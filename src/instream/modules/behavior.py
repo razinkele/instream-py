@@ -1,0 +1,297 @@
+"""Behavioral decisions — logistic functions, candidate mask, fitness, habitat selection."""
+import numpy as np
+
+
+def evaluate_logistic(x, L1, L9):
+    """Evaluate logistic function where f(L1)=0.1 and f(L9)=0.9. Scalar version."""
+    midpoint = (L1 + L9) / 2.0
+    slope = np.log(81.0) / (L9 - L1) if L9 != L1 else 0.0
+    return float(1.0 / (1.0 + np.exp(-slope * (x - midpoint))))
+
+
+def evaluate_logistic_array(x, L1, L9):
+    """Evaluate logistic function on an array."""
+    x = np.asarray(x, dtype=np.float64)
+    midpoint = (L1 + L9) / 2.0
+    slope = np.log(81.0) / (L9 - L1) if L9 != L1 else 0.0
+    return 1.0 / (1.0 + np.exp(-slope * (x - midpoint)))
+
+
+def movement_radius(length, move_radius_max, move_radius_L1, move_radius_L9):
+    """Calculate habitat selection radius (in CRS units, same as centroids).
+
+    Parameters
+    ----------
+    length : float
+        Fish length (cm).
+    move_radius_max : float
+        Maximum movement radius (CRS units, e.g. cm in NetLogo, meters in projected CRS).
+    move_radius_L1 : float
+        Fish length at which logistic = 0.1.
+    move_radius_L9 : float
+        Fish length at which logistic = 0.9.
+
+    Returns
+    -------
+    float
+        Movement radius for this fish.
+    """
+    fraction = evaluate_logistic(length, L1=move_radius_L1, L9=move_radius_L9)
+    return move_radius_max * fraction
+
+
+def build_candidate_mask(trout_state, fem_space, move_radius_max, move_radius_L1, move_radius_L9):
+    """Build boolean mask of candidate cells for each fish.
+
+    Returns shape (N_MAX, num_cells). True = fish can consider that cell.
+    Dead fish get all-False row. Dry cells (depth=0) are excluded.
+
+    Parameters
+    ----------
+    trout_state : TroutState
+        All trout state arrays.
+    fem_space : FEMSpace
+        Spatial container with KD-tree and neighbor info.
+    move_radius_max : float
+        Maximum movement radius (CRS units).
+    move_radius_L1 : float
+        Fish length where logistic = 0.1.
+    move_radius_L9 : float
+        Fish length where logistic = 0.9.
+
+    Returns
+    -------
+    mask : ndarray, shape (capacity, num_cells), dtype bool
+    """
+    n_fish = trout_state.alive.shape[0]
+    n_cells = fem_space.num_cells
+    mask = np.zeros((n_fish, n_cells), dtype=bool)
+
+    wet_mask = fem_space.cell_state.depth > 0
+
+    for i in range(n_fish):
+        if not trout_state.alive[i]:
+            continue
+        current_cell = trout_state.cell_idx[i]
+        if current_cell < 0:
+            continue
+        # Calculate movement radius for this fish
+        radius = movement_radius(trout_state.length[i], move_radius_max,
+                                  move_radius_L1, move_radius_L9)
+        # Get cells within radius via KD-tree
+        candidates = fem_space.cells_in_radius(current_cell, radius)
+        # Also include direct neighbors (ensures adjacency even if radius is tiny)
+        neighbors = fem_space.get_neighbor_indices(current_cell)
+        neighbors = neighbors[neighbors >= 0]
+        all_candidates = np.unique(np.concatenate([candidates, neighbors]))
+        # Apply wet mask
+        for c in all_candidates:
+            if wet_mask[c]:
+                mask[i, c] = True
+        # Ensure current cell is included if wet
+        if current_cell < n_cells and wet_mask[current_cell]:
+            mask[i, current_cell] = True
+
+    return mask
+
+
+def fitness_for(activity, length, weight, depth, velocity, light, turbidity, temperature,
+                drift_conc, search_prod, search_area,
+                available_drift, available_search, available_shelter, shelter_speed_frac,
+                superind_rep, prev_consumption, step_length,
+                cmax_A, cmax_B, cmax_temp_table_x, cmax_temp_table_y,
+                react_dist_A, react_dist_B,
+                turbid_threshold, turbid_min, turbid_exp,
+                light_threshold, light_min, light_exp,
+                capture_R1, capture_R9,
+                max_speed_A, max_speed_B, max_swim_temp_term,
+                resp_A, resp_B, resp_D, resp_temp_term,
+                prey_energy_density, fish_energy_density):
+    """Compute fitness for a fish at a cell with given activity.
+
+    Phase 4 simplified version: fitness = growth_rate * step_length.
+    # TODO Phase 5: integrate survival into full fitness formula.
+    """
+    from instream.modules.growth import (growth_rate_for, max_swim_speed,
+                                          drift_swim_speed)
+
+    max_speed_len_term = max_speed_A * length + max_speed_B
+    max_speed = max_swim_speed(max_speed_len_term, max_swim_temp_term)
+
+    # Speed check: if velocity exceeds max speed for this activity, fitness = 0
+    if activity == "search" and velocity > max_speed:
+        return 0.0
+    if activity == "drift":
+        d_speed = drift_swim_speed(velocity, length, available_shelter, shelter_speed_frac)
+        if d_speed > max_speed:
+            return 0.0
+
+    growth = growth_rate_for(
+        activity=activity, length=length, weight=weight,
+        depth=depth, velocity=velocity, light=light,
+        turbidity=turbidity, temperature=temperature,
+        drift_conc=drift_conc, search_prod=search_prod, search_area=search_area,
+        available_drift=available_drift, available_search=available_search,
+        available_shelter=available_shelter, shelter_speed_frac=shelter_speed_frac,
+        superind_rep=superind_rep, prev_consumption=prev_consumption, step_length=step_length,
+        cmax_A=cmax_A, cmax_B=cmax_B,
+        cmax_temp_table_x=cmax_temp_table_x, cmax_temp_table_y=cmax_temp_table_y,
+        react_dist_A=react_dist_A, react_dist_B=react_dist_B,
+        turbid_threshold=turbid_threshold, turbid_min=turbid_min, turbid_exp=turbid_exp,
+        light_threshold=light_threshold, light_min=light_min, light_exp=light_exp,
+        capture_R1=capture_R1, capture_R9=capture_R9,
+        max_speed_A=max_speed_A, max_speed_B=max_speed_B,
+        max_swim_temp_term=max_swim_temp_term,
+        resp_A=resp_A, resp_B=resp_B, resp_D=resp_D, resp_temp_term=resp_temp_term,
+        prey_energy_density=prey_energy_density, fish_energy_density=fish_energy_density,
+    )
+
+    # Simplified fitness: growth only (Phase 4)
+    # TODO Phase 5: full formula with survival, mean_condition_survival, time_horizon
+    return growth * step_length
+
+
+def deplete_resources(fish_order, chosen_cells, chosen_activities,
+                      intake_amounts, fish_lengths, superind_reps,
+                      available_drift, available_search,
+                      available_shelter, available_hiding):
+    """Sequential resource depletion (order-dependent). Modifies arrays in place."""
+    for idx in fish_order:
+        cell = chosen_cells[idx]
+        act = chosen_activities[idx]
+        rep = superind_reps[idx]
+        length = fish_lengths[idx]
+
+        if act == 0:  # drift
+            consumed = min(intake_amounts[idx] * rep, available_drift[cell])
+            available_drift[cell] -= consumed
+            # Also deplete velocity shelter
+            shelter_needed = length**2 * rep
+            if available_shelter[cell] >= shelter_needed:
+                available_shelter[cell] -= shelter_needed
+        elif act == 1:  # search
+            consumed = min(intake_amounts[idx] * rep, available_search[cell])
+            available_search[cell] -= consumed
+        elif act == 2:  # hide
+            if available_hiding[cell] >= rep:
+                available_hiding[cell] -= rep
+
+
+def select_habitat_and_activity(trout_state, fem_space, **params):
+    """Main habitat selection: for each fish, pick best cell x activity.
+
+    # TODO Phase 5: integrate survival into fitness
+    """
+    from instream.modules.growth import (growth_rate_for, drift_intake as _drift_intake,
+                                          search_intake as _search_intake,
+                                          max_swim_speed, drift_swim_speed)
+
+    mask = build_candidate_mask(trout_state, fem_space,
+                                 params['move_radius_max'],
+                                 params['move_radius_L1'],
+                                 params['move_radius_L9'])
+
+    cs = fem_space.cell_state
+    alive = trout_state.alive_indices()
+
+    # Sort by length descending (large fish first, as in NetLogo)
+    alive_sorted = alive[np.argsort(-trout_state.length[alive])]
+
+    best_cells = np.full(trout_state.alive.shape[0], -1, dtype=np.int32)
+    best_activities = np.zeros(trout_state.alive.shape[0], dtype=np.int32)
+    intake_amounts = np.zeros(trout_state.alive.shape[0], dtype=np.float64)
+
+    activities = ["drift", "search", "hide"]
+
+    for i in alive_sorted:
+        candidates = np.where(mask[i])[0]
+        if len(candidates) == 0:
+            # No wet candidates -- stay at current cell
+            best_cells[i] = trout_state.cell_idx[i]
+            best_activities[i] = 2  # hide
+            continue
+
+        best_fitness = -np.inf
+        best_c = candidates[0]
+        best_a = 2  # default hide
+        best_intake = 0.0
+
+        prev_cons = float(np.sum(trout_state.consumption_memory[i]))
+
+        for c_idx in candidates:
+            for a_idx, act_name in enumerate(activities):
+                f = fitness_for(
+                    activity=act_name,
+                    length=trout_state.length[i], weight=trout_state.weight[i],
+                    depth=cs.depth[c_idx], velocity=cs.velocity[c_idx],
+                    light=cs.light[c_idx], turbidity=params['turbidity'],
+                    temperature=params['temperature'],
+                    drift_conc=params['drift_conc'], search_prod=params['search_prod'],
+                    search_area=params['search_area'],
+                    available_drift=cs.available_drift[c_idx],
+                    available_search=cs.available_search[c_idx],
+                    available_shelter=cs.available_vel_shelter[c_idx],
+                    shelter_speed_frac=params['shelter_speed_frac'],
+                    superind_rep=trout_state.superind_rep[i],
+                    prev_consumption=prev_cons,
+                    step_length=params['step_length'],
+                    cmax_A=params['cmax_A'], cmax_B=params['cmax_B'],
+                    cmax_temp_table_x=params['cmax_temp_table_x'],
+                    cmax_temp_table_y=params['cmax_temp_table_y'],
+                    react_dist_A=params['react_dist_A'], react_dist_B=params['react_dist_B'],
+                    turbid_threshold=params['turbid_threshold'],
+                    turbid_min=params['turbid_min'], turbid_exp=params['turbid_exp'],
+                    light_threshold=params['light_threshold'],
+                    light_min=params['light_min'], light_exp=params['light_exp'],
+                    capture_R1=params['capture_R1'], capture_R9=params['capture_R9'],
+                    max_speed_A=params['max_speed_A'], max_speed_B=params['max_speed_B'],
+                    max_swim_temp_term=params['max_swim_temp_term'],
+                    resp_A=params['resp_A'], resp_B=params['resp_B'],
+                    resp_D=params['resp_D'],
+                    resp_temp_term=params['resp_temp_term'],
+                    prey_energy_density=params['prey_energy_density'],
+                    fish_energy_density=params['fish_energy_density'],
+                )
+                if f > best_fitness:
+                    best_fitness = f
+                    best_c = c_idx
+                    best_a = a_idx
+
+        best_cells[i] = best_c
+        best_activities[i] = best_a
+        trout_state.cell_idx[i] = best_c
+        trout_state.activity[i] = best_a
+
+        # Compute intake for depletion
+        _len = trout_state.length[i]
+        _wt = trout_state.weight[i]
+        _cmax_wt = params['cmax_A'] * _wt ** params['cmax_B']
+        from instream.modules.growth import cmax_temp_function, c_stepmax
+        _cmax_temp = cmax_temp_function(params['temperature'],
+                                         params['cmax_temp_table_x'],
+                                         params['cmax_temp_table_y'])
+        _cstepmax = c_stepmax(_cmax_wt, _cmax_temp, prev_cons, params['step_length'])
+        _max_spd_len = params['max_speed_A'] * _len + params['max_speed_B']
+        _max_spd = max_swim_speed(_max_spd_len, params['max_swim_temp_term'])
+        if best_a == 0:  # drift
+            intake_amounts[i] = _drift_intake(
+                _len, cs.depth[best_c], cs.velocity[best_c],
+                cs.light[best_c], params['turbidity'], params['drift_conc'],
+                _max_spd, _cstepmax, cs.available_drift[best_c],
+                trout_state.superind_rep[i],
+                params['react_dist_A'], params['react_dist_B'],
+                params['turbid_threshold'], params['turbid_min'], params['turbid_exp'],
+                params['light_threshold'], params['light_min'], params['light_exp'],
+                params['capture_R1'], params['capture_R9'])
+        elif best_a == 1:  # search
+            intake_amounts[i] = _search_intake(
+                cs.velocity[best_c], _max_spd,
+                params['search_prod'], params['search_area'],
+                _cstepmax, cs.available_search[best_c],
+                trout_state.superind_rep[i])
+
+    # Deplete resources (sequential, large fish first)
+    deplete_resources(alive_sorted, best_cells, best_activities,
+                      intake_amounts, trout_state.length, trout_state.superind_rep,
+                      cs.available_drift, cs.available_search,
+                      cs.available_vel_shelter, cs.available_hiding_places)
