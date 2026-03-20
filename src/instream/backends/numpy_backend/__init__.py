@@ -45,7 +45,94 @@ class NumpyBackend:
 
     def compute_light(self, julian_date, latitude, light_correction, shading,
                       light_at_night, twilight_angle):
-        raise NotImplementedError("Phase 2")
+        """Compute day length, twilight length, and mean daytime irradiance.
+
+        Parameters
+        ----------
+        julian_date : int
+            Day of year (1-365).
+        latitude : float
+            Site latitude in degrees.
+        light_correction : float
+            Multiplicative correction for irradiance.
+        shading : float
+            Fraction of light reaching water surface (0-1).
+        light_at_night : float
+            Background light level for night / dry cells.
+        twilight_angle : float
+            Sun angle below horizon defining twilight (degrees, e.g. 6).
+
+        Returns
+        -------
+        day_length : float
+            Fraction of 24h that is daylight (0-1).
+        twilight_length : float
+            Morning twilight duration as fraction of day.
+        irradiance : float
+            Mean daytime irradiance at surface (W/m^2, scaled).
+        """
+        # Solar declination
+        decl = 23.45 * np.sin(np.radians((284 + julian_date) * 360.0 / 365.0))
+        decl_rad = np.radians(decl)
+        lat_rad = np.radians(latitude)
+
+        # Hour angle at sunrise/sunset
+        cos_ha = -np.tan(lat_rad) * np.tan(decl_rad)
+        cos_ha = np.clip(cos_ha, -1.0, 1.0)  # handle polar regions
+        hour_angle = np.degrees(np.arccos(cos_ha))
+        day_length = 2.0 * hour_angle / 360.0  # fraction of day
+
+        # Twilight hour angle
+        denom = np.cos(lat_rad) * np.cos(decl_rad)
+        if abs(denom) < 1e-15:
+            twilight_length = 0.0
+        else:
+            cos_tw = (-np.sin(np.radians(twilight_angle))
+                      - np.sin(lat_rad) * np.sin(decl_rad)) / denom
+            cos_tw = np.clip(cos_tw, -1.0, 1.0)
+            tw_hour_angle = np.degrees(np.arccos(cos_tw))
+            twilight_length = (tw_hour_angle - hour_angle) / 360.0
+            twilight_length = max(0.0, float(twilight_length))
+
+        # Mean daytime irradiance (simplified daily average)
+        # Approximate peak solar elevation angle
+        solar_constant = 1360.0
+        solar_elevation = 90.0 - latitude + decl  # approximate noon elevation
+        solar_elevation = min(90.0, max(0.0, solar_elevation))
+        irradiance = (solar_constant * np.sin(np.radians(solar_elevation))
+                      * light_correction * shading)
+        irradiance = max(0.0, float(irradiance)) * day_length  # scale by day fraction
+
+        return float(day_length), float(twilight_length), float(irradiance)
+
+    def compute_cell_light(self, depths, irradiance, turbid_coef, turbidity,
+                           light_at_night):
+        """Compute light at mid-depth for each cell using Beer-Lambert law.
+
+        Parameters
+        ----------
+        depths : 1-D array, shape (C,)
+            Water depth at each cell (cm).
+        irradiance : float
+            Surface irradiance (W/m^2 scaled).
+        turbid_coef : float
+            Turbidity coefficient for attenuation.
+        turbidity : float
+            Current turbidity value (NTU).
+        light_at_night : float
+            Light value assigned to dry cells (depth=0).
+
+        Returns
+        -------
+        light : 1-D array, shape (C,)
+            Light intensity at mid-depth for each cell.
+        """
+        depths = np.asarray(depths, dtype=float)
+        attenuation = turbid_coef * turbidity
+        light = irradiance * np.exp(-attenuation * depths / 2.0)
+        # Dry cells get night light
+        light = np.where(depths > 0, light, light_at_night)
+        return light
 
     def growth_rate(self, lengths, weights, temperatures, velocities, depths, **params):
         raise NotImplementedError("Phase 3")

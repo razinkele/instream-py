@@ -16,6 +16,10 @@ class ComputeBackend(Protocol):
                       light_at_night: float, twilight_angle: float
                       ) -> tuple[float, float, float]: ...
 
+    def compute_cell_light(self, depths: np.ndarray, irradiance: float,
+                           turbid_coef: float, turbidity: float,
+                           light_at_night: float) -> np.ndarray: ...
+
     def growth_rate(self, lengths: np.ndarray, weights: np.ndarray,
                     temperatures: np.ndarray, velocities: np.ndarray,
                     depths: np.ndarray, **params) -> np.ndarray: ...

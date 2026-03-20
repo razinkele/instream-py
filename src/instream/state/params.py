@@ -32,6 +32,12 @@ class SpeciesParams:
     # Interpolation tables (optional, default to empty read-only arrays)
     cmax_temp_table_x: np.ndarray = field(default_factory=_readonly_array())
     cmax_temp_table_y: np.ndarray = field(default_factory=_readonly_array())
+    # Max swim speed temperature term coefficients: C*T² + D*T + E
+    max_speed_C: float = 0.0
+    max_speed_D: float = 0.0
+    max_speed_E: float = 0.0
+    # Respiration temperature term coefficient: exp(resp_C * T²)
+    resp_C: float = 0.0
 
     def __post_init__(self):
         # Make numpy arrays read-only to enforce true immutability

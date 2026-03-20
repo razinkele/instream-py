@@ -1,6 +1,72 @@
 """Numba compute backend — JIT-compiled, CPU multi-threaded."""
+import math
 import numpy as np
 import numba
+
+
+@numba.njit(cache=True)
+def _compute_light(julian_date, latitude, light_correction, shading,
+                   light_at_night, twilight_angle):
+    """Compute day length, twilight length, and mean daytime irradiance."""
+    # Solar declination
+    decl = 23.45 * math.sin(math.radians((284.0 + julian_date) * 360.0 / 365.0))
+    decl_rad = math.radians(decl)
+    lat_rad = math.radians(latitude)
+
+    # Hour angle at sunrise/sunset
+    cos_ha = -math.tan(lat_rad) * math.tan(decl_rad)
+    if cos_ha < -1.0:
+        cos_ha = -1.0
+    elif cos_ha > 1.0:
+        cos_ha = 1.0
+    hour_angle = math.degrees(math.acos(cos_ha))
+    day_length = 2.0 * hour_angle / 360.0
+
+    # Twilight hour angle
+    denom = math.cos(lat_rad) * math.cos(decl_rad)
+    if abs(denom) < 1e-15:
+        twilight_length = 0.0
+    else:
+        cos_tw = (-math.sin(math.radians(twilight_angle))
+                  - math.sin(lat_rad) * math.sin(decl_rad)) / denom
+        if cos_tw < -1.0:
+            cos_tw = -1.0
+        elif cos_tw > 1.0:
+            cos_tw = 1.0
+        tw_hour_angle = math.degrees(math.acos(cos_tw))
+        twilight_length = (tw_hour_angle - hour_angle) / 360.0
+        if twilight_length < 0.0:
+            twilight_length = 0.0
+
+    # Mean daytime irradiance (simplified)
+    solar_constant = 1360.0
+    solar_elevation = 90.0 - latitude + decl
+    if solar_elevation < 0.0:
+        solar_elevation = 0.0
+    elif solar_elevation > 90.0:
+        solar_elevation = 90.0
+    irradiance = (solar_constant * math.sin(math.radians(solar_elevation))
+                  * light_correction * shading)
+    if irradiance < 0.0:
+        irradiance = 0.0
+    irradiance = irradiance * day_length
+
+    return day_length, twilight_length, irradiance
+
+
+@numba.njit(parallel=True, cache=True)
+def _compute_cell_light(depths, irradiance, turbid_coef, turbidity,
+                        light_at_night):
+    """Compute light at mid-depth for all cells (Beer-Lambert)."""
+    n = depths.shape[0]
+    light = np.empty(n, dtype=np.float64)
+    attenuation = turbid_coef * turbidity
+    for i in numba.prange(n):
+        if depths[i] > 0.0:
+            light[i] = irradiance * math.exp(-attenuation * depths[i] / 2.0)
+        else:
+            light[i] = light_at_night
+    return light
 
 
 @numba.njit(parallel=True, cache=True)
@@ -36,8 +102,18 @@ class NumbaBackend:
     def update_hydraulics(self, flow, table_flows, depth_values, vel_values):
         return _update_hydraulics(float(flow), table_flows, depth_values, vel_values)
 
-    def compute_light(self, *args, **kwargs):
-        raise NotImplementedError("Phase 2")
+    def compute_light(self, julian_date, latitude, light_correction, shading,
+                      light_at_night, twilight_angle):
+        return _compute_light(float(julian_date), float(latitude),
+                              float(light_correction), float(shading),
+                              float(light_at_night), float(twilight_angle))
+
+    def compute_cell_light(self, depths, irradiance, turbid_coef, turbidity,
+                           light_at_night):
+        depths = np.asarray(depths, dtype=np.float64)
+        return _compute_cell_light(depths, float(irradiance),
+                                   float(turbid_coef), float(turbidity),
+                                   float(light_at_night))
 
     def growth_rate(self, *args, **kwargs):
         raise NotImplementedError("Phase 3")

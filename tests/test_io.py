@@ -82,3 +82,73 @@ class TestHydraulicReader:
             return_cell_ids=True
         )
         assert cell_ids[0] == "I-1"
+
+
+class TestTimeSeriesReader:
+    """Test CSV time-series input reader."""
+
+    def test_read_example_a_returns_dataframe(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        import pandas as pd
+        assert isinstance(df, pd.DataFrame)
+
+    def test_read_example_a_has_datetime_index(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        import pandas as pd
+        assert isinstance(df.index, pd.DatetimeIndex)
+
+    def test_read_example_a_date_range(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        assert df.index[0].month == 10
+        assert df.index[0].day == 1
+        assert df.index[0].year == 2010
+
+    def test_read_example_a_columns(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        assert "temperature" in df.columns
+        assert "flow" in df.columns
+        assert "turbidity" in df.columns
+
+    def test_read_example_a_first_row_values(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        np.testing.assert_allclose(df["temperature"].iloc[0], 11.1)
+        np.testing.assert_allclose(df["flow"].iloc[0], 6.37)
+        np.testing.assert_allclose(df["turbidity"].iloc[0], 2.0)
+
+    def test_read_timeseries_ignores_comment_lines(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        # If comments handled, we get data rows only, no errors
+        assert len(df) > 100
+
+    def test_read_example_a_row_count(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        # ~12 years of daily data (Oct 2010 – Oct 2022)
+        assert 4000 < len(df) < 4500
+
+    def test_check_gaps_clean_data_passes(self):
+        from instream.io.timeseries import read_time_series, check_gaps
+        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+        gaps = check_gaps(df, max_gap_days=1.0)
+        assert len(gaps) == 0, f"Unexpected gaps found: {gaps}"
+
+    def test_check_gaps_detects_missing_day(self):
+        from instream.io.timeseries import check_gaps
+        import pandas as pd
+        # Create data with a 3-day gap
+        dates = pd.to_datetime(["2020-01-01", "2020-01-02", "2020-01-05", "2020-01-06"])
+        df = pd.DataFrame({"temperature": [10, 11, 12, 13], "flow": [1, 2, 3, 4]}, index=dates)
+        gaps = check_gaps(df, max_gap_days=1.0)
+        assert len(gaps) > 0  # should detect the gap between Jan 2 and Jan 5
+
+    def test_read_example_b_downstream(self):
+        from instream.io.timeseries import read_time_series
+        df = read_time_series(FIXTURES_DIR / "example_b" / "DownstreamReach-TimeSeriesInput.csv")
+        assert "temperature" in df.columns
+        assert len(df) > 0

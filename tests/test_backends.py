@@ -48,6 +48,11 @@ class TestBackendFactory:
         backend = get_backend("numpy")
         assert hasattr(backend, "compute_light")
 
+    def test_backend_has_compute_cell_light(self):
+        from instream.backends import get_backend
+        backend = get_backend("numpy")
+        assert hasattr(backend, "compute_cell_light")
+
     def test_backend_has_evaluate_logistic(self):
         from instream.backends import get_backend
         backend = get_backend("numpy")
