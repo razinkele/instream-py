@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "instream"
+version = "0.1.0"
+description = "Python conversion of inSTREAM/inSALMO 7.4 individual-based salmonid model"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.11"
+dependencies = [
+    "mesa>=3.1",
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "pandas>=2.0",
+    "geopandas>=0.14",
+    "shapely>=2.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+numba = [
+    "numba>=0.59",
+]
+jax = [
+    "jax>=0.4.20",
+    "jaxlib>=0.4.20",
+    "interpax>=0.3",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "hypothesis>=6.0",
+    "instream[numba]",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+
+[project.scripts]
+instream = "instream.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/instream"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["instream"]
+omit = ["*/backends/jax_backend/*", "*/backends/numba_backend/*"]
+
+[tool.coverage.report]
+fail_under = 80
