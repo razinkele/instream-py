@@ -1,0 +1,342 @@
+; Parameter file for inSALMO 7.4
+; For Example Project B: three reaches, two Chinook races, and one trout species
+
+to set-parameters
+  ; A procedure that sets parameter values and serves as the parameter file
+  
+  ; Model run parameters
+  set start-date "10/1/2010"
+  set end-date   "9/30/2013"
+  set file-output-frequency  1   ; Minimum number of time units between file output updates - must be an integer
+  set file-output-units "days"   ; Time units for file-output-frequency: "minutes", "hours", "days", "weeks", "months", or "years".
+                                 ; Use 1 "minutes" to get output every time step.
+  set census-days (list "6/15" "9/30" )  ; List of days of year (M/d format) on which "is-census?" reports TRUE
+  set census-years-to-skip  0    ; Number of years at start of simulation before "is-census?" can be TRUE. Usually should be zero for inSALMO
+
+  ; Input file names, including path if in a subdirectory
+  set GIS-file-name             "Example-Project-B_3Reaches-3Species/Shapefile/ExampleB.shp"            ; Cell geometry shapefile name
+  set background-image-file     "None"     ; Name of an optional image (BMP, JPG, GIF, or PNG) displayed in background of view;
+                                           ; "None" if not used. DO NOT just comment this statement out.
+  set initial-population-file   "Example-Project-B_3Reaches-3Species/ExampleB-InitialPopulations.csv"            ; Name of the initial population file
+  set adult-arrival-file        "Example-Project-B_3Reaches-3Species/ExampleB-AdultArrivals.csv"          ; Name of file with adult salmon arrival input
+  
+  ; GIS variable names
+  set GIS-property-for-cell-ID                "ID_TEXT"     ; Name of GIS file's property for cell ID
+  set GIS-property-for-cell-reach-name        "REACH_NAME"  ; Name of GIS file's property for  reach name
+  set GIS-property-for-cell-area              "AREA_M2"     ; Name of GIS file's property for cell area
+  set GIS-property-for-cell-dist-escape       "DISTANCE_T"  ; Name of GIS file's property for distance to escape cover
+  set GIS-property-for-cell-num-hiding-places "NUM_HIDING"   ; Name of GIS file's property for number of hiding places
+  set GIS-property-for-cell-frac-vel-shelter  "FRAC_VEL_S"  ; Name of GIS file's property for fraction of cell with velocity shelter
+  set GIS-property-for-cell-frac-spawn        "FRAC_SPAWN"  ; Name of GIS file's property for fraction of cell with spawning gravel
+
+  ;; Year shuffler parameters
+  set shuffle-years?            false  ; If true, then shuffle input years, with input years defined by shuffle-day
+  set shuffle-day               "10/1" ; If years are shuffled, then draw a new year on this day (a string in M/d format)
+                                       ; Typically will be the first day of the water year
+  set shuffle-rand-seed         0      ; Random number seed for year shuffling, which is independent of random-number-seed
+                                       ; If set to 0, year shuffler uses the main random generator instead of its own.
+  
+  ; Switches for secondary output files
+  set write-frames?             false ; Set to true to save the Interface to a graphics file each tick, for making a movie of the simulation
+  set individual-fish-output?   false ; Set to true to get output on each individual fish
+  set frac-trout-to-output      0.05  ; The fraction of individual fish to report in individual-fish-output
+  set cell-output?              false ; Set to true to get output on each habitat cell
+  set debug-growth?             false ; Set to true to get test output for growth; THIS OUTPUT IS EXTREMELY LARGE, and
+                                      ; its code in procedure growth-rate-for is normally commented out.
+  set debug-survival?           false ; Set to true to get test output for survival; code in survive.
+  set debug-redd-survival?      false ; Set to true to get test output for redd survival; code in redd-survive.
+  set debug-survival-logistics? false ; Set to true to get debug output for survival logistic functions; code in build-logistic-functions.
+  set debug-cell-variables?     false ; Set true to get output of all cell variables except depth and velocity tables; coded in read-hydraulics.
+  set debug-cell-hydraulics?    false ; Set true to get output of cell depth and velocity tables; coded in read-hydraulics.
+  set debug-cell-resources?     false ; Set true to get output of cell resource variables and their depletion; coded in update-habitat
+  set debug-spawning-readiness? false ; Set true to get output on whether trout meet criteria for spawning; coded in spawn
+
+  ; Display and output parameters
+  set world-resolution     200     ; Patch size (cm)
+  set max-shade-depth    200.0     ; The depth at which cell colors are bluest (cm)
+  set max-shade-velocity 200.0     ; The velocity at which cell colors are reddest (cm/s)
+  set max-shade-light    100.0     ; Higher values distinguish among depths when there is turbidity but obscure twilight.
+  set trout-size-scale     1.0     ; Ratio of display size to fish length
+  set age-class-list (list 0 1 2)  ; List defining the age classes used to break out results. Must be ascending sequential integers.
+  set outmigrant-length-classes (list 5 7) ; For inSALMO, length class list for outmigrant output file
+  
+  ;; Input testing parameter
+  set max-days-between-time-series-inputs 1.0 ; maximum number of days between rows in time-series input files
+                                              ; used to define missing input -- use 1.0 for daily input
+
+  ; Light parameters
+  set latitude                 41      ; Site latitude (deg)
+  set light-correction          0.7    ; Multiplier for atmospheric light losses
+  set light-at-night            0.9        ; Light intensity at night (W/m2)
+  set twilight-angle            6.0        ; Parameter for definition of twilight: degrees that sun is below horizon;
+                                           ; 6 deg. is "civil twilight" and higher values should not be used.
+
+  ; Reach parameters -- lists with one value per reach
+  ;; Reach initialization parameters
+  set reach-names                 (list "Upstream" "Middle" "Downstream") ; Text names of reaches-- must match values in GIS file
+  set time-series-input-files	(list "Example-Project-B_3Reaches-3Species/UpperReaches-TimeSeriesInput.csv"
+								"Example-Project-B_3Reaches-3Species/UpperReaches-TimeSeriesInput.csv" "Example-Project-B_3Reaches-3Species/DownstreamReach-TimeSeriesInput.csv") ; Name of time series input file
+  set depth-file-names  		(list "Example-Project-B_3Reaches-3Species/UpstreamReach-Depths.csv" 
+								"Example-Project-B_3Reaches-3Species/MiddleReach-Depths.csv"
+								"Example-Project-B_3Reaches-3Species/DownstreamReach-Depths.csv")       ; Depth lookup table for cells
+  set velocity-file-names 		(list "Example-Project-B_3Reaches-3Species/UpstreamReach-Vels.csv"
+								"Example-Project-B_3Reaches-3Species/MiddleReach-Vels.csv"
+								"Example-Project-B_3Reaches-3Species/DownstreamReach-Vels.csv")             ; Velocity lookup table for cells
+
+  ;; Reach-scale habitat parameters
+  set reach-drift-concs           (list 5.0E-10  5.0E-10  5.0E-10) ; Concentration of drift food, g/cm3
+  set reach-search-prods          (list 1.0E-5   1.0E-5   1.0E-5) ; Production of search food, g/cm2/d
+  set reach-shelter-speed-fracs   (list 0.3      0.3      0.3) ; Fraction by which velocity shelter reduces swimming speed
+  set reach-prey-energy-densities (list 2500     2500     2500) ; Energy content of fish prey, J/g
+  set reach-drift-regen-distances (list 1000     1000     1000) ; Distance over which drift is regenerated (cm)
+  set reach-shadings              (list 0.8      0.8      0.8) ; Multiplier for shading: fraction of sunlight *not* blocked by shading
+  set reach-fish-pred-mins        (list 0.9      0.9      0.9) ; Minimum probability of surviving fish predation
+  set reach-terr-pred-mins        (list 0.9      0.9      0.9) ; Minimum probability of surviving terrestrial predation
+  set reach-light-turbid-coefs    (list 0.0017   0.0017   0.0017) ; Multiplier in relation between light attentuation coefficient and turbidity (cm-1 NTU-1)
+  set reach-light-turbid-consts   (list 0.0      0.0      0.0) ; Constant in relation between light attentuation coefficient and turbidity (cm-1)
+  set reach-max-spawn-flows       (list 40       40       40) ; Maximum flow (m3/s) at which trout can spawn -- estimate
+  set reach-shear-As              (list 0.0      0.0      0.0) ; Multiplier (s/m3) in the relation between flow and shear stress, for redd scour -- OFF
+  set reach-shear-Bs              (list 1.0      1.0      1.0) ; Exponent in the relation between flow and shear stress, for redd scour
+  set reach-upstream-junctions    (list 1        2        3)   ; For inSALMO, junction numbers to define downstream reaches
+  set reach-downstream-junctions  (list 2        3        4)   ; For inSALMO, junction numbers to define downstream reaches
+
+  ; Trout and redd parameters
+  set species-list                  (list "Chinook-Fall" "Chinook-Spring" "Rainbow")
+  set trout-is-anadromous?          (list  true      true    false)
+  set trout-display-color           (list  brown     green   red  )
+  
+  set trout-capture-R1              (list    1.3    1.3    1.3    )
+  set trout-capture-R9              (list    0.4    0.4    0.4    )
+
+  set trout-cmax-A                  (list    0.628  0.628  0.628  )
+  set trout-cmax-B                  (list    0.7    0.7    0.7    )
+
+  set trout-emerge-length-min       (list    3.5    3.5    2.6    )
+  set trout-emerge-length-mode      (list    3.8    3.8    2.8    )
+  set trout-emerge-length-max       (list    4.1    4.1    3.0    )
+
+  set trout-react-dist-A            (list    4.0    4.0    4.0    )
+  set trout-react-dist-B            (list    2.0    2.0    2.0    )
+  set trout-turbid-threshold        (list    5.0    5.0    5.0    )
+  set trout-turbid-min              (list    0.1    0.1    0.1    )
+  set trout-turbid-exp              (list   -0.116 -0.116 -0.116  )
+  set trout-light-threshold         (list    20.0   20.0   20.0   )
+  set trout-light-min               (list    0.5    0.5    0.5    )
+  set trout-light-exp               (list   -0.2   -0.2   -0.2    )
+
+  set trout-energy-density          (list    5900   5900   5900   )
+
+  set trout-fitness-horizon         (list    60     60     60     )
+  set trout-fitness-length          (list    15     15     14     )     ; New in inSALMO, the target length in fitness measure (cm)
+
+  set trout-max-speed-A             (list    2.8    2.8    2.8    )
+  set trout-max-speed-B             (list    21.0   21.0   21.0   )
+  set trout-max-speed-C             (list  -0.0029 -0.0029 -0.0029)
+  set trout-max-speed-D             (list    0.084  0.084  0.084  )
+  set trout-max-speed-E             (list    0.37   0.37   0.37   )
+
+  set trout-migrate-fitness-L1      (list    4.0    4.0    0.0    )  ; New in inSALMO, defines downstream migration fitness term
+  set trout-migrate-fitness-L9      (list   10.0   10.0    1.0    )  ; New in inSALMO, defines downstream migration fitness term
+
+  set trout-move-radius-max         (list    20000  20000 15000   )
+  set trout-move-radius-L1          (list     7      7      6     )
+  set trout-move-radius-L9          (list    20     20     20     )
+
+  set trout-pisciv-length           (list    20     20     20     )
+
+  set trout-resp-A                  (list    36     36     36     )
+  set trout-resp-B                  (list    0.783  0.783  0.783  )
+  set trout-resp-C                  (list    0.0020 0.0020 0.0020 )
+  set trout-resp-D                  (list    1.4    1.4    1.4    )
+
+  set trout-search-area             (list    20000  20000  20000  )
+
+  set trout-spawn-defense-area      (list    200000 200000 0      )
+  set trout-spawn-egg-viability     (list    0.8    0.8    0.8    )
+  set trout-spawn-fecund-mult       (list    690    690    0.18   )
+  set trout-spawn-fecund-exp        (list    0.552  0.552  2.51   )
+  set trout-spawn-suitability-tol   (list    0.1    0.1    0.1    )
+  set trout-spawn-start-day         (list    time:create "10/1"  time:create "9/1"  time:create "4/15" )
+  set trout-spawn-end-day           (list    time:create "11/30" time:create "10/31"  time:create "5/30" )
+  set trout-spawn-max-flow-change   (list    0.2    0.2    0.2    )
+  set trout-spawn-max-temp          (list    14     14     18     )
+  set trout-spawn-min-age           (list    -9     -9     2      )
+  set trout-spawn-min-length        (list    -9     -9     14     )
+  set trout-spawn-min-cond          (list    -9     -9    0.98   )
+  set trout-spawn-min-temp          (list    5      5      10     )
+  set trout-spawn-prob              (list    0.2    0.1    0.1    )
+  set trout-spawn-wt-loss-fraction  (list    0.4    0.4    0.2    )
+
+  set trout-weight-A                (list    0.0041 0.0041 0.0124 )
+  set trout-weight-B                (list    3.49   3.49   2.98   )
+
+  set mort-high-temp-T1             (list    28.0   28.0   30.0   )
+  set mort-high-temp-T9             (list    24.0   24.0   25.8   )
+  set mort-strand-survival-when-dry (list    0.5    0.5    0.5    )
+  set mort-condition-S-at-K8        (list    0.992  0.992  0.992  )
+  set mort-condition-S-at-K5        (list    0.8    0.8    0.8    )
+  
+  set mort-terr-pred-L1             (list    6.0    6.0    6.0    )
+  set mort-terr-pred-L9             (list    3.0    3.0    3.0    )
+  set mort-terr-pred-D1             (list    0.0    0.0    0.0    )
+  set mort-terr-pred-D9             (list    200    200    200    )
+  set mort-terr-pred-V1             (list    20     20     20     )
+  set mort-terr-pred-V9             (list    300    300    300    )
+  set mort-terr-pred-I1             (list    50     50     50     )
+  set mort-terr-pred-I9             (list   -10    -10    -10     )
+  set mort-terr-pred-H1             (list    200    200    200    )
+  set mort-terr-pred-H9             (list   -50    -50    -50     )
+  set mort-terr-pred-hiding-factor  (list    0.8    0.8    0.8    )
+  
+  set mort-fish-pred-L1             (list    3.0    3.0    3.0    )
+  set mort-fish-pred-L9             (list    6.0    6.0    6.0    )
+  set mort-fish-pred-D1             (list    35     35     35     )
+  set mort-fish-pred-D9             (list    5      5      5      )
+  set mort-fish-pred-I1             (list    50     50     50     )
+  set mort-fish-pred-I9             (list   -50    -50    -50     )
+  set mort-fish-pred-hiding-factor  (list    0.5    0.5    0.5    )
+  set mort-fish-pred-P1             (list   5.0E-06 5.0E-06 5.0E-06 )
+  set mort-fish-pred-P9             (list   -5.0   -5.0    5.0E-07 )
+  set mort-fish-pred-T1             (list    6.0    6.0    6.0    )
+  set mort-fish-pred-T9             (list    2.0    2.0    2.0    )
+  
+  set mort-redd-dewater-surv        (list    0.9    0.9    0.9    )
+  set mort-redd-hi-temp-T1          (list    23     23     30     )
+  set mort-redd-hi-temp-T9          (list    17.5   17.5   21     )
+  set mort-redd-lo-temp-T1          (list    1.7    1.7   -3.0    )
+  set mort-redd-lo-temp-T9          (list    4.0    4.0    0.0    )
+  set mort-redd-scour-depth         (list    20     20     5.0    )
+  
+  set redd-devel-A                  (list   0.00190  0.00190   0.0)
+  set redd-devel-B                  (list   0.000500 0.000500  0.00126 )
+  set redd-devel-C                  (list   0.0000360 0.0000360 0.0000372)
+  
+  set redd-area                     (list    56000   56000   1200 )
+  
+  ; Superindividual parameters
+  set trout-superind-max-rep        (list    20      20    20     ) ; The maximum number of trout represented by a superindividual
+  set trout-superind-max-length     (list    10      10    5      ) ; The length (cm) at which superindividuals turn into individuals
+
+  ; Table of cmax temperature functions by species
+  ; Add, remove, or edit tables to change species
+  let Rainbow-cmax-table table:make
+  ; Use as many lines as needed here to define the relation between temperature and CMax
+  ; These *must* be in order of increasing temperature
+  ;                               Temperature  CMax
+  table:put Rainbow-cmax-table    0.0          0.05
+  table:put Rainbow-cmax-table    2.0          0.05
+  table:put Rainbow-cmax-table   10.0          0.5
+  table:put Rainbow-cmax-table   22.0          1.0
+  table:put Rainbow-cmax-table   23.0          0.8
+  table:put Rainbow-cmax-table   25.0          0.5
+  table:put Rainbow-cmax-table   30.0          0.0
+
+  let Chinook-Fall-cmax-table table:make
+  ; Use as many lines as needed here to define the relation between temperature and CMax
+  ; These *must* be in order of increasing temperature
+  ;                               Temperature  CMax
+  table:put Chinook-Fall-cmax-table      0.0          0.05
+  table:put Chinook-Fall-cmax-table      2.0          0.05
+  table:put Chinook-Fall-cmax-table     10.0          0.5
+  table:put Chinook-Fall-cmax-table     22.0          1.0
+  table:put Chinook-Fall-cmax-table     23.0          0.8
+  table:put Chinook-Fall-cmax-table     25.0          0.5
+  table:put Chinook-Fall-cmax-table     30.0          0.0
+
+  let Chinook-Spring-cmax-table table:make
+  ; Use as many lines as needed here to define the relation between temperature and CMax
+  ; These *must* be in order of increasing temperature
+  ;                               Temperature  CMax
+  table:put Chinook-Spring-cmax-table    0.0          0.05
+  table:put Chinook-Spring-cmax-table    2.0          0.05
+  table:put Chinook-Spring-cmax-table   10.0          0.5
+  table:put Chinook-Spring-cmax-table   22.0          1.0
+  table:put Chinook-Spring-cmax-table   23.0          0.8
+  table:put Chinook-Spring-cmax-table   25.0          0.5
+  table:put Chinook-Spring-cmax-table   30.0          0.0
+
+  ; Modify the following lines if you change species
+  set cmax-interpolation-table table:make
+  table:put cmax-interpolation-table "Rainbow"    Rainbow-cmax-table
+  table:put cmax-interpolation-table "Chinook-Fall"      Chinook-Fall-cmax-table
+  table:put cmax-interpolation-table "Chinook-Spring"  Chinook-Spring-cmax-table
+
+  ; Table of spawning depth suitability functions by species
+  ; Add, remove, or edit tables to change species
+  let Rainbow-depth-table table:make
+  ; Use as many lines as needed here to define the relation between depth and spawning suitability
+  ; These *must* be in order of increasing depth
+  ;                              Depth      Suitability
+  table:put Rainbow-depth-table    0          0.0
+  table:put Rainbow-depth-table    9          0.0
+  table:put Rainbow-depth-table   18          1.0
+  table:put Rainbow-depth-table   37          1.0
+  table:put Rainbow-depth-table  100          0.0
+
+  let Chinook-Fall-depth-table table:make
+  ; Use as many lines as needed here to define the relation between depth and spawning suitability
+  ; These *must* be in order of increasing depth
+  ;                              Depth      Suitability
+  table:put Chinook-Fall-depth-table    0          0.0
+  table:put Chinook-Fall-depth-table   12          0.0
+  table:put Chinook-Fall-depth-table   27          0.95
+  table:put Chinook-Fall-depth-table   33.5        1.0
+  table:put Chinook-Fall-depth-table  204          0.0
+
+  let Chinook-Spring-depth-table table:make
+  ; Use as many lines as needed here to define the relation between depth and spawning suitability
+  ; These *must* be in order of increasing depth
+  ;                                Depth      Suitability
+  table:put Chinook-Spring-depth-table    0          0.0
+  table:put Chinook-Spring-depth-table   12          0.0
+  table:put Chinook-Spring-depth-table   27          0.95
+  table:put Chinook-Spring-depth-table   33.5        1.0
+  table:put Chinook-Spring-depth-table  204          0.0
+
+  ; Modify the following lines if you change species
+  set spawn-depth-interpolation-table table:make
+  table:put spawn-depth-interpolation-table "Rainbow"    Rainbow-depth-table
+  table:put spawn-depth-interpolation-table "Chinook-Fall"      Chinook-Fall-depth-table
+  table:put spawn-depth-interpolation-table "Chinook-Spring"  Chinook-Spring-depth-table
+
+  ; Table of spawning velocity suitability functions by species
+  ; Add, remove, or edit tables to change species
+  let Rainbow-vel-table table:make
+  ; Use as many lines as needed here to define the relation between velocity and spawning suitability
+  ; These *must* be in order of increasing velocity
+  ;                            Velocity    Suitability
+  table:put Rainbow-vel-table    0          0.0
+  table:put Rainbow-vel-table   10          0.0
+  table:put Rainbow-vel-table   20          1.0
+  table:put Rainbow-vel-table   75          1.0
+  table:put Rainbow-vel-table  100          0.0
+
+  let Chinook-Fall-vel-table table:make
+  ; Use as many lines as needed here to define the relation between velocity and spawning suitability
+  ; These *must* be in order of increasing velocity
+  ;                            Velocity    Suitability
+  table:put Chinook-Fall-vel-table    0          0.0
+  table:put Chinook-Fall-vel-table    2.3        0.0
+  table:put Chinook-Fall-vel-table    3          0.06
+  table:put Chinook-Fall-vel-table   54          1.0
+  table:put Chinook-Fall-vel-table   61          1.0
+  table:put Chinook-Fall-vel-table  192          0.0
+
+  let Chinook-Spring-vel-table table:make
+  ; Use as many lines as needed here to define the relation between velocity and spawning suitability
+  ; These *must* be in order of increasing velocity
+  ;                            Velocity    Suitability
+  table:put Chinook-Spring-vel-table    0          0.0
+  table:put Chinook-Spring-vel-table    2.3        0.0
+  table:put Chinook-Spring-vel-table    3          0.06
+  table:put Chinook-Spring-vel-table   54          1.0
+  table:put Chinook-Spring-vel-table   61          1.0
+  table:put Chinook-Spring-vel-table  192          0.0
+
+  ; Modify the following lines if you change species
+  set spawn-vel-interpolation-table table:make
+  table:put spawn-vel-interpolation-table "Rainbow"    Rainbow-vel-table
+  table:put spawn-vel-interpolation-table "Chinook-Fall"      Chinook-Fall-vel-table
+  table:put spawn-vel-interpolation-table "Chinook-Spring"  Chinook-Spring-vel-table
+
+end

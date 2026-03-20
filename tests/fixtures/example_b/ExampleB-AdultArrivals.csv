@@ -1,0 +1,33 @@
+; Adult arrival input for InSALMO-7,,,,,,,,,,
+; Test input for Example Project B,,,,,,,,,,
+; Year,Species,Reach,Number,Fraction female,Arrival start,Arrival peak,Arrival end,Length min,Length mode,Length max
+2010,Chinook-Fall,Upstream,59,0.46,10/1/2009,10/31/2009,11/15/2009,50,65,85
+2011,Chinook-Fall,Upstream,10,0.74,10/1/2010,10/31/2010,11/15/2010,50,65,85
+2012,Chinook-Fall,Upstream,103,0.04,10/1/2011,10/31/2011,11/15/2011,50,65,85
+2013,Chinook-Fall,Upstream,99,0.33,10/1/2012,10/31/2012,11/15/2012,50,65,85
+2014,Chinook-Fall,Upstream,135,0.85,10/1/2013,10/31/2013,11/15/2013,50,65,85
+2010,Chinook-Spring,Upstream,100,0.96,4/1/2009,6/1/2009,9/1/2009,40,60,70
+2011,Chinook-Spring,Upstream,5,0.07,4/1/2010,6/1/2010,9/1/2010,40,60,70
+2012,Chinook-Spring,Upstream,97,0.73,4/1/2011,6/1/2011,9/1/2011,40,60,70
+2013,Chinook-Spring,Upstream,53,0.75,4/1/2012,6/1/2012,9/1/2012,40,60,70
+2014,Chinook-Spring,Upstream,93,0.09,4/1/2013,6/1/2013,9/1/2013,40,60,70
+2010,Chinook-Fall,Middle,109,0.6,10/1/2009,10/31/2009,11/15/2009,50,65,85
+2011,Chinook-Fall,Middle,15,0.47,10/1/2010,10/31/2010,11/15/2010,50,65,85
+2012,Chinook-Fall,Middle,142,0.57,10/1/2011,10/31/2011,11/15/2011,50,65,85
+2013,Chinook-Fall,Middle,86,0.66,10/1/2012,10/31/2012,11/15/2012,50,65,85
+2014,Chinook-Fall,Middle,145,0.58,10/1/2013,10/31/2013,11/15/2013,50,65,85
+2010,Chinook-Spring,Middle,58,0.06,4/1/2009,6/1/2009,9/1/2009,40,60,70
+2011,Chinook-Spring,Middle,5,0.68,4/1/2010,6/1/2010,9/1/2010,40,60,70
+2012,Chinook-Spring,Middle,75,0.47,4/1/2011,6/1/2011,9/1/2011,40,60,70
+2013,Chinook-Spring,Middle,55,0.22,4/1/2012,6/1/2012,9/1/2012,40,60,70
+2014,Chinook-Spring,Middle,131,0.61,4/1/2013,6/1/2013,9/1/2013,40,60,70
+2010,Chinook-Fall,Downstream,142,0.57,10/1/2009,10/31/2009,11/15/2009,50,65,85
+2011,Chinook-Fall,Downstream,20,0.21,10/1/2010,10/31/2010,11/15/2010,50,65,85
+2012,Chinook-Fall,Downstream,59,0.81,10/1/2011,10/31/2011,11/15/2011,50,65,85
+2013,Chinook-Fall,Downstream,78,0.78,10/1/2012,10/31/2012,11/15/2012,50,65,85
+2014,Chinook-Fall,Downstream,76,0.86,10/1/2013,10/31/2013,11/15/2013,50,65,85
+2010,Chinook-Spring,Downstream,139,0.6,4/1/2009,6/1/2009,9/1/2009,40,60,70
+2011,Chinook-Spring,Downstream,5,0.86,4/1/2010,6/1/2010,9/1/2010,40,60,70
+2012,Chinook-Spring,Downstream,141,0.43,4/1/2011,6/1/2011,9/1/2011,40,60,70
+2013,Chinook-Spring,Downstream,124,0.53,4/1/2012,6/1/2012,9/1/2012,40,60,70
+2014,Chinook-Spring,Downstream,81,0.08,4/1/2013,6/1/2013,9/1/2013,40,60,70
