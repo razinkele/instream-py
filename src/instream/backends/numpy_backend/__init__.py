@@ -28,10 +28,15 @@ class NumpyBackend:
             n_cells = depth_values.shape[0]
             return np.zeros(n_cells), np.zeros(n_cells)
 
-        depths = np.array([np.interp(flow, table_flows, depth_values[i])
-                           for i in range(depth_values.shape[0])])
-        vels = np.array([np.interp(flow, table_flows, vel_values[i])
-                         for i in range(vel_values.shape[0])])
+        # NOTE: np.interp is 1D only, so we loop over cells. This is O(C) Python
+        # calls and will be vectorized in the Numba/JAX backends (Phase 1+) using
+        # np.searchsorted + manual lerp across all cells simultaneously.
+        n_cells = depth_values.shape[0]
+        depths = np.empty(n_cells)
+        vels = np.empty(n_cells)
+        for i in range(n_cells):
+            depths[i] = np.interp(flow, table_flows, depth_values[i])
+            vels[i] = np.interp(flow, table_flows, vel_values[i])
 
         # Clamp negative depths to zero; zero velocity where dry
         depths = np.maximum(depths, 0.0)

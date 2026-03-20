@@ -41,15 +41,12 @@ class TestLoadConfig:
         with pytest.raises(FileNotFoundError):
             load_config(Path("/nonexistent/config.yaml"))
 
-    def test_load_config_missing_required_field_raises(self):
+    def test_load_config_missing_required_field_raises(self, tmp_path):
         from instream.io.config import load_config
-        # Create a minimal invalid YAML
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write("simulation:\n  end_date: '2013-09-30'\n")
-            f.flush()
-            with pytest.raises(Exception):  # pydantic ValidationError
-                load_config(Path(f.name))
+        p = tmp_path / "bad.yaml"
+        p.write_text("simulation:\n  end_date: '2013-09-30'\n")
+        with pytest.raises(Exception):  # pydantic ValidationError
+            load_config(p)
 
 
 class TestParamsFromConfig:
@@ -85,14 +82,12 @@ class TestNlsConverter:
         assert "Chinook-Spring" in yaml_str
         assert "start_date" in yaml_str
 
-    def test_nls_yaml_roundtrip(self):
+    def test_nls_yaml_roundtrip(self, tmp_path):
         from instream.io.config import nls_to_yaml, load_config
-        import tempfile
         nls_path = FIXTURES_DIR / "example_a" / "parameters-ExampleA.nls"
         yaml_str = nls_to_yaml(nls_path)
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(yaml_str)
-            f.flush()
-            config = load_config(Path(f.name))
+        p = tmp_path / "roundtrip.yaml"
+        p.write_text(yaml_str)
+        config = load_config(p)
         assert config.simulation.start_date == "2011-04-01"
         assert "Chinook-Spring" in config.species

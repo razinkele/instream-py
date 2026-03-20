@@ -22,6 +22,12 @@ class TestCheckNan:
         with pytest.raises(ValueError, match="Inf"):
             check_nan(arr, "test_array")
 
+    def test_raises_on_negative_inf_input(self):
+        from instream.utils.guards import check_nan
+        arr = np.array([1.0, -np.inf, 3.0])
+        with pytest.raises(ValueError, match="Inf"):
+            check_nan(arr, "test_array")
+
     def test_passes_on_empty_array(self):
         from instream.utils.guards import check_nan
         arr = np.array([])
