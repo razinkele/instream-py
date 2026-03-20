@@ -39,3 +39,7 @@ class ReddState:
 
     def num_alive(self) -> int:
         return int(np.sum(self.alive))
+
+    def first_dead_slot(self) -> int:
+        dead = np.where(~self.alive)[0]
+        return int(dead[0]) if len(dead) > 0 else -1

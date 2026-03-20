@@ -1,0 +1,140 @@
+"""Tests for spawning, redd creation, egg development, and emergence."""
+import numpy as np
+import pytest
+
+
+class TestReadyToSpawn:
+    def test_female_meeting_criteria_is_ready(self):
+        from instream.modules.spawning import ready_to_spawn
+        result = ready_to_spawn(
+            sex=0, age=3, length=20.0, condition=1.0, temperature=10.0,
+            flow=5.0, spawned_this_season=False, day_of_year=274,  # Oct 1
+            spawn_min_age=-9, spawn_min_length=-9, spawn_min_cond=-9,
+            spawn_min_temp=5.0, spawn_max_temp=14.0, spawn_prob=1.0,
+            max_spawn_flow=10.0,
+            spawn_start_doy=244, spawn_end_doy=304,  # Sep 1 - Oct 31
+            rng=np.random.default_rng(42))
+        assert result is True
+
+    def test_male_not_ready(self):
+        from instream.modules.spawning import ready_to_spawn
+        result = ready_to_spawn(
+            sex=1, age=3, length=20.0, condition=1.0, temperature=10.0,
+            flow=5.0, spawned_this_season=False, day_of_year=274,
+            spawn_min_age=-9, spawn_min_length=-9, spawn_min_cond=-9,
+            spawn_min_temp=5.0, spawn_max_temp=14.0, spawn_prob=1.0,
+            max_spawn_flow=10.0, spawn_start_doy=244, spawn_end_doy=304,
+            rng=np.random.default_rng(42))
+        assert result is False
+
+    def test_wrong_season(self):
+        from instream.modules.spawning import ready_to_spawn
+        result = ready_to_spawn(
+            sex=0, age=3, length=20.0, condition=1.0, temperature=10.0,
+            flow=5.0, spawned_this_season=False, day_of_year=100,  # April
+            spawn_min_age=-9, spawn_min_length=-9, spawn_min_cond=-9,
+            spawn_min_temp=5.0, spawn_max_temp=14.0, spawn_prob=1.0,
+            max_spawn_flow=10.0, spawn_start_doy=244, spawn_end_doy=304,
+            rng=np.random.default_rng(42))
+        assert result is False
+
+    def test_temperature_too_high(self):
+        from instream.modules.spawning import ready_to_spawn
+        result = ready_to_spawn(
+            sex=0, age=3, length=20.0, condition=1.0, temperature=20.0,
+            flow=5.0, spawned_this_season=False, day_of_year=274,
+            spawn_min_age=-9, spawn_min_length=-9, spawn_min_cond=-9,
+            spawn_min_temp=5.0, spawn_max_temp=14.0, spawn_prob=1.0,
+            max_spawn_flow=10.0, spawn_start_doy=244, spawn_end_doy=304,
+            rng=np.random.default_rng(42))
+        assert result is False
+
+    def test_already_spawned(self):
+        from instream.modules.spawning import ready_to_spawn
+        result = ready_to_spawn(
+            sex=0, age=3, length=20.0, condition=1.0, temperature=10.0,
+            flow=5.0, spawned_this_season=True, day_of_year=274,
+            spawn_min_age=-9, spawn_min_length=-9, spawn_min_cond=-9,
+            spawn_min_temp=5.0, spawn_max_temp=14.0, spawn_prob=1.0,
+            max_spawn_flow=10.0, spawn_start_doy=244, spawn_end_doy=304,
+            rng=np.random.default_rng(42))
+        assert result is False
+
+    def test_probabilistic(self):
+        from instream.modules.spawning import ready_to_spawn
+        results = []
+        for seed in range(100):
+            r = ready_to_spawn(
+                sex=0, age=3, length=20.0, condition=1.0, temperature=10.0,
+                flow=5.0, spawned_this_season=False, day_of_year=274,
+                spawn_min_age=-9, spawn_min_length=-9, spawn_min_cond=-9,
+                spawn_min_temp=5.0, spawn_max_temp=14.0, spawn_prob=0.1,
+                max_spawn_flow=10.0, spawn_start_doy=244, spawn_end_doy=304,
+                rng=np.random.default_rng(seed))
+            results.append(r)
+        pct = sum(results) / len(results)
+        assert 0.02 < pct < 0.25  # roughly 10%
+
+
+class TestSpawnSuitability:
+    def test_zero_when_no_gravel(self):
+        from instream.modules.spawning import spawn_suitability
+        s = spawn_suitability(depth=30.0, velocity=50.0, frac_spawn=0.0, area=10000.0,
+                              depth_table_x=np.array([0,12,27,33.5,204.0]),
+                              depth_table_y=np.array([0,0,0.95,1.0,0.0]),
+                              vel_table_x=np.array([0,2.3,3,54,61,192.0]),
+                              vel_table_y=np.array([0,0,0.06,1.0,1.0,0.0]))
+        assert s == 0.0
+
+    def test_positive_at_optimal(self):
+        from instream.modules.spawning import spawn_suitability
+        s = spawn_suitability(depth=30.0, velocity=50.0, frac_spawn=0.5, area=10000.0,
+                              depth_table_x=np.array([0,12,27,33.5,204.0]),
+                              depth_table_y=np.array([0,0,0.95,1.0,0.0]),
+                              vel_table_x=np.array([0,2.3,3,54,61,192.0]),
+                              vel_table_y=np.array([0,0,0.06,1.0,1.0,0.0]))
+        assert s > 0.0
+
+    def test_picks_best_cell(self):
+        from instream.modules.spawning import select_spawn_cell
+        scores = np.array([0.0, 0.5, 0.8, 0.3])
+        candidates = np.array([0, 1, 2, 3])
+        best = select_spawn_cell(scores, candidates)
+        assert best == 2  # highest score
+
+
+class TestSpawn:
+    def test_creates_redd(self):
+        from instream.state.redd_state import ReddState
+        from instream.modules.spawning import create_redd
+        rs = ReddState.zeros(10)
+        create_redd(rs, species_idx=0, cell_idx=5, reach_idx=0,
+                    weight=50.0, fecund_mult=690.0, fecund_exp=0.552,
+                    egg_viability=0.8)
+        assert rs.num_alive() == 1
+        assert rs.cell_idx[0] == 5
+
+    def test_correct_egg_count(self):
+        from instream.state.redd_state import ReddState
+        from instream.modules.spawning import create_redd
+        rs = ReddState.zeros(10)
+        create_redd(rs, species_idx=0, cell_idx=5, reach_idx=0,
+                    weight=50.0, fecund_mult=690.0, fecund_exp=0.552,
+                    egg_viability=0.8)
+        expected = int(690.0 * 50.0**0.552 * 0.8)
+        assert rs.num_eggs[0] == expected
+
+    def test_no_redd_when_full(self):
+        from instream.state.redd_state import ReddState
+        from instream.modules.spawning import create_redd
+        rs = ReddState.zeros(1)
+        rs.alive[0] = True  # slot full
+        result = create_redd(rs, species_idx=0, cell_idx=5, reach_idx=0,
+                             weight=50.0, fecund_mult=690.0, fecund_exp=0.552,
+                             egg_viability=0.8)
+        assert result is False  # couldn't create
+
+    def test_spawner_weight_loss(self):
+        from instream.modules.spawning import apply_spawner_weight_loss
+        new_weight = apply_spawner_weight_loss(weight=50.0, wt_loss_fraction=0.4)
+        np.testing.assert_allclose(new_weight, 30.0)
