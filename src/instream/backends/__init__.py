@@ -8,7 +8,8 @@ def get_backend(name: str) -> ComputeBackend:
         from instream.backends.numpy_backend import NumpyBackend
         return NumpyBackend()
     elif name == "numba":
-        raise NotImplementedError("Numba backend not yet implemented")
+        from instream.backends.numba_backend import NumbaBackend
+        return NumbaBackend()
     elif name == "jax":
         raise NotImplementedError("JAX backend not yet implemented")
     else:
