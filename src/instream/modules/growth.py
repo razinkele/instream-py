@@ -15,6 +15,8 @@ def c_stepmax(cmax_wt_term, cmax_temp, prev_consumption, step_length):
     prev_consumption: food already consumed earlier this day (g)
     step_length: fraction of day for this time step
     """
+    if step_length <= 0.0:
+        return 0.0
     c_max_daily = cmax_wt_term * cmax_temp
     c_stepmax_val = (c_max_daily - prev_consumption) / step_length
     return max(0.0, c_stepmax_val)
@@ -226,13 +228,17 @@ def split_superindividuals(trout_state, max_length):
         new_slot = trout_state.first_dead_slot()
         if new_slot < 0:
             continue  # no room
-        # Copy all attributes
-        for field_name in ['species_idx', 'length', 'weight', 'condition', 'age',
-                           'cell_idx', 'reach_idx', 'activity', 'sex',
-                           'life_history', 'in_shelter', 'spawned_this_season']:
-            arr = getattr(trout_state, field_name)
-            arr[new_slot] = arr[i]
-        # Split rep
+        # Copy ALL attributes (iterate dataclass fields to never miss new ones)
+        import dataclasses
+        for f in dataclasses.fields(trout_state):
+            if f.name in ('alive', 'superind_rep'):
+                continue  # handled separately
+            arr = getattr(trout_state, f.name)
+            if arr.ndim == 1:
+                arr[new_slot] = arr[i]
+            else:
+                arr[new_slot] = arr[i]  # copies entire row for 2D arrays
+        # Split rep (integer division: 10 → 5+5, 7 → 4+3)
         half = trout_state.superind_rep[i] // 2
         trout_state.superind_rep[i] = trout_state.superind_rep[i] - half
         trout_state.superind_rep[new_slot] = half

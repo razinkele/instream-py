@@ -498,3 +498,54 @@ class TestSuperindividual:
         # Can't split — no dead slot. Should not crash.
         assert ts.num_alive() == 2
         assert ts.superind_rep[0] == 10  # unchanged
+
+    def test_odd_rep_splits_correctly(self):
+        """Rep=7 should split to 4+3 (integer division)."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.growth import split_superindividuals
+        ts = TroutState.zeros(10)
+        ts.alive[0] = True
+        ts.length[0] = 6.0
+        ts.superind_rep[0] = 7
+        split_superindividuals(ts, max_length=5.0)
+        alive = ts.alive_indices()
+        reps = sorted([ts.superind_rep[i] for i in alive])
+        assert reps == [3, 4]  # 7 // 2 = 3, 7 - 3 = 4
+
+    def test_split_copies_memory_arrays(self):
+        """Split must copy growth/consumption/survival memory."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.growth import split_superindividuals
+        ts = TroutState.zeros(10, max_steps_per_day=4)
+        ts.alive[0] = True
+        ts.length[0] = 6.0
+        ts.weight[0] = 5.0
+        ts.superind_rep[0] = 10
+        ts.growth_memory[0, 0] = 0.5
+        ts.growth_memory[0, 1] = 0.3
+        ts.consumption_memory[0, 0] = 1.2
+        ts.resp_std_wt_term[0] = 42.0
+        ts.cmax_wt_term[0] = 7.7
+        split_superindividuals(ts, max_length=5.0)
+        new_idx = ts.alive_indices()[1]
+        np.testing.assert_allclose(ts.growth_memory[new_idx, 0], 0.5)
+        np.testing.assert_allclose(ts.growth_memory[new_idx, 1], 0.3)
+        np.testing.assert_allclose(ts.consumption_memory[new_idx, 0], 1.2)
+        np.testing.assert_allclose(ts.resp_std_wt_term[new_idx], 42.0)
+        np.testing.assert_allclose(ts.cmax_wt_term[new_idx], 7.7)
+
+    def test_capture_success_decreasing_with_velocity_ratio(self):
+        """High velocity ratio → low capture success (R1=1.3 > R9=0.4)."""
+        from instream.modules.growth import drift_intake
+        kwargs = dict(length=10.0, depth=50.0, light=50.0, turbidity=2.0,
+                      drift_conc=3.2e-10, c_stepmax_val=1000.0,
+                      available_drift=1e6, superind_rep=1,
+                      react_dist_A=4.0, react_dist_B=2.0,
+                      turbid_threshold=5.0, turbid_min=0.1, turbid_exp=-0.116,
+                      light_threshold=20.0, light_min=0.5, light_exp=-0.2,
+                      capture_R1=1.3, capture_R9=0.4)
+        # Low vel ratio (20/50=0.4) → high capture
+        r_low = drift_intake(velocity=20.0, max_swim_speed=50.0, **kwargs)
+        # High vel ratio (48/50=0.96) → low capture
+        r_high = drift_intake(velocity=48.0, max_swim_speed=50.0, **kwargs)
+        assert r_low > r_high

@@ -57,6 +57,13 @@ def build_initial_trout_state(
     """
     from instream.state.trout_state import TroutState
 
+    total = sum(p["number"] for p in populations)
+    if total > capacity:
+        raise ValueError(
+            f"Total fish ({total}) exceeds capacity ({capacity}). "
+            f"Increase trout_capacity in config."
+        )
+
     ts = TroutState.zeros(capacity)
     rng = np.random.default_rng(seed)
     idx = 0
