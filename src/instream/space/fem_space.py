@@ -16,15 +16,35 @@ class FEMSpace:
         self.neighbor_indices = neighbor_indices
         self.num_cells = cell_state.area.shape[0]
 
+        # Validate that depth and velocity tables share the same flow breakpoints.
+        # inSTREAM format guarantees this; if they ever differ, the backend
+        # signature must be extended to accept separate flow arrays.
+        if len(cell_state.depth_table_flows) > 0 and len(cell_state.vel_table_flows) > 0:
+            if not np.array_equal(cell_state.depth_table_flows, cell_state.vel_table_flows):
+                raise ValueError(
+                    "Depth and velocity tables have different flow breakpoints. "
+                    "This is not supported — inSTREAM format requires identical flows."
+                )
+
         # Build KD-tree from centroids for radius queries
+        # NOTE: centroids are in CRS units (typically meters for projected CRS).
+        # The radius parameter in cells_in_radius() must use the same units.
         centroids = np.column_stack([cell_state.centroid_x, cell_state.centroid_y])
         self._tree = cKDTree(centroids)
 
-    def cells_in_radius(self, cell_idx: int, radius_cm: float) -> np.ndarray:
-        """Return indices of all cells within radius of given cell."""
+    def cells_in_radius(self, cell_idx: int, radius: float) -> np.ndarray:
+        """Return indices of all cells within radius of given cell.
+
+        Parameters
+        ----------
+        cell_idx : int
+        radius : float
+            Search radius in CRS units (same as centroid coordinates —
+            typically meters for projected CRS).
+        """
         point = [self.cell_state.centroid_x[cell_idx],
                  self.cell_state.centroid_y[cell_idx]]
-        indices = self._tree.query_ball_point(point, r=radius_cm)
+        indices = self._tree.query_ball_point(point, r=radius)
         return np.array(indices, dtype=np.int64)
 
     def get_neighbor_indices(self, cell_idx: int) -> np.ndarray:

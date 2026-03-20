@@ -57,9 +57,10 @@ def _parse_hydraulic_csv(
     flow_parts = lines[idx].strip().split(",")
     # First element is empty (or whitespace), remaining are flow values
     flow_values = [float(x) for x in flow_parts[1:] if x.strip() != ""]
-    assert len(flow_values) == num_flows, (
-        f"Expected {num_flows} flow values, got {len(flow_values)}"
-    )
+    if len(flow_values) != num_flows:
+        raise ValueError(
+            f"{path}: expected {num_flows} flow values, got {len(flow_values)}"
+        )
     flows = np.array(flow_values, dtype=np.float64)
     idx += 1
 
@@ -67,13 +68,19 @@ def _parse_hydraulic_csv(
     cell_ids: list[str] = []
     rows: list[list[float]] = []
 
-    for line in lines[idx:]:
+    for line_no, line in enumerate(lines[idx:], start=idx + 1):
         stripped = line.strip()
         if stripped == "" or stripped.startswith(";") or stripped.startswith('"'):
             continue
         parts = stripped.split(",")
         cell_ids.append(parts[0])
-        row = [float(x) for x in parts[1 : num_flows + 1]]
+        row_values = [x.strip() for x in parts[1 : num_flows + 1] if x.strip() != ""]
+        if len(row_values) != num_flows:
+            raise ValueError(
+                f"{path} line {line_no}: expected {num_flows} values, got {len(row_values)} "
+                f"for cell {parts[0]}"
+            )
+        row = [float(x) for x in row_values]
         rows.append(row)
 
     values = np.array(rows, dtype=np.float64)

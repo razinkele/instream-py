@@ -3,9 +3,13 @@ import numpy as np
 import numba
 
 
-@numba.njit(parallel=True)
+@numba.njit(parallel=True, cache=True)
 def _update_hydraulics(flow, table_flows, depth_values, vel_values):
-    """Interpolate depth and velocity for all cells at given flow."""
+    """Interpolate depth and velocity for all cells at given flow.
+
+    Uses np.interp (supported in numba nopython mode since 0.64.0).
+    cache=True ensures hard failure if object-mode fallback is attempted.
+    """
     n_cells = depth_values.shape[0]
     depths = np.empty(n_cells, dtype=np.float64)
     vels = np.empty(n_cells, dtype=np.float64)
@@ -14,14 +18,15 @@ def _update_hydraulics(flow, table_flows, depth_values, vel_values):
         vels[:] = 0.0
         return depths, vels
     for i in numba.prange(n_cells):
-        depths[i] = np.interp(flow, table_flows, depth_values[i])
-        vels[i] = np.interp(flow, table_flows, vel_values[i])
-    # Clamp negative depths
-    for i in numba.prange(n_cells):
-        if depths[i] < 0.0:
-            depths[i] = 0.0
-        if depths[i] == 0.0:
-            vels[i] = 0.0
+        d = np.interp(flow, table_flows, depth_values[i])
+        v = np.interp(flow, table_flows, vel_values[i])
+        # Clamp: negative depth → 0, dry cell → zero velocity
+        if d < 0.0:
+            d = 0.0
+        if d == 0.0:
+            v = 0.0
+        depths[i] = d
+        vels[i] = v
     return depths, vels
 
 
