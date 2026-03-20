@@ -95,9 +95,12 @@ class NumpyBackend:
             twilight_length = max(0.0, float(twilight_length))
 
         # Mean daytime irradiance (simplified daily average)
-        # Approximate peak solar elevation angle
+        # TODO: Phase 3 — replace with daily-integral irradiance from NetLogo
+        # calcDayLength/calcDailyMeanSolar. Current formula uses noon elevation
+        # approximation which overestimates irradiance (avg elevation < noon).
+        # Correct noon elevation: 90 - |latitude - declination|.
         solar_constant = 1360.0
-        solar_elevation = 90.0 - latitude + decl  # approximate noon elevation
+        solar_elevation = 90.0 - abs(latitude - decl)  # noon elevation
         solar_elevation = min(90.0, max(0.0, solar_elevation))
         irradiance = (solar_constant * np.sin(np.radians(solar_elevation))
                       * light_correction * shading)

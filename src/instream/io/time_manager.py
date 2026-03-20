@@ -79,6 +79,18 @@ class TimeManager:
         """
         df = self._time_series[reach_name]
         idx = df.index.get_indexer([self._current_date], method="nearest")[0]
+        if idx < 0:
+            raise ValueError(
+                f"No matching date for {self._current_date} in reach {reach_name}"
+            )
+        nearest_date = df.index[idx]
+        gap_days = abs((nearest_date - self._current_date).total_seconds()) / 86400.0
+        if gap_days > 1.5:
+            raise ValueError(
+                f"Nearest date {nearest_date} is {gap_days:.1f} days from "
+                f"{self._current_date} for reach {reach_name} — "
+                f"date is outside time-series range"
+            )
         row = df.iloc[idx]
         return {col: float(row[col]) for col in df.columns}
 

@@ -39,8 +39,9 @@ def _compute_light(julian_date, latitude, light_correction, shading,
             twilight_length = 0.0
 
     # Mean daytime irradiance (simplified)
+    # TODO: Phase 3 — replace with daily-integral irradiance from NetLogo
     solar_constant = 1360.0
-    solar_elevation = 90.0 - latitude + decl
+    solar_elevation = 90.0 - abs(latitude - decl)  # noon elevation (corrected)
     if solar_elevation < 0.0:
         solar_elevation = 0.0
     elif solar_elevation > 90.0:
@@ -133,5 +134,6 @@ class NumbaBackend:
     def evaluate_logistic(self, *args, **kwargs):
         raise NotImplementedError("Phase 4")
 
-    def interp1d(self, *args, **kwargs):
-        raise NotImplementedError("Phase 3")
+    def interp1d(self, x, table_x, table_y):
+        """Piecewise-linear interpolation (delegates to np.interp)."""
+        return np.interp(x, table_x, table_y)
