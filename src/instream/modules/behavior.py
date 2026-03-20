@@ -203,21 +203,29 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
     activities = ["drift", "search", "hide"]
 
+    from instream.modules.growth import cmax_temp_function, c_stepmax
+
     for i in alive_sorted:
         candidates = np.where(mask[i])[0]
         if len(candidates) == 0:
-            # No wet candidates -- stay at current cell
-            best_cells[i] = trout_state.cell_idx[i]
+            # No wet candidates — fish is stranded at current cell
+            cur = trout_state.cell_idx[i]
+            if cur < 0 or cur >= fem_space.num_cells:
+                cur = 0  # safety fallback
+            best_cells[i] = cur
             best_activities[i] = 2  # hide
+            trout_state.cell_idx[i] = cur
+            trout_state.activity[i] = 2
             continue
 
         best_fitness = -np.inf
         best_c = candidates[0]
         best_a = 2  # default hide
-        best_intake = 0.0
 
         prev_cons = float(np.sum(trout_state.consumption_memory[i]))
 
+        # Evaluate fitness for all candidate cells × activities
+        # Fish sees CURRENT resource levels (depleted by larger fish above)
         for c_idx in candidates:
             for a_idx, act_name in enumerate(activities):
                 f = fitness_for(
@@ -257,41 +265,48 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
                     best_c = c_idx
                     best_a = a_idx
 
+        # Assign fish to chosen cell + activity
         best_cells[i] = best_c
         best_activities[i] = best_a
         trout_state.cell_idx[i] = best_c
         trout_state.activity[i] = best_a
 
-        # Compute intake for depletion
+        # --- DEPLETE IMMEDIATELY (before next fish evaluates) ---
+        # This matches NetLogo: large fish deplete first, small fish see reduced resources.
         _len = trout_state.length[i]
         _wt = trout_state.weight[i]
+        _rep = trout_state.superind_rep[i]
         _cmax_wt = params['cmax_A'] * _wt ** params['cmax_B']
-        from instream.modules.growth import cmax_temp_function, c_stepmax
         _cmax_temp = cmax_temp_function(params['temperature'],
                                          params['cmax_temp_table_x'],
                                          params['cmax_temp_table_y'])
         _cstepmax = c_stepmax(_cmax_wt, _cmax_temp, prev_cons, params['step_length'])
         _max_spd_len = params['max_speed_A'] * _len + params['max_speed_B']
         _max_spd = max_swim_speed(_max_spd_len, params['max_swim_temp_term'])
+
         if best_a == 0:  # drift
-            intake_amounts[i] = _drift_intake(
+            intake = _drift_intake(
                 _len, cs.depth[best_c], cs.velocity[best_c],
                 cs.light[best_c], params['turbidity'], params['drift_conc'],
                 _max_spd, _cstepmax, cs.available_drift[best_c],
-                trout_state.superind_rep[i],
+                _rep,
                 params['react_dist_A'], params['react_dist_B'],
                 params['turbid_threshold'], params['turbid_min'], params['turbid_exp'],
                 params['light_threshold'], params['light_min'], params['light_exp'],
                 params['capture_R1'], params['capture_R9'])
+            cs.available_drift[best_c] -= min(intake * _rep, cs.available_drift[best_c])
+            # Deplete velocity shelter
+            shelter_needed = _len ** 2 * _rep
+            if cs.available_vel_shelter[best_c] >= shelter_needed:
+                cs.available_vel_shelter[best_c] -= shelter_needed
+                trout_state.in_shelter[i] = True
         elif best_a == 1:  # search
-            intake_amounts[i] = _search_intake(
+            intake = _search_intake(
                 cs.velocity[best_c], _max_spd,
                 params['search_prod'], params['search_area'],
                 _cstepmax, cs.available_search[best_c],
-                trout_state.superind_rep[i])
-
-    # Deplete resources (sequential, large fish first)
-    deplete_resources(alive_sorted, best_cells, best_activities,
-                      intake_amounts, trout_state.length, trout_state.superind_rep,
-                      cs.available_drift, cs.available_search,
-                      cs.available_vel_shelter, cs.available_hiding_places)
+                _rep)
+            cs.available_search[best_c] -= min(intake * _rep, cs.available_search[best_c])
+        elif best_a == 2:  # hide
+            if cs.available_hiding_places[best_c] >= _rep:
+                cs.available_hiding_places[best_c] -= _rep

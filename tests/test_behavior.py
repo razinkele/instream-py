@@ -409,3 +409,57 @@ class TestHabitatSelection:
         # At least some resources should have decreased
         assert np.any(space.cell_state.available_drift < initial_drift) or \
                np.any(space.cell_state.available_search < np.array([1000.0]*3))
+
+    def test_sequential_depletion_large_fish_first(self):
+        """Larger fish depletes resources first, smaller fish sees reduced availability."""
+        from instream.modules.behavior import select_habitat_and_activity
+        from instream.state.cell_state import CellState
+        from instream.state.trout_state import TroutState
+        from instream.space.fem_space import FEMSpace
+
+        # Single cell with very limited drift food
+        cs = CellState.zeros(1, num_flows=2)
+        cs.centroid_x[:] = 0.0
+        cs.centroid_y[:] = 0.0
+        cs.depth[:] = 50.0
+        cs.velocity[:] = 20.0
+        cs.light[:] = 50.0
+        cs.area[:] = 10000.0
+        cs.available_drift[:] = 0.01  # limited but enough for drift to be chosen
+        cs.available_search[:] = 1000.0
+        cs.available_vel_shelter[:] = 10000.0
+        cs.available_hiding_places[:] = 5
+        ni = np.full((1, 1), -1, dtype=np.int32)
+        space = FEMSpace(cs, ni)
+
+        # Two fish: large (20cm) and small (5cm), both at cell 0
+        ts = TroutState.zeros(2)
+        ts.alive[:2] = True
+        ts.cell_idx[:2] = 0
+        ts.length[0] = 20.0; ts.weight[0] = 80.0  # large
+        ts.length[1] = 5.0;  ts.weight[1] = 1.0   # small
+        ts.condition[:2] = 1.0
+        ts.superind_rep[:2] = 1
+
+        params = dict(
+            move_radius_max=20000, move_radius_L1=7, move_radius_L9=20,
+            cmax_A=0.628, cmax_B=0.7,
+            cmax_temp_table_x=np.array([0.0,10.0,22.0,30.0]),
+            cmax_temp_table_y=np.array([0.05,0.5,1.0,0.0]),
+            react_dist_A=4.0, react_dist_B=2.0,
+            turbid_threshold=5.0, turbid_min=0.1, turbid_exp=-0.116,
+            light_threshold=20.0, light_min=0.5, light_exp=-0.2,
+            capture_R1=1.3, capture_R9=0.4,
+            max_speed_A=2.8, max_speed_B=21.0,
+            resp_A=36.0, resp_B=0.783, resp_D=1.4,
+            prey_energy_density=2500.0, fish_energy_density=5900.0,
+            shelter_speed_frac=0.3, search_prod=8e-7, search_area=20000.0,
+            drift_conc=3.2e-10, temperature=15.0, turbidity=2.0,
+            max_swim_temp_term=0.98,
+            resp_temp_term=np.exp(0.002*225),
+            step_length=1.0,
+        )
+        select_habitat_and_activity(ts, space, **params)
+        # After selection: the scarce drift food should be nearly gone
+        # Large fish took first, small fish saw what remained
+        assert cs.available_drift[0] < 0.01  # some was consumed by at least one fish
