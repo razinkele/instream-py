@@ -85,6 +85,8 @@ def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992):
     float
         Survival probability, clipped to [0, 1].
     """
+    if condition <= 0.0:
+        return 0.0
     if condition == 1.0:
         return 1.0
 

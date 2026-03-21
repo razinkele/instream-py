@@ -67,6 +67,15 @@ class TestConditionSurvival:
             assert 0 <= s <= 1.0
 
 
+def test_survival_condition_zero_is_lethal():
+    from instream.modules.survival import survival_condition
+    assert survival_condition(0.0) == 0.0
+
+def test_survival_condition_negative_is_lethal():
+    from instream.modules.survival import survival_condition
+    assert survival_condition(-0.5) == 0.0
+
+
 class TestFishPredationSurvival:
     def test_large_fish_safer(self):
         from instream.modules.survival import survival_fish_predation
