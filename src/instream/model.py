@@ -406,7 +406,11 @@ class InSTREAMModel(mesa.Model):
             spawn_start_doy = int(pd.Timestamp(f"2000-{start_parts[0]}-{start_parts[1]}").day_of_year)
             end_parts = sp_cfg.spawn_end_day.split("-")
             spawn_end_doy = int(pd.Timestamp(f"2000-{end_parts[0]}-{end_parts[1]}").day_of_year)
-        except Exception:
+        except (ValueError, IndexError, AttributeError) as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Could not parse spawn dates (%s), using defaults Sep 1 - Oct 31", e
+            )
             spawn_start_doy = 244  # Sep 1
             spawn_end_doy = 304   # Oct 31
 
