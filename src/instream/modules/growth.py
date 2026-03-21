@@ -1,4 +1,6 @@
 """Bioenergetics module — CMax, consumption, swim speed, intake, respiration, growth."""
+import dataclasses as _dc
+
 import numpy as np
 
 
@@ -217,12 +219,20 @@ def apply_growth(weight, length, condition, growth, weight_A, weight_B):
     return new_weight, new_length, new_condition
 
 
+_TROUT_FIELDS = None
+
+
 def split_superindividuals(trout_state, max_length):
     """Split superindividuals that exceed length threshold (Task 3.10).
 
     For each alive fish with superind_rep > 1 and length >= max_length,
     find a dead slot, copy all attributes, and halve the rep count.
     """
+    global _TROUT_FIELDS
+    if _TROUT_FIELDS is None:
+        _TROUT_FIELDS = [f for f in _dc.fields(trout_state)
+                         if f.name not in ('alive', 'superind_rep')]
+
     for i in trout_state.alive_indices():
         if trout_state.superind_rep[i] <= 1:
             continue
@@ -232,10 +242,7 @@ def split_superindividuals(trout_state, max_length):
         if new_slot < 0:
             continue  # no room
         # Copy ALL attributes (iterate dataclass fields to never miss new ones)
-        import dataclasses
-        for f in dataclasses.fields(trout_state):
-            if f.name in ('alive', 'superind_rep'):
-                continue  # handled separately
+        for f in _TROUT_FIELDS:
             arr = getattr(trout_state, f.name)
             if arr.ndim == 1:
                 arr[new_slot] = arr[i]
