@@ -12,7 +12,9 @@ def evaluate_logistic(x, L1, L9):
     """Evaluate logistic function where f(L1)=0.1 and f(L9)=0.9. Scalar version."""
     midpoint = (L1 + L9) / 2.0
     slope = np.log(81.0) / (L9 - L1) if L9 != L1 else 0.0
-    return float(1.0 / (1.0 + np.exp(-slope * (x - midpoint))))
+    arg = -slope * (x - midpoint)
+    arg = float(np.clip(arg, -500, 500))
+    return float(1.0 / (1.0 + np.exp(arg)))
 
 
 def evaluate_logistic_array(x, L1, L9):
@@ -20,7 +22,9 @@ def evaluate_logistic_array(x, L1, L9):
     x = np.asarray(x, dtype=np.float64)
     midpoint = (L1 + L9) / 2.0
     slope = np.log(81.0) / (L9 - L1) if L9 != L1 else 0.0
-    return 1.0 / (1.0 + np.exp(-slope * (x - midpoint)))
+    arg = -slope * (x - midpoint)
+    arg = np.clip(arg, -500, 500)
+    return 1.0 / (1.0 + np.exp(arg))
 
 
 def movement_radius(length, move_radius_max, move_radius_L1, move_radius_L9):
