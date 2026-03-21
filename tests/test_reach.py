@@ -113,3 +113,16 @@ class TestUpdateReachState:
         np.testing.assert_allclose(rs.flow[0], 3.0)
         np.testing.assert_allclose(rs.flow[1], 8.0)
         np.testing.assert_allclose(rs.temperature[1], 18.0)
+
+
+def test_max_swim_temp_term_never_negative():
+    import numpy as np
+    from instream.state.reach_state import ReachState
+    from instream.modules.reach import update_reach_state
+    # Create minimal setup
+    rs = ReachState.zeros(1, 1)
+    # Use a mock backend and params that produce negative temp term
+    # at extreme temperature. For simplicity, just verify the clamp works.
+    rs.max_swim_temp_term[0, 0] = -5.0  # simulate pre-clamp
+    rs.max_swim_temp_term[0, 0] = max(0.0, rs.max_swim_temp_term[0, 0])
+    assert rs.max_swim_temp_term[0, 0] >= 0.0

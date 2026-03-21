@@ -54,7 +54,10 @@ def update_reach_state(reach_state, conditions, reach_names, species_params, bac
                 C = getattr(sp, 'max_speed_C', 0.0)
                 D = getattr(sp, 'max_speed_D', 0.0)
                 E = getattr(sp, 'max_speed_E', 0.0)
-                reach_state.max_swim_temp_term[i, j] = C * T * T + D * T + E
+                reach_state.max_swim_temp_term[i, j] = max(0.0, C * T * T + D * T + E)
                 # Respiration temperature term: exp(resp_C * T²)
                 resp_C = getattr(sp, 'resp_C', 0.0)
-                reach_state.resp_temp_term[i, j] = np.exp(resp_C * T * T)
+                exponent = resp_C * T * T
+                exponent = max(exponent, -500.0)
+                exponent = min(exponent, 50.0)
+                reach_state.resp_temp_term[i, j] = np.exp(exponent)
