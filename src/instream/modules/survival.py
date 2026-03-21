@@ -285,17 +285,8 @@ def apply_mortality(alive, survival_probs, rng):
 # ---------------------------------------------------------------------------
 
 def _redd_logistic(x: float, T1: float, T9: float) -> float:
-    """Return the inSTREAM logistic value for *x* given parameters T1 and T9.
-
-    Defined so that ``logistic(T1) ~ 0.1`` and ``logistic(T9) ~ 0.9``.
-    When ``T1 < T9`` the curve is increasing; when ``T1 > T9`` it is
-    decreasing.
-    """
-    if T9 == T1:
-        return 0.5
-    midpoint = (T1 + T9) / 2.0
-    slope = 2.0 * np.log(9.0) / (T9 - T1)
-    return float(1.0 / (1.0 + np.exp(-slope * (x - midpoint))))
+    """Return the inSTREAM logistic value for *x* given parameters T1 and T9."""
+    return evaluate_logistic(x, T1, T9)
 
 
 def redd_survival_lo_temp(

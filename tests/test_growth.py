@@ -534,6 +534,21 @@ class TestSuperindividual:
         np.testing.assert_allclose(ts.resp_std_wt_term[new_idx], 42.0)
         np.testing.assert_allclose(ts.cmax_wt_term[new_idx], 7.7)
 
+def test_drift_intake_equal_capture_R1_R9():
+    from instream.modules.growth import drift_intake
+    result = drift_intake(
+        length=10.0, depth=50.0, velocity=20.0, light=100.0,
+        turbidity=0.0, drift_conc=0.001, max_swim_speed=50.0,
+        c_stepmax_val=1.0, available_drift=10.0, superind_rep=1,
+        react_dist_A=1.0, react_dist_B=0.1,
+        turbid_threshold=10.0, turbid_min=0.1, turbid_exp=-0.1,
+        light_threshold=50.0, light_min=0.1, light_exp=-0.1,
+        capture_R1=0.5, capture_R9=0.5,
+    )
+    import numpy as np
+    assert np.isfinite(result)
+
+
     def test_capture_success_decreasing_with_velocity_ratio(self):
         """High velocity ratio → low capture success (R1=1.3 > R9=0.4)."""
         from instream.modules.growth import drift_intake

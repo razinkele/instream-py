@@ -62,3 +62,11 @@ class TestBackendFactory:
         from instream.backends import get_backend
         backend = get_backend("numpy")
         assert hasattr(backend, "interp1d")
+
+
+def test_numpy_evaluate_logistic_equal_L1_L9():
+    import numpy as np
+    from instream.backends.numpy_backend import NumpyBackend
+    backend = NumpyBackend()
+    result = backend.evaluate_logistic(np.array([5.0]), L1=5.0, L9=5.0)
+    assert np.allclose(result, 0.5)

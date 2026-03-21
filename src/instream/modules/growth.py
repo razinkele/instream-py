@@ -82,9 +82,12 @@ def drift_intake(length, depth, velocity, light, turbidity, drift_conc,
     # 6. Capture success (logistic: evaluate_logistic("capture-success", ...))
     #    f(R1)=0.9, f(R9)=0.1 → midpoint=(R1+R9)/2, slope=ln(81)/(R9-R1)
     vel_ratio = velocity / max_swim_speed if max_swim_speed > 0 else 999.0
-    midpoint = (capture_R1 + capture_R9) / 2.0
-    slope = np.log(81.0) / (capture_R9 - capture_R1)
-    capture_success = 1.0 / (1.0 + np.exp(-slope * (vel_ratio - midpoint)))
+    if capture_R9 == capture_R1:
+        capture_success = 0.5
+    else:
+        midpoint = (capture_R1 + capture_R9) / 2.0
+        slope = np.log(81.0) / (capture_R9 - capture_R1)
+        capture_success = 1.0 / (1.0 + np.exp(-slope * (vel_ratio - midpoint)))
 
     # 7. Gross intake (g/d)
     gross = capture_area * drift_conc * velocity * 86400.0 * capture_success

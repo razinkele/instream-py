@@ -171,6 +171,8 @@ class NumpyBackend:
         """
         x = np.asarray(x, dtype=float)
         midpoint = (L1 + L9) / 2.0
+        if L9 == L1:
+            return np.full_like(x, 0.5)
         slope = np.log(81.0) / (L9 - L1)
         return 1.0 / (1.0 + np.exp(-slope * (x - midpoint)))
 
