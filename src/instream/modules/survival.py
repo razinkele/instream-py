@@ -302,11 +302,11 @@ def redd_survival_lo_temp(
     The logistic is *increasing* (T1 < T9): cold temperatures yield low
     logistic values -> high mortality.
 
-    ``survival = 1 - (1 - logistic(T)) * step_length``
+    ``survival = logistic(T) ** step_length``
     Clamped to [0, 1].
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
-    survival = 1.0 - (1.0 - logistic_val) * step_length
+    survival = logistic_val ** step_length
     return float(np.clip(survival, 0.0, 1.0))
 
 
@@ -325,11 +325,11 @@ def redd_survival_hi_temp(
     The logistic is *decreasing* (T1 > T9): hot temperatures yield low
     logistic values -> high mortality.
 
-    ``survival = 1 - (1 - logistic(T)) * step_length``
+    ``survival = logistic(T) ** step_length``
     Clamped to [0, 1].
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
-    survival = 1.0 - (1.0 - logistic_val) * step_length
+    survival = logistic_val ** step_length
     return float(np.clip(survival, 0.0, 1.0))
 
 
