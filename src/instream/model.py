@@ -29,6 +29,7 @@ from instream.modules.spawning import (
     create_redd, apply_spawner_weight_loss, develop_eggs, redd_emergence,
 )
 from instream.modules.survival import apply_redd_survival
+from instream.modules.behavior import select_habitat_and_activity
 from instream.sync import sync_trout_agents
 
 
@@ -258,7 +259,6 @@ class InSTREAMModel(mesa.Model):
         temperature = float(self.reach_state.temperature[0])
         turbidity = float(self.reach_state.turbidity[0])
 
-        from instream.modules.behavior import select_habitat_and_activity
         select_habitat_and_activity(
             self.trout_state, self.fem_space,
             move_radius_max=sp_cfg.move_radius_max,

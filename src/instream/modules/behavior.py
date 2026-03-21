@@ -1,6 +1,12 @@
 """Behavioral decisions — logistic functions, candidate mask, fitness, habitat selection."""
 import numpy as np
 
+from instream.modules.growth import (
+    growth_rate_for, max_swim_speed, drift_swim_speed,
+    drift_intake, search_intake,
+    cmax_temp_function, c_stepmax,
+)
+
 
 def evaluate_logistic(x, L1, L9):
     """Evaluate logistic function where f(L1)=0.1 and f(L9)=0.9. Scalar version."""
@@ -112,9 +118,6 @@ def fitness_for(activity, length, weight, depth, velocity, light, turbidity, tem
     Phase 4 simplified version: fitness = growth_rate * step_length.
     # TODO Phase 5: integrate survival into full fitness formula.
     """
-    from instream.modules.growth import (growth_rate_for, max_swim_speed,
-                                          drift_swim_speed)
-
     max_speed_len_term = max_speed_A * length + max_speed_B
     max_speed = max_swim_speed(max_speed_len_term, max_swim_temp_term)
 
@@ -182,10 +185,6 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
     # TODO Phase 5: integrate survival into fitness
     """
-    from instream.modules.growth import (growth_rate_for, drift_intake as _drift_intake,
-                                          search_intake as _search_intake,
-                                          max_swim_speed, drift_swim_speed)
-
     mask = build_candidate_mask(trout_state, fem_space,
                                  params['move_radius_max'],
                                  params['move_radius_L1'],
@@ -202,8 +201,6 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     intake_amounts = np.zeros(trout_state.alive.shape[0], dtype=np.float64)
 
     activities = ["drift", "search", "hide"]
-
-    from instream.modules.growth import cmax_temp_function, c_stepmax
 
     for i in alive_sorted:
         candidates = np.where(mask[i])[0]
@@ -293,7 +290,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         _max_spd = max_swim_speed(_max_spd_len, params['max_swim_temp_term'])
 
         if best_a == 0:  # drift
-            intake = _drift_intake(
+            intake = drift_intake(
                 _len, cs.depth[best_c], cs.velocity[best_c],
                 cs.light[best_c], params['turbidity'], params['drift_conc'],
                 _max_spd, _cstepmax, cs.available_drift[best_c],
@@ -309,7 +306,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
                 cs.available_vel_shelter[best_c] -= shelter_needed
                 trout_state.in_shelter[i] = True
         elif best_a == 1:  # search
-            intake = _search_intake(
+            intake = search_intake(
                 cs.velocity[best_c], _max_spd,
                 params['search_prod'], params['search_area'],
                 _cstepmax, cs.available_search[best_c],
