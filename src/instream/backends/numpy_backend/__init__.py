@@ -41,6 +41,7 @@ class NumpyBackend:
         # Clamp negative depths to zero; zero velocity where dry
         depths = np.maximum(depths, 0.0)
         vels = np.where(depths > 0.0, vels, 0.0)
+        vels = np.maximum(vels, 0.0)
         return depths, vels
 
     def compute_light(self, julian_date, latitude, light_correction, shading,

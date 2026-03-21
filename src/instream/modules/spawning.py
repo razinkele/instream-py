@@ -214,6 +214,7 @@ def develop_eggs(frac_developed, temperature, step_length,
     """
     increment = (devel_A + devel_B * temperature
                  + devel_C * temperature * temperature) * step_length
+    increment = max(0.0, increment)
     return frac_developed + increment
 
 
