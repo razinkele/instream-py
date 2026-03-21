@@ -181,6 +181,17 @@ class InSTREAMModel(mesa.Model):
         # Light config
         self._light_cfg = self.config.light
 
+        # Pre-compute spawn suitability tables (avoid dict-to-array per step)
+        self._spawn_tables = {}
+        for sp_name, sp_cfg_item in self.config.species.items():
+            sp_depth_tbl = sp_cfg_item.spawn_depth_table
+            depth_xs = np.array(sorted(sp_depth_tbl.keys()), dtype=np.float64)
+            depth_ys = np.array([sp_depth_tbl[k] for k in sorted(sp_depth_tbl.keys())], dtype=np.float64)
+            sp_vel_tbl = sp_cfg_item.spawn_vel_table
+            vel_xs = np.array(sorted(sp_vel_tbl.keys()), dtype=np.float64)
+            vel_ys = np.array([sp_vel_tbl[k] for k in sorted(sp_vel_tbl.keys())], dtype=np.float64)
+            self._spawn_tables[sp_name] = (depth_xs, depth_ys, vel_xs, vel_ys)
+
     def _assign_initial_positions(self):
         """Randomly assign alive fish to wet or available cells."""
         alive = self.trout_state.alive_indices()
@@ -459,13 +470,8 @@ class InSTREAMModel(mesa.Model):
         alive = self.trout_state.alive_indices()
         cs = self.fem_space.cell_state
 
-        # Spawn depth/velocity table arrays
-        sp_depth_tbl = sp_cfg.spawn_depth_table
-        depth_xs = np.array(sorted(sp_depth_tbl.keys()), dtype=np.float64)
-        depth_ys = np.array([sp_depth_tbl[k] for k in sorted(sp_depth_tbl.keys())], dtype=np.float64)
-        sp_vel_tbl = sp_cfg.spawn_vel_table
-        vel_xs = np.array(sorted(sp_vel_tbl.keys()), dtype=np.float64)
-        vel_ys = np.array([sp_vel_tbl[k] for k in sorted(sp_vel_tbl.keys())], dtype=np.float64)
+        # Pre-computed spawn depth/velocity table arrays
+        depth_xs, depth_ys, vel_xs, vel_ys = self._spawn_tables[self.species_order[0]]
 
         for i in alive:
             if not ready_to_spawn(
