@@ -189,6 +189,20 @@ class InSTREAMModel(mesa.Model):
         # Set reach_idx from cell's reach_idx
         self.trout_state.reach_idx[alive] = self.fem_space.cell_state.reach_idx[cells]
 
+    def _reset_spawn_season_if_needed(self, spawn_start_doy):
+        """Reset spawned_this_season when the spawn season begins.
+
+        Uses a transition check (not exact DOY match) to handle multi-day
+        steps or model restarts that might skip the exact start day.
+        """
+        current_doy = self.time_manager.julian_date
+        prev_doy = getattr(self, '_prev_doy', current_doy)
+        if prev_doy < spawn_start_doy <= current_doy:
+            self.trout_state.spawned_this_season[:] = False
+        elif prev_doy > current_doy and current_doy >= spawn_start_doy:
+            self.trout_state.spawned_this_season[:] = False
+        self._prev_doy = current_doy
+
     def step(self):
         """Advance the simulation by one time step."""
         # 1. Advance time
@@ -437,6 +451,8 @@ class InSTREAMModel(mesa.Model):
         except Exception:
             spawn_start_doy = 244  # Sep 1
             spawn_end_doy = 304   # Oct 31
+
+        self._reset_spawn_season_if_needed(spawn_start_doy)
 
         alive = self.trout_state.alive_indices()
         cs = self.fem_space.cell_state

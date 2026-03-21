@@ -71,6 +71,40 @@ class TestModelStep:
         assert final_pop <= initial_pop * 2  # shouldn't explode in 10 steps
 
 
+@pytest.fixture
+def example_a_model():
+    from instream.model import InSTREAMModel
+    return InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
+                         data_dir=FIXTURES_DIR / "example_a")
+
+
+def test_spawned_this_season_resets_at_season_start(example_a_model):
+    """spawned_this_season must reset when new spawn season begins."""
+    model = example_a_model
+    alive = model.trout_state.alive_indices()
+    if len(alive) < 5:
+        return
+    model.trout_state.spawned_this_season[alive[:5]] = True
+    assert any(model.trout_state.spawned_this_season[alive[:5]])
+
+    sp_cfg = model.config.species[model.species_order[0]]
+    try:
+        import pandas as pd
+        parts = sp_cfg.spawn_start_day.split("-")
+        spawn_start_doy = int(pd.Timestamp("2000-{}-{}".format(parts[0], parts[1])).day_of_year)
+    except Exception:
+        spawn_start_doy = 244
+
+    # Set model time so current DOY == spawn_start_doy (satisfies transition check)
+    import pandas as pd
+    year = model.time_manager.current_date.year
+    model.time_manager._current_date = pd.Timestamp(year=year, month=1, day=1) + pd.Timedelta(days=spawn_start_doy - 1)
+    model._prev_doy = spawn_start_doy - 1
+    model._reset_spawn_season_if_needed(spawn_start_doy)
+    assert not any(model.trout_state.spawned_this_season[alive[:5]]), \
+        "spawned_this_season should be reset at season start"
+
+
 class TestModelRun:
     def test_short_run_completes(self):
         """Run for 30 days without crash."""
