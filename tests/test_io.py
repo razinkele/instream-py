@@ -84,6 +84,25 @@ class TestHydraulicReader:
         assert cell_ids[0] == "I-1"
 
 
+def test_build_initial_trout_state_assigns_sex():
+    """Fish should have approximately 50:50 sex ratio."""
+    from instream.io.population_reader import build_initial_trout_state
+    populations = [
+        {"species": "Cutthroat", "reach": "R1", "age": 1, "number": 200,
+         "length_min": 5.0, "length_mode": 8.0, "length_max": 12.0},
+    ]
+    ts = build_initial_trout_state(
+        populations=populations, capacity=500,
+        weight_A=0.000247, weight_B=2.9, species_index=0, seed=42,
+    )
+    alive = ts.alive_indices()
+    males = int(np.sum(ts.sex[alive] == 1))
+    females = int(np.sum(ts.sex[alive] == 0))
+    assert males > 0, "No males assigned"
+    assert females > 0, "No females assigned"
+    assert abs(males - females) / len(alive) < 0.2, "Sex ratio too skewed"
+
+
 class TestTimeSeriesReader:
     """Test CSV time-series input reader."""
 

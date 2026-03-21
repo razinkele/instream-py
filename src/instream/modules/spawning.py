@@ -276,6 +276,15 @@ def redd_emergence(redd_state, trout_state, rng,
             ts.age[slot] = 0
             ts.cell_idx[slot] = rs.cell_idx[i]
             ts.reach_idx[slot] = rs.reach_idx[i]
+            ts.sex[slot] = int(rng.integers(0, 2))
+            ts.superind_rep[slot] = 1
+            ts.life_history[slot] = 0
+            ts.in_shelter[slot] = False
+            ts.spawned_this_season[slot] = False
+            ts.activity[slot] = 0
+            ts.growth_memory[slot, :] = 0.0
+            ts.consumption_memory[slot, :] = 0.0
+            ts.survival_memory[slot, :] = 0.0
 
             rs.num_eggs[i] -= 1
 

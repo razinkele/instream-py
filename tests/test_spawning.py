@@ -138,3 +138,30 @@ class TestSpawn:
         from instream.modules.spawning import apply_spawner_weight_loss
         new_weight = apply_spawner_weight_loss(weight=50.0, wt_loss_fraction=0.4)
         np.testing.assert_allclose(new_weight, 30.0)
+
+
+def test_redd_emergence_assigns_random_sex():
+    """Emerged fry should have both sexes and clean state."""
+    from instream.state.trout_state import TroutState
+    from instream.state.redd_state import ReddState
+    from instream.modules.spawning import redd_emergence
+    ts = TroutState.zeros(200)
+    rs = ReddState.zeros(5)
+    rng = np.random.default_rng(42)
+    rs.alive[0] = True
+    rs.species_idx[0] = 0
+    rs.num_eggs[0] = 100
+    rs.frac_developed[0] = 1.0
+    rs.cell_idx[0] = 0
+    rs.reach_idx[0] = 0
+    redd_emergence(rs, ts, rng, 2.5, 3.0, 3.5, 0.000247, 2.9, species_index=0)
+    alive = ts.alive_indices()
+    assert len(alive) == 100
+    males = int(np.sum(ts.sex[alive] == 1))
+    females = int(np.sum(ts.sex[alive] == 0))
+    assert males > 0, "No male fry"
+    assert females > 0, "No female fry"
+    # Verify clean state initialization
+    assert np.all(ts.superind_rep[alive] == 1)
+    assert np.all(ts.spawned_this_season[alive] == False)
+    assert np.all(ts.growth_memory[alive] == 0.0)

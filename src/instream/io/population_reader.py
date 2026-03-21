@@ -81,5 +81,6 @@ def build_initial_trout_state(
         ts.weight[idx:end] = weights
         ts.condition[idx:end] = 1.0
         ts.superind_rep[idx:end] = 1
+        ts.sex[idx:end] = rng.integers(0, 2, size=n, dtype=np.int32)
         idx = end
     return ts
