@@ -379,7 +379,8 @@ class InSTREAMModel(mesa.Model):
                 sp_cfg.mort_terr_pred_hiding_factor,
             )
 
-            survival_probs[i] = s_ht * s_str * s_cond * s_fp * s_tp
+            daily_surv = s_ht * s_str * s_cond * s_fp * s_tp
+            survival_probs[i] = daily_surv ** step_length
 
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)
