@@ -116,11 +116,34 @@ def fitness_for(activity, length, weight, depth, velocity, light, turbidity, tem
                 capture_R1, capture_R9,
                 max_speed_A, max_speed_B, max_swim_temp_term,
                 resp_A, resp_B, resp_D, resp_temp_term,
-                prey_energy_density, fish_energy_density):
+                prey_energy_density, fish_energy_density,
+                # --- Survival parameters (Phase 5) ---
+                condition=1.0,
+                mort_high_temp_T1=28.0, mort_high_temp_T9=24.0,
+                mort_condition_S_at_K5=0.8, mort_condition_S_at_K8=0.992,
+                fish_pred_min=0.99,
+                fish_pred_L1=10.0, fish_pred_L9=3.0,
+                fish_pred_D1=50.0, fish_pred_D9=10.0,
+                fish_pred_P1=0.5, fish_pred_P9=0.1,
+                fish_pred_I1=200.0, fish_pred_I9=50.0,
+                fish_pred_T1=25.0, fish_pred_T9=15.0,
+                fish_pred_hiding_factor=0.5,
+                pisciv_density=0.0,
+                terr_pred_min=0.99,
+                terr_pred_L1=15.0, terr_pred_L9=5.0,
+                terr_pred_D1=50.0, terr_pred_D9=10.0,
+                terr_pred_V1=50.0, terr_pred_V9=10.0,
+                terr_pred_I1=200.0, terr_pred_I9=50.0,
+                terr_pred_H1=50.0, terr_pred_H9=10.0,
+                terr_pred_hiding_factor=0.5,
+                dist_escape=100.0,
+                available_hiding=10,
+                mort_strand_survival_when_dry=0.5,
+                ):
     """Compute fitness for a fish at a cell with given activity.
 
-    Phase 4 simplified version: fitness = growth_rate * step_length.
-    # TODO Phase 5: integrate survival into full fitness formula.
+    Phase 5: fitness = growth_rate * step_length * non_starve_survival * condition_survival.
+    Survival penalizes cells with high predation risk, extreme temperature, or stranding.
     """
     max_speed_len_term = max_speed_A * length + max_speed_B
     max_speed = max_swim_speed(max_speed_len_term, max_swim_temp_term)
@@ -153,9 +176,32 @@ def fitness_for(activity, length, weight, depth, velocity, light, turbidity, tem
         prey_energy_density=prey_energy_density, fish_energy_density=fish_energy_density,
     )
 
-    # Simplified fitness: growth only (Phase 4)
-    # TODO Phase 5: full formula with survival, mean_condition_survival, time_horizon
-    return growth * step_length
+    # Phase 5: full fitness = growth * survival
+    from instream.modules.survival import (
+        survival_high_temperature, survival_stranding,
+        survival_condition as surv_cond_fn,
+        survival_fish_predation, survival_terrestrial_predation,
+    )
+    s_ht = survival_high_temperature(temperature, mort_high_temp_T1, mort_high_temp_T9)
+    s_str = survival_stranding(depth, mort_strand_survival_when_dry)
+    s_cond = surv_cond_fn(condition, mort_condition_S_at_K5, mort_condition_S_at_K8)
+    s_fp = survival_fish_predation(
+        length, depth, light, pisciv_density, temperature, activity,
+        fish_pred_min, fish_pred_L1, fish_pred_L9,
+        fish_pred_D1, fish_pred_D9, fish_pred_P1, fish_pred_P9,
+        fish_pred_I1, fish_pred_I9, fish_pred_T1, fish_pred_T9,
+        fish_pred_hiding_factor,
+    )
+    s_tp = survival_terrestrial_predation(
+        length, depth, velocity, light, dist_escape,
+        activity, available_hiding, superind_rep,
+        terr_pred_min, terr_pred_L1, terr_pred_L9,
+        terr_pred_D1, terr_pred_D9, terr_pred_V1, terr_pred_V9,
+        terr_pred_I1, terr_pred_I9, terr_pred_H1, terr_pred_H9,
+        terr_pred_hiding_factor,
+    )
+    non_starve = s_ht * s_str * s_fp * s_tp
+    return growth * step_length * non_starve * s_cond
 
 
 def deplete_resources(fish_order, chosen_cells, chosen_activities,
@@ -187,7 +233,7 @@ def deplete_resources(fish_order, chosen_cells, chosen_activities,
 def select_habitat_and_activity(trout_state, fem_space, **params):
     """Main habitat selection: for each fish, pick best cell x activity.
 
-    # TODO Phase 5: integrate survival into fitness
+    Phase 5: fitness includes survival weighting via fitness_for().
     """
     mask = build_candidate_mask(trout_state, fem_space,
                                  params['move_radius_max'],
@@ -229,6 +275,9 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         # Fish sees CURRENT resource levels (depleted by larger fish above)
         for c_idx in candidates:
             for a_idx, act_name in enumerate(activities):
+                # Build survival kwargs from params (use defaults if not provided)
+                _pisciv_densities = params.get('pisciv_densities', None)
+                _pisciv_d = float(_pisciv_densities[c_idx]) if _pisciv_densities is not None else 0.0
                 f = fitness_for(
                     activity=act_name,
                     length=trout_state.length[i], weight=trout_state.weight[i],
@@ -260,6 +309,40 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
                     resp_temp_term=params['resp_temp_term'],
                     prey_energy_density=params['prey_energy_density'],
                     fish_energy_density=params['fish_energy_density'],
+                    # Survival parameters (Phase 5)
+                    condition=float(trout_state.condition[i]),
+                    mort_high_temp_T1=params.get('mort_high_temp_T1', 28.0),
+                    mort_high_temp_T9=params.get('mort_high_temp_T9', 24.0),
+                    mort_condition_S_at_K5=params.get('mort_condition_S_at_K5', 0.8),
+                    mort_condition_S_at_K8=params.get('mort_condition_S_at_K8', 0.992),
+                    fish_pred_min=params.get('fish_pred_min', 0.99),
+                    fish_pred_L1=params.get('fish_pred_L1', 10.0),
+                    fish_pred_L9=params.get('fish_pred_L9', 3.0),
+                    fish_pred_D1=params.get('fish_pred_D1', 50.0),
+                    fish_pred_D9=params.get('fish_pred_D9', 10.0),
+                    fish_pred_P1=params.get('fish_pred_P1', 0.5),
+                    fish_pred_P9=params.get('fish_pred_P9', 0.1),
+                    fish_pred_I1=params.get('fish_pred_I1', 200.0),
+                    fish_pred_I9=params.get('fish_pred_I9', 50.0),
+                    fish_pred_T1=params.get('fish_pred_T1', 25.0),
+                    fish_pred_T9=params.get('fish_pred_T9', 15.0),
+                    fish_pred_hiding_factor=params.get('fish_pred_hiding_factor', 0.5),
+                    pisciv_density=_pisciv_d,
+                    terr_pred_min=params.get('terr_pred_min', 0.99),
+                    terr_pred_L1=params.get('terr_pred_L1', 15.0),
+                    terr_pred_L9=params.get('terr_pred_L9', 5.0),
+                    terr_pred_D1=params.get('terr_pred_D1', 50.0),
+                    terr_pred_D9=params.get('terr_pred_D9', 10.0),
+                    terr_pred_V1=params.get('terr_pred_V1', 50.0),
+                    terr_pred_V9=params.get('terr_pred_V9', 10.0),
+                    terr_pred_I1=params.get('terr_pred_I1', 200.0),
+                    terr_pred_I9=params.get('terr_pred_I9', 50.0),
+                    terr_pred_H1=params.get('terr_pred_H1', 50.0),
+                    terr_pred_H9=params.get('terr_pred_H9', 10.0),
+                    terr_pred_hiding_factor=params.get('terr_pred_hiding_factor', 0.5),
+                    dist_escape=float(cs.dist_escape[c_idx]),
+                    available_hiding=int(cs.available_hiding_places[c_idx]),
+                    mort_strand_survival_when_dry=params.get('mort_strand_survival_when_dry', 0.5),
                 )
                 if f > best_fitness:
                     best_fitness = f
@@ -272,13 +355,40 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         trout_state.cell_idx[i] = best_c
         trout_state.activity[i] = best_a
 
-        # Store the growth rate for the chosen cell/activity
-        # best_fitness = growth * step_length (Phase 4 formula)
-        # So growth_rate = best_fitness / step_length
-        if params['step_length'] > 0:
-            trout_state.last_growth_rate[i] = best_fitness / params['step_length']
-        else:
-            trout_state.last_growth_rate[i] = 0.0
+        # Store raw growth rate (NOT fitness, which now includes survival)
+        chosen_growth = growth_rate_for(
+            activity=activities[best_a],
+            length=trout_state.length[i], weight=trout_state.weight[i],
+            depth=cs.depth[best_c], velocity=cs.velocity[best_c],
+            light=cs.light[best_c], turbidity=params['turbidity'],
+            temperature=params['temperature'],
+            drift_conc=params['drift_conc'], search_prod=params['search_prod'],
+            search_area=params['search_area'],
+            available_drift=cs.available_drift[best_c],
+            available_search=cs.available_search[best_c],
+            available_shelter=cs.available_vel_shelter[best_c],
+            shelter_speed_frac=params['shelter_speed_frac'],
+            superind_rep=trout_state.superind_rep[i],
+            prev_consumption=prev_cons,
+            step_length=params['step_length'],
+            cmax_A=params['cmax_A'], cmax_B=params['cmax_B'],
+            cmax_temp_table_x=params['cmax_temp_table_x'],
+            cmax_temp_table_y=params['cmax_temp_table_y'],
+            react_dist_A=params['react_dist_A'], react_dist_B=params['react_dist_B'],
+            turbid_threshold=params['turbid_threshold'],
+            turbid_min=params['turbid_min'], turbid_exp=params['turbid_exp'],
+            light_threshold=params['light_threshold'],
+            light_min=params['light_min'], light_exp=params['light_exp'],
+            capture_R1=params['capture_R1'], capture_R9=params['capture_R9'],
+            max_speed_A=params['max_speed_A'], max_speed_B=params['max_speed_B'],
+            max_swim_temp_term=params['max_swim_temp_term'],
+            resp_A=params['resp_A'], resp_B=params['resp_B'],
+            resp_D=params['resp_D'],
+            resp_temp_term=params['resp_temp_term'],
+            prey_energy_density=params['prey_energy_density'],
+            fish_energy_density=params['fish_energy_density'],
+        )
+        trout_state.last_growth_rate[i] = chosen_growth
 
         # --- DEPLETE IMMEDIATELY (before next fish evaluates) ---
         # This matches NetLogo: large fish deplete first, small fish see reduced resources.

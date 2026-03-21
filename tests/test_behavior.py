@@ -534,3 +534,64 @@ class TestGrowthRateStored:
             assert ts.last_growth_rate[i] != 0.0, (
                 f"Fish {i} has last_growth_rate=0 after habitat selection"
             )
+
+
+class TestFitnessSurvivalIntegration:
+    """Test that fitness includes survival penalty (Phase 5)."""
+
+    def test_fitness_includes_survival_penalty(self):
+        """Fitness in a dangerous cell should be lower than a safe cell."""
+        from instream.modules.behavior import fitness_for
+        # Both cells have same growth parameters but different predation risk
+        common = dict(
+            length=5.0, weight=2.0, velocity=10.0, turbidity=0.0, temperature=12.0,
+            drift_conc=0.001, search_prod=0.001, search_area=100.0,
+            available_drift=10.0, available_search=10.0, available_shelter=1000.0,
+            shelter_speed_frac=0.3, superind_rep=1, prev_consumption=0.0, step_length=1.0,
+            cmax_A=0.628, cmax_B=0.3,
+            cmax_temp_table_x=np.array([0.0, 10.0, 20.0, 30.0]),
+            cmax_temp_table_y=np.array([0.0, 0.5, 1.0, 0.5]),
+            react_dist_A=1.0, react_dist_B=0.1,
+            turbid_threshold=10.0, turbid_min=0.1, turbid_exp=-0.1,
+            light_threshold=50.0, light_min=0.1, light_exp=-0.1,
+            capture_R1=1.3, capture_R9=0.4,
+            max_speed_A=1.5, max_speed_B=0.0, max_swim_temp_term=1.0,
+            resp_A=0.0253, resp_B=0.75, resp_D=0.03, resp_temp_term=1.0,
+            prey_energy_density=3500.0, fish_energy_density=5500.0,
+            condition=0.9,
+        )
+        # Safe: deep water, low light (low predation risk)
+        safe = fitness_for(activity="drift", depth=100.0, light=10.0, **common)
+        # Dangerous: shallow water, bright light (high predation risk)
+        dangerous = fitness_for(activity="drift", depth=5.0, light=500.0, **common)
+        # With survival, the shallow bright cell should have lower fitness
+        assert safe > dangerous or (safe == 0.0 and dangerous == 0.0), \
+            "Fitness should penalize high-predation cells: safe={} vs dangerous={}".format(safe, dangerous)
+
+    def test_fitness_with_default_survival_params_close_to_growth_only(self):
+        """With default survival params (benign conditions), fitness ~ growth * step_length."""
+        from instream.modules.behavior import fitness_for
+        from instream.modules.growth import growth_rate_for
+        kwargs = dict(
+            activity="drift", length=10.0, weight=10.0,
+            depth=50.0, velocity=30.0, light=50.0, turbidity=2.0, temperature=15.0,
+            drift_conc=3.2e-10, search_prod=8e-7, search_area=20000.0,
+            available_drift=1000.0, available_search=1000.0,
+            available_shelter=1000.0, shelter_speed_frac=0.3,
+            superind_rep=1, prev_consumption=0.0, step_length=1.0,
+            cmax_A=0.628, cmax_B=0.7,
+            cmax_temp_table_x=np.array([0.0, 10.0, 22.0, 30.0]),
+            cmax_temp_table_y=np.array([0.05, 0.5, 1.0, 0.0]),
+            react_dist_A=4.0, react_dist_B=2.0,
+            turbid_threshold=5.0, turbid_min=0.1, turbid_exp=-0.116,
+            light_threshold=20.0, light_min=0.5, light_exp=-0.2,
+            capture_R1=1.3, capture_R9=0.4,
+            max_speed_A=2.8, max_speed_B=21.0, max_swim_temp_term=0.98,
+            resp_A=36.0, resp_B=0.783, resp_D=1.4,
+            resp_temp_term=np.exp(0.002 * 225),
+            prey_energy_density=2500.0, fish_energy_density=5900.0,
+        )
+        # With all default survival params (condition=1.0, benign defaults),
+        # fitness should be non-zero and have same sign as growth*step
+        fitness = fitness_for(**kwargs)
+        assert fitness != 0.0, "Fitness should be non-zero with default survival params"

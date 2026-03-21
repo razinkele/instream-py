@@ -212,6 +212,9 @@ class InSTREAMModel(mesa.Model):
         # 1. Advance time
         step_length = self.time_manager.advance()
 
+        # 1b. Increment age on January 1
+        self._increment_age_if_new_year()
+
         # 2. Get conditions for each reach
         conditions = {}
         for rname in self.reach_order:
@@ -264,6 +267,9 @@ class InSTREAMModel(mesa.Model):
         temperature = float(self.reach_state.temperature[0])
         turbidity = float(self.reach_state.turbidity[0])
 
+        # Compute piscivore density for fitness evaluation
+        pisciv_densities = self._compute_piscivore_density()
+
         select_habitat_and_activity(
             self.trout_state, self.fem_space,
             move_radius_max=sp_cfg.move_radius_max,
@@ -299,6 +305,37 @@ class InSTREAMModel(mesa.Model):
             resp_temp_term=float(self.reach_state.resp_temp_term[0, 0]),
             prey_energy_density=rp.prey_energy_density,
             fish_energy_density=sp_cfg.energy_density,
+            # Survival parameters (Phase 5)
+            mort_high_temp_T1=sp_cfg.mort_high_temp_T1,
+            mort_high_temp_T9=sp_cfg.mort_high_temp_T9,
+            mort_condition_S_at_K5=sp_cfg.mort_condition_S_at_K5,
+            mort_condition_S_at_K8=sp_cfg.mort_condition_S_at_K8,
+            mort_strand_survival_when_dry=sp_cfg.mort_strand_survival_when_dry,
+            fish_pred_min=rp.fish_pred_min,
+            fish_pred_L1=sp_cfg.mort_fish_pred_L1,
+            fish_pred_L9=sp_cfg.mort_fish_pred_L9,
+            fish_pred_D1=sp_cfg.mort_fish_pred_D1,
+            fish_pred_D9=sp_cfg.mort_fish_pred_D9,
+            fish_pred_P1=sp_cfg.mort_fish_pred_P1,
+            fish_pred_P9=sp_cfg.mort_fish_pred_P9,
+            fish_pred_I1=sp_cfg.mort_fish_pred_I1,
+            fish_pred_I9=sp_cfg.mort_fish_pred_I9,
+            fish_pred_T1=sp_cfg.mort_fish_pred_T1,
+            fish_pred_T9=sp_cfg.mort_fish_pred_T9,
+            fish_pred_hiding_factor=sp_cfg.mort_fish_pred_hiding_factor,
+            pisciv_densities=pisciv_densities,
+            terr_pred_min=rp.terr_pred_min,
+            terr_pred_L1=sp_cfg.mort_terr_pred_L1,
+            terr_pred_L9=sp_cfg.mort_terr_pred_L9,
+            terr_pred_D1=sp_cfg.mort_terr_pred_D1,
+            terr_pred_D9=sp_cfg.mort_terr_pred_D9,
+            terr_pred_V1=sp_cfg.mort_terr_pred_V1,
+            terr_pred_V9=sp_cfg.mort_terr_pred_V9,
+            terr_pred_I1=sp_cfg.mort_terr_pred_I1,
+            terr_pred_I9=sp_cfg.mort_terr_pred_I9,
+            terr_pred_H1=sp_cfg.mort_terr_pred_H1,
+            terr_pred_H9=sp_cfg.mort_terr_pred_H9,
+            terr_pred_hiding_factor=sp_cfg.mort_terr_pred_hiding_factor,
         )
 
         # 8. Growth: use growth rate from habitat selection (not recomputed)
@@ -328,6 +365,9 @@ class InSTREAMModel(mesa.Model):
         n_capacity = self.trout_state.alive.shape[0]
         survival_probs = np.ones(n_capacity, dtype=np.float64)
 
+        # Compute piscivore density for survival evaluation
+        pisciv_densities_surv = self._compute_piscivore_density()
+
         for i in alive:
             cell = self.trout_state.cell_idx[i]
             if cell < 0 or cell >= self.fem_space.num_cells:
@@ -343,12 +383,12 @@ class InSTREAMModel(mesa.Model):
                 float(self.trout_state.condition[i]),
                 sp_cfg.mort_condition_S_at_K5, sp_cfg.mort_condition_S_at_K8)
 
-            # Fish predation -- use 0 piscivore density for now (placeholder)
+            # Fish predation with computed piscivore density
             s_fp = survival_fish_predation(
                 float(self.trout_state.length[i]),
                 float(cs.depth[cell]),
                 float(cs.light[cell]),
-                0.0,  # pisciv_density placeholder
+                float(pisciv_densities_surv[cell]),
                 temperature,
                 act_name,
                 rp.fish_pred_min,
@@ -559,6 +599,26 @@ class InSTREAMModel(mesa.Model):
             sp_cfg.weight_A, sp_cfg.weight_B,
             species_index=0,
         )
+
+    def _compute_piscivore_density(self):
+        """Compute piscivore density (count / area) per cell."""
+        sp_cfg = self.config.species[self.species_order[0]]
+        pisciv_length = getattr(sp_cfg, 'pisciv_length', 999.0)
+        n_cells = self.fem_space.num_cells
+        pisciv_count = np.zeros(n_cells, dtype=np.float64)
+        alive = self.trout_state.alive_indices()
+        for i in alive:
+            cell = self.trout_state.cell_idx[i]
+            if 0 <= cell < n_cells and self.trout_state.length[i] >= pisciv_length:
+                pisciv_count[cell] += self.trout_state.superind_rep[i]
+        cs = self.fem_space.cell_state
+        return np.where(cs.area > 0, pisciv_count / cs.area, 0.0)
+
+    def _increment_age_if_new_year(self):
+        """Increment fish age by 1 on January 1."""
+        if self.time_manager.julian_date == 1:
+            alive = self.trout_state.alive_indices()
+            self.trout_state.age[alive] += 1
 
     def run(self):
         """Run the simulation until the end date."""
