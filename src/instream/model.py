@@ -480,6 +480,9 @@ class InSTREAMModel(mesa.Model):
                 )
                 self.trout_state.weight[i] = new_w
                 self.trout_state.spawned_this_season[i] = True
+                healthy_wt = sp_cfg.weight_A * float(self.trout_state.length[i]) ** sp_cfg.weight_B
+                if healthy_wt > 0:
+                    self.trout_state.condition[i] = new_w / healthy_wt
 
     def _do_redd_step(self, step_length, temperature):
         """Redd survival, egg development, and emergence."""
