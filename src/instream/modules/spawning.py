@@ -259,35 +259,36 @@ def redd_emergence(redd_state, trout_state, rng,
             rs.alive[i] = False
             continue
 
-        for _ in range(n_emerge):
-            slot = ts.first_dead_slot()
-            if slot < 0:
-                break  # no capacity left
+        # Pre-compute available dead slots for batch allocation
+        dead_slots = np.where(~ts.alive)[0]
+        n_slots = min(n_emerge, len(dead_slots))
+        if n_slots <= 0:
+            continue
 
-            length = float(rng.triangular(emerge_length_min,
-                                          emerge_length_mode,
-                                          emerge_length_max))
-            weight = weight_A * length ** weight_B
+        slots = dead_slots[:n_slots]
+        lengths = rng.triangular(emerge_length_min, emerge_length_mode,
+                                  emerge_length_max, size=n_slots)
+        weights = weight_A * lengths ** weight_B
 
-            ts.alive[slot] = True
-            ts.species_idx[slot] = rs.species_idx[i]
-            ts.length[slot] = length
-            ts.weight[slot] = weight
-            ts.condition[slot] = 1.0
-            ts.age[slot] = 0
-            ts.cell_idx[slot] = rs.cell_idx[i]
-            ts.reach_idx[slot] = rs.reach_idx[i]
-            ts.sex[slot] = int(rng.integers(0, 2))
-            ts.superind_rep[slot] = 1
-            ts.life_history[slot] = 0
-            ts.in_shelter[slot] = False
-            ts.spawned_this_season[slot] = False
-            ts.activity[slot] = 0
-            ts.growth_memory[slot, :] = 0.0
-            ts.consumption_memory[slot, :] = 0.0
-            ts.survival_memory[slot, :] = 0.0
+        ts.alive[slots] = True
+        ts.species_idx[slots] = rs.species_idx[i]
+        ts.length[slots] = lengths
+        ts.weight[slots] = weights
+        ts.condition[slots] = 1.0
+        ts.age[slots] = 0
+        ts.cell_idx[slots] = rs.cell_idx[i]
+        ts.reach_idx[slots] = rs.reach_idx[i]
+        ts.sex[slots] = rng.integers(0, 2, size=n_slots, dtype=np.int32)
+        ts.superind_rep[slots] = 1
+        ts.life_history[slots] = 0
+        ts.in_shelter[slots] = False
+        ts.spawned_this_season[slots] = False
+        ts.activity[slots] = 0
+        ts.growth_memory[slots, :] = 0.0
+        ts.consumption_memory[slots, :] = 0.0
+        ts.survival_memory[slots, :] = 0.0
+        ts.last_growth_rate[slots] = 0.0
 
-            rs.num_eggs[i] -= 1
-
+        rs.num_eggs[i] -= n_slots
         if rs.num_eggs[i] <= 0:
             rs.alive[i] = False
