@@ -142,11 +142,16 @@ class InSTREAMModel(mesa.Model):
         self._prev_flow = np.zeros(len(self.reach_order), dtype=np.float64)
 
         # Load initial trout population
-        pop_path = self.data_dir / "ExampleA-InitialPopulations.csv"
-        if not pop_path.exists():
-            # Try generic name
+        pop_file = self.config.simulation.population_file
+        if pop_file:
+            pop_path = self.data_dir / pop_file
+        else:
             pop_candidates = list(self.data_dir.glob("*InitialPopulations*"))
-            pop_path = pop_candidates[0] if pop_candidates else pop_path
+            if not pop_candidates:
+                raise FileNotFoundError(
+                    "No population file configured and no *InitialPopulations* file in {}".format(self.data_dir)
+                )
+            pop_path = pop_candidates[0]
 
         populations = read_initial_populations(pop_path)
 
