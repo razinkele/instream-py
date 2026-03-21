@@ -1,0 +1,585 @@
+"""InSTREAMModel -- main simulation model wiring all modules together."""
+import numpy as np
+import pandas as pd
+from pathlib import Path
+
+import mesa
+
+from instream.io.config import load_config, params_from_config
+from instream.io.timeseries import read_time_series
+from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+from instream.io.time_manager import TimeManager
+from instream.space.polygon_mesh import PolygonMesh
+from instream.space.fem_space import FEMSpace
+from instream.state.redd_state import ReddState
+from instream.state.reach_state import ReachState
+from instream.backends import get_backend
+from instream.modules.reach import update_reach_state
+from instream.modules.growth import (
+    apply_growth, split_superindividuals, growth_rate_for,
+    cmax_temp_function, c_stepmax, max_swim_speed, drift_swim_speed,
+    drift_intake, search_intake,
+)
+from instream.modules.survival import (
+    survival_high_temperature, survival_stranding,
+    survival_condition, survival_fish_predation,
+    survival_terrestrial_predation, apply_mortality,
+)
+from instream.modules.spawning import (
+    ready_to_spawn, spawn_suitability, select_spawn_cell,
+    create_redd, apply_spawner_weight_loss, develop_eggs, redd_emergence,
+)
+from instream.modules.survival import apply_redd_survival
+from instream.sync import sync_trout_agents
+
+
+class InSTREAMModel(mesa.Model):
+    """Main inSTREAM simulation model.
+
+    Parameters
+    ----------
+    config_path : str or Path
+        Path to the YAML configuration file.
+    data_dir : str or Path, optional
+        Directory containing data files (shapefile, CSVs). Defaults to
+        the config file's parent directory.
+    end_date_override : str, optional
+        Override the end date from config (for short test runs).
+    """
+
+    def __init__(self, config_path, data_dir=None, end_date_override=None):
+        super().__init__()
+        config_path = Path(config_path)
+        self.config = load_config(config_path)
+        self.species_params, self.reach_params = params_from_config(self.config)
+
+        if data_dir is None:
+            data_dir = config_path.parent
+        self.data_dir = Path(data_dir)
+
+        # RNG
+        self.rng = np.random.default_rng(self.config.simulation.seed)
+
+        # Backend
+        backend_name = self.config.performance.backend
+        self.backend = get_backend(backend_name)
+
+        # Species and reach ordering
+        self.species_order = list(self.config.species.keys())
+        self.reach_order = list(self.config.reaches.keys())
+        self._species_name_to_idx = {n: i for i, n in enumerate(self.species_order)}
+        self._reach_name_to_idx = {n: i for i, n in enumerate(self.reach_order)}
+
+        # Load spatial mesh
+        gis = self.config.spatial.gis_properties
+        mesh_path = self.data_dir / self.config.spatial.mesh_file
+        # If mesh_file has directory structure, try to resolve it; if not found,
+        # try just the filename in Shapefile/ subfolder
+        if not mesh_path.exists():
+            # Try the fixture layout: Shapefile/ExampleA.shp
+            alt = self.data_dir / "Shapefile" / Path(self.config.spatial.mesh_file).name
+            if alt.exists():
+                mesh_path = alt
+
+        self.mesh = PolygonMesh(
+            mesh_path,
+            id_field=gis.get("cell_id", "ID_TEXT"),
+            reach_field=gis.get("reach_name", "REACH_NAME"),
+            area_field=gis.get("area", "AREA"),
+            dist_escape_field=gis.get("dist_escape", "M_TO_ESC"),
+            hiding_field=gis.get("num_hiding_places", "NUM_HIDING"),
+            shelter_field=gis.get("frac_vel_shelter", "FRACVSHL"),
+            spawn_field=gis.get("frac_spawn", "FRACSPWN"),
+        )
+
+        # Load hydraulic tables per reach
+        # For simplicity, we assume a single reach for now and load the first.
+        # Multi-reach: we'd need to load per-reach tables and merge cell indices.
+        reach_cfg = self.config.reaches[self.reach_order[0]]
+
+        depth_path = self.data_dir / reach_cfg.depth_file
+        if not depth_path.exists():
+            depth_path = self.data_dir / Path(reach_cfg.depth_file).name
+        vel_path = self.data_dir / reach_cfg.velocity_file
+        if not vel_path.exists():
+            vel_path = self.data_dir / Path(reach_cfg.velocity_file).name
+
+        depth_flows, depth_values = read_depth_table(depth_path)
+        vel_flows, vel_values = read_velocity_table(vel_path)
+
+        # Convert from SI units (m, m/s) to inSTREAM internal units (cm, cm/s)
+        depth_values = depth_values * 100.0   # m -> cm
+        vel_values = vel_values * 100.0       # m/s -> cm/s
+
+        # Build CellState and FEMSpace
+        cell_state = self.mesh.to_cell_state(depth_flows, depth_values,
+                                             vel_flows, vel_values)
+        self.fem_space = FEMSpace(cell_state, self.mesh.neighbor_indices)
+
+        # Load time-series data per reach
+        time_series = {}
+        for rname, rcfg in self.config.reaches.items():
+            ts_path = self.data_dir / rcfg.time_series_input_file
+            if not ts_path.exists():
+                ts_path = self.data_dir / Path(rcfg.time_series_input_file).name
+            time_series[rname] = read_time_series(ts_path)
+
+        # Time manager
+        end_date = end_date_override or self.config.simulation.end_date
+        self.time_manager = TimeManager(
+            start_date=self.config.simulation.start_date,
+            end_date=end_date,
+            time_series=time_series,
+        )
+
+        # Reach state
+        self.reach_state = ReachState.zeros(
+            num_reaches=len(self.reach_order),
+            num_species=len(self.species_order),
+        )
+
+        # Previous flow for peak detection
+        self._prev_flow = np.zeros(len(self.reach_order), dtype=np.float64)
+
+        # Load initial trout population
+        pop_path = self.data_dir / "ExampleA-InitialPopulations.csv"
+        if not pop_path.exists():
+            # Try generic name
+            pop_candidates = list(self.data_dir.glob("*InitialPopulations*"))
+            pop_path = pop_candidates[0] if pop_candidates else pop_path
+
+        populations = read_initial_populations(pop_path)
+
+        # Use first species' weight params for initial population
+        first_sp_name = self.species_order[0]
+        first_sp_cfg = self.config.species[first_sp_name]
+
+        self.trout_state = build_initial_trout_state(
+            populations=populations,
+            capacity=self.config.performance.trout_capacity,
+            weight_A=first_sp_cfg.weight_A,
+            weight_B=first_sp_cfg.weight_B,
+            species_index=0,
+            seed=self.config.simulation.seed,
+        )
+
+        # Assign initial cell and reach indices to fish
+        self._assign_initial_positions()
+
+        # Redd state
+        self.redd_state = ReddState.zeros(self.config.performance.redd_capacity)
+
+        # Mesa agent dict (for sync_trout_agents)
+        self._trout_agents = {}
+        sync_trout_agents(self)
+
+        # Light config
+        self._light_cfg = self.config.light
+
+    def _assign_initial_positions(self):
+        """Randomly assign alive fish to wet or available cells."""
+        alive = self.trout_state.alive_indices()
+        n_cells = self.fem_space.num_cells
+        if n_cells == 0 or len(alive) == 0:
+            return
+        # Distribute fish across all cells
+        cells = self.rng.integers(0, n_cells, size=len(alive))
+        self.trout_state.cell_idx[alive] = cells
+        # Set reach_idx from cell's reach_idx
+        self.trout_state.reach_idx[alive] = self.fem_space.cell_state.reach_idx[cells]
+
+    def step(self):
+        """Advance the simulation by one time step."""
+        # 1. Advance time
+        step_length = self.time_manager.advance()
+
+        # 2. Get conditions for each reach
+        conditions = {}
+        for rname in self.reach_order:
+            conditions[rname] = self.time_manager.get_conditions(rname)
+
+        # 3. Update reach state (flow, temp, turbidity, intermediates)
+        update_reach_state(
+            self.reach_state, conditions, self.reach_order,
+            self.species_params, self.backend,
+            species_order=self.species_order,
+        )
+
+        # Peak flow detection (simple: current > previous)
+        for i, rname in enumerate(self.reach_order):
+            current_flow = self.reach_state.flow[i]
+            self.reach_state.is_flow_peak[i] = current_flow > self._prev_flow[i]
+            self._prev_flow[i] = current_flow
+
+        # 4. Update hydraulics for each reach's flow
+        # Use the first reach's flow (single-reach model for now)
+        flow = float(self.reach_state.flow[0])
+        self.fem_space.update_hydraulics(flow, self.backend)
+
+        # 5. Compute light
+        jd = self.time_manager.julian_date
+        reach_cfg_0 = self.config.reaches[self.reach_order[0]]
+        day_length, twilight_length, irradiance = self.backend.compute_light(
+            jd, self._light_cfg.latitude, self._light_cfg.light_correction,
+            reach_cfg_0.shading, self._light_cfg.light_at_night,
+            self._light_cfg.twilight_angle,
+        )
+        cell_light = self.backend.compute_cell_light(
+            self.fem_space.cell_state.depth, irradiance,
+            reach_cfg_0.light_turbid_coef,
+            float(self.reach_state.turbidity[0]),
+            self._light_cfg.light_at_night,
+        )
+        self.fem_space.cell_state.light[:] = cell_light
+
+        # 6. Reset cell resources
+        cs = self.fem_space.cell_state
+        rp = self.reach_params[self.reach_order[0]]
+        cs.available_drift[:] = rp.drift_conc * cs.area * cs.depth
+        cs.available_search[:] = rp.search_prod * cs.area
+        cs.available_vel_shelter[:] = cs.frac_vel_shelter * cs.area
+        cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
+
+        # 7. Habitat selection & activity
+        sp_cfg = self.config.species[self.species_order[0]]
+        temperature = float(self.reach_state.temperature[0])
+        turbidity = float(self.reach_state.turbidity[0])
+
+        from instream.modules.behavior import select_habitat_and_activity
+        select_habitat_and_activity(
+            self.trout_state, self.fem_space,
+            move_radius_max=sp_cfg.move_radius_max,
+            move_radius_L1=sp_cfg.move_radius_L1,
+            move_radius_L9=sp_cfg.move_radius_L9,
+            temperature=temperature,
+            turbidity=turbidity,
+            drift_conc=rp.drift_conc,
+            search_prod=rp.search_prod,
+            search_area=sp_cfg.search_area,
+            shelter_speed_frac=rp.shelter_speed_frac,
+            step_length=step_length,
+            cmax_A=sp_cfg.cmax_A,
+            cmax_B=sp_cfg.cmax_B,
+            cmax_temp_table_x=self.species_params[self.species_order[0]].cmax_temp_table_x,
+            cmax_temp_table_y=self.species_params[self.species_order[0]].cmax_temp_table_y,
+            react_dist_A=sp_cfg.react_dist_A,
+            react_dist_B=sp_cfg.react_dist_B,
+            turbid_threshold=sp_cfg.turbid_threshold,
+            turbid_min=sp_cfg.turbid_min,
+            turbid_exp=sp_cfg.turbid_exp,
+            light_threshold=sp_cfg.light_threshold,
+            light_min=sp_cfg.light_min,
+            light_exp=sp_cfg.light_exp,
+            capture_R1=sp_cfg.capture_R1,
+            capture_R9=sp_cfg.capture_R9,
+            max_speed_A=sp_cfg.max_speed_A,
+            max_speed_B=sp_cfg.max_speed_B,
+            max_swim_temp_term=float(self.reach_state.max_swim_temp_term[0, 0]),
+            resp_A=sp_cfg.resp_A,
+            resp_B=sp_cfg.resp_B,
+            resp_D=sp_cfg.resp_D,
+            resp_temp_term=float(self.reach_state.resp_temp_term[0, 0]),
+            prey_energy_density=rp.prey_energy_density,
+            fish_energy_density=sp_cfg.energy_density,
+        )
+
+        # 8. Growth for each alive fish
+        alive = self.trout_state.alive_indices()
+        for i in alive:
+            cell = self.trout_state.cell_idx[i]
+            if cell < 0 or cell >= self.fem_space.num_cells:
+                continue
+            act_idx = self.trout_state.activity[i]
+            act_name = ["drift", "search", "hide"][min(act_idx, 2)]
+
+            growth = growth_rate_for(
+                activity=act_name,
+                length=float(self.trout_state.length[i]),
+                weight=float(self.trout_state.weight[i]),
+                depth=float(cs.depth[cell]),
+                velocity=float(cs.velocity[cell]),
+                light=float(cs.light[cell]),
+                turbidity=turbidity,
+                temperature=temperature,
+                drift_conc=rp.drift_conc,
+                search_prod=rp.search_prod,
+                search_area=sp_cfg.search_area,
+                available_drift=float(cs.available_drift[cell]),
+                available_search=float(cs.available_search[cell]),
+                available_shelter=float(cs.available_vel_shelter[cell]),
+                shelter_speed_frac=rp.shelter_speed_frac,
+                superind_rep=int(self.trout_state.superind_rep[i]),
+                prev_consumption=float(np.sum(self.trout_state.consumption_memory[i])),
+                step_length=step_length,
+                cmax_A=sp_cfg.cmax_A,
+                cmax_B=sp_cfg.cmax_B,
+                cmax_temp_table_x=self.species_params[self.species_order[0]].cmax_temp_table_x,
+                cmax_temp_table_y=self.species_params[self.species_order[0]].cmax_temp_table_y,
+                react_dist_A=sp_cfg.react_dist_A,
+                react_dist_B=sp_cfg.react_dist_B,
+                turbid_threshold=sp_cfg.turbid_threshold,
+                turbid_min=sp_cfg.turbid_min,
+                turbid_exp=sp_cfg.turbid_exp,
+                light_threshold=sp_cfg.light_threshold,
+                light_min=sp_cfg.light_min,
+                light_exp=sp_cfg.light_exp,
+                capture_R1=sp_cfg.capture_R1,
+                capture_R9=sp_cfg.capture_R9,
+                max_speed_A=sp_cfg.max_speed_A,
+                max_speed_B=sp_cfg.max_speed_B,
+                max_swim_temp_term=float(self.reach_state.max_swim_temp_term[0, 0]),
+                resp_A=sp_cfg.resp_A,
+                resp_B=sp_cfg.resp_B,
+                resp_D=sp_cfg.resp_D,
+                resp_temp_term=float(self.reach_state.resp_temp_term[0, 0]),
+                prey_energy_density=rp.prey_energy_density,
+                fish_energy_density=sp_cfg.energy_density,
+            )
+
+            daily_growth = growth * step_length
+            new_w, new_l, new_k = apply_growth(
+                float(self.trout_state.weight[i]),
+                float(self.trout_state.length[i]),
+                float(self.trout_state.condition[i]),
+                daily_growth,
+                sp_cfg.weight_A, sp_cfg.weight_B,
+            )
+            self.trout_state.weight[i] = new_w
+            self.trout_state.length[i] = new_l
+            self.trout_state.condition[i] = new_k
+
+        # Split superindividuals
+        split_superindividuals(self.trout_state, sp_cfg.superind_max_length)
+
+        # 9. Survival / mortality
+        alive = self.trout_state.alive_indices()
+        n_capacity = self.trout_state.alive.shape[0]
+        survival_probs = np.ones(n_capacity, dtype=np.float64)
+
+        for i in alive:
+            cell = self.trout_state.cell_idx[i]
+            if cell < 0 or cell >= self.fem_space.num_cells:
+                continue
+            act_idx = self.trout_state.activity[i]
+            act_name = ["drift", "search", "hide"][min(act_idx, 2)]
+
+            s_ht = survival_high_temperature(
+                temperature, sp_cfg.mort_high_temp_T1, sp_cfg.mort_high_temp_T9)
+            s_str = survival_stranding(
+                float(cs.depth[cell]), sp_cfg.mort_strand_survival_when_dry)
+            s_cond = survival_condition(
+                float(self.trout_state.condition[i]),
+                sp_cfg.mort_condition_S_at_K5, sp_cfg.mort_condition_S_at_K8)
+
+            # Fish predation -- use 0 piscivore density for now (placeholder)
+            s_fp = survival_fish_predation(
+                float(self.trout_state.length[i]),
+                float(cs.depth[cell]),
+                float(cs.light[cell]),
+                0.0,  # pisciv_density placeholder
+                temperature,
+                act_name,
+                rp.fish_pred_min,
+                sp_cfg.mort_fish_pred_L1, sp_cfg.mort_fish_pred_L9,
+                sp_cfg.mort_fish_pred_D1, sp_cfg.mort_fish_pred_D9,
+                sp_cfg.mort_fish_pred_P1, sp_cfg.mort_fish_pred_P9,
+                sp_cfg.mort_fish_pred_I1, sp_cfg.mort_fish_pred_I9,
+                sp_cfg.mort_fish_pred_T1, sp_cfg.mort_fish_pred_T9,
+                sp_cfg.mort_fish_pred_hiding_factor,
+            )
+
+            # Terrestrial predation
+            s_tp = survival_terrestrial_predation(
+                float(self.trout_state.length[i]),
+                float(cs.depth[cell]),
+                float(cs.velocity[cell]),
+                float(cs.light[cell]),
+                float(cs.dist_escape[cell]),
+                act_name,
+                int(cs.available_hiding_places[cell]),
+                int(self.trout_state.superind_rep[i]),
+                rp.terr_pred_min,
+                sp_cfg.mort_terr_pred_L1, sp_cfg.mort_terr_pred_L9,
+                sp_cfg.mort_terr_pred_D1, sp_cfg.mort_terr_pred_D9,
+                sp_cfg.mort_terr_pred_V1, sp_cfg.mort_terr_pred_V9,
+                sp_cfg.mort_terr_pred_I1, sp_cfg.mort_terr_pred_I9,
+                sp_cfg.mort_terr_pred_H1, sp_cfg.mort_terr_pred_H9,
+                sp_cfg.mort_terr_pred_hiding_factor,
+            )
+
+            survival_probs[i] = s_ht * s_str * s_cond * s_fp * s_tp
+
+        # Apply stochastic mortality
+        apply_mortality(self.trout_state.alive, survival_probs, self.rng)
+
+        # 10. Spawning
+        self._do_spawning(step_length, temperature, turbidity, flow)
+
+        # 11. Redd survival, development, emergence
+        self._do_redd_step(step_length, temperature)
+
+        # 12. Sync Mesa agents
+        sync_trout_agents(self)
+
+    def _do_spawning(self, step_length, temperature, turbidity, flow):
+        """Check spawning readiness and create redds."""
+        sp_cfg = self.config.species[self.species_order[0]]
+        rp = self.reach_params[self.reach_order[0]]
+        doy = self.time_manager.julian_date
+
+        # Parse spawn season DOY
+        try:
+            start_parts = sp_cfg.spawn_start_day.split("-")
+            spawn_start_doy = int(pd.Timestamp(f"2000-{start_parts[0]}-{start_parts[1]}").day_of_year)
+            end_parts = sp_cfg.spawn_end_day.split("-")
+            spawn_end_doy = int(pd.Timestamp(f"2000-{end_parts[0]}-{end_parts[1]}").day_of_year)
+        except Exception:
+            spawn_start_doy = 244  # Sep 1
+            spawn_end_doy = 304   # Oct 31
+
+        alive = self.trout_state.alive_indices()
+        cs = self.fem_space.cell_state
+
+        # Spawn depth/velocity table arrays
+        sp_depth_tbl = sp_cfg.spawn_depth_table
+        depth_xs = np.array(sorted(sp_depth_tbl.keys()), dtype=np.float64)
+        depth_ys = np.array([sp_depth_tbl[k] for k in sorted(sp_depth_tbl.keys())], dtype=np.float64)
+        sp_vel_tbl = sp_cfg.spawn_vel_table
+        vel_xs = np.array(sorted(sp_vel_tbl.keys()), dtype=np.float64)
+        vel_ys = np.array([sp_vel_tbl[k] for k in sorted(sp_vel_tbl.keys())], dtype=np.float64)
+
+        for i in alive:
+            if not ready_to_spawn(
+                sex=int(self.trout_state.sex[i]),
+                age=int(self.trout_state.age[i]),
+                length=float(self.trout_state.length[i]),
+                condition=float(self.trout_state.condition[i]),
+                temperature=temperature,
+                flow=flow,
+                spawned_this_season=bool(self.trout_state.spawned_this_season[i]),
+                day_of_year=doy,
+                spawn_min_age=sp_cfg.spawn_min_age,
+                spawn_min_length=sp_cfg.spawn_min_length,
+                spawn_min_cond=sp_cfg.spawn_min_cond,
+                spawn_min_temp=sp_cfg.spawn_min_temp,
+                spawn_max_temp=sp_cfg.spawn_max_temp,
+                spawn_prob=sp_cfg.spawn_prob,
+                max_spawn_flow=rp.max_spawn_flow,
+                spawn_start_doy=spawn_start_doy,
+                spawn_end_doy=spawn_end_doy,
+                rng=self.rng,
+            ):
+                continue
+
+            # Find best spawn cell near this fish
+            cell = self.trout_state.cell_idx[i]
+            if cell < 0:
+                continue
+            candidates = self.fem_space.cells_in_radius(cell, sp_cfg.move_radius_max * 0.1)
+            if len(candidates) == 0:
+                candidates = np.array([cell])
+
+            scores = np.array([
+                spawn_suitability(
+                    float(cs.depth[c]), float(cs.velocity[c]),
+                    float(cs.frac_spawn[c]), float(cs.area[c]),
+                    depth_xs, depth_ys, vel_xs, vel_ys,
+                )
+                for c in candidates
+            ])
+
+            if np.max(scores) <= sp_cfg.spawn_suitability_tol:
+                continue
+
+            best_cell = select_spawn_cell(scores, candidates)
+            reach_idx = int(cs.reach_idx[best_cell])
+
+            created = create_redd(
+                self.redd_state,
+                species_idx=0,
+                cell_idx=best_cell,
+                reach_idx=reach_idx,
+                weight=float(self.trout_state.weight[i]),
+                fecund_mult=sp_cfg.spawn_fecund_mult,
+                fecund_exp=sp_cfg.spawn_fecund_exp,
+                egg_viability=sp_cfg.spawn_egg_viability,
+            )
+            if created:
+                new_w = apply_spawner_weight_loss(
+                    float(self.trout_state.weight[i]),
+                    sp_cfg.spawn_wt_loss_fraction,
+                )
+                self.trout_state.weight[i] = new_w
+                self.trout_state.spawned_this_season[i] = True
+
+    def _do_redd_step(self, step_length, temperature):
+        """Redd survival, egg development, and emergence."""
+        sp_cfg = self.config.species[self.species_order[0]]
+        rp_cfg = self.config.reaches[self.reach_order[0]]
+        cs = self.fem_space.cell_state
+
+        alive_redds = np.where(self.redd_state.alive)[0]
+        if len(alive_redds) == 0:
+            return
+
+        # Get conditions at each redd's cell
+        redd_temps = np.full(len(self.redd_state.alive), temperature)
+        redd_depths = np.zeros(len(self.redd_state.alive))
+        redd_flows = np.full(len(self.redd_state.alive), float(self.reach_state.flow[0]))
+        redd_peaks = np.full(len(self.redd_state.alive), bool(self.reach_state.is_flow_peak[0]))
+
+        for i in alive_redds:
+            cell = self.redd_state.cell_idx[i]
+            if 0 <= cell < self.fem_space.num_cells:
+                redd_depths[i] = cs.depth[cell]
+
+        # Apply redd survival
+        new_eggs, lo, hi, dw, sc = apply_redd_survival(
+            self.redd_state.num_eggs,
+            self.redd_state.frac_developed,
+            redd_temps, redd_depths, redd_flows, redd_peaks,
+            step_length=step_length,
+            lo_T1=sp_cfg.mort_redd_lo_temp_T1,
+            lo_T9=sp_cfg.mort_redd_lo_temp_T9,
+            hi_T1=sp_cfg.mort_redd_hi_temp_T1,
+            hi_T9=sp_cfg.mort_redd_hi_temp_T9,
+            dewater_surv=sp_cfg.mort_redd_dewater_surv,
+            shear_A=rp_cfg.shear_A,
+            shear_B=rp_cfg.shear_B,
+            scour_depth=sp_cfg.mort_redd_scour_depth,
+        )
+        self.redd_state.num_eggs[:] = new_eggs.astype(np.int32)
+
+        # Track mortality
+        self.redd_state.eggs_lo_temp[:] += lo.astype(np.int32)
+        self.redd_state.eggs_hi_temp[:] += hi.astype(np.int32)
+        self.redd_state.eggs_dewatering[:] += dw.astype(np.int32)
+        self.redd_state.eggs_scour[:] += sc.astype(np.int32)
+
+        # Develop eggs
+        for i in alive_redds:
+            self.redd_state.frac_developed[i] = develop_eggs(
+                float(self.redd_state.frac_developed[i]),
+                temperature, step_length,
+                sp_cfg.redd_devel_A, sp_cfg.redd_devel_B, sp_cfg.redd_devel_C,
+            )
+
+        # Kill redds with 0 eggs
+        for i in alive_redds:
+            if self.redd_state.num_eggs[i] <= 0:
+                self.redd_state.alive[i] = False
+
+        # Emergence
+        redd_emergence(
+            self.redd_state, self.trout_state, self.rng,
+            sp_cfg.emerge_length_min, sp_cfg.emerge_length_mode,
+            sp_cfg.emerge_length_max,
+            sp_cfg.weight_A, sp_cfg.weight_B,
+            species_index=0,
+        )
+
+    def run(self):
+        """Run the simulation until the end date."""
+        while not self.time_manager.is_done():
+            self.step()

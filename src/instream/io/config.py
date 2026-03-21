@@ -287,6 +287,10 @@ def params_from_config(config: ModelConfig) -> tuple[dict[str, SpeciesParams], d
             weight_B=sp.weight_B,
             cmax_temp_table_x=xs,
             cmax_temp_table_y=ys,
+            max_speed_C=sp.max_speed_C,
+            max_speed_D=sp.max_speed_D,
+            max_speed_E=sp.max_speed_E,
+            resp_C=sp.resp_C,
         )
 
     reach_params: dict[str, ReachParams] = {}
