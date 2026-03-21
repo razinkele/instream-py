@@ -152,7 +152,16 @@ def growth_rate_for(activity, length, weight, depth, velocity, light,
     """Compute growth rate (g/d) for a fish at a cell with given activity.
 
     Implements NetLogo growth-rate-for (Task 3.8).
+    Activity can be a string ("drift", "search", "hide") or int (0, 1, 2).
     """
+    # Normalize activity to integer code
+    if isinstance(activity, int):
+        act = activity
+    elif isinstance(activity, str):
+        act = {"drift": 0, "search": 1, "hide": 2}.get(activity, -1)
+    else:
+        act = int(activity)
+
     # Pre-compute intermediates
     cmax_wt_term = cmax_A * weight ** cmax_B
     cmax_temp = cmax_temp_function(temperature, cmax_temp_table_x, cmax_temp_table_y)
@@ -161,7 +170,7 @@ def growth_rate_for(activity, length, weight, depth, velocity, light,
     max_speed = max_swim_speed(max_speed_len_term, max_swim_temp_term)
     resp_std_wt_term = resp_A * weight ** resp_B
 
-    if activity == "drift":
+    if act == 0:  # drift
         intake = drift_intake(length, depth, velocity, light, turbidity, drift_conc,
                               max_speed, cstepmax, available_drift, superind_rep,
                               react_dist_A, react_dist_B,
@@ -173,13 +182,13 @@ def growth_rate_for(activity, length, weight, depth, velocity, light,
         resp = respiration(resp_std_wt_term, resp_temp_term, swim_speed,
                            max_speed, resp_D)
         net_energy = intake * prey_energy_density - resp
-    elif activity == "search":
+    elif act == 1:  # search
         intake = search_intake(velocity, max_speed, search_prod, search_area,
                                cstepmax, available_search, superind_rep)
         resp = respiration(resp_std_wt_term, resp_temp_term, velocity,
                            max_speed, resp_D)
         net_energy = intake * prey_energy_density - resp
-    elif activity == "hide":
+    elif act == 2:  # hide
         resp = respiration(resp_std_wt_term, resp_temp_term, 0.0,
                            max_speed, resp_D)
         net_energy = -resp

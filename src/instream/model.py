@@ -383,8 +383,7 @@ class InSTREAMModel(mesa.Model):
             cell = self.trout_state.cell_idx[i]
             if cell < 0 or cell >= self.fem_space.num_cells:
                 continue
-            act_idx = self.trout_state.activity[i]
-            act_name = ["drift", "search", "hide"][min(act_idx, 2)]
+            act_idx = int(self.trout_state.activity[i])
 
             s_ht = survival_high_temperature(
                 temperature, sp_cfg.mort_high_temp_T1, sp_cfg.mort_high_temp_T9)
@@ -401,7 +400,7 @@ class InSTREAMModel(mesa.Model):
                 float(cs.light[cell]),
                 float(pisciv_densities_surv[cell]),
                 temperature,
-                act_name,
+                act_idx,
                 rp.fish_pred_min,
                 sp_cfg.mort_fish_pred_L1, sp_cfg.mort_fish_pred_L9,
                 sp_cfg.mort_fish_pred_D1, sp_cfg.mort_fish_pred_D9,
@@ -418,7 +417,7 @@ class InSTREAMModel(mesa.Model):
                 float(cs.velocity[cell]),
                 float(cs.light[cell]),
                 float(cs.dist_escape[cell]),
-                act_name,
+                act_idx,
                 int(cs.available_hiding_places[cell]),
                 int(self.trout_state.superind_rep[i]),
                 rp.terr_pred_min,

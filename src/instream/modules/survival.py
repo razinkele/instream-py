@@ -148,7 +148,8 @@ def survival_fish_predation(length, depth, light, pisciv_density, temperature,
     float
         Survival probability in [min_surv, 1.0].
     """
-    hide_factor = hiding_factor if activity == "hide" else 0.0
+    is_hiding = (activity == "hide") if isinstance(activity, str) else (activity == 2)
+    hide_factor = hiding_factor if is_hiding else 0.0
 
     relative_risk = (
         (1.0 - evaluate_logistic(length, L1, L9)) *
@@ -211,7 +212,8 @@ def survival_terrestrial_predation(length, depth, velocity, light, dist_escape,
     float
         Survival probability in [min_surv, 1.0].
     """
-    in_hiding = (activity == "hide") and (available_hiding >= superind_rep)
+    is_hiding = (activity == "hide") if isinstance(activity, str) else (activity == 2)
+    in_hiding = is_hiding and (available_hiding >= superind_rep)
     hide_factor = hiding_factor if in_hiding else 0.0
 
     relative_risk = (
