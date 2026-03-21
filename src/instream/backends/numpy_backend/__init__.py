@@ -24,19 +24,25 @@ class NumpyBackend:
         depths : 1-D array, shape (C,)
         velocities : 1-D array, shape (C,)
         """
+        n_cells = depth_values.shape[0]
         if flow <= 0.0:
-            n_cells = depth_values.shape[0]
             return np.zeros(n_cells), np.zeros(n_cells)
 
-        # NOTE: np.interp is 1D only, so we loop over cells. This is O(C) Python
-        # calls and will be vectorized in the Numba/JAX backends (Phase 1+) using
-        # np.searchsorted + manual lerp across all cells simultaneously.
-        n_cells = depth_values.shape[0]
-        depths = np.empty(n_cells)
-        vels = np.empty(n_cells)
-        for i in range(n_cells):
-            depths[i] = np.interp(flow, table_flows, depth_values[i])
-            vels[i] = np.interp(flow, table_flows, vel_values[i])
+        # Vectorized interpolation using searchsorted + lerp across all cells
+        # Clamp to table range (matching np.interp boundary behavior)
+        n_flows = len(table_flows)
+        if flow <= table_flows[0]:
+            depths = depth_values[:, 0].copy()
+            vels = vel_values[:, 0].copy()
+        elif flow >= table_flows[n_flows - 1]:
+            depths = depth_values[:, n_flows - 1].copy()
+            vels = vel_values[:, n_flows - 1].copy()
+        else:
+            idx = np.searchsorted(table_flows, flow, side='right') - 1
+            idx = np.clip(idx, 0, n_flows - 2)
+            frac = (flow - table_flows[idx]) / (table_flows[idx + 1] - table_flows[idx])
+            depths = depth_values[:, idx] + frac * (depth_values[:, idx + 1] - depth_values[:, idx])
+            vels = vel_values[:, idx] + frac * (vel_values[:, idx + 1] - vel_values[:, idx])
 
         # Clamp negative depths to zero; zero velocity where dry
         depths = np.maximum(depths, 0.0)
