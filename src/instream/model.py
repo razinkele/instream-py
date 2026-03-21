@@ -525,13 +525,13 @@ class InSTREAMModel(mesa.Model):
             shear_B=rp_cfg.shear_B,
             scour_depth=sp_cfg.mort_redd_scour_depth,
         )
-        self.redd_state.num_eggs[:] = new_eggs.astype(np.int32)
+        self.redd_state.num_eggs[:] = np.round(new_eggs).astype(np.int32)
 
         # Track mortality
-        self.redd_state.eggs_lo_temp[:] += lo.astype(np.int32)
-        self.redd_state.eggs_hi_temp[:] += hi.astype(np.int32)
-        self.redd_state.eggs_dewatering[:] += dw.astype(np.int32)
-        self.redd_state.eggs_scour[:] += sc.astype(np.int32)
+        self.redd_state.eggs_lo_temp[:] += np.round(lo).astype(np.int32)
+        self.redd_state.eggs_hi_temp[:] += np.round(hi).astype(np.int32)
+        self.redd_state.eggs_dewatering[:] += np.round(dw).astype(np.int32)
+        self.redd_state.eggs_scour[:] += np.round(sc).astype(np.int32)
 
         # Develop eggs
         for i in alive_redds:
