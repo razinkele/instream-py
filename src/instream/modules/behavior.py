@@ -271,6 +271,14 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         trout_state.cell_idx[i] = best_c
         trout_state.activity[i] = best_a
 
+        # Store the growth rate for the chosen cell/activity
+        # best_fitness = growth * step_length (Phase 4 formula)
+        # So growth_rate = best_fitness / step_length
+        if params['step_length'] > 0:
+            trout_state.last_growth_rate[i] = best_fitness / params['step_length']
+        else:
+            trout_state.last_growth_rate[i] = 0.0
+
         # --- DEPLETE IMMEDIATELY (before next fish evaluates) ---
         # This matches NetLogo: large fish deplete first, small fish see reduced resources.
         _len = trout_state.length[i]

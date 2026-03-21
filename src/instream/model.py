@@ -17,9 +17,7 @@ from instream.state.reach_state import ReachState
 from instream.backends import get_backend
 from instream.modules.reach import update_reach_state
 from instream.modules.growth import (
-    apply_growth, split_superindividuals, growth_rate_for,
-    cmax_temp_function, c_stepmax, max_swim_speed, drift_swim_speed,
-    drift_intake, search_intake,
+    apply_growth, split_superindividuals,
 )
 from instream.modules.survival import (
     survival_high_temperature, survival_stranding,
@@ -298,59 +296,13 @@ class InSTREAMModel(mesa.Model):
             fish_energy_density=sp_cfg.energy_density,
         )
 
-        # 8. Growth for each alive fish
+        # 8. Growth: use growth rate from habitat selection (not recomputed)
         alive = self.trout_state.alive_indices()
         for i in alive:
             cell = self.trout_state.cell_idx[i]
             if cell < 0 or cell >= self.fem_space.num_cells:
                 continue
-            act_idx = self.trout_state.activity[i]
-            act_name = ["drift", "search", "hide"][min(act_idx, 2)]
-
-            growth = growth_rate_for(
-                activity=act_name,
-                length=float(self.trout_state.length[i]),
-                weight=float(self.trout_state.weight[i]),
-                depth=float(cs.depth[cell]),
-                velocity=float(cs.velocity[cell]),
-                light=float(cs.light[cell]),
-                turbidity=turbidity,
-                temperature=temperature,
-                drift_conc=rp.drift_conc,
-                search_prod=rp.search_prod,
-                search_area=sp_cfg.search_area,
-                available_drift=float(cs.available_drift[cell]),
-                available_search=float(cs.available_search[cell]),
-                available_shelter=float(cs.available_vel_shelter[cell]),
-                shelter_speed_frac=rp.shelter_speed_frac,
-                superind_rep=int(self.trout_state.superind_rep[i]),
-                prev_consumption=float(np.sum(self.trout_state.consumption_memory[i])),
-                step_length=step_length,
-                cmax_A=sp_cfg.cmax_A,
-                cmax_B=sp_cfg.cmax_B,
-                cmax_temp_table_x=self.species_params[self.species_order[0]].cmax_temp_table_x,
-                cmax_temp_table_y=self.species_params[self.species_order[0]].cmax_temp_table_y,
-                react_dist_A=sp_cfg.react_dist_A,
-                react_dist_B=sp_cfg.react_dist_B,
-                turbid_threshold=sp_cfg.turbid_threshold,
-                turbid_min=sp_cfg.turbid_min,
-                turbid_exp=sp_cfg.turbid_exp,
-                light_threshold=sp_cfg.light_threshold,
-                light_min=sp_cfg.light_min,
-                light_exp=sp_cfg.light_exp,
-                capture_R1=sp_cfg.capture_R1,
-                capture_R9=sp_cfg.capture_R9,
-                max_speed_A=sp_cfg.max_speed_A,
-                max_speed_B=sp_cfg.max_speed_B,
-                max_swim_temp_term=float(self.reach_state.max_swim_temp_term[0, 0]),
-                resp_A=sp_cfg.resp_A,
-                resp_B=sp_cfg.resp_B,
-                resp_D=sp_cfg.resp_D,
-                resp_temp_term=float(self.reach_state.resp_temp_term[0, 0]),
-                prey_energy_density=rp.prey_energy_density,
-                fish_energy_density=sp_cfg.energy_density,
-            )
-
+            growth = self.trout_state.last_growth_rate[i]
             daily_growth = growth * step_length
             new_w, new_l, new_k = apply_growth(
                 float(self.trout_state.weight[i]),

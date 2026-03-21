@@ -20,6 +20,7 @@ class TroutState:
     life_history: np.ndarray   # int enum: 0=resident, 1=anad_juve, 2=anad_adult
     in_shelter: np.ndarray
     spawned_this_season: np.ndarray
+    last_growth_rate: np.ndarray
 
     # Within-day memory: shape (capacity, max_steps_per_day)
     growth_memory: np.ndarray
@@ -48,6 +49,7 @@ class TroutState:
             life_history=np.zeros(capacity, dtype=np.int32),
             in_shelter=np.zeros(capacity, dtype=bool),
             spawned_this_season=np.zeros(capacity, dtype=bool),
+            last_growth_rate=np.zeros(capacity, dtype=np.float64),
             growth_memory=np.zeros((capacity, max_steps_per_day), dtype=np.float64),
             consumption_memory=np.zeros((capacity, max_steps_per_day), dtype=np.float64),
             survival_memory=np.zeros((capacity, max_steps_per_day), dtype=np.float64),

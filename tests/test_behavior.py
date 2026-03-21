@@ -463,3 +463,74 @@ class TestHabitatSelection:
         # After selection: the scarce drift food should be nearly gone
         # Large fish took first, small fish saw what remained
         assert cs.available_drift[0] < 0.01  # some was consumed by at least one fish
+
+
+class TestGrowthRateStored:
+    """Test that habitat selection stores growth rate for use by the growth step."""
+
+    @pytest.fixture
+    def simple_model(self):
+        """Create minimal model state for growth rate storage testing."""
+        from instream.state.cell_state import CellState
+        from instream.state.trout_state import TroutState
+        from instream.space.fem_space import FEMSpace
+
+        cs = CellState.zeros(3, num_flows=2)
+        cs.centroid_x[:] = np.array([0, 100, 200], dtype=np.float64)
+        cs.centroid_y[:] = np.zeros(3)
+        cs.depth[:] = np.array([50, 30, 40], dtype=np.float64)
+        cs.velocity[:] = np.array([20, 10, 30], dtype=np.float64)
+        cs.light[:] = np.array([50, 50, 50], dtype=np.float64)
+        cs.area[:] = 10000.0
+        cs.available_drift[:] = 1000.0
+        cs.available_search[:] = 1000.0
+        cs.available_vel_shelter[:] = 10000.0
+        cs.available_hiding_places[:] = 5
+        ni = np.full((3, 3), -1, dtype=np.int32)
+        ni[0, 0] = 1; ni[1, 0] = 0; ni[1, 1] = 2; ni[2, 0] = 1
+        space = FEMSpace(cs, ni)
+
+        ts = TroutState.zeros(5)
+        ts.alive[0] = True; ts.cell_idx[0] = 0; ts.length[0] = 10.0; ts.weight[0] = 10.0
+        ts.alive[1] = True; ts.cell_idx[1] = 1; ts.length[1] = 8.0; ts.weight[1] = 6.0
+        ts.condition[:2] = 1.0
+        ts.superind_rep[:2] = 1
+        return space, ts
+
+    def test_trout_state_has_last_growth_rate_field(self):
+        """TroutState should have a last_growth_rate field initialized to zero."""
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(10)
+        assert hasattr(ts, 'last_growth_rate'), "TroutState missing last_growth_rate field"
+        assert ts.last_growth_rate.shape == (10,)
+        assert np.all(ts.last_growth_rate == 0.0)
+
+    def test_habitat_selection_populates_last_growth_rate(self, simple_model):
+        """After habitat selection, alive fish should have last_growth_rate set."""
+        from instream.modules.behavior import select_habitat_and_activity
+        space, ts = simple_model
+        params = dict(
+            move_radius_max=20000, move_radius_L1=7, move_radius_L9=20,
+            cmax_A=0.628, cmax_B=0.7,
+            cmax_temp_table_x=np.array([0.0, 10.0, 22.0, 30.0]),
+            cmax_temp_table_y=np.array([0.05, 0.5, 1.0, 0.0]),
+            react_dist_A=4.0, react_dist_B=2.0,
+            turbid_threshold=5.0, turbid_min=0.1, turbid_exp=-0.116,
+            light_threshold=20.0, light_min=0.5, light_exp=-0.2,
+            capture_R1=1.3, capture_R9=0.4,
+            max_speed_A=2.8, max_speed_B=21.0,
+            resp_A=36.0, resp_B=0.783, resp_D=1.4,
+            prey_energy_density=2500.0, fish_energy_density=5900.0,
+            shelter_speed_frac=0.3, search_prod=8e-7, search_area=20000.0,
+            drift_conc=3.2e-10, temperature=15.0, turbidity=2.0,
+            max_swim_temp_term=0.98,
+            resp_temp_term=np.exp(0.002 * 225),
+            step_length=1.0,
+        )
+        select_habitat_and_activity(ts, space, **params)
+        alive = ts.alive_indices()
+        # All alive fish should have a non-zero growth rate (positive or negative)
+        for i in alive:
+            assert ts.last_growth_rate[i] != 0.0, (
+                f"Fish {i} has last_growth_rate=0 after habitat selection"
+            )
