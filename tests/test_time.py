@@ -1,9 +1,9 @@
 """Tests for time management — TimeManager, YearShuffler, census."""
+
 import numpy as np
 import pandas as pd
 import pytest
 from pathlib import Path
-from datetime import datetime
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -15,7 +15,10 @@ class TestTimeManager:
     def time_manager(self):
         from instream.io.timeseries import read_time_series
         from instream.io.time_manager import TimeManager
-        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
+
+        df = read_time_series(
+            FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv"
+        )
         return TimeManager(
             start_date="2011-04-01",
             end_date="2011-04-10",  # short run for testing
@@ -42,9 +45,13 @@ class TestTimeManager:
     def test_julian_date_jan_1(self):
         from instream.io.timeseries import read_time_series
         from instream.io.time_manager import TimeManager
-        df = read_time_series(FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv")
-        tm = TimeManager(start_date="2011-01-01", end_date="2011-01-05",
-                         time_series={"ExampleA": df})
+
+        df = read_time_series(
+            FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv"
+        )
+        tm = TimeManager(
+            start_date="2011-01-01", end_date="2011-01-05", time_series={"ExampleA": df}
+        )
         assert tm.julian_date == 1
 
     def test_is_done_false_at_start(self, time_manager):
@@ -87,34 +94,196 @@ class TestCensus:
 
     def test_is_census_on_census_day(self):
         from instream.io.time_manager import is_census
+
         dt = pd.Timestamp("2011-06-15")
-        assert is_census(dt, census_days=["6/15", "9/30"], years_to_skip=0,
-                         start_date=pd.Timestamp("2011-04-01"))
+        assert is_census(
+            dt,
+            census_days=["6/15", "9/30"],
+            years_to_skip=0,
+            start_date=pd.Timestamp("2011-04-01"),
+        )
 
     def test_is_census_on_second_census_day(self):
         from instream.io.time_manager import is_census
+
         dt = pd.Timestamp("2011-09-30")
-        assert is_census(dt, census_days=["6/15", "9/30"], years_to_skip=0,
-                         start_date=pd.Timestamp("2011-04-01"))
+        assert is_census(
+            dt,
+            census_days=["6/15", "9/30"],
+            years_to_skip=0,
+            start_date=pd.Timestamp("2011-04-01"),
+        )
 
     def test_not_census_on_regular_day(self):
         from instream.io.time_manager import is_census
+
         dt = pd.Timestamp("2011-07-04")
-        assert not is_census(dt, census_days=["6/15", "9/30"], years_to_skip=0,
-                             start_date=pd.Timestamp("2011-04-01"))
+        assert not is_census(
+            dt,
+            census_days=["6/15", "9/30"],
+            years_to_skip=0,
+            start_date=pd.Timestamp("2011-04-01"),
+        )
 
     def test_census_skips_early_years(self):
         from instream.io.time_manager import is_census
+
         dt = pd.Timestamp("2011-06-15")
         # Skip 1 year from start (2011-04-01), so first census allowed in 2012
-        assert not is_census(dt, census_days=["6/15", "9/30"], years_to_skip=1,
-                             start_date=pd.Timestamp("2011-04-01"))
+        assert not is_census(
+            dt,
+            census_days=["6/15", "9/30"],
+            years_to_skip=1,
+            start_date=pd.Timestamp("2011-04-01"),
+        )
 
     def test_census_after_skip_years(self):
         from instream.io.time_manager import is_census
+
         dt = pd.Timestamp("2012-06-15")
-        assert is_census(dt, census_days=["6/15", "9/30"], years_to_skip=1,
-                         start_date=pd.Timestamp("2011-04-01"))
+        assert is_census(
+            dt,
+            census_days=["6/15", "9/30"],
+            years_to_skip=1,
+            start_date=pd.Timestamp("2011-04-01"),
+        )
+
+
+class TestDetectFrequency:
+    """Test auto-detection of time-series frequency."""
+
+    def test_daily_returns_1(self):
+        from instream.io.time_manager import detect_frequency
+
+        dates = pd.date_range("2011-04-01", periods=10, freq="D")
+        df = pd.DataFrame({"flow": range(10)}, index=dates)
+        assert detect_frequency(df) == 1
+
+    def test_hourly_returns_24(self):
+        from instream.io.time_manager import detect_frequency
+
+        dates = pd.date_range("2011-04-01", periods=48, freq="h")
+        df = pd.DataFrame({"flow": range(48)}, index=dates)
+        assert detect_frequency(df) == 24
+
+    def test_6hourly_returns_4(self):
+        from instream.io.time_manager import detect_frequency
+
+        dates = pd.date_range("2011-04-01", periods=20, freq="6h")
+        df = pd.DataFrame({"flow": range(20)}, index=dates)
+        assert detect_frequency(df) == 4
+
+    def test_single_row_returns_1(self):
+        from instream.io.time_manager import detect_frequency
+
+        dates = pd.date_range("2011-04-01", periods=1, freq="D")
+        df = pd.DataFrame({"flow": [1.0]}, index=dates)
+        assert detect_frequency(df) == 1
+
+
+class TestSubDailyAdvance:
+    """Test sub-daily time stepping."""
+
+    def _make_hourly_tm(self, hours=48):
+        """Helper: create a TimeManager with hourly data for 2 days."""
+        from instream.io.time_manager import TimeManager
+
+        dates = pd.date_range("2011-04-01", periods=hours, freq="h")
+        df = pd.DataFrame(
+            {
+                "flow": np.arange(hours, dtype=float),
+                "temperature": np.linspace(10, 15, hours),
+            },
+            index=dates,
+        )
+        return TimeManager(
+            start_date="2011-04-01",
+            end_date="2011-04-02",
+            time_series={"reach1": df},
+        )
+
+    def test_subdaily_step_length(self):
+        tm = self._make_hourly_tm()
+        step = tm.advance()
+        assert step == pytest.approx(1.0 / 24)
+
+    def test_step_lengths_sum_to_one_per_day(self):
+        tm = self._make_hourly_tm()
+        total = 0.0
+        for _ in range(24):
+            total += tm.advance()
+        assert total == pytest.approx(1.0)
+
+    def test_is_day_boundary_last_substep(self):
+        tm = self._make_hourly_tm()
+        # Advance 23 times: pointer goes to row 23 (hour 23 of day 1).
+        # Next row (24) is hour 0 of day 2 => different calendar day
+        # => is_day_boundary should be True.
+        boundary_seen = False
+        for i in range(23):
+            tm.advance()
+        boundary_seen = tm.is_day_boundary
+        assert boundary_seen, "Expected day boundary after last sub-step of day 1"
+
+    def test_substep_index_increments(self):
+        tm = self._make_hourly_tm()
+        assert tm.substep_index == 0
+        tm.advance()
+        # substep_index should be 1 after first advance
+        assert tm.substep_index == 1
+        tm.advance()
+        assert tm.substep_index == 2
+
+    def test_daily_backward_compatible(self):
+        """Daily input should behave exactly as before."""
+        from instream.io.time_manager import TimeManager
+
+        dates = pd.date_range("2011-04-01", periods=10, freq="D")
+        df = pd.DataFrame({"flow": np.arange(10, dtype=float)}, index=dates)
+        tm = TimeManager(
+            start_date="2011-04-01",
+            end_date="2011-04-05",
+            time_series={"reach1": df},
+        )
+        assert tm.steps_per_day == 1
+        step = tm.advance()
+        assert step == pytest.approx(1.0)
+        assert tm.current_date == pd.Timestamp("2011-04-02")
+        assert tm.is_day_boundary is True
+
+    def test_get_conditions_exact_row(self):
+        """Sub-daily get_conditions should return exact row data."""
+        tm = self._make_hourly_tm()
+        # Row 0 is initial conditions (hour 0)
+        c0 = tm.get_conditions("reach1")
+        assert c0["flow"] == pytest.approx(0.0)
+
+        # After first advance, should be at row 1 (hour 1)
+        tm.advance()
+        c1 = tm.get_conditions("reach1")
+        assert c1["flow"] == pytest.approx(1.0)
+
+        # After second advance, row 2 (hour 2)
+        tm.advance()
+        c2 = tm.get_conditions("reach1")
+        assert c2["flow"] == pytest.approx(2.0)
+
+    def test_is_done_subdaily(self):
+        """is_done should be True when row pointers exceed data length."""
+        from instream.io.time_manager import TimeManager
+
+        # Only 4 rows of 6-hourly data (1 day)
+        dates = pd.date_range("2011-04-01", periods=4, freq="6h")
+        df = pd.DataFrame({"flow": [1.0, 2.0, 3.0, 4.0]}, index=dates)
+        tm = TimeManager(
+            start_date="2011-04-01",
+            end_date="2011-04-01",
+            time_series={"reach1": df},
+        )
+        assert not tm.is_done()
+        for _ in range(4):
+            tm.advance()
+        assert tm.is_done()
 
 
 class TestYearShuffler:
@@ -122,12 +291,14 @@ class TestYearShuffler:
 
     def test_produces_valid_mapping(self):
         from instream.io.time_manager import YearShuffler
+
         ys = YearShuffler(available_years=[2010, 2011, 2012], seed=42)
         mapped = ys.get_year(2011)
         assert mapped in [2010, 2011, 2012]
 
     def test_deterministic_with_seed(self):
         from instream.io.time_manager import YearShuffler
+
         ys1 = YearShuffler(available_years=[2010, 2011, 2012], seed=42)
         ys2 = YearShuffler(available_years=[2010, 2011, 2012], seed=42)
         for y in range(2011, 2020):
@@ -135,6 +306,7 @@ class TestYearShuffler:
 
     def test_different_seeds_different_mapping(self):
         from instream.io.time_manager import YearShuffler
+
         ys1 = YearShuffler(available_years=[2010, 2011, 2012], seed=1)
         ys2 = YearShuffler(available_years=[2010, 2011, 2012], seed=999)
         # At least some years should map differently

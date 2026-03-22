@@ -3,6 +3,7 @@
 Provides TimeManager for daily time stepping, census day detection,
 and YearShuffler for stochastic input year resampling.
 """
+
 from __future__ import annotations
 
 from typing import Dict, List, Sequence
@@ -11,8 +12,36 @@ import numpy as np
 import pandas as pd
 
 
+def detect_frequency(time_series_df: pd.DataFrame) -> int:
+    """Detect time-series row frequency.
+
+    Parameters
+    ----------
+    time_series_df : pd.DataFrame
+        DataFrame with a DatetimeIndex.
+
+    Returns
+    -------
+    int
+        Number of steps per day (1 for daily, 24 for hourly, etc.).
+    """
+    timestamps = time_series_df.index
+    if len(timestamps) < 2:
+        return 1
+    intervals = np.diff(timestamps.values).astype("timedelta64[m]").astype(float)
+    median_minutes = np.median(intervals)
+    if median_minutes <= 0:
+        return 1
+    steps_per_day = max(1, round(1440.0 / median_minutes))
+    return steps_per_day
+
+
 class TimeManager:
     """Manages simulation time advancement and environmental condition lookup.
+
+    Supports both daily and sub-daily time stepping.  The frequency is
+    auto-detected from the time-series data.  Daily input behaves exactly
+    as before (backward compatible).
 
     Parameters
     ----------
@@ -36,6 +65,19 @@ class TimeManager:
         self._current_date = pd.Timestamp(start_date)
         self._time_series = time_series
 
+        # Auto-detect frequency from first reach
+        first_df = next(iter(time_series.values()))
+        self._steps_per_day: int = detect_frequency(first_df)
+
+        # Sub-daily bookkeeping
+        self._substep_index: int = 0
+        self._is_day_boundary: bool = True  # start of sim is a day boundary
+        self._row_pointers: Dict[str, int] = {rname: 0 for rname in time_series}
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
     @property
     def current_date(self) -> pd.Timestamp:
         """Current simulation date."""
@@ -46,26 +88,97 @@ class TimeManager:
         """Day of year (1-365/366) for the current date."""
         return self._current_date.day_of_year
 
+    @property
+    def steps_per_day(self) -> int:
+        """Number of sub-steps per calendar day."""
+        return self._steps_per_day
+
+    @property
+    def is_day_boundary(self) -> bool:
+        """True when the current sub-step is the last of the calendar day."""
+        return self._is_day_boundary
+
+    @property
+    def substep_index(self) -> int:
+        """Position within the current day (0-based)."""
+        return self._substep_index
+
+    # ------------------------------------------------------------------
+    # Time advancement
+    # ------------------------------------------------------------------
+
     def advance(self) -> float:
-        """Advance simulation by one day.
+        """Advance simulation by one sub-step.
 
         Returns
         -------
         float
-            Step length in days (1.0 for daily mode).
+            Step length as a fraction of a day (1.0 for daily,
+            1/24 for hourly, etc.).
         """
-        self._current_date += pd.Timedelta(days=1)
-        return 1.0
+        if self._steps_per_day == 1:
+            # Daily mode — same as before
+            self._current_date += pd.Timedelta(days=1)
+            self._is_day_boundary = True
+            self._substep_index = 0
+            for rname in self._row_pointers:
+                self._row_pointers[rname] += 1
+            return 1.0
+
+        # Sub-daily mode
+        self._substep_index += 1
+        for rname in self._row_pointers:
+            self._row_pointers[rname] += 1
+
+        # Update current_date from the time-series timestamp
+        first_reach = next(iter(self._time_series))
+        idx = self._row_pointers[first_reach]
+        first_df = self._time_series[first_reach]
+        if idx < len(first_df):
+            self._current_date = first_df.index[idx]
+        # else: keep last date (is_done will trigger)
+
+        # Determine day boundary: is the *next* row a new calendar day?
+        next_idx = idx + 1
+        if next_idx >= len(first_df):
+            self._is_day_boundary = True
+        else:
+            next_date = first_df.index[next_idx]
+            self._is_day_boundary = next_date.date() != self._current_date.date()
+
+        if self._is_day_boundary:
+            self._substep_index = 0  # will reset for next day
+
+        step_length = 1.0 / self._steps_per_day
+        return step_length
 
     def is_done(self) -> bool:
-        """Return True when the simulation has passed the end date."""
+        """Return True when the simulation has passed the end date.
+
+        For sub-daily mode, also checks whether all row pointers have
+        exceeded the data length.
+        """
+        if self._steps_per_day == 1:
+            return self._current_date > self._end_date
+
+        # Sub-daily: done when current_date is past end AND we've
+        # exhausted the data, OR simply past end_date.
+        first_reach = next(iter(self._time_series))
+        idx = self._row_pointers[first_reach]
+        if idx >= len(self._time_series[first_reach]):
+            return True
         return self._current_date > self._end_date
+
+    # ------------------------------------------------------------------
+    # Condition lookup
+    # ------------------------------------------------------------------
 
     def get_conditions(self, reach_name: str) -> Dict[str, float]:
         """Look up environmental conditions for a reach at the current date.
 
-        Uses nearest-date lookup (method='nearest') from the time-series
-        DataFrame to handle potential time mismatches (e.g. noon vs midnight).
+        For daily mode, uses nearest-date lookup (method='nearest') from
+        the time-series DataFrame.  For sub-daily mode, uses exact row
+        indexing via the internal row pointer.
 
         Parameters
         ----------
@@ -78,20 +191,32 @@ class TimeManager:
             Dictionary with keys like 'flow', 'temperature', 'turbidity'.
         """
         df = self._time_series[reach_name]
-        idx = df.index.get_indexer([self._current_date], method="nearest")[0]
-        if idx < 0:
-            raise ValueError(
-                f"No matching date for {self._current_date} in reach {reach_name}"
+
+        if self._steps_per_day == 1:
+            # Daily: nearest-neighbor lookup (existing behavior)
+            idx = df.index.get_indexer([self._current_date], method="nearest")[0]
+            if idx < 0:
+                raise ValueError(
+                    f"No matching date for {self._current_date} in reach {reach_name}"
+                )
+            nearest_date = df.index[idx]
+            gap_days = (
+                abs((nearest_date - self._current_date).total_seconds()) / 86400.0
             )
-        nearest_date = df.index[idx]
-        gap_days = abs((nearest_date - self._current_date).total_seconds()) / 86400.0
-        if gap_days > 1.5:
-            raise ValueError(
-                f"Nearest date {nearest_date} is {gap_days:.1f} days from "
-                f"{self._current_date} for reach {reach_name} — "
-                f"date is outside time-series range"
-            )
-        row = df.iloc[idx]
+            if gap_days > 1.5:
+                raise ValueError(
+                    f"Nearest date {nearest_date} is {gap_days:.1f} days "
+                    f"from {self._current_date} for reach {reach_name} — "
+                    f"date is outside time-series range"
+                )
+            row = df.iloc[idx]
+        else:
+            # Sub-daily: exact row index
+            idx = self._row_pointers[reach_name]
+            if idx >= len(df):
+                idx = len(df) - 1
+            row = df.iloc[idx]
+
         return {col: float(row[col]) for col in df.columns}
 
     def formatted_time(self) -> str:
