@@ -1,20 +1,47 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 *.egg-info/
 dist/
 build/
 .eggs/
 *.egg
+
+# Testing
 .pytest_cache/
+.hypothesis/
 .coverage
 htmlcov/
+
+# Type checking / linting
 .mypy_cache/
 .ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Numba
+__pycache__/*.nbi
+__pycache__/*.nbc
 *.nbi
 *.nbc
+
+# Jupyter
 .ipynb_checkpoints/
+
+# Data
 *.h5
 *.hdf5
+
+# Output
+output/
 results/
-.hypothesis/
+
+# OS
+.DS_Store
+Thumbs.db
