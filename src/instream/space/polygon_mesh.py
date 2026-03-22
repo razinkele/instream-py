@@ -3,6 +3,7 @@
 Reads a shapefile of habitat cell polygons and extracts cell attributes,
 centroids, and spatial adjacency for use in the inSTREAM model.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -51,18 +52,43 @@ class PolygonMesh:
     ) -> None:
         gdf = gpd.read_file(shapefile_path)
 
+        # Build case-insensitive column lookup so configs and shapefiles
+        # with different capitalisations still match (e.g. ID_TEXT vs ID_text).
+        col_lower = {c.lower(): c for c in gdf.columns}
+
+        def _resolve(requested: str) -> str:
+            if requested in gdf.columns:
+                return requested
+            actual = col_lower.get(requested.lower())
+            if actual is not None:
+                return actual
+            raise KeyError(
+                "Field '{}' not found in shapefile columns {} "
+                "(case-insensitive)".format(requested, list(gdf.columns))
+            )
+
         self._num_cells: int = len(gdf)
-        self._cell_ids: list[str] = gdf[id_field].astype(str).tolist()
-        self._reach_names: list[str] = gdf[reach_field].astype(str).tolist()
+        self._cell_ids: list[str] = gdf[_resolve(id_field)].astype(str).tolist()
+        self._reach_names: list[str] = gdf[_resolve(reach_field)].astype(str).tolist()
 
         # Areas: m² → cm²
-        self._areas: np.ndarray = gdf[area_field].to_numpy(dtype=np.float64) * 10_000.0
+        self._areas: np.ndarray = (
+            gdf[_resolve(area_field)].to_numpy(dtype=np.float64) * 10_000.0
+        )
 
         # Other cell attributes
-        self._dist_escape: np.ndarray = gdf[dist_escape_field].to_numpy(dtype=np.float64)
-        self._num_hiding_places: np.ndarray = gdf[hiding_field].to_numpy(dtype=np.int32)
-        self._frac_vel_shelter: np.ndarray = gdf[shelter_field].to_numpy(dtype=np.float64)
-        self._frac_spawn: np.ndarray = gdf[spawn_field].to_numpy(dtype=np.float64)
+        self._dist_escape: np.ndarray = gdf[_resolve(dist_escape_field)].to_numpy(
+            dtype=np.float64
+        )
+        self._num_hiding_places: np.ndarray = gdf[_resolve(hiding_field)].to_numpy(
+            dtype=np.int32
+        )
+        self._frac_vel_shelter: np.ndarray = gdf[_resolve(shelter_field)].to_numpy(
+            dtype=np.float64
+        )
+        self._frac_spawn: np.ndarray = gdf[_resolve(spawn_field)].to_numpy(
+            dtype=np.float64
+        )
 
         # Centroids from polygon geometries
         centroids = gdf.geometry.centroid
