@@ -1,4 +1,5 @@
 """InSTREAMModel -- main simulation model wiring all modules together."""
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -8,7 +9,10 @@ import mesa
 from instream.io.config import load_config, params_from_config
 from instream.io.timeseries import read_time_series
 from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
-from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+from instream.io.population_reader import (
+    read_initial_populations,
+    build_initial_trout_state,
+)
 from instream.io.time_manager import TimeManager
 from instream.space.polygon_mesh import PolygonMesh
 from instream.space.fem_space import FEMSpace
@@ -17,16 +21,25 @@ from instream.state.reach_state import ReachState
 from instream.backends import get_backend
 from instream.modules.reach import update_reach_state
 from instream.modules.growth import (
-    apply_growth, split_superindividuals,
+    apply_growth,
+    split_superindividuals,
 )
 from instream.modules.survival import (
-    survival_high_temperature, survival_stranding,
-    survival_condition, survival_fish_predation,
-    survival_terrestrial_predation, apply_mortality,
+    survival_high_temperature,
+    survival_stranding,
+    survival_condition,
+    survival_fish_predation,
+    survival_terrestrial_predation,
+    apply_mortality,
 )
 from instream.modules.spawning import (
-    ready_to_spawn, spawn_suitability, select_spawn_cell,
-    create_redd, apply_spawner_weight_loss, develop_eggs, redd_emergence,
+    ready_to_spawn,
+    spawn_suitability,
+    select_spawn_cell,
+    create_redd,
+    apply_spawner_weight_loss,
+    develop_eggs,
+    redd_emergence,
 )
 from instream.modules.survival import apply_redd_survival
 from instream.modules.behavior import select_habitat_and_activity
@@ -108,12 +121,13 @@ class InSTREAMModel(mesa.Model):
         vel_flows, vel_values = read_velocity_table(vel_path)
 
         # Convert from SI units (m, m/s) to inSTREAM internal units (cm, cm/s)
-        depth_values = depth_values * 100.0   # m -> cm
-        vel_values = vel_values * 100.0       # m/s -> cm/s
+        depth_values = depth_values * 100.0  # m -> cm
+        vel_values = vel_values * 100.0  # m/s -> cm/s
 
         # Build CellState and FEMSpace
-        cell_state = self.mesh.to_cell_state(depth_flows, depth_values,
-                                             vel_flows, vel_values)
+        cell_state = self.mesh.to_cell_state(
+            depth_flows, depth_values, vel_flows, vel_values
+        )
         self.fem_space = FEMSpace(cell_state, self.mesh.neighbor_indices)
 
         # Load time-series data per reach
@@ -149,7 +163,9 @@ class InSTREAMModel(mesa.Model):
             pop_candidates = list(self.data_dir.glob("*InitialPopulations*"))
             if not pop_candidates:
                 raise FileNotFoundError(
-                    "No population file configured and no *InitialPopulations* file in {}".format(self.data_dir)
+                    "No population file configured and no *InitialPopulations* file in {}".format(
+                        self.data_dir
+                    )
                 )
             pop_path = pop_candidates[0]
 
@@ -174,6 +190,16 @@ class InSTREAMModel(mesa.Model):
         # Redd state
         self.redd_state = ReddState.zeros(self.config.performance.redd_capacity)
 
+        # Reach connectivity graph for migration
+        from instream.modules.migration import build_reach_graph
+
+        upstream = [self.config.reaches[r].upstream_junction for r in self.reach_order]
+        downstream = [
+            self.config.reaches[r].downstream_junction for r in self.reach_order
+        ]
+        self._reach_graph = build_reach_graph(upstream, downstream)
+        self._outmigrants = []
+
         # Mesa agent dict (for sync_trout_agents)
         self._trout_agents = {}
         sync_trout_agents(self)
@@ -186,10 +212,14 @@ class InSTREAMModel(mesa.Model):
         for sp_name, sp_cfg_item in self.config.species.items():
             sp_depth_tbl = sp_cfg_item.spawn_depth_table
             depth_xs = np.array(sorted(sp_depth_tbl.keys()), dtype=np.float64)
-            depth_ys = np.array([sp_depth_tbl[k] for k in sorted(sp_depth_tbl.keys())], dtype=np.float64)
+            depth_ys = np.array(
+                [sp_depth_tbl[k] for k in sorted(sp_depth_tbl.keys())], dtype=np.float64
+            )
             sp_vel_tbl = sp_cfg_item.spawn_vel_table
             vel_xs = np.array(sorted(sp_vel_tbl.keys()), dtype=np.float64)
-            vel_ys = np.array([sp_vel_tbl[k] for k in sorted(sp_vel_tbl.keys())], dtype=np.float64)
+            vel_ys = np.array(
+                [sp_vel_tbl[k] for k in sorted(sp_vel_tbl.keys())], dtype=np.float64
+            )
             self._spawn_tables[sp_name] = (depth_xs, depth_ys, vel_xs, vel_ys)
 
     def _assign_initial_positions(self):
@@ -211,7 +241,7 @@ class InSTREAMModel(mesa.Model):
         steps or model restarts that might skip the exact start day.
         """
         current_doy = self.time_manager.julian_date
-        prev_doy = getattr(self, '_prev_doy', current_doy)
+        prev_doy = getattr(self, "_prev_doy", current_doy)
         if prev_doy < spawn_start_doy <= current_doy:
             self.trout_state.spawned_this_season[:] = False
         elif prev_doy > current_doy and current_doy >= spawn_start_doy:
@@ -226,6 +256,9 @@ class InSTREAMModel(mesa.Model):
         # 1b. Increment age on January 1
         self._increment_age_if_new_year()
 
+        # 1c. Adult arrivals (stub for multi-reach/species)
+        self._do_adult_arrivals()
+
         # 2. Get conditions for each reach
         conditions = {}
         for rname in self.reach_order:
@@ -233,8 +266,11 @@ class InSTREAMModel(mesa.Model):
 
         # 3. Update reach state (flow, temp, turbidity, intermediates)
         update_reach_state(
-            self.reach_state, conditions, self.reach_order,
-            self.species_params, self.backend,
+            self.reach_state,
+            conditions,
+            self.reach_order,
+            self.species_params,
+            self.backend,
             species_order=self.species_order,
         )
 
@@ -253,12 +289,16 @@ class InSTREAMModel(mesa.Model):
         jd = self.time_manager.julian_date
         reach_cfg_0 = self.config.reaches[self.reach_order[0]]
         day_length, twilight_length, irradiance = self.backend.compute_light(
-            jd, self._light_cfg.latitude, self._light_cfg.light_correction,
-            reach_cfg_0.shading, self._light_cfg.light_at_night,
+            jd,
+            self._light_cfg.latitude,
+            self._light_cfg.light_correction,
+            reach_cfg_0.shading,
+            self._light_cfg.light_at_night,
             self._light_cfg.twilight_angle,
         )
         cell_light = self.backend.compute_cell_light(
-            self.fem_space.cell_state.depth, irradiance,
+            self.fem_space.cell_state.depth,
+            irradiance,
             reach_cfg_0.light_turbid_coef,
             float(self.reach_state.turbidity[0]),
             self._light_cfg.light_at_night,
@@ -282,7 +322,8 @@ class InSTREAMModel(mesa.Model):
         pisciv_densities = self._compute_piscivore_density()
 
         select_habitat_and_activity(
-            self.trout_state, self.fem_space,
+            self.trout_state,
+            self.fem_space,
             move_radius_max=sp_cfg.move_radius_max,
             move_radius_L1=sp_cfg.move_radius_L1,
             move_radius_L9=sp_cfg.move_radius_L9,
@@ -295,8 +336,12 @@ class InSTREAMModel(mesa.Model):
             step_length=step_length,
             cmax_A=sp_cfg.cmax_A,
             cmax_B=sp_cfg.cmax_B,
-            cmax_temp_table_x=self.species_params[self.species_order[0]].cmax_temp_table_x,
-            cmax_temp_table_y=self.species_params[self.species_order[0]].cmax_temp_table_y,
+            cmax_temp_table_x=self.species_params[
+                self.species_order[0]
+            ].cmax_temp_table_x,
+            cmax_temp_table_y=self.species_params[
+                self.species_order[0]
+            ].cmax_temp_table_y,
             react_dist_A=sp_cfg.react_dist_A,
             react_dist_B=sp_cfg.react_dist_B,
             turbid_threshold=sp_cfg.turbid_threshold,
@@ -362,7 +407,8 @@ class InSTREAMModel(mesa.Model):
                 float(self.trout_state.length[i]),
                 float(self.trout_state.condition[i]),
                 daily_growth,
-                sp_cfg.weight_A, sp_cfg.weight_B,
+                sp_cfg.weight_A,
+                sp_cfg.weight_B,
             )
             self.trout_state.weight[i] = new_w
             self.trout_state.length[i] = new_l
@@ -386,12 +432,16 @@ class InSTREAMModel(mesa.Model):
             act_idx = int(self.trout_state.activity[i])
 
             s_ht = survival_high_temperature(
-                temperature, sp_cfg.mort_high_temp_T1, sp_cfg.mort_high_temp_T9)
+                temperature, sp_cfg.mort_high_temp_T1, sp_cfg.mort_high_temp_T9
+            )
             s_str = survival_stranding(
-                float(cs.depth[cell]), sp_cfg.mort_strand_survival_when_dry)
+                float(cs.depth[cell]), sp_cfg.mort_strand_survival_when_dry
+            )
             s_cond = survival_condition(
                 float(self.trout_state.condition[i]),
-                sp_cfg.mort_condition_S_at_K5, sp_cfg.mort_condition_S_at_K8)
+                sp_cfg.mort_condition_S_at_K5,
+                sp_cfg.mort_condition_S_at_K8,
+            )
 
             # Fish predation with computed piscivore density
             s_fp = survival_fish_predation(
@@ -402,11 +452,16 @@ class InSTREAMModel(mesa.Model):
                 temperature,
                 act_idx,
                 rp.fish_pred_min,
-                sp_cfg.mort_fish_pred_L1, sp_cfg.mort_fish_pred_L9,
-                sp_cfg.mort_fish_pred_D1, sp_cfg.mort_fish_pred_D9,
-                sp_cfg.mort_fish_pred_P1, sp_cfg.mort_fish_pred_P9,
-                sp_cfg.mort_fish_pred_I1, sp_cfg.mort_fish_pred_I9,
-                sp_cfg.mort_fish_pred_T1, sp_cfg.mort_fish_pred_T9,
+                sp_cfg.mort_fish_pred_L1,
+                sp_cfg.mort_fish_pred_L9,
+                sp_cfg.mort_fish_pred_D1,
+                sp_cfg.mort_fish_pred_D9,
+                sp_cfg.mort_fish_pred_P1,
+                sp_cfg.mort_fish_pred_P9,
+                sp_cfg.mort_fish_pred_I1,
+                sp_cfg.mort_fish_pred_I9,
+                sp_cfg.mort_fish_pred_T1,
+                sp_cfg.mort_fish_pred_T9,
                 sp_cfg.mort_fish_pred_hiding_factor,
             )
 
@@ -421,16 +476,21 @@ class InSTREAMModel(mesa.Model):
                 int(cs.available_hiding_places[cell]),
                 int(self.trout_state.superind_rep[i]),
                 rp.terr_pred_min,
-                sp_cfg.mort_terr_pred_L1, sp_cfg.mort_terr_pred_L9,
-                sp_cfg.mort_terr_pred_D1, sp_cfg.mort_terr_pred_D9,
-                sp_cfg.mort_terr_pred_V1, sp_cfg.mort_terr_pred_V9,
-                sp_cfg.mort_terr_pred_I1, sp_cfg.mort_terr_pred_I9,
-                sp_cfg.mort_terr_pred_H1, sp_cfg.mort_terr_pred_H9,
+                sp_cfg.mort_terr_pred_L1,
+                sp_cfg.mort_terr_pred_L9,
+                sp_cfg.mort_terr_pred_D1,
+                sp_cfg.mort_terr_pred_D9,
+                sp_cfg.mort_terr_pred_V1,
+                sp_cfg.mort_terr_pred_V9,
+                sp_cfg.mort_terr_pred_I1,
+                sp_cfg.mort_terr_pred_I9,
+                sp_cfg.mort_terr_pred_H1,
+                sp_cfg.mort_terr_pred_H9,
                 sp_cfg.mort_terr_pred_hiding_factor,
             )
 
             daily_surv = s_ht * s_str * s_cond * s_fp * s_tp
-            survival_probs[i] = daily_surv ** step_length
+            survival_probs[i] = daily_surv**step_length
 
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)
@@ -441,8 +501,14 @@ class InSTREAMModel(mesa.Model):
         # 11. Redd survival, development, emergence
         self._do_redd_step(step_length, temperature)
 
-        # 12. Sync Mesa agents
+        # 12. Migration
+        self._do_migration()
+
+        # 13. Sync Mesa agents
         sync_trout_agents(self)
+
+        # 14. Census data collection
+        self._collect_census_if_needed()
 
     def _do_spawning(self, step_length, temperature, turbidity, flow):
         """Check spawning readiness and create redds."""
@@ -453,16 +519,21 @@ class InSTREAMModel(mesa.Model):
         # Parse spawn season DOY
         try:
             start_parts = sp_cfg.spawn_start_day.split("-")
-            spawn_start_doy = int(pd.Timestamp(f"2000-{start_parts[0]}-{start_parts[1]}").day_of_year)
+            spawn_start_doy = int(
+                pd.Timestamp(f"2000-{start_parts[0]}-{start_parts[1]}").day_of_year
+            )
             end_parts = sp_cfg.spawn_end_day.split("-")
-            spawn_end_doy = int(pd.Timestamp(f"2000-{end_parts[0]}-{end_parts[1]}").day_of_year)
+            spawn_end_doy = int(
+                pd.Timestamp(f"2000-{end_parts[0]}-{end_parts[1]}").day_of_year
+            )
         except (ValueError, IndexError, AttributeError) as e:
             import logging
+
             logging.getLogger(__name__).warning(
                 "Could not parse spawn dates (%s), using defaults Sep 1 - Oct 31", e
             )
             spawn_start_doy = 244  # Sep 1
-            spawn_end_doy = 304   # Oct 31
+            spawn_end_doy = 304  # Oct 31
 
         self._reset_spawn_season_if_needed(spawn_start_doy)
 
@@ -499,18 +570,27 @@ class InSTREAMModel(mesa.Model):
             cell = self.trout_state.cell_idx[i]
             if cell < 0:
                 continue
-            candidates = self.fem_space.cells_in_radius(cell, sp_cfg.move_radius_max * 0.1)
+            candidates = self.fem_space.cells_in_radius(
+                cell, sp_cfg.move_radius_max * 0.1
+            )
             if len(candidates) == 0:
                 candidates = np.array([cell])
 
-            scores = np.array([
-                spawn_suitability(
-                    float(cs.depth[c]), float(cs.velocity[c]),
-                    float(cs.frac_spawn[c]), float(cs.area[c]),
-                    depth_xs, depth_ys, vel_xs, vel_ys,
-                )
-                for c in candidates
-            ])
+            scores = np.array(
+                [
+                    spawn_suitability(
+                        float(cs.depth[c]),
+                        float(cs.velocity[c]),
+                        float(cs.frac_spawn[c]),
+                        float(cs.area[c]),
+                        depth_xs,
+                        depth_ys,
+                        vel_xs,
+                        vel_ys,
+                    )
+                    for c in candidates
+                ]
+            )
 
             if np.max(scores) <= sp_cfg.spawn_suitability_tol:
                 continue
@@ -535,7 +615,10 @@ class InSTREAMModel(mesa.Model):
                 )
                 self.trout_state.weight[i] = new_w
                 self.trout_state.spawned_this_season[i] = True
-                healthy_wt = sp_cfg.weight_A * float(self.trout_state.length[i]) ** sp_cfg.weight_B
+                healthy_wt = (
+                    sp_cfg.weight_A
+                    * float(self.trout_state.length[i]) ** sp_cfg.weight_B
+                )
                 if healthy_wt > 0:
                     self.trout_state.condition[i] = new_w / healthy_wt
 
@@ -552,8 +635,12 @@ class InSTREAMModel(mesa.Model):
         # Get conditions at each redd's cell
         redd_temps = np.full(len(self.redd_state.alive), temperature)
         redd_depths = np.zeros(len(self.redd_state.alive))
-        redd_flows = np.full(len(self.redd_state.alive), float(self.reach_state.flow[0]))
-        redd_peaks = np.full(len(self.redd_state.alive), bool(self.reach_state.is_flow_peak[0]))
+        redd_flows = np.full(
+            len(self.redd_state.alive), float(self.reach_state.flow[0])
+        )
+        redd_peaks = np.full(
+            len(self.redd_state.alive), bool(self.reach_state.is_flow_peak[0])
+        )
 
         for i in alive_redds:
             cell = self.redd_state.cell_idx[i]
@@ -564,7 +651,10 @@ class InSTREAMModel(mesa.Model):
         new_eggs, lo, hi, dw, sc = apply_redd_survival(
             self.redd_state.num_eggs,
             self.redd_state.frac_developed,
-            redd_temps, redd_depths, redd_flows, redd_peaks,
+            redd_temps,
+            redd_depths,
+            redd_flows,
+            redd_peaks,
             step_length=step_length,
             lo_T1=sp_cfg.mort_redd_lo_temp_T1,
             lo_T9=sp_cfg.mort_redd_lo_temp_T9,
@@ -587,8 +677,11 @@ class InSTREAMModel(mesa.Model):
         for i in alive_redds:
             self.redd_state.frac_developed[i] = develop_eggs(
                 float(self.redd_state.frac_developed[i]),
-                temperature, step_length,
-                sp_cfg.redd_devel_A, sp_cfg.redd_devel_B, sp_cfg.redd_devel_C,
+                temperature,
+                step_length,
+                sp_cfg.redd_devel_A,
+                sp_cfg.redd_devel_B,
+                sp_cfg.redd_devel_C,
             )
 
         # Kill redds with 0 eggs
@@ -598,17 +691,21 @@ class InSTREAMModel(mesa.Model):
 
         # Emergence
         redd_emergence(
-            self.redd_state, self.trout_state, self.rng,
-            sp_cfg.emerge_length_min, sp_cfg.emerge_length_mode,
+            self.redd_state,
+            self.trout_state,
+            self.rng,
+            sp_cfg.emerge_length_min,
+            sp_cfg.emerge_length_mode,
             sp_cfg.emerge_length_max,
-            sp_cfg.weight_A, sp_cfg.weight_B,
+            sp_cfg.weight_A,
+            sp_cfg.weight_B,
             species_index=0,
         )
 
     def _compute_piscivore_density(self):
         """Compute piscivore density (count / area) per cell."""
         sp_cfg = self.config.species[self.species_order[0]]
-        pisciv_length = getattr(sp_cfg, 'pisciv_length', 999.0)
+        pisciv_length = getattr(sp_cfg, "pisciv_length", 999.0)
         n_cells = self.fem_space.num_cells
         pisciv_count = np.zeros(n_cells, dtype=np.float64)
         alive = self.trout_state.alive_indices()
@@ -624,6 +721,72 @@ class InSTREAMModel(mesa.Model):
         if self.time_manager.julian_date == 1:
             alive = self.trout_state.alive_indices()
             self.trout_state.age[alive] += 1
+
+    def _do_migration(self):
+        """Evaluate migration fitness and move fish downstream if warranted."""
+        from instream.modules.migration import (
+            migration_fitness,
+            should_migrate,
+            migrate_fish_downstream,
+        )
+
+        sp_cfg = self.config.species[self.species_order[0]]
+        mig_L1 = getattr(sp_cfg, "migrate_fitness_L1", 999.0)
+        mig_L9 = getattr(sp_cfg, "migrate_fitness_L9", 999.0)
+        alive = self.trout_state.alive_indices()
+        for i in alive:
+            lh = int(self.trout_state.life_history[i])
+            if lh != 1:
+                continue
+            mig_fit = migration_fitness(
+                float(self.trout_state.length[i]), mig_L1, mig_L9
+            )
+            best_hab = float(self.trout_state.last_growth_rate[i])
+            if should_migrate(mig_fit, best_hab, lh):
+                out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
+                self._outmigrants.extend(out)
+
+    def _collect_census_if_needed(self):
+        """Record census data on configured census days."""
+        from instream.io.time_manager import is_census
+
+        if not hasattr(self, "_census_records"):
+            self._census_records = []
+        current_date = self.time_manager._current_date
+        # Config census_days use "MM-dd" format; is_census expects "M/d"
+        census_days_slash = []
+        for spec in self.config.simulation.census_days:
+            parts = spec.split("-")
+            if len(parts) == 2:
+                census_days_slash.append("{}/{}".format(int(parts[0]), int(parts[1])))
+            else:
+                census_days_slash.append(spec)
+        if is_census(
+            current_date,
+            census_days_slash,
+            self.config.simulation.census_years_to_skip,
+            pd.Timestamp(self.config.simulation.start_date),
+        ):
+            alive = self.trout_state.alive_indices()
+            self._census_records.append(
+                {
+                    "date": str(current_date.date()),
+                    "num_alive": len(alive),
+                    "mean_length": float(np.mean(self.trout_state.length[alive]))
+                    if len(alive) > 0
+                    else 0.0,
+                    "mean_weight": float(np.mean(self.trout_state.weight[alive]))
+                    if len(alive) > 0
+                    else 0.0,
+                    "num_redds": int(self.redd_state.num_alive())
+                    if hasattr(self.redd_state, "num_alive")
+                    else 0,
+                }
+            )
+
+    def _do_adult_arrivals(self):
+        """Add arriving adults if adult arrival data is configured."""
+        pass  # TODO: implement when multi-reach/species is added
 
     def run(self):
         """Run the simulation until the end date."""

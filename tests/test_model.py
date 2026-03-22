@@ -1,4 +1,5 @@
 """Tests for the main InSTREAMModel simulation."""
+
 import numpy as np
 import pytest
 from pathlib import Path
@@ -10,28 +11,36 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 class TestModelInit:
     def test_initializes_from_config(self):
         from instream.model import InSTREAMModel
-        model = InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
-                              data_dir=FIXTURES_DIR / "example_a")
+
+        model = InSTREAMModel(
+            CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+        )
         assert model is not None
 
     def test_has_trout_state(self):
         from instream.model import InSTREAMModel
-        model = InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
-                              data_dir=FIXTURES_DIR / "example_a")
+
+        model = InSTREAMModel(
+            CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+        )
         assert model.trout_state is not None
         assert model.trout_state.num_alive() > 0
 
     def test_has_cell_state(self):
         from instream.model import InSTREAMModel
-        model = InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
-                              data_dir=FIXTURES_DIR / "example_a")
+
+        model = InSTREAMModel(
+            CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+        )
         assert model.fem_space is not None
         assert model.fem_space.num_cells > 0
 
     def test_has_time_manager(self):
         from instream.model import InSTREAMModel
-        model = InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
-                              data_dir=FIXTURES_DIR / "example_a")
+
+        model = InSTREAMModel(
+            CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+        )
         assert model.time_manager is not None
 
 
@@ -39,8 +48,10 @@ class TestModelStep:
     @pytest.fixture
     def model(self):
         from instream.model import InSTREAMModel
-        return InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
-                             data_dir=FIXTURES_DIR / "example_a")
+
+        return InSTREAMModel(
+            CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+        )
 
     def test_step_advances_time(self, model):
         date_before = model.time_manager.current_date
@@ -74,8 +85,10 @@ class TestModelStep:
 @pytest.fixture
 def example_a_model():
     from instream.model import InSTREAMModel
-    return InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
-                         data_dir=FIXTURES_DIR / "example_a")
+
+    return InSTREAMModel(
+        CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+    )
 
 
 def test_spawned_this_season_resets_at_season_start(example_a_model):
@@ -90,28 +103,76 @@ def test_spawned_this_season_resets_at_season_start(example_a_model):
     sp_cfg = model.config.species[model.species_order[0]]
     try:
         import pandas as pd
+
         parts = sp_cfg.spawn_start_day.split("-")
-        spawn_start_doy = int(pd.Timestamp("2000-{}-{}".format(parts[0], parts[1])).day_of_year)
+        spawn_start_doy = int(
+            pd.Timestamp("2000-{}-{}".format(parts[0], parts[1])).day_of_year
+        )
     except Exception:
         spawn_start_doy = 244
 
     # Set model time so current DOY == spawn_start_doy (satisfies transition check)
     import pandas as pd
+
     year = model.time_manager.current_date.year
-    model.time_manager._current_date = pd.Timestamp(year=year, month=1, day=1) + pd.Timedelta(days=spawn_start_doy - 1)
+    model.time_manager._current_date = pd.Timestamp(
+        year=year, month=1, day=1
+    ) + pd.Timedelta(days=spawn_start_doy - 1)
     model._prev_doy = spawn_start_doy - 1
     model._reset_spawn_season_if_needed(spawn_start_doy)
-    assert not any(model.trout_state.spawned_this_season[alive[:5]]), \
+    assert not any(model.trout_state.spawned_this_season[alive[:5]]), (
         "spawned_this_season should be reset at season start"
+    )
+
+
+def test_model_has_reach_graph():
+    from instream.model import InSTREAMModel
+
+    model = InSTREAMModel(
+        CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+    )
+    assert hasattr(model, "_reach_graph")
+    assert isinstance(model._reach_graph, dict)
+    assert hasattr(model, "_outmigrants")
+
+
+def test_model_has_census_records_after_run():
+    from instream.model import InSTREAMModel
+
+    model = InSTREAMModel(
+        CONFIGS_DIR / "example_a.yaml",
+        data_dir=FIXTURES_DIR / "example_a",
+        end_date_override="2011-07-01",
+    )  # 3 months, crosses Jun 15
+    model.run()
+    assert hasattr(model, "_census_records")
+    assert isinstance(model._census_records, list)
+    # Jun 15 should be a census day
+    dates = [r["date"] for r in model._census_records]
+    assert "2011-06-15" in dates, "Expected census on 2011-06-15, got: {}".format(dates)
+
+
+def test_model_has_adult_arrivals_stub():
+    from instream.model import InSTREAMModel
+
+    model = InSTREAMModel(
+        CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+    )
+    assert hasattr(model, "_do_adult_arrivals")
+    # Should not raise
+    model._do_adult_arrivals()
 
 
 class TestModelRun:
     def test_short_run_completes(self):
         """Run for 30 days without crash."""
         from instream.model import InSTREAMModel
-        model = InSTREAMModel(CONFIGS_DIR / "example_a.yaml",
-                              data_dir=FIXTURES_DIR / "example_a",
-                              end_date_override="2011-05-01")  # 30 days
+
+        model = InSTREAMModel(
+            CONFIGS_DIR / "example_a.yaml",
+            data_dir=FIXTURES_DIR / "example_a",
+            end_date_override="2011-05-01",
+        )  # 30 days
         model.run()
         assert model.time_manager.is_done()
         assert model.trout_state.num_alive() >= 0
