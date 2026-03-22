@@ -229,10 +229,10 @@ class TestSubDailyAdvance:
         tm = self._make_hourly_tm()
         assert tm.substep_index == 0
         tm.advance()
-        # substep_index should be 1 after first advance
-        assert tm.substep_index == 1
+        # substep_index should be 0 after first advance (first sub-step of day)
+        assert tm.substep_index == 0
         tm.advance()
-        assert tm.substep_index == 2
+        assert tm.substep_index == 1
 
     def test_daily_backward_compatible(self):
         """Daily input should behave exactly as before."""

@@ -668,7 +668,7 @@ class InSTREAMModel(mesa.Model):
         direct apply_growth behaviour exactly.
         """
         alive = self.trout_state.alive_indices()
-        steps = self.time_manager.substep_index + 1  # sub-steps completed today
+        steps = self.steps_per_day  # all sub-steps completed for this day
         sl = 1.0 / max(self.steps_per_day, 1)  # step_length per sub-step
 
         _wA = self._sp_arrays["weight_A"]

@@ -73,6 +73,9 @@ class TimeManager:
         self._substep_index: int = 0
         self._is_day_boundary: bool = True  # start of sim is a day boundary
         self._row_pointers: Dict[str, int] = {rname: 0 for rname in time_series}
+        # Track whether the previous step was a day boundary, so we know
+        # to reset substep_index on the *next* advance call.
+        self._prev_was_boundary: bool = True
 
     # ------------------------------------------------------------------
     # Properties
@@ -126,7 +129,12 @@ class TimeManager:
             return 1.0
 
         # Sub-daily mode
-        self._substep_index += 1
+        # Reset substep counter at the start of a new day
+        if self._prev_was_boundary:
+            self._substep_index = 0
+        else:
+            self._substep_index += 1
+
         for rname in self._row_pointers:
             self._row_pointers[rname] += 1
 
@@ -146,8 +154,7 @@ class TimeManager:
             next_date = first_df.index[next_idx]
             self._is_day_boundary = next_date.date() != self._current_date.date()
 
-        if self._is_day_boundary:
-            self._substep_index = 0  # will reset for next day
+        self._prev_was_boundary = self._is_day_boundary
 
         step_length = 1.0 / self._steps_per_day
         return step_length
