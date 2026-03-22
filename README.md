@@ -49,14 +49,17 @@ For background on the inSTREAM modelling framework, see:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/instream-py.git
+git clone https://github.com/razinkele/instream-py.git
 cd instream-py
 
 # Install in development mode
 pip install -e ".[dev]"
 
-# Run the example simulation
-instream run configs/example_a.yaml
+# Run Example A simulation
+instream configs/example_a.yaml --output-dir results/ --end-date 2012-01-01
+
+# Run Example B (3 reaches x 3 species)
+instream configs/example_b.yaml --data-dir tests/fixtures/example_b/ -o results_b/
 ```
 
 ## Installation
@@ -154,12 +157,12 @@ parent directory.
 
 Benchmark results on a 912-day simulation (Example A, ~300 fish):
 
-| Backend          | Full step | 912-day run | vs NetLogo |
-|------------------|-----------|-------------|------------|
-| Python (pure)    | 62 s      | ~129 min    | --         |
-| NumPy vectorized | 179 ms    | ~2.1 min    | ~30x       |
-| Numba JIT        | < 100 ms  | < 1.5 min   | ~50x       |
-| NetLogo 7.4      | ~5 s      | ~76 min     | 1x         |
+| Backend          | Full step | 912-day run | vs Pure Python |
+|------------------|-----------|-------------|----------------|
+| Python (pure)    | 62 s      | ~129 min    | 1x             |
+| NumPy vectorized | 179 ms    | ~2.1 min    | ~346x          |
+| Numba JIT        | 98 ms     | < 1.5 min   | ~633x          |
+| NetLogo 7.4      | ~5 s      | ~76 min     | ~12x           |
 
 *Measured on Intel i7-11800H, 64 GB RAM. Numba times exclude JIT warmup.*
 
@@ -215,7 +218,19 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**~58% complete** as of March 2026.
+**v0.6.0** -- ~65% complete as of March 2026.
+
+### Current Metrics
+
+| Metric          | Value                          |
+|-----------------|--------------------------------|
+| Tests           | 435+                           |
+| Validation      | 11/11 NetLogo reference tests  |
+| Step time       | 98 ms (Numba JIT)              |
+| Species         | Multi-species support          |
+| Reaches         | Multi-reach support            |
+| Output          | 6 file types + CLI             |
+| Example B       | 3 reaches x 3 species working  |
 
 ### Completed
 
@@ -225,19 +240,22 @@ property-based tests, and performance regression tests.
 - Five survival sources with logistic functions
 - Fitness-based habitat selection with survival integration
 - Spawning, egg development, and redd emergence
-- Migration framework
+- Multi-reach migration with junction network routing
+- Multi-species support (Example B: 3 reaches x 3 species)
+- Output system (6 file types: population, habitat, individual, redd, mortality, spatial)
+- CLI interface (`instream` command)
 - NumPy and Numba compute backends
-- 376+ unit tests with Hypothesis property-based testing
+- 11/11 NetLogo validation tests passing
+- 435+ unit, integration, property-based, and validation tests
 
 ### Planned
 
 - JAX GPU backend
-- Multi-reach migration with junction network routing
 - Angler harvest module
 - Habitat restoration scenario tools
 - Sensitivity analysis framework
-- Full NetLogo validation suite
 - Shiny dashboard for interactive visualization
+- CI/CD pipeline and packaging
 
 ## License
 
