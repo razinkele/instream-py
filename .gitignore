@@ -17,3 +17,4 @@ htmlcov/
 *.h5
 *.hdf5
 results/
+.hypothesis/
