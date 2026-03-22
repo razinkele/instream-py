@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-22
+
+### Added
+- All 11 validation tests now active (was 0 at v0.1.0, 5 at v0.3.0)
+- 6 new golden-snapshot reference CSVs: CStepMax, growth report, trout survival, redd survival, spawn cell suitability, fitness snapshot
+- Reference data generator covers all ecological modules (growth, survival, spawning, fitness)
+
+### Validation
+- 11/11 tests passing: GIS, depths, velocities, day length, CMax interpolation, CStepMax, growth report, trout survival, redd survival, spawn cell, fitness
+- Golden snapshots from Python v0.5.0 — ready for cross-validation against NetLogo when available
+- Note: NetLogo not installed; reference data computed by Python implementation itself (regression guard)
+
+---
+
 ## [0.5.0] - 2026-03-22
 
 ### Added
