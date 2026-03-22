@@ -1,0 +1,4 @@
+# file: C:\Users\DELL\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model.py
+# hypothesis_version: 6.151.9
+
+[0.0, 0.1, 100.0, 999.0, 244, 304, '*InitialPopulations*', '-', 'AREA', 'FRACSPWN', 'FRACVSHL', 'ID_TEXT', 'M_TO_ESC', 'NUM_HIDING', 'REACH_NAME', 'Shapefile', '_census_records', '_prev_doy', 'area', 'cell_id', 'date', 'dist_escape', 'frac_spawn', 'frac_vel_shelter', 'mean_length', 'mean_weight', 'migrate_fitness_L1', 'migrate_fitness_L9', 'num_alive', 'num_hiding_places', 'num_redds', 'pisciv_length', 'reach_name', '{}/{}']

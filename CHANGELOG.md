@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-22
+
+### Added
+- Numba brute-force candidate search replacing KD-tree queries (136ms -> 15ms)
+- Sparse per-fish candidate lists replacing dense (2000, 1373) boolean mask
+- 5 analytical validation tests activated (day length, CMax interpolation, GIS, depths, velocities)
+- Reference data generator script (`scripts/generate_analytical_reference.py`)
+- Migration wired into model.step() with reach graph construction
+- Census day data collection wired into model.step()
+- Adult arrivals stub (ready for multi-reach/species)
+
+### Performance
+- Full step: 179ms -> 98ms (1.8x faster, 633x vs original)
+- Candidate mask build: 136ms -> 15ms (9x faster via Numba brute-force)
+- Estimated full 912-day run: 2.2 min -> 1.4 min
+- Now within 2-3x of NetLogo performance (was 130x slower at v0.1.0)
+
+### Validation
+- 5/11 validation tests now active (was 0/11)
+- Tests use analytically computed reference data (no NetLogo dependency)
+
+---
+
 ## [0.2.0] - 2026-03-22
 
 ### Added
