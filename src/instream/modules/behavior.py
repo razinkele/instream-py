@@ -132,6 +132,39 @@ def build_candidate_mask(
     return mask
 
 
+def build_candidate_lists(
+    trout_state, fem_space, move_radius_max, move_radius_L1, move_radius_L9
+):
+    """Build per-fish candidate cell arrays (sparse, no dense mask).
+
+    Returns list of length capacity. Dead fish get None. Alive fish get
+    np.ndarray of wet candidate cell indices (int32).
+    """
+    n_fish = trout_state.alive.shape[0]
+    wet_mask = fem_space.cell_state.depth > 0
+    candidate_lists = [None] * n_fish
+
+    for i in range(n_fish):
+        if not trout_state.alive[i]:
+            continue
+        current_cell = trout_state.cell_idx[i]
+        if current_cell < 0:
+            continue
+        radius = movement_radius(
+            trout_state.length[i], move_radius_max, move_radius_L1, move_radius_L9
+        )
+        candidates = fem_space.cells_in_radius(current_cell, radius)
+        neighbors = fem_space.get_neighbor_indices(current_cell)
+        neighbors = neighbors[neighbors >= 0]
+        all_c = np.unique(
+            np.concatenate([candidates, neighbors, np.array([current_cell])])
+        )
+        # Vectorized wet filter (replaces Python for-loop)
+        candidate_lists[i] = all_c[wet_mask[all_c]].astype(np.int32)
+
+    return candidate_lists
+
+
 def fitness_for(
     activity,
     length,
@@ -379,7 +412,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         survival_condition as _surv_cond,
     )
 
-    mask = build_candidate_mask(
+    candidate_lists = build_candidate_lists(
         trout_state,
         fem_space,
         params["move_radius_max"],
@@ -491,8 +524,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     )
 
     for i in alive_sorted:
-        candidates = np.where(mask[i])[0]
-        if len(candidates) == 0:
+        candidates = candidate_lists[i]
+        if candidates is None or len(candidates) == 0:
             # No wet candidates — fish is stranded at current cell
             cur = trout_state.cell_idx[i]
             if cur < 0 or cur >= fem_space.num_cells:
@@ -528,7 +561,11 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         # Fish sees CURRENT resource levels (depleted by larger fish above)
         if _HAS_NUMBA_FITNESS:
             # --- Numba fast path: compiled inner loop ---
-            candidates_i32 = candidates.astype(np.int32)
+            candidates_i32 = (
+                candidates
+                if candidates.dtype == np.int32
+                else candidates.astype(np.int32)
+            )
             _hiding_arr = (
                 _c_ahiding.astype(np.float64)
                 if _c_ahiding.dtype != np.float64
