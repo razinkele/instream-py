@@ -3,7 +3,7 @@
 These tests require NetLogo reference CSVs in tests/fixtures/reference/.
 They are skipped when reference data is not available.
 """
-import numpy as np
+
 import pytest
 from pathlib import Path
 
@@ -23,37 +23,128 @@ class TestCellVariablesMatchGIS:
     """Port of NetLogo test-cell-variables."""
 
     def test_cell_variables_match_gis_file(self):
+        import numpy as np
+        import pandas as pd
+        import geopandas as gpd
+
         ref_path = require_reference("Test-GIS-contents.csv")
-        # TODO: Load reference CSV, load shapefile, compare each cell's attributes
-        # Exact match on cell-ID, reach-name; rtol=1e-6 on area, dist-escape, frac-shelter, frac-spawn
-        pytest.skip("Implementation pending — need to parse reference CSV format")
+        ref = pd.read_csv(ref_path)
+        shp_path = FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp"
+        gdf = gpd.read_file(shp_path)
+        assert len(ref) == len(gdf), "Row count mismatch: ref={} shp={}".format(
+            len(ref), len(gdf)
+        )
+        for idx, row in ref.iterrows():
+            shp_row = gdf.iloc[idx]
+            assert str(row["cell_id"]) == str(shp_row["ID_TEXT"])
+            assert row["reach_name"] == shp_row["REACH_NAME"]
+            np.testing.assert_allclose(
+                row["area_m2"],
+                shp_row["AREA"],
+                rtol=1e-6,
+                err_msg="Area mismatch at cell {}".format(row["cell_id"]),
+            )
+            np.testing.assert_allclose(
+                row["dist_escape"],
+                shp_row["M_TO_ESC"],
+                rtol=1e-6,
+                err_msg="DistEscape mismatch at cell {}".format(row["cell_id"]),
+            )
+            assert int(row["num_hiding"]) == int(shp_row["NUM_HIDING"])
+            np.testing.assert_allclose(
+                row["frac_shelter"],
+                shp_row["FRACVSHL"],
+                rtol=1e-6,
+                err_msg="FracShelter mismatch at cell {}".format(row["cell_id"]),
+            )
+            np.testing.assert_allclose(
+                row["frac_spawn"],
+                shp_row["FRACSPWN"],
+                rtol=1e-6,
+                err_msg="FracSpawn mismatch at cell {}".format(row["cell_id"]),
+            )
 
 
 class TestCellDepthsMatchNetLogo:
     """Port of NetLogo test-cell-depths."""
 
     def test_cell_depths_match_netlogo(self):
+        import numpy as np
+        import pandas as pd
+
         ref_path = require_reference("cell-depth-test-out.csv")
-        # TODO: Pick 10 cells, interpolate over 50 geometric flow series
-        # Compare to NetLogo reference, rtol=1e-6
-        pytest.skip("Implementation pending — need to parse reference CSV format")
+        ref = pd.read_csv(ref_path)
+        from instream.io.hydraulics_reader import read_depth_table
+
+        data_dir = FIXTURES_DIR / "example_a"
+        d_flows, d_vals = read_depth_table(data_dir / "ExampleA-Depths.csv")
+        for _, row in ref.iterrows():
+            ci = int(row["cell_index"])
+            flow = row["flow"]
+            expected = row["depth_m"]
+            actual = max(0.0, float(np.interp(flow, d_flows, d_vals[ci])))
+            np.testing.assert_allclose(
+                actual,
+                expected,
+                rtol=1e-5,
+                atol=1e-8,
+                err_msg="Depth mismatch at cell={} flow={}".format(ci, flow),
+            )
 
 
 class TestCellVelocitiesMatchNetLogo:
     """Port of NetLogo test-cell-velocities."""
 
     def test_cell_velocities_match_netlogo(self):
+        import numpy as np
+        import pandas as pd
+
         ref_path = require_reference("cell-vel-test-out.csv")
-        # TODO: Same structure as depth test
-        pytest.skip("Implementation pending — need to parse reference CSV format")
+        ref = pd.read_csv(ref_path)
+        from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+
+        data_dir = FIXTURES_DIR / "example_a"
+        d_flows, d_vals = read_depth_table(data_dir / "ExampleA-Depths.csv")
+        v_flows, v_vals = read_velocity_table(data_dir / "ExampleA-Vels.csv")
+        for _, row in ref.iterrows():
+            ci = int(row["cell_index"])
+            flow = row["flow"]
+            expected = row["velocity_ms"]
+            depth = float(np.interp(flow, d_flows, d_vals[ci]))
+            vel = float(np.interp(flow, v_flows, v_vals[ci]))
+            if depth <= 0:
+                vel = 0.0
+            actual = max(0.0, vel)
+            np.testing.assert_allclose(
+                actual,
+                expected,
+                rtol=1e-5,
+                atol=1e-8,
+                err_msg="Velocity mismatch at cell={} flow={}".format(ci, flow),
+            )
 
 
 class TestDayLengthMatchesNetLogo:
-    """Port of NetLogo test-day-length (will be filled in Phase 2)."""
+    """Port of NetLogo test-day-length."""
 
     def test_day_length_matches_netlogo_reference(self):
+        import pandas as pd
+
         ref_path = require_reference("test-day-length.csv")
-        pytest.skip("Phase 2 — light module not yet implemented")
+        ref = pd.read_csv(ref_path)
+        from instream.backends.numpy_backend import NumpyBackend
+
+        backend = NumpyBackend()
+        mismatches = 0
+        for _, row in ref.iterrows():
+            dl, tl, _ = backend.compute_light(
+                int(row["julian_day"]), float(row["latitude"]), 1.0, 1.0, 0.0, 6.0
+            )
+            if abs(dl - row["day_length"]) > 1e-6:
+                mismatches += 1
+        assert mismatches == 0, "{} day-length mismatches out of {} rows".format(
+            mismatches, len(ref)
+        )
 
 
 class TestGrowthReportMatchesNetLogo:
@@ -73,11 +164,26 @@ class TestCStepMaxMatchesNetLogo:
 
 
 class TestInterpolationMatchesNetLogo:
-    """Port of NetLogo write-interpolation-test-report (will be filled in Phase 3)."""
+    """Port of NetLogo write-interpolation-test-report."""
 
     def test_cmax_temp_interpolation_matches_netlogo(self):
+        import numpy as np
+        import pandas as pd
+
         ref_path = require_reference("CMaxTempFunctTestOut.csv")
-        pytest.skip("Phase 3 — growth module not yet implemented")
+        ref = pd.read_csv(ref_path)
+        from instream.modules.growth import cmax_temp_function
+
+        table_x = [0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0]
+        table_y = [0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0]
+        for _, row in ref.iterrows():
+            result = cmax_temp_function(row["temperature"], table_x, table_y)
+            np.testing.assert_allclose(
+                result,
+                row["cmax_temp_function"],
+                rtol=1e-10,
+                err_msg="CMax interp mismatch at T={}".format(row["temperature"]),
+            )
 
 
 class TestSurvivalMatchesNetLogo:
