@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-22
+
+### Added
+- Multi-reach support: per-reach hydraulic loading, light computation, resource reset
+- Multi-species support: per-fish species parameter dispatch via pre-built arrays
+- Per-fish reach-based temperature, turbidity, and intermediate lookups
+- Multi-species initial population loading from CSV
+- Per-reach per-species spawning and redd development
+- Example B config (3 reaches x 3 species) generated from NLS
+- Example B integration tests (init + 10-day + 30-day runs)
+- Case-insensitive shapefile column name resolution
+
+### Changed
+- model.py no longer hardcodes reach_order[0] or species_order[0]
+- Habitat selection uses per-fish species/reach parameters
+- Survival loop uses per-fish species/reach mortality parameters
+- Piscivore density computed with per-species length threshold
+
+---
+
 ## [0.3.0] - 2026-03-22
 
 ### Added
