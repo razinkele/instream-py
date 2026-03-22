@@ -321,25 +321,29 @@ class InSTREAMModel(mesa.Model):
             self.fem_space.cell_state.depth[cells] = depths
             self.fem_space.cell_state.velocity[cells] = vels
 
-        # 5. Compute light
+        # 5. Compute light per reach (each reach has its own shading & turbidity)
         jd = self.time_manager.julian_date
-        reach_cfg_0 = self.config.reaches[self.reach_order[0]]
-        day_length, twilight_length, irradiance = self.backend.compute_light(
-            jd,
-            self._light_cfg.latitude,
-            self._light_cfg.light_correction,
-            reach_cfg_0.shading,
-            self._light_cfg.light_at_night,
-            self._light_cfg.twilight_angle,
-        )
-        cell_light = self.backend.compute_cell_light(
-            self.fem_space.cell_state.depth,
-            irradiance,
-            reach_cfg_0.light_turbid_coef,
-            float(self.reach_state.turbidity[0]),
-            self._light_cfg.light_at_night,
-        )
-        self.fem_space.cell_state.light[:] = cell_light
+        for r_idx, rname in enumerate(self.reach_order):
+            reach_cfg = self.config.reaches[rname]
+            cells = np.where(self.fem_space.cell_state.reach_idx == r_idx)[0]
+            if len(cells) == 0:
+                continue
+            day_length, twilight_length, irradiance = self.backend.compute_light(
+                jd,
+                self._light_cfg.latitude,
+                self._light_cfg.light_correction,
+                reach_cfg.shading,
+                self._light_cfg.light_at_night,
+                self._light_cfg.twilight_angle,
+            )
+            cell_light = self.backend.compute_cell_light(
+                self.fem_space.cell_state.depth[cells],
+                irradiance,
+                reach_cfg.light_turbid_coef,
+                float(self.reach_state.turbidity[r_idx]),
+                self._light_cfg.light_at_night,
+            )
+            self.fem_space.cell_state.light[cells] = cell_light
 
         # 6. Reset cell resources
         cs = self.fem_space.cell_state
