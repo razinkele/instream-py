@@ -12,7 +12,7 @@ from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
 from instream.io.population_reader import (
     read_initial_populations,
 )
-from instream.io.time_manager import TimeManager
+from instream.io.time_manager import TimeManager, detect_frequency
 from instream.space.polygon_mesh import PolygonMesh
 from instream.space.fem_space import FEMSpace
 from instream.state.redd_state import ReddState
@@ -36,6 +36,7 @@ from instream.modules.spawning import (
     spawn_suitability,
     select_spawn_cell,
     create_redd,
+    apply_superimposition,
     apply_spawner_weight_loss,
     develop_eggs,
     redd_emergence,
@@ -164,6 +165,10 @@ class InSTREAMModel(mesa.Model):
             if not ts_path.exists():
                 ts_path = self.data_dir / Path(rcfg.time_series_input_file).name
             time_series[rname] = read_time_series(ts_path)
+
+        # Detect sub-daily frequency from first reach's time series
+        first_ts = next(iter(time_series.values()))
+        self.steps_per_day = detect_frequency(first_ts)
 
         # Time manager
         end_date = end_date_override or self.config.simulation.end_date
@@ -300,7 +305,10 @@ class InSTREAMModel(mesa.Model):
 
         from instream.state.trout_state import TroutState
 
-        self.trout_state = TroutState.zeros(self.config.performance.trout_capacity)
+        self.trout_state = TroutState.zeros(
+            self.config.performance.trout_capacity,
+            max_steps_per_day=self.steps_per_day,
+        )
         rng_pop = np.random.default_rng(self.config.simulation.seed)
         idx = 0
         for pop in populations:
@@ -349,6 +357,7 @@ class InSTREAMModel(mesa.Model):
 
         # Light config
         self._light_cfg = self.config.light
+        self._cached_solar = {}  # solar irradiance cache (computed once per day)
 
         # Pre-compute spawn suitability tables (avoid dict-to-array per step)
         self._spawn_tables = {}
@@ -392,15 +401,25 @@ class InSTREAMModel(mesa.Model):
         self._prev_doy = current_doy
 
     def step(self):
-        """Advance the simulation by one time step."""
+        """Advance the simulation by one sub-step (or full day if daily).
+
+        Operations are split into two groups:
+        A) Every sub-step: hydraulics, light, resources, habitat, survival.
+        B) Day boundary only: growth application, spawning, redds, migration,
+           census, age increment, memory reset.
+
+        When steps_per_day == 1, substep_index is always 0 and
+        is_day_boundary is always True, so every step executes both A and B
+        (backward compatible with the original daily loop).
+        """
+        # ----------------------------------------------------------------
+        # A) EVERY SUB-STEP
+        # ----------------------------------------------------------------
+
         # 1. Advance time
         step_length = self.time_manager.advance()
-
-        # 1b. Increment age on January 1
-        self._increment_age_if_new_year()
-
-        # 1c. Adult arrivals (stub for multi-reach/species)
-        self._do_adult_arrivals()
+        substep = self.time_manager.substep_index
+        is_boundary = self.time_manager.is_day_boundary
 
         # 2. Get conditions for each reach
         conditions = {}
@@ -424,10 +443,11 @@ class InSTREAMModel(mesa.Model):
             self._prev_flow[i] = current_flow
 
         # 4. Update hydraulics per reach (each reach has its own flow & tables)
+        cs = self.fem_space.cell_state
         for r_idx, rname in enumerate(self.reach_order):
             flow = float(self.reach_state.flow[r_idx])
             hdata = self._reach_hydraulic_data[rname]
-            cells = np.where(self.fem_space.cell_state.reach_idx == r_idx)[0]
+            cells = np.where(cs.reach_idx == r_idx)[0]
             if len(cells) == 0:
                 continue
             depths, vels = self.backend.update_hydraulics(
@@ -436,105 +456,94 @@ class InSTREAMModel(mesa.Model):
                 hdata["depth_values"],
                 hdata["vel_values"],
             )
-            self.fem_space.cell_state.depth[cells] = depths
-            self.fem_space.cell_state.velocity[cells] = vels
+            cs.depth[cells] = depths
+            cs.velocity[cells] = vels
 
-        # 5. Compute light per reach (each reach has its own shading & turbidity)
+        # 5. Light: solar irradiance computed once per day, cell light every sub-step
         jd = self.time_manager.julian_date
+        if substep == 0:
+            # Compute solar irradiance once per day
+            self._cached_solar = {}
+            for r_idx, rname in enumerate(self.reach_order):
+                reach_cfg = self.config.reaches[rname]
+                _dl, _tl, irr = self.backend.compute_light(
+                    jd,
+                    self._light_cfg.latitude,
+                    self._light_cfg.light_correction,
+                    reach_cfg.shading,
+                    self._light_cfg.light_at_night,
+                    self._light_cfg.twilight_angle,
+                )
+                self._cached_solar[rname] = irr
+
+        # Cell light: ALWAYS recompute (depth changes with flow)
         for r_idx, rname in enumerate(self.reach_order):
             reach_cfg = self.config.reaches[rname]
-            cells = np.where(self.fem_space.cell_state.reach_idx == r_idx)[0]
+            cells = np.where(cs.reach_idx == r_idx)[0]
             if len(cells) == 0:
                 continue
-            day_length, twilight_length, irradiance = self.backend.compute_light(
-                jd,
-                self._light_cfg.latitude,
-                self._light_cfg.light_correction,
-                reach_cfg.shading,
-                self._light_cfg.light_at_night,
-                self._light_cfg.twilight_angle,
-            )
             cell_light = self.backend.compute_cell_light(
-                self.fem_space.cell_state.depth[cells],
-                irradiance,
+                cs.depth[cells],
+                self._cached_solar[rname],
                 reach_cfg.light_turbid_coef,
                 float(self.reach_state.turbidity[r_idx]),
                 self._light_cfg.light_at_night,
             )
-            self.fem_space.cell_state.light[cells] = cell_light
+            cs.light[cells] = cell_light
 
-        # 6. Reset cell resources per reach
-        # NOTE: drift_regen_distance is loaded in config but spatial drift
-        # regeneration is not yet implemented. Drift food resets fully each
-        # step. Future work: scale drift reset by cell distance from reach
-        # boundary using cell connectivity and upstream/downstream ordering.
-        cs = self.fem_space.cell_state
-        for r_idx, rname in enumerate(self.reach_order):
-            rp = self.reach_params[rname]
-            cells = np.where(cs.reach_idx == r_idx)[0]
-            cs.available_drift[cells] = rp.drift_conc * cs.area[cells] * cs.depth[cells]
-            cs.available_search[cells] = rp.search_prod * cs.area[cells]
-            cs.available_vel_shelter[cells] = (
-                cs.frac_vel_shelter[cells] * cs.area[cells]
-            )
-        cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
+        # 6. Resources: full reset on first sub-step, partial repletion otherwise
+        if substep == 0:
+            for r_idx, rname in enumerate(self.reach_order):
+                rp = self.reach_params[rname]
+                cells = np.where(cs.reach_idx == r_idx)[0]
+                cs.available_drift[cells] = (
+                    rp.drift_conc * cs.area[cells] * cs.depth[cells]
+                )
+                cs.available_search[cells] = rp.search_prod * cs.area[cells]
+                cs.available_vel_shelter[cells] = (
+                    cs.frac_vel_shelter[cells] * cs.area[cells]
+                )
+            cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
+        else:
+            self._replenish_resources_partial(step_length)
+            # Vel shelter and hiding places reset fully each sub-step
+            for r_idx, rname in enumerate(self.reach_order):
+                cells = np.where(cs.reach_idx == r_idx)[0]
+                cs.available_vel_shelter[cells] = (
+                    cs.frac_vel_shelter[cells] * cs.area[cells]
+                )
+            cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
 
         # 7. Habitat selection & activity (per-fish species/reach dispatch)
-        # Compute piscivore density for fitness evaluation
         pisciv_densities = self._compute_piscivore_density()
 
         select_habitat_and_activity(
             self.trout_state,
             self.fem_space,
-            # Per-reach arrays
-            temperature=self.reach_state.temperature,  # shape (num_reaches,)
-            turbidity=self.reach_state.turbidity,  # shape (num_reaches,)
-            max_swim_temp_term=self.reach_state.max_swim_temp_term,  # (num_reaches, num_species)
-            resp_temp_term=self.reach_state.resp_temp_term,  # (num_reaches, num_species)
-            # Per-species arrays
+            temperature=self.reach_state.temperature,
+            turbidity=self.reach_state.turbidity,
+            max_swim_temp_term=self.reach_state.max_swim_temp_term,
+            resp_temp_term=self.reach_state.resp_temp_term,
             sp_arrays=self._sp_arrays,
             sp_cmax_table_x=self._sp_cmax_table_x,
             sp_cmax_table_y=self._sp_cmax_table_y,
-            # Per-reach parameter arrays
             rp_arrays=self._rp_arrays,
-            # Scalars
             step_length=step_length,
             pisciv_densities=pisciv_densities,
         )
 
-        # 8. Growth: use growth rate from habitat selection (not recomputed)
-        _wA_arr = self._sp_arrays["weight_A"]
-        _wB_arr = self._sp_arrays["weight_B"]
+        # 8. Store growth rate in memory (NOT applied to weight yet)
         alive = self.trout_state.alive_indices()
         for i in alive:
-            cell = self.trout_state.cell_idx[i]
-            if cell < 0 or cell >= self.fem_space.num_cells:
-                continue
-            sp_idx = int(self.trout_state.species_idx[i])
-            growth = self.trout_state.last_growth_rate[i]
-            daily_growth = growth * step_length
-            new_w, new_l, new_k = apply_growth(
-                float(self.trout_state.weight[i]),
-                float(self.trout_state.length[i]),
-                float(self.trout_state.condition[i]),
-                daily_growth,
-                float(_wA_arr[sp_idx]),
-                float(_wB_arr[sp_idx]),
+            self.trout_state.growth_memory[i, substep] = (
+                self.trout_state.last_growth_rate[i]
             )
-            self.trout_state.weight[i] = new_w
-            self.trout_state.length[i] = new_l
-            self.trout_state.condition[i] = new_k
-
-        # Split superindividuals (per-species max length)
-        _sml_arr = self._sp_arrays["superind_max_length"]
-        split_superindividuals(self.trout_state, float(np.max(_sml_arr)))
 
         # 9. Survival / mortality (per-fish species/reach dispatch)
         alive = self.trout_state.alive_indices()
         n_capacity = self.trout_state.alive.shape[0]
         survival_probs = np.ones(n_capacity, dtype=np.float64)
 
-        # Compute piscivore density for survival evaluation
         pisciv_densities_surv = self._compute_piscivore_density()
 
         _spa = self._sp_arrays
@@ -565,7 +574,6 @@ class InSTREAMModel(mesa.Model):
                 float(_spa["mort_condition_S_at_K8"][sp_idx]),
             )
 
-            # Fish predation with computed piscivore density
             s_fp = survival_fish_predation(
                 float(self.trout_state.length[i]),
                 float(cs.depth[cell]),
@@ -587,7 +595,6 @@ class InSTREAMModel(mesa.Model):
                 float(_spa["mort_fish_pred_hiding_factor"][sp_idx]),
             )
 
-            # Terrestrial predation
             s_tp = survival_terrestrial_predation(
                 float(self.trout_state.length[i]),
                 float(cs.depth[cell]),
@@ -617,20 +624,100 @@ class InSTREAMModel(mesa.Model):
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)
 
-        # 10. Spawning (per-fish species/reach dispatch)
-        self._do_spawning(step_length)
+        # ----------------------------------------------------------------
+        # B) DAY-BOUNDARY ONLY OPERATIONS
+        # ----------------------------------------------------------------
+        if is_boundary:
+            # Apply accumulated growth (sum growth_memory across sub-steps)
+            self._apply_accumulated_growth()
 
-        # 11. Redd survival, development, emergence (per-redd species/reach)
-        self._do_redd_step(step_length)
+            # Split superindividuals (per-species max length)
+            _sml_arr = self._sp_arrays["superind_max_length"]
+            split_superindividuals(self.trout_state, float(np.max(_sml_arr)))
 
-        # 12. Migration
-        self._do_migration()
+            # Spawning (per-fish species/reach dispatch)
+            self._do_spawning(step_length)
 
-        # 13. Sync Mesa agents
-        sync_trout_agents(self)
+            # Redd survival, development, emergence (per-redd species/reach)
+            self._do_redd_step(step_length)
 
-        # 14. Census data collection
-        self._collect_census_if_needed()
+            # Migration
+            self._do_migration()
+
+            # Increment age on January 1
+            self._increment_age_if_new_year()
+
+            # Adult arrivals (stub for multi-reach/species)
+            self._do_adult_arrivals()
+
+            # Census data collection
+            self._collect_census_if_needed()
+
+            # Sync Mesa agents
+            sync_trout_agents(self)
+
+            # Reset memory for next day
+            self.trout_state.growth_memory[:] = 0.0
+            self.trout_state.consumption_memory[:] = 0.0
+
+    def _apply_accumulated_growth(self):
+        """Sum growth_memory across sub-steps and apply to weight/length/condition.
+
+        For daily mode (steps_per_day == 1), growth_memory[i, 0] holds the
+        single growth rate and step_length is 1.0, matching the original
+        direct apply_growth behaviour exactly.
+        """
+        alive = self.trout_state.alive_indices()
+        steps = self.time_manager.substep_index + 1  # sub-steps completed today
+        sl = 1.0 / max(self.steps_per_day, 1)  # step_length per sub-step
+
+        _wA = self._sp_arrays["weight_A"]
+        _wB = self._sp_arrays["weight_B"]
+
+        for i in alive:
+            cell = self.trout_state.cell_idx[i]
+            if cell < 0 or cell >= self.fem_space.num_cells:
+                continue
+            total_growth = 0.0
+            for s in range(steps):
+                total_growth += float(self.trout_state.growth_memory[i, s]) * sl
+            sp_idx = int(self.trout_state.species_idx[i])
+            new_w, new_l, new_k = apply_growth(
+                float(self.trout_state.weight[i]),
+                float(self.trout_state.length[i]),
+                float(self.trout_state.condition[i]),
+                total_growth,
+                float(_wA[sp_idx]),
+                float(_wB[sp_idx]),
+            )
+            self.trout_state.weight[i] = new_w
+            self.trout_state.length[i] = new_l
+            self.trout_state.condition[i] = new_k
+
+    def _replenish_resources_partial(self, step_length):
+        """Partially replenish drift and search food between sub-steps.
+
+        Resources regenerate proportionally to step_length but are capped
+        at the full-day maximum so they never exceed the daily reset value.
+        """
+        cs = self.fem_space.cell_state
+        for r_idx, rname in enumerate(self.reach_order):
+            rp = self.reach_params[rname]
+            cells = np.where(cs.reach_idx == r_idx)[0]
+            if len(cells) == 0:
+                continue
+            # Partial replenishment
+            cs.available_drift[cells] += (
+                rp.drift_conc * cs.area[cells] * cs.depth[cells] * step_length
+            )
+            cs.available_search[cells] += rp.search_prod * cs.area[cells] * step_length
+            # Cap at daily maximum
+            max_drift = rp.drift_conc * cs.area[cells] * cs.depth[cells]
+            cs.available_drift[cells] = np.minimum(cs.available_drift[cells], max_drift)
+            max_search = rp.search_prod * cs.area[cells]
+            cs.available_search[cells] = np.minimum(
+                cs.available_search[cells], max_search
+            )
 
     def _do_spawning(self, step_length):
         """Check spawning readiness and create redds (per-fish species/reach)."""
