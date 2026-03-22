@@ -1,15 +1,32 @@
 """Bioenergetics module — CMax, consumption, swim speed, intake, respiration, growth."""
+
+import bisect
 import dataclasses as _dc
 import math
 
-import numpy as np
 
 _LN81 = math.log(81.0)
 
 
 def cmax_temp_function(temperature, table_x, table_y):
-    """CMax temperature multiplier from interpolation table."""
-    return float(np.interp(temperature, table_x, table_y))
+    """CMax temperature multiplier via linear interpolation.
+
+    Uses bisect for O(log n) scalar lookup (avoids np.interp dispatch overhead).
+    Accepts numpy arrays or Python lists for table_x/table_y.
+    """
+    if hasattr(table_x, "tolist"):
+        table_x = table_x.tolist()
+        table_y = table_y.tolist()
+    n = len(table_x)
+    if n == 0:
+        return 0.0
+    if temperature <= table_x[0]:
+        return table_y[0]
+    if temperature >= table_x[-1]:
+        return table_y[-1]
+    i = bisect.bisect_right(table_x, temperature)
+    frac = (temperature - table_x[i - 1]) / (table_x[i] - table_x[i - 1])
+    return table_y[i - 1] + frac * (table_y[i] - table_y[i - 1])
 
 
 def c_stepmax(cmax_wt_term, cmax_temp, prev_consumption, step_length):
@@ -42,17 +59,33 @@ def drift_swim_speed(velocity, fish_length, available_shelter, shelter_speed_fra
     If velocity shelter is available (shelter area > fish_length²),
     the fish swims at reduced speed.
     """
-    if available_shelter > fish_length ** 2:
+    if available_shelter > fish_length**2:
         return velocity * shelter_speed_frac
     return velocity
 
 
-def drift_intake(length, depth, velocity, light, turbidity, drift_conc,
-                 max_swim_speed, c_stepmax_val, available_drift, superind_rep,
-                 react_dist_A, react_dist_B,
-                 turbid_threshold, turbid_min, turbid_exp,
-                 light_threshold, light_min, light_exp,
-                 capture_R1, capture_R9):
+def drift_intake(
+    length,
+    depth,
+    velocity,
+    light,
+    turbidity,
+    drift_conc,
+    max_swim_speed,
+    c_stepmax_val,
+    available_drift,
+    superind_rep,
+    react_dist_A,
+    react_dist_B,
+    turbid_threshold,
+    turbid_min,
+    turbid_exp,
+    light_threshold,
+    light_min,
+    light_exp,
+    capture_R1,
+    capture_R9,
+):
     """Daily gross drift feeding intake (g/d).
 
     Implements NetLogo drift-intake-for (Task 3.5).
@@ -68,14 +101,16 @@ def drift_intake(length, depth, velocity, light, turbidity, drift_conc,
         turbid_func = 1.0
     else:
         turbid_func = turbid_min + (1 - turbid_min) * math.exp(
-            turbid_exp * (turbidity - turbid_threshold))
+            turbid_exp * (turbidity - turbid_threshold)
+        )
 
     # 3. Light function
     if light >= light_threshold:
         light_func = 1.0
     else:
         light_func = light_min + (1 - light_min) * math.exp(
-            light_exp * (light_threshold - light))
+            light_exp * (light_threshold - light)
+        )
 
     # 4. Adjusted detection distance
     detect_dist *= turbid_func * light_func
@@ -104,8 +139,15 @@ def drift_intake(length, depth, velocity, light, turbidity, drift_conc,
     return gross
 
 
-def search_intake(velocity, max_swim_speed, search_prod, search_area,
-                  c_stepmax_val, available_search, superind_rep):
+def search_intake(
+    velocity,
+    max_swim_speed,
+    search_prod,
+    search_area,
+    c_stepmax_val,
+    available_search,
+    superind_rep,
+):
     """Daily gross search feeding intake (g/d).
 
     Implements NetLogo search-intake-for (Task 3.6).
@@ -121,8 +163,7 @@ def search_intake(velocity, max_swim_speed, search_prod, search_area,
     return gross
 
 
-def respiration(resp_std_wt_term, resp_temp_term, swim_speed, max_swim_speed,
-                resp_D):
+def respiration(resp_std_wt_term, resp_temp_term, swim_speed, max_swim_speed, resp_D):
     """Total respiration (J/d).
 
     Implements NetLogo respiration-for (Task 3.7).
@@ -133,25 +174,53 @@ def respiration(resp_std_wt_term, resp_temp_term, swim_speed, max_swim_speed,
     if ratio > 20:
         return 999999.0
     resp_standard = resp_std_wt_term * resp_temp_term
-    resp_activity = math.exp(resp_D * ratio ** 2)
+    resp_activity = math.exp(resp_D * ratio**2)
     return resp_standard * resp_activity
 
 
-def growth_rate_for(activity, length, weight, depth, velocity, light,
-                    turbidity, temperature,
-                    drift_conc, search_prod, search_area,
-                    available_drift, available_search,
-                    available_shelter, shelter_speed_frac,
-                    superind_rep, prev_consumption, step_length,
-                    cmax_A, cmax_B,
-                    cmax_temp_table_x, cmax_temp_table_y,
-                    react_dist_A, react_dist_B,
-                    turbid_threshold, turbid_min, turbid_exp,
-                    light_threshold, light_min, light_exp,
-                    capture_R1, capture_R9,
-                    max_speed_A, max_speed_B, max_swim_temp_term,
-                    resp_A, resp_B, resp_D, resp_temp_term,
-                    prey_energy_density, fish_energy_density):
+def growth_rate_for(
+    activity,
+    length,
+    weight,
+    depth,
+    velocity,
+    light,
+    turbidity,
+    temperature,
+    drift_conc,
+    search_prod,
+    search_area,
+    available_drift,
+    available_search,
+    available_shelter,
+    shelter_speed_frac,
+    superind_rep,
+    prev_consumption,
+    step_length,
+    cmax_A,
+    cmax_B,
+    cmax_temp_table_x,
+    cmax_temp_table_y,
+    react_dist_A,
+    react_dist_B,
+    turbid_threshold,
+    turbid_min,
+    turbid_exp,
+    light_threshold,
+    light_min,
+    light_exp,
+    capture_R1,
+    capture_R9,
+    max_speed_A,
+    max_speed_B,
+    max_swim_temp_term,
+    resp_A,
+    resp_B,
+    resp_D,
+    resp_temp_term,
+    prey_energy_density,
+    fish_energy_density,
+):
     """Compute growth rate (g/d) for a fish at a cell with given activity.
 
     Implements NetLogo growth-rate-for (Task 3.8).
@@ -166,34 +235,59 @@ def growth_rate_for(activity, length, weight, depth, velocity, light,
         act = int(activity)
 
     # Pre-compute intermediates
-    cmax_wt_term = cmax_A * weight ** cmax_B
+    cmax_wt_term = cmax_A * weight**cmax_B
     cmax_temp = cmax_temp_function(temperature, cmax_temp_table_x, cmax_temp_table_y)
     cstepmax = c_stepmax(cmax_wt_term, cmax_temp, prev_consumption, step_length)
     max_speed_len_term = max_speed_A * length + max_speed_B
     max_speed = max_swim_speed(max_speed_len_term, max_swim_temp_term)
-    resp_std_wt_term = resp_A * weight ** resp_B
+    resp_std_wt_term = resp_A * weight**resp_B
 
     if act == 0:  # drift
-        intake = drift_intake(length, depth, velocity, light, turbidity, drift_conc,
-                              max_speed, cstepmax, available_drift, superind_rep,
-                              react_dist_A, react_dist_B,
-                              turbid_threshold, turbid_min, turbid_exp,
-                              light_threshold, light_min, light_exp,
-                              capture_R1, capture_R9)
-        swim_speed = drift_swim_speed(velocity, length, available_shelter,
-                                      shelter_speed_frac)
-        resp = respiration(resp_std_wt_term, resp_temp_term, swim_speed,
-                           max_speed, resp_D)
+        intake = drift_intake(
+            length,
+            depth,
+            velocity,
+            light,
+            turbidity,
+            drift_conc,
+            max_speed,
+            cstepmax,
+            available_drift,
+            superind_rep,
+            react_dist_A,
+            react_dist_B,
+            turbid_threshold,
+            turbid_min,
+            turbid_exp,
+            light_threshold,
+            light_min,
+            light_exp,
+            capture_R1,
+            capture_R9,
+        )
+        swim_speed = drift_swim_speed(
+            velocity, length, available_shelter, shelter_speed_frac
+        )
+        resp = respiration(
+            resp_std_wt_term, resp_temp_term, swim_speed, max_speed, resp_D
+        )
         net_energy = intake * prey_energy_density - resp
     elif act == 1:  # search
-        intake = search_intake(velocity, max_speed, search_prod, search_area,
-                               cstepmax, available_search, superind_rep)
-        resp = respiration(resp_std_wt_term, resp_temp_term, velocity,
-                           max_speed, resp_D)
+        intake = search_intake(
+            velocity,
+            max_speed,
+            search_prod,
+            search_area,
+            cstepmax,
+            available_search,
+            superind_rep,
+        )
+        resp = respiration(
+            resp_std_wt_term, resp_temp_term, velocity, max_speed, resp_D
+        )
         net_energy = intake * prey_energy_density - resp
     elif act == 2:  # hide
-        resp = respiration(resp_std_wt_term, resp_temp_term, 0.0,
-                           max_speed, resp_D)
+        resp = respiration(resp_std_wt_term, resp_temp_term, 0.0, max_speed, resp_D)
         net_energy = -resp
     else:
         raise ValueError(f"Unknown activity: {activity}")
@@ -203,7 +297,7 @@ def growth_rate_for(activity, length, weight, depth, velocity, light,
 
 def weight_from_length_and_condition(length, condition, weight_A, weight_B):
     """Compute weight from length, condition factor, and allometric params."""
-    return condition * weight_A * length ** weight_B
+    return condition * weight_A * length**weight_B
 
 
 def length_for_weight(weight, weight_A, weight_B):
@@ -221,7 +315,7 @@ def apply_growth(weight, length, condition, growth, weight_A, weight_B):
     new_weight = weight + growth
     if new_weight < 0:
         new_weight = 0.0
-    healthy_weight = weight_A * length ** weight_B
+    healthy_weight = weight_A * length**weight_B
     if new_weight > healthy_weight:
         new_length = length_for_weight(new_weight, weight_A, weight_B)
         new_condition = 1.0
@@ -242,8 +336,11 @@ def split_superindividuals(trout_state, max_length):
     """
     global _TROUT_FIELDS
     if _TROUT_FIELDS is None:
-        _TROUT_FIELDS = [f for f in _dc.fields(trout_state)
-                         if f.name not in ('alive', 'superind_rep')]
+        _TROUT_FIELDS = [
+            f
+            for f in _dc.fields(trout_state)
+            if f.name not in ("alive", "superind_rep")
+        ]
 
     for i in trout_state.alive_indices():
         if trout_state.superind_rep[i] <= 1:
