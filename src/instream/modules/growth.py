@@ -1,7 +1,10 @@
 """Bioenergetics module — CMax, consumption, swim speed, intake, respiration, growth."""
 import dataclasses as _dc
+import math
 
 import numpy as np
+
+_LN81 = math.log(81.0)
 
 
 def cmax_temp_function(temperature, table_x, table_y):
@@ -64,14 +67,14 @@ def drift_intake(length, depth, velocity, light, turbidity, drift_conc,
     if turbidity <= turbid_threshold:
         turbid_func = 1.0
     else:
-        turbid_func = turbid_min + (1 - turbid_min) * np.exp(
+        turbid_func = turbid_min + (1 - turbid_min) * math.exp(
             turbid_exp * (turbidity - turbid_threshold))
 
     # 3. Light function
     if light >= light_threshold:
         light_func = 1.0
     else:
-        light_func = light_min + (1 - light_min) * np.exp(
+        light_func = light_min + (1 - light_min) * math.exp(
             light_exp * (light_threshold - light))
 
     # 4. Adjusted detection distance
@@ -88,8 +91,8 @@ def drift_intake(length, depth, velocity, light, turbidity, drift_conc,
         capture_success = 0.5
     else:
         midpoint = (capture_R1 + capture_R9) / 2.0
-        slope = np.log(81.0) / (capture_R9 - capture_R1)
-        capture_success = 1.0 / (1.0 + np.exp(-slope * (vel_ratio - midpoint)))
+        slope = _LN81 / (capture_R9 - capture_R1)
+        capture_success = 1.0 / (1.0 + math.exp(-slope * (vel_ratio - midpoint)))
 
     # 7. Gross intake (g/d)
     gross = capture_area * drift_conc * velocity * 86400.0 * capture_success
@@ -130,7 +133,7 @@ def respiration(resp_std_wt_term, resp_temp_term, swim_speed, max_swim_speed,
     if ratio > 20:
         return 999999.0
     resp_standard = resp_std_wt_term * resp_temp_term
-    resp_activity = np.exp(resp_D * ratio ** 2)
+    resp_activity = math.exp(resp_D * ratio ** 2)
     return resp_standard * resp_activity
 
 

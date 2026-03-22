@@ -1,4 +1,5 @@
 """Behavioral decisions — logistic functions, candidate mask, fitness, habitat selection."""
+import math
 import numpy as np
 
 from instream.modules.growth import (
@@ -7,14 +8,23 @@ from instream.modules.growth import (
     cmax_temp_function, c_stepmax,
 )
 
+# Pre-compute constant used in every logistic call
+_LN81 = math.log(81.0)
+
 
 def evaluate_logistic(x, L1, L9):
-    """Evaluate logistic function where f(L1)=0.1 and f(L9)=0.9. Scalar version."""
-    midpoint = (L1 + L9) / 2.0
-    slope = np.log(81.0) / (L9 - L1) if L9 != L1 else 0.0
+    """Evaluate logistic function where f(L1)=0.1 and f(L9)=0.9. Scalar version.
+
+    Uses pure Python math (not numpy) to avoid 0-d array dispatch overhead.
+    """
+    midpoint = (L1 + L9) * 0.5
+    slope = _LN81 / (L9 - L1) if L9 != L1 else 0.0
     arg = -slope * (x - midpoint)
-    arg = float(np.clip(arg, -500, 500))
-    return float(1.0 / (1.0 + np.exp(arg)))
+    if arg > 500.0:
+        arg = 500.0
+    elif arg < -500.0:
+        arg = -500.0
+    return 1.0 / (1.0 + math.exp(arg))
 
 
 def evaluate_logistic_array(x, L1, L9):
