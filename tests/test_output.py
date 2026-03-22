@@ -1,0 +1,85 @@
+"""Tests for output writer module."""
+
+
+
+def test_write_population_census(tmp_path):
+    from instream.io.output import write_population_census
+
+    records = [
+        {
+            "date": "2011-06-15",
+            "num_alive": 300,
+            "mean_length": 12.5,
+            "mean_weight": 25.0,
+            "num_redds": 0,
+        },
+        {
+            "date": "2011-09-30",
+            "num_alive": 250,
+            "mean_length": 14.0,
+            "mean_weight": 30.0,
+            "num_redds": 5,
+        },
+    ]
+    path = write_population_census(records, tmp_path)
+    assert path.exists()
+    lines = path.read_text().strip().split("\n")
+    assert len(lines) == 3  # header + 2 rows
+
+
+def test_write_population_census_empty(tmp_path):
+    from instream.io.output import write_population_census
+
+    result = write_population_census([], tmp_path)
+    assert result is None
+
+
+def test_write_fish_snapshot(tmp_path):
+    from instream.state.trout_state import TroutState
+    from instream.io.output import write_fish_snapshot
+
+    ts = TroutState.zeros(10)
+    ts.alive[:3] = True
+    ts.length[:3] = [10.0, 12.0, 8.0]
+    ts.weight[:3] = [15.0, 20.0, 10.0]
+    ts.condition[:3] = 1.0
+    path = write_fish_snapshot(ts, ["Rainbow"], "2011-06-15", tmp_path)
+    assert path.exists()
+    lines = path.read_text().strip().split("\n")
+    assert len(lines) == 4  # header + 3 fish
+
+
+def test_write_redd_snapshot(tmp_path):
+    from instream.state.redd_state import ReddState
+    from instream.io.output import write_redd_snapshot
+
+    rs = ReddState.zeros(5)
+    rs.alive[0] = True
+    rs.cell_idx[0] = 3
+    rs.num_eggs[0] = 100
+    path = write_redd_snapshot(rs, ["Rainbow"], "2011-06-15", tmp_path)
+    assert path.exists()
+    lines = path.read_text().strip().split("\n")
+    assert len(lines) == 2  # header + 1 redd
+
+
+def test_write_outmigrants(tmp_path):
+    from instream.io.output import write_outmigrants
+
+    outmigrants = [
+        {"species_idx": 0, "length": 12.5, "reach_idx": 0},
+        {"species_idx": 0, "length": 14.0, "reach_idx": 1},
+    ]
+    path = write_outmigrants(outmigrants, ["Rainbow"], tmp_path)
+    assert path.exists()
+    lines = path.read_text().strip().split("\n")
+    assert len(lines) == 3  # header + 2 records
+
+
+def test_write_outmigrants_empty(tmp_path):
+    from instream.io.output import write_outmigrants
+
+    path = write_outmigrants([], ["Rainbow"], tmp_path)
+    assert path.exists()
+    lines = path.read_text().strip().split("\n")
+    assert len(lines) == 1  # header only
