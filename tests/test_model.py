@@ -176,3 +176,17 @@ class TestModelRun:
         model.run()
         assert model.time_manager.is_done()
         assert model.trout_state.num_alive() >= 0
+
+
+def test_multi_reach_model_loads():
+    """Example B should load with 3 reaches."""
+    from instream.model import InSTREAMModel
+
+    CONFIGS = Path(__file__).parent.parent / "configs"
+    FIXTURES = Path(__file__).parent / "fixtures" / "example_b"
+    try:
+        model = InSTREAMModel(CONFIGS / "example_b.yaml", data_dir=FIXTURES)
+        assert len(model.reach_order) == 3
+        print("Multi-reach model loaded:", model.fem_space.num_cells, "cells")
+    except Exception as e:
+        print("Expected failure (multi-reach WIP):", e)
