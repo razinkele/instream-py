@@ -250,3 +250,48 @@ def test_numba_evaluate_all_cells_matches_python():
         best_a, py_best_a
     )
     np.testing.assert_allclose(best_fit, py_best_fit, rtol=1e-10)
+
+
+# ---- JAX backend tests ----
+
+
+def test_jax_backend_hydraulics():
+    pytest.importorskip("jax")
+    import numpy as np
+    from instream.backends.jax_backend import JaxBackend
+
+    backend = JaxBackend()
+    flows = np.array([1.0, 5.0, 10.0])
+    depths = np.array([[5.0, 10.0, 20.0], [3.0, 8.0, 15.0]])
+    vels = np.array([[1.0, 3.0, 5.0], [0.5, 2.0, 4.0]])
+    d, v = backend.update_hydraulics(5.0, flows, depths, vels)
+    np.testing.assert_allclose(d, [10.0, 8.0], rtol=1e-10)
+    np.testing.assert_allclose(v, [3.0, 2.0], rtol=1e-10)
+
+
+def test_jax_backend_logistic():
+    pytest.importorskip("jax")
+    import numpy as np
+    from instream.backends.jax_backend import JaxBackend
+    from instream.backends.numpy_backend import NumpyBackend
+
+    jax_b = JaxBackend()
+    np_b = NumpyBackend()
+    x = np.array([5.0, 10.0, 15.0, 20.0])
+    jax_result = jax_b.evaluate_logistic(x, 10.0, 20.0)
+    np_result = np_b.evaluate_logistic(x, 10.0, 20.0)
+    np.testing.assert_allclose(jax_result, np_result, rtol=1e-10)
+
+
+def test_jax_backend_cell_light():
+    pytest.importorskip("jax")
+    import numpy as np
+    from instream.backends.jax_backend import JaxBackend
+    from instream.backends.numpy_backend import NumpyBackend
+
+    jax_b = JaxBackend()
+    np_b = NumpyBackend()
+    depths = np.array([10.0, 30.0, 50.0, 0.0])
+    jax_light = jax_b.compute_cell_light(depths, 800.0, 0.01, 5.0, 0.01)
+    np_light = np_b.compute_cell_light(depths, 800.0, 0.01, 5.0, 0.01)
+    np.testing.assert_allclose(jax_light, np_light, rtol=1e-10)
