@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-22
+
+### Added
+- Output writer module (`io/output.py`) with 6 file types: census, fish/redd/cell snapshots, outmigrants, summary
+- `write_outputs()` method on InSTREAMModel, called automatically at end of `run()`
+- Redd superimposition: existing redd eggs reduced when new redd placed on same cell
+- Working CLI: `instream config.yaml --output-dir results/ --end-date 2012-01-01`
+- 8 new tests (output writers, superimposition)
+
+### Changed
+- `create_redd()` returns slot index (not bool) for superimposition support
+- `run()` now calls `write_outputs()` at completion
+- CLI uses argparse with config, --data-dir, --output-dir, --end-date, --quiet
+
+---
+
 ## [0.4.0] - 2026-03-22
 
 ### Added
