@@ -727,7 +727,7 @@ class InSTREAMModel(mesa.Model):
             best_cell = select_spawn_cell(scores, candidates)
             reach_idx = int(cs.reach_idx[best_cell])
 
-            created = create_redd(
+            new_redd_slot = create_redd(
                 self.redd_state,
                 species_idx=sp_idx,
                 cell_idx=best_cell,
@@ -737,7 +737,12 @@ class InSTREAMModel(mesa.Model):
                 fecund_exp=sp_cfg.spawn_fecund_exp,
                 egg_viability=sp_cfg.spawn_egg_viability,
             )
-            if created:
+            if new_redd_slot >= 0:
+                apply_superimposition(
+                    self.redd_state,
+                    new_redd_slot,
+                    float(cs.area[best_cell]),
+                )
                 new_w = apply_spawner_weight_loss(
                     float(self.trout_state.weight[i]),
                     sp_cfg.spawn_wt_loss_fraction,

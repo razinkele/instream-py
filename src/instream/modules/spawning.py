@@ -1,12 +1,27 @@
 """Spawning module — readiness checks, cell selection, redd creation (Tasks 6.1-6.3)."""
+
 import numpy as np
 
 
 def ready_to_spawn(
-    sex, age, length, condition, temperature, flow, spawned_this_season,
-    day_of_year, spawn_min_age, spawn_min_length, spawn_min_cond,
-    spawn_min_temp, spawn_max_temp, spawn_prob, max_spawn_flow,
-    spawn_start_doy, spawn_end_doy, rng,
+    sex,
+    age,
+    length,
+    condition,
+    temperature,
+    flow,
+    spawned_this_season,
+    day_of_year,
+    spawn_min_age,
+    spawn_min_length,
+    spawn_min_cond,
+    spawn_min_temp,
+    spawn_max_temp,
+    spawn_prob,
+    max_spawn_flow,
+    spawn_start_doy,
+    spawn_end_doy,
+    rng,
 ):
     """Check whether a fish is ready to spawn (Task 6.1).
 
@@ -87,9 +102,16 @@ def ready_to_spawn(
     return True
 
 
-def spawn_suitability(depth, velocity, frac_spawn, area,
-                      depth_table_x, depth_table_y,
-                      vel_table_x, vel_table_y):
+def spawn_suitability(
+    depth,
+    velocity,
+    frac_spawn,
+    area,
+    depth_table_x,
+    depth_table_y,
+    vel_table_x,
+    vel_table_y,
+):
     """Compute spawn suitability score for a cell (Task 6.2).
 
     Parameters
@@ -134,8 +156,16 @@ def select_spawn_cell(scores, candidates):
     return int(candidates[best_idx])
 
 
-def create_redd(redd_state, species_idx, cell_idx, reach_idx,
-                weight, fecund_mult, fecund_exp, egg_viability):
+def create_redd(
+    redd_state,
+    species_idx,
+    cell_idx,
+    reach_idx,
+    weight,
+    fecund_mult,
+    fecund_exp,
+    egg_viability,
+):
     """Create a new redd in the first available slot (Task 6.3).
 
     Parameters
@@ -153,14 +183,14 @@ def create_redd(redd_state, species_idx, cell_idx, reach_idx,
 
     Returns
     -------
-    bool
-        True if redd was created, False if no slot available.
+    int
+        Slot index of the new redd (>= 0), or -1 if no slot available.
     """
     slot = redd_state.first_dead_slot()
     if slot < 0:
-        return False
+        return -1
 
-    num_eggs = int(fecund_mult * weight ** fecund_exp * egg_viability)
+    num_eggs = int(fecund_mult * weight**fecund_exp * egg_viability)
 
     redd_state.alive[slot] = True
     redd_state.species_idx[slot] = species_idx
@@ -171,7 +201,35 @@ def create_redd(redd_state, species_idx, cell_idx, reach_idx,
     redd_state.frac_developed[slot] = 0.0
     redd_state.emerge_days[slot] = 0
 
-    return True
+    return slot
+
+
+def apply_superimposition(redd_state, new_redd_idx, redd_area):
+    """Reduce eggs in existing redds on the same cell as the new redd.
+
+    Each existing redd loses a fraction of eggs proportional to
+    redd_area / cell_area overlap. Simplified: lose 50% of remaining eggs
+    when superimposed.
+
+    Parameters
+    ----------
+    redd_state : ReddState
+        Redd state arrays (modified in place).
+    new_redd_idx : int
+        Index of the newly created redd.
+    redd_area : float
+        Area of the redd (currently unused; fixed 50% loss).
+    """
+    cell = redd_state.cell_idx[new_redd_idx]
+    alive_redds = np.where(redd_state.alive)[0]
+    for i in alive_redds:
+        if i == new_redd_idx:
+            continue
+        if redd_state.cell_idx[i] == cell:
+            # Existing redd loses eggs from disturbance
+            lost = redd_state.num_eggs[i] // 2
+            redd_state.num_eggs[i] -= lost
+            redd_state.eggs_scour[i] += lost
 
 
 def apply_spawner_weight_loss(weight, wt_loss_fraction):
@@ -192,8 +250,7 @@ def apply_spawner_weight_loss(weight, wt_loss_fraction):
     return weight * (1.0 - wt_loss_fraction)
 
 
-def develop_eggs(frac_developed, temperature, step_length,
-                 devel_A, devel_B, devel_C):
+def develop_eggs(frac_developed, temperature, step_length, devel_A, devel_B, devel_C):
     """Advance egg fractional development (Task 6.4).
 
     Parameters
@@ -212,15 +269,24 @@ def develop_eggs(frac_developed, temperature, step_length,
     float
         Updated fractional development.
     """
-    increment = (devel_A + devel_B * temperature
-                 + devel_C * temperature * temperature) * step_length
+    increment = (
+        devel_A + devel_B * temperature + devel_C * temperature * temperature
+    ) * step_length
     increment = max(0.0, increment)
     return frac_developed + increment
 
 
-def redd_emergence(redd_state, trout_state, rng,
-                   emerge_length_min, emerge_length_mode, emerge_length_max,
-                   weight_A, weight_B, species_index):
+def redd_emergence(
+    redd_state,
+    trout_state,
+    rng,
+    emerge_length_min,
+    emerge_length_mode,
+    emerge_length_max,
+    weight_A,
+    weight_B,
+    species_index,
+):
     """Hatch eggs from fully-developed redds and create new trout (Task 6.5).
 
     For each alive redd of the given species with frac_developed >= 1.0,
@@ -266,9 +332,10 @@ def redd_emergence(redd_state, trout_state, rng,
             continue
 
         slots = dead_slots[:n_slots]
-        lengths = rng.triangular(emerge_length_min, emerge_length_mode,
-                                  emerge_length_max, size=n_slots)
-        weights = weight_A * lengths ** weight_B
+        lengths = rng.triangular(
+            emerge_length_min, emerge_length_mode, emerge_length_max, size=n_slots
+        )
+        weights = weight_A * lengths**weight_B
 
         ts.alive[slots] = True
         ts.species_idx[slots] = rs.species_idx[i]
