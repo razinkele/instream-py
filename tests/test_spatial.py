@@ -1,4 +1,5 @@
 """Tests for spatial mesh backends and FEMSpace."""
+
 import numpy as np
 import pytest
 from pathlib import Path
@@ -11,7 +12,7 @@ class TestPolygonMesh:
 
     def test_load_example_a_cell_count(self):
         from instream.space.polygon_mesh import PolygonMesh
-        from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
             id_field="ID_TEXT",
@@ -26,22 +27,32 @@ class TestPolygonMesh:
 
     def test_load_example_a_areas_positive(self):
         from instream.space.polygon_mesh import PolygonMesh
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
         assert np.all(mesh.areas > 0)
 
     def test_load_example_a_areas_in_cm2(self):
         """Areas from shapefile are in m²; must be converted to cm² (×10000)."""
         from instream.space.polygon_mesh import PolygonMesh
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
         # Areas should be in cm² (m² × 10000); the smallest cell is ~0.4 m² = ~3991 cm²
         # Check that conversion happened: mean area should be >> 1 (would be ~12.6 if still in m²)
@@ -51,33 +62,48 @@ class TestPolygonMesh:
 
     def test_load_example_a_has_centroids(self):
         from instream.space.polygon_mesh import PolygonMesh
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
         assert len(mesh.centroids_x) == mesh.num_cells
         assert len(mesh.centroids_y) == mesh.num_cells
 
     def test_load_example_a_reach_names(self):
         from instream.space.polygon_mesh import PolygonMesh
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
         # All cells in Example A belong to reach "ExampleA"
         assert all(r == "ExampleA" for r in mesh.reach_names)
 
     def test_load_example_a_cell_attributes(self):
         from instream.space.polygon_mesh import PolygonMesh
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
         assert len(mesh.frac_spawn) == mesh.num_cells
         assert len(mesh.frac_vel_shelter) == mesh.num_cells
@@ -86,11 +112,16 @@ class TestPolygonMesh:
 
     def test_adjacency_symmetric(self):
         from instream.space.polygon_mesh import PolygonMesh
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
         # neighbor_indices is (num_cells, max_neighbors), padded with -1
         ni = mesh.neighbor_indices
@@ -98,32 +129,49 @@ class TestPolygonMesh:
             neighbors = ni[i][ni[i] >= 0]
             for j in neighbors:
                 j_neighbors = ni[j][ni[j] >= 0]
-                assert i in j_neighbors, f"Cell {i} neighbors {j}, but {j} doesn't neighbor {i}"
+                assert i in j_neighbors, (
+                    f"Cell {i} neighbors {j}, but {j} doesn't neighbor {i}"
+                )
 
     def test_to_cell_state(self):
         from instream.space.polygon_mesh import PolygonMesh
         from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
-        d_flows, d_vals = read_depth_table(FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv")
-        v_flows, v_vals = read_velocity_table(FIXTURES_DIR / "example_a" / "ExampleA-Vels.csv")
+        d_flows, d_vals = read_depth_table(
+            FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv"
+        )
+        v_flows, v_vals = read_velocity_table(
+            FIXTURES_DIR / "example_a" / "ExampleA-Vels.csv"
+        )
         cs = mesh.to_cell_state(d_flows, d_vals, v_flows, v_vals)
         from instream.state.cell_state import CellState
+
         assert isinstance(cs, CellState)
         assert cs.area.shape[0] == mesh.num_cells
         assert cs.depth_table_values.shape[0] == mesh.num_cells
 
     def test_load_example_b_multiple_reaches(self):
         from instream.space.polygon_mesh import PolygonMesh
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_b" / "Shapefile" / "ExampleB.shp",
-            id_field="ID_text", reach_field="REACH_NAME", area_field="Area_m2",
-            dist_escape_field="DISTANCE_T", hiding_field="NUM_HIDING",
-            shelter_field="FRAC_VEL_S", spawn_field="FRAC_SPAWN",
+            id_field="ID_text",
+            reach_field="REACH_NAME",
+            area_field="Area_m2",
+            dist_escape_field="DISTANCE_T",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRAC_VEL_S",
+            spawn_field="FRAC_SPAWN",
         )
         unique_reaches = set(mesh.reach_names)
         assert len(unique_reaches) >= 3  # Example B has 3 reaches
@@ -137,14 +185,23 @@ class TestFEMSpace:
         from instream.space.polygon_mesh import PolygonMesh
         from instream.space.fem_space import FEMSpace
         from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
-            id_field="ID_TEXT", reach_field="REACH_NAME", area_field="AREA",
-            dist_escape_field="M_TO_ESC", hiding_field="NUM_HIDING",
-            shelter_field="FRACVSHL", spawn_field="FRACSPWN",
+            id_field="ID_TEXT",
+            reach_field="REACH_NAME",
+            area_field="AREA",
+            dist_escape_field="M_TO_ESC",
+            hiding_field="NUM_HIDING",
+            shelter_field="FRACVSHL",
+            spawn_field="FRACSPWN",
         )
-        d_flows, d_vals = read_depth_table(FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv")
-        v_flows, v_vals = read_velocity_table(FIXTURES_DIR / "example_a" / "ExampleA-Vels.csv")
+        d_flows, d_vals = read_depth_table(
+            FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv"
+        )
+        v_flows, v_vals = read_velocity_table(
+            FIXTURES_DIR / "example_a" / "ExampleA-Vels.csv"
+        )
         cell_state = mesh.to_cell_state(d_flows, d_vals, v_flows, v_vals)
         return FEMSpace(cell_state, mesh.neighbor_indices)
 
@@ -179,6 +236,7 @@ class TestFEMSpace:
 
     def test_update_hydraulics_changes_depth(self, fem_space_example_a):
         from instream.backends import get_backend
+
         backend = get_backend("numpy")
         # Before update, depths should be zero (initialized with zeros)
         assert np.all(fem_space_example_a.cell_state.depth == 0.0)
@@ -189,8 +247,74 @@ class TestFEMSpace:
 
     def test_update_hydraulics_dry_cells_have_zero_velocity(self, fem_space_example_a):
         from instream.backends import get_backend
+
         backend = get_backend("numpy")
         fem_space_example_a.update_hydraulics(1.42, backend)  # minimum flow
         dry_mask = fem_space_example_a.cell_state.depth == 0.0
         if np.any(dry_mask):
             assert np.all(fem_space_example_a.cell_state.velocity[dry_mask] == 0.0)
+
+
+# ---- FEM mesh reader tests ----
+
+
+def test_fem_mesh_reads_triangle_mesh(tmp_path):
+    pytest.importorskip("meshio")
+    import meshio
+    from instream.space.fem_mesh import FEMMesh
+
+    # Create a simple 2-triangle mesh
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=float)
+    cells = [("triangle", np.array([[0, 1, 2], [0, 2, 3]]))]
+    mesh = meshio.Mesh(points, cells)
+    mesh_path = tmp_path / "test.msh"
+    meshio.write(str(mesh_path), mesh)
+
+    fem = FEMMesh(str(mesh_path))
+    assert fem.num_cells == 2
+    assert fem.neighbor_indices.shape[0] == 2
+    # Triangles share edge 0-2, so they should be neighbors
+    assert 1 in fem.neighbor_indices[0] or 0 in fem.neighbor_indices[1]
+
+
+def test_fem_mesh_areas_correct(tmp_path):
+    pytest.importorskip("meshio")
+    import meshio
+    from instream.space.fem_mesh import FEMMesh
+
+    # Unit square split into 2 right triangles, each area = 0.5 m^2 = 5000 cm^2
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=float)
+    cells = [("triangle", np.array([[0, 1, 2], [0, 2, 3]]))]
+    mesh = meshio.Mesh(points, cells)
+    mesh_path = tmp_path / "test.msh"
+    meshio.write(str(mesh_path), mesh)
+
+    fem = FEMMesh(str(mesh_path))
+    np.testing.assert_allclose(fem._areas, [5000.0, 5000.0], rtol=1e-10)
+
+
+def test_fem_mesh_adjacency_symmetric(tmp_path):
+    pytest.importorskip("meshio")
+    import meshio
+    from instream.space.fem_mesh import FEMMesh
+
+    points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=float)
+    cells = [("triangle", np.array([[0, 1, 2], [0, 2, 3]]))]
+    mesh = meshio.Mesh(points, cells)
+    mesh_path = tmp_path / "test.msh"
+    meshio.write(str(mesh_path), mesh)
+
+    fem = FEMMesh(str(mesh_path))
+    ni = fem.neighbor_indices
+    for i in range(fem.num_cells):
+        neighbors = ni[i][ni[i] >= 0]
+        for j in neighbors:
+            j_neighbors = ni[j][ni[j] >= 0]
+            assert i in j_neighbors
+
+
+def test_fem_mesh_file_not_found():
+    from instream.space.fem_mesh import FEMMesh
+
+    with pytest.raises(FileNotFoundError):
+        FEMMesh("nonexistent_file.msh")
