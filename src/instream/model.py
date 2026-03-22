@@ -59,11 +59,14 @@ class InSTREAMModel(mesa.Model):
         Override the end date from config (for short test runs).
     """
 
-    def __init__(self, config_path, data_dir=None, end_date_override=None):
+    def __init__(
+        self, config_path, data_dir=None, end_date_override=None, output_dir=None
+    ):
         super().__init__()
         config_path = Path(config_path)
         self.config = load_config(config_path)
         self.species_params, self.reach_params = params_from_config(self.config)
+        self.output_dir = output_dir  # None = no file output
 
         if data_dir is None:
             data_dir = config_path.parent
@@ -933,7 +936,38 @@ class InSTREAMModel(mesa.Model):
         """Add arriving adults if adult arrival data is configured."""
         pass  # TODO: implement when multi-reach/species is added
 
+    def write_outputs(self, output_dir=None):
+        """Write all output files to the specified directory."""
+        out = output_dir or self.output_dir
+        if out is None:
+            return
+        from instream.io.output import (
+            write_population_census,
+            write_fish_snapshot,
+            write_redd_snapshot,
+            write_outmigrants,
+            write_summary,
+        )
+
+        Path(out).mkdir(parents=True, exist_ok=True)
+        write_population_census(getattr(self, "_census_records", []), out)
+        write_fish_snapshot(
+            self.trout_state,
+            self.species_order,
+            str(self.time_manager._current_date.date()),
+            out,
+        )
+        write_redd_snapshot(
+            self.redd_state,
+            self.species_order,
+            str(self.time_manager._current_date.date()),
+            out,
+        )
+        write_outmigrants(getattr(self, "_outmigrants", []), self.species_order, out)
+        write_summary(self, out)
+
     def run(self):
         """Run the simulation until the end date."""
         while not self.time_manager.is_done():
             self.step()
+        self.write_outputs()
