@@ -305,10 +305,21 @@ class InSTREAMModel(mesa.Model):
             self.reach_state.is_flow_peak[i] = current_flow > self._prev_flow[i]
             self._prev_flow[i] = current_flow
 
-        # 4. Update hydraulics for each reach's flow
-        # Use the first reach's flow (single-reach model for now)
-        flow = float(self.reach_state.flow[0])
-        self.fem_space.update_hydraulics(flow, self.backend)
+        # 4. Update hydraulics per reach (each reach has its own flow & tables)
+        for r_idx, rname in enumerate(self.reach_order):
+            flow = float(self.reach_state.flow[r_idx])
+            hdata = self._reach_hydraulic_data[rname]
+            cells = np.where(self.fem_space.cell_state.reach_idx == r_idx)[0]
+            if len(cells) == 0:
+                continue
+            depths, vels = self.backend.update_hydraulics(
+                flow,
+                hdata["depth_flows"],
+                hdata["depth_values"],
+                hdata["vel_values"],
+            )
+            self.fem_space.cell_state.depth[cells] = depths
+            self.fem_space.cell_state.velocity[cells] = vels
 
         # 5. Compute light
         jd = self.time_manager.julian_date
