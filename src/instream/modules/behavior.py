@@ -12,6 +12,15 @@ try:
 except ImportError:
     _HAS_NUMBA_FITNESS = False
 
+try:
+    from instream.backends.numba_backend.spatial import (
+        build_all_candidates_numba as _numba_build_cands,
+    )
+
+    _HAS_NUMBA_SPATIAL = True
+except ImportError:
+    _HAS_NUMBA_SPATIAL = False
+
 from instream.modules.growth import (
     growth_rate_for,
     max_swim_speed,
@@ -139,11 +148,34 @@ def build_candidate_lists(
 
     Returns list of length capacity. Dead fish get None. Alive fish get
     np.ndarray of wet candidate cell indices (int32).
+
+    Uses Numba brute-force distance search when available (faster than
+    KD-tree for meshes under ~10k cells). Falls back to KD-tree + Python.
     """
     n_fish = trout_state.alive.shape[0]
     wet_mask = fem_space.cell_state.depth > 0
-    candidate_lists = [None] * n_fish
 
+    if _HAS_NUMBA_SPATIAL:
+        offsets, flat = _numba_build_cands(
+            trout_state.alive,
+            trout_state.cell_idx,
+            trout_state.length,
+            fem_space.cell_state.centroid_x,
+            fem_space.cell_state.centroid_y,
+            wet_mask,
+            fem_space.neighbor_indices,
+            move_radius_max,
+            move_radius_L1,
+            move_radius_L9,
+        )
+        candidate_lists = [None] * n_fish
+        for i in range(n_fish):
+            if offsets[i + 1] > offsets[i]:
+                candidate_lists[i] = flat[int(offsets[i]) : int(offsets[i + 1])]
+        return candidate_lists
+
+    # Python fallback: KD-tree queries + vectorized wet filter
+    candidate_lists = [None] * n_fish
     for i in range(n_fish):
         if not trout_state.alive[i]:
             continue

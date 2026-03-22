@@ -1000,3 +1000,76 @@ class TestSparseCandidates:
         for i in range(ts.alive.shape[0]):
             if sparse[i] is not None:
                 assert sparse[i].dtype == np.int32
+
+
+class TestNumbaCandidates:
+    """Test that Numba brute-force candidate search matches KD-tree results."""
+
+    @pytest.fixture
+    def simple_setup(self):
+        """Create a simple 5-cell setup for testing."""
+        from instream.state.cell_state import CellState
+        from instream.state.trout_state import TroutState
+        from instream.space.fem_space import FEMSpace
+
+        cs = CellState.zeros(5, num_flows=2)
+        cs.centroid_x[:] = np.array([0, 100, 200, 300, 400], dtype=np.float64)
+        cs.centroid_y[:] = np.zeros(5, dtype=np.float64)
+        cs.depth[:] = np.array([50, 30, 0, 40, 20], dtype=np.float64)
+        cs.area[:] = 10000.0
+        ni = np.full((5, 4), -1, dtype=np.int32)
+        ni[0, 0] = 1
+        ni[1, 0] = 0
+        ni[1, 1] = 2
+        ni[2, 0] = 1
+        ni[2, 1] = 3
+        ni[3, 0] = 2
+        ni[3, 1] = 4
+        ni[4, 0] = 3
+        space = FEMSpace(cs, ni)
+
+        ts = TroutState.zeros(3)
+        ts.alive[0] = True
+        ts.cell_idx[0] = 0
+        ts.length[0] = 10.0
+        ts.alive[1] = True
+        ts.cell_idx[1] = 2
+        ts.length[1] = 15.0
+        ts.alive[2] = False
+        return space, ts
+
+    def test_numba_candidates_match_kdtree(self, simple_setup):
+        """Numba brute-force must find same cells as KD-tree."""
+        pytest.importorskip("numba")
+        from instream.modules.behavior import (
+            build_candidate_lists,
+            build_candidate_mask,
+        )
+
+        space, ts = simple_setup
+        # build_candidate_mask always uses KD-tree (reference)
+        mask = build_candidate_mask(
+            ts, space, move_radius_max=20000, move_radius_L1=7, move_radius_L9=20
+        )
+        # build_candidate_lists uses numba if available
+        sparse = build_candidate_lists(
+            ts, space, move_radius_max=20000, move_radius_L1=7, move_radius_L9=20
+        )
+        for i in range(ts.alive.shape[0]):
+            dense_cands = set(np.where(mask[i])[0])
+            sparse_cands = set(sparse[i].tolist()) if sparse[i] is not None else set()
+            assert dense_cands == sparse_cands, "Numba mismatch for fish {}".format(i)
+
+    def test_numba_all_candidates_wet(self, simple_setup):
+        """All candidates from numba should be wet cells."""
+        pytest.importorskip("numba")
+        from instream.modules.behavior import build_candidate_lists
+
+        space, ts = simple_setup
+        sparse = build_candidate_lists(
+            ts, space, move_radius_max=20000, move_radius_L1=7, move_radius_L9=20
+        )
+        for i in range(ts.alive.shape[0]):
+            if sparse[i] is not None:
+                assert len(sparse[i]) > 0
+                assert np.all(space.cell_state.depth[sparse[i]] > 0)
