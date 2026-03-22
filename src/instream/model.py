@@ -464,6 +464,10 @@ class InSTREAMModel(mesa.Model):
             self.fem_space.cell_state.light[cells] = cell_light
 
         # 6. Reset cell resources per reach
+        # NOTE: drift_regen_distance is loaded in config but spatial drift
+        # regeneration is not yet implemented. Drift food resets fully each
+        # step. Future work: scale drift reset by cell distance from reach
+        # boundary using cell connectivity and upstream/downstream ordering.
         cs = self.fem_space.cell_state
         for r_idx, rname in enumerate(self.reach_order):
             rp = self.reach_params[rname]
