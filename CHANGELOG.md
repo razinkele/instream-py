@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-22
+
+### Added
+- JAX compute backend: `update_hydraulics`, `compute_light`, `compute_cell_light`, `evaluate_logistic`, `interp1d` implemented with `jax.vmap` vectorization
+- FEM mesh reader (`space/fem_mesh.py`): reads triangular meshes via meshio (River2D .2dm, GMSH .msh, and all meshio-supported formats)
+- FEM mesh computes centroids, areas, and edge-based adjacency from element connectivity
+- 7 new tests: JAX backend cross-validation against NumpyBackend, FEM mesh reading/area/adjacency
+
+### Changed
+- `get_backend("jax")` now returns a working JaxBackend (was NotImplementedError)
+- FEM mesh areas automatically convert m^2 to cm^2
+
+---
+
 ## [0.7.0] - 2026-03-22
 
 ### Added
