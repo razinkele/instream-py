@@ -345,12 +345,16 @@ class InSTREAMModel(mesa.Model):
             )
             self.fem_space.cell_state.light[cells] = cell_light
 
-        # 6. Reset cell resources
+        # 6. Reset cell resources per reach
         cs = self.fem_space.cell_state
-        rp = self.reach_params[self.reach_order[0]]
-        cs.available_drift[:] = rp.drift_conc * cs.area * cs.depth
-        cs.available_search[:] = rp.search_prod * cs.area
-        cs.available_vel_shelter[:] = cs.frac_vel_shelter * cs.area
+        for r_idx, rname in enumerate(self.reach_order):
+            rp = self.reach_params[rname]
+            cells = np.where(cs.reach_idx == r_idx)[0]
+            cs.available_drift[cells] = rp.drift_conc * cs.area[cells] * cs.depth[cells]
+            cs.available_search[cells] = rp.search_prod * cs.area[cells]
+            cs.available_vel_shelter[cells] = (
+                cs.frac_vel_shelter[cells] * cs.area[cells]
+            )
         cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
 
         # 7. Habitat selection & activity
