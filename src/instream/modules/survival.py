@@ -3,6 +3,7 @@
 Implements NetLogo survival sources: high temperature, stranding, condition,
 fish predation, terrestrial predation, and stochastic mortality application.
 """
+
 import numpy as np
 
 from instream.modules.behavior import evaluate_logistic
@@ -11,6 +12,7 @@ from instream.modules.behavior import evaluate_logistic
 # ---------------------------------------------------------------------------
 # 1. High Temperature Survival
 # ---------------------------------------------------------------------------
+
 
 def survival_high_temperature(temperature, T1=28.0, T9=24.0):
     """Survival probability from high water temperature.
@@ -39,6 +41,7 @@ def survival_high_temperature(temperature, T1=28.0, T9=24.0):
 # 2. Stranding Survival
 # ---------------------------------------------------------------------------
 
+
 def survival_stranding(depth, survival_when_dry=0.5):
     """Survival probability from stranding (dry cell).
 
@@ -62,6 +65,7 @@ def survival_stranding(depth, survival_when_dry=0.5):
 # ---------------------------------------------------------------------------
 # 3. Condition Survival (two-piece linear)
 # ---------------------------------------------------------------------------
+
 
 def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992):
     """Survival probability based on body condition factor (K = weight / (length^3 * p1)).
@@ -101,17 +105,34 @@ def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992):
         intercept = S_at_K5 - (0.5 * slope)
         s = condition * slope + intercept
 
-    return float(np.clip(s, 0.0, 1.0))
+    return max(0.0, min(1.0, s))
 
 
 # ---------------------------------------------------------------------------
 # 4. Fish Predation Survival
 # ---------------------------------------------------------------------------
 
-def survival_fish_predation(length, depth, light, pisciv_density, temperature,
-                            activity, min_surv,
-                            L1, L9, D1, D9, P1, P9, I1, I9, T1, T9,
-                            hiding_factor):
+
+def survival_fish_predation(
+    length,
+    depth,
+    light,
+    pisciv_density,
+    temperature,
+    activity,
+    min_surv,
+    L1,
+    L9,
+    D1,
+    D9,
+    P1,
+    P9,
+    I1,
+    I9,
+    T1,
+    T9,
+    hiding_factor,
+):
     """Survival probability from piscivorous fish predation.
 
     Parameters
@@ -152,12 +173,12 @@ def survival_fish_predation(length, depth, light, pisciv_density, temperature,
     hide_factor = hiding_factor if is_hiding else 0.0
 
     relative_risk = (
-        (1.0 - evaluate_logistic(length, L1, L9)) *
-        (1.0 - evaluate_logistic(depth, D1, D9)) *
-        (1.0 - evaluate_logistic(pisciv_density, P1, P9)) *
-        (1.0 - evaluate_logistic(light, I1, I9)) *
-        (1.0 - evaluate_logistic(temperature, T1, T9)) *
-        (1.0 - hide_factor)
+        (1.0 - evaluate_logistic(length, L1, L9))
+        * (1.0 - evaluate_logistic(depth, D1, D9))
+        * (1.0 - evaluate_logistic(pisciv_density, P1, P9))
+        * (1.0 - evaluate_logistic(light, I1, I9))
+        * (1.0 - evaluate_logistic(temperature, T1, T9))
+        * (1.0 - hide_factor)
     )
 
     return min_surv + (1.0 - min_surv) * (1.0 - relative_risk)
@@ -167,11 +188,29 @@ def survival_fish_predation(length, depth, light, pisciv_density, temperature,
 # 5. Terrestrial Predation Survival
 # ---------------------------------------------------------------------------
 
-def survival_terrestrial_predation(length, depth, velocity, light, dist_escape,
-                                   activity, available_hiding, superind_rep,
-                                   min_surv,
-                                   L1, L9, D1, D9, V1, V9, I1, I9, H1, H9,
-                                   hiding_factor):
+
+def survival_terrestrial_predation(
+    length,
+    depth,
+    velocity,
+    light,
+    dist_escape,
+    activity,
+    available_hiding,
+    superind_rep,
+    min_surv,
+    L1,
+    L9,
+    D1,
+    D9,
+    V1,
+    V9,
+    I1,
+    I9,
+    H1,
+    H9,
+    hiding_factor,
+):
     """Survival probability from terrestrial predation (birds, mammals).
 
     Parameters
@@ -217,12 +256,12 @@ def survival_terrestrial_predation(length, depth, velocity, light, dist_escape,
     hide_factor = hiding_factor if in_hiding else 0.0
 
     relative_risk = (
-        (1.0 - evaluate_logistic(length, L1, L9)) *
-        (1.0 - evaluate_logistic(depth, D1, D9)) *
-        (1.0 - evaluate_logistic(velocity, V1, V9)) *
-        (1.0 - evaluate_logistic(light, I1, I9)) *
-        (1.0 - evaluate_logistic(dist_escape, H1, H9)) *
-        (1.0 - hide_factor)
+        (1.0 - evaluate_logistic(length, L1, L9))
+        * (1.0 - evaluate_logistic(depth, D1, D9))
+        * (1.0 - evaluate_logistic(velocity, V1, V9))
+        * (1.0 - evaluate_logistic(light, I1, I9))
+        * (1.0 - evaluate_logistic(dist_escape, H1, H9))
+        * (1.0 - hide_factor)
     )
 
     return min_surv + (1.0 - min_surv) * (1.0 - relative_risk)
@@ -231,6 +270,7 @@ def survival_terrestrial_predation(length, depth, velocity, light, dist_escape,
 # ---------------------------------------------------------------------------
 # 6. Non-starve (combined) Survival
 # ---------------------------------------------------------------------------
+
 
 def non_starve_survival(s_high_temp, s_stranding, s_fish_pred, s_terr_pred):
     """Combined non-starvation survival (product of independent sources).
@@ -261,6 +301,7 @@ def non_starve_survival(s_high_temp, s_stranding, s_fish_pred, s_terr_pred):
 # 7. Stochastic Mortality Application
 # ---------------------------------------------------------------------------
 
+
 def apply_mortality(alive, survival_probs, rng):
     """Apply stochastic mortality to a population.
 
@@ -288,6 +329,7 @@ def apply_mortality(alive, survival_probs, rng):
 # 8. Redd (Egg) Survival — Low Temperature
 # ---------------------------------------------------------------------------
 
+
 def _redd_logistic(x: float, T1: float, T9: float) -> float:
     """Return the inSTREAM logistic value for *x* given parameters T1 and T9."""
     return evaluate_logistic(x, T1, T9)
@@ -308,13 +350,14 @@ def redd_survival_lo_temp(
     Clamped to [0, 1].
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
-    survival = logistic_val ** step_length
+    survival = logistic_val**step_length
     return float(np.clip(survival, 0.0, 1.0))
 
 
 # ---------------------------------------------------------------------------
 # 9. Redd (Egg) Survival — High Temperature
 # ---------------------------------------------------------------------------
+
 
 def redd_survival_hi_temp(
     temperature: float,
@@ -331,13 +374,14 @@ def redd_survival_hi_temp(
     Clamped to [0, 1].
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
-    survival = logistic_val ** step_length
+    survival = logistic_val**step_length
     return float(np.clip(survival, 0.0, 1.0))
 
 
 # ---------------------------------------------------------------------------
 # 10. Redd (Egg) Survival — Dewatering
 # ---------------------------------------------------------------------------
+
 
 def redd_survival_dewatering(
     depth: float,
@@ -356,6 +400,7 @@ def redd_survival_dewatering(
 # 11. Redd (Egg) Survival — Scour
 # ---------------------------------------------------------------------------
 
+
 def redd_survival_scour(
     flow: float,
     is_flow_peak: bool,
@@ -370,7 +415,7 @@ def redd_survival_scour(
     """
     if not is_flow_peak:
         return 1.0
-    shear_stress = shear_A * (flow ** shear_B)
+    shear_stress = shear_A * (flow**shear_B)
     if shear_stress > scour_depth:
         return 0.0
     return 1.0
@@ -379,6 +424,7 @@ def redd_survival_scour(
 # ---------------------------------------------------------------------------
 # 12. Combined Redd Survival (vectorised over redds)
 # ---------------------------------------------------------------------------
+
 
 def apply_redd_survival(
     num_eggs,
@@ -450,8 +496,11 @@ def apply_redd_survival(
 
         # Scour
         sc_surv = redd_survival_scour(
-            float(flows[i]), bool(is_peak[i]),
-            shear_A, shear_B, scour_depth,
+            float(flows[i]),
+            bool(is_peak[i]),
+            shear_A,
+            shear_B,
+            scour_depth,
         )
         killed = current * (1.0 - sc_surv)
         sc_deaths[i] = killed
