@@ -60,6 +60,12 @@ instream configs/example_a.yaml --output-dir results/ --end-date 2012-01-01
 
 # Run Example B (3 reaches x 3 species)
 instream configs/example_b.yaml --data-dir tests/fixtures/example_b/ -o results_b/
+
+# Run with hourly input (auto-detected as 24 sub-steps per day)
+instream configs/example_a.yaml --data-dir data/ -o results/
+
+# Sub-daily mode is auto-detected from time-series frequency
+# Just provide hourly/sub-hourly CSV data — no config changes needed
 ```
 
 ## Installation
@@ -155,13 +161,18 @@ parent directory.
 
 ## Performance
 
-Benchmark results on a 912-day simulation (Example A, ~300 fish):
+Benchmark results (912-day simulation, Intel i7-11800H, 64 GB RAM):
+
+| Example | Fish | Cells | Step Time | Full Run | vs NetLogo |
+|---------|------|-------|-----------|----------|------------|
+| A (1 reach, 1 species) | 360 | 1,373 | 48 ms | 44 sec | AT PARITY |
+| B (3 reaches, 3 species) | 63 | 5,631 | 22 ms | 24 sec | 5-9x FASTER |
 
 | Backend          | Full step | 912-day run | vs Pure Python |
 |------------------|-----------|-------------|----------------|
 | Python (pure)    | 62 s      | ~129 min    | 1x             |
 | NumPy vectorized | 179 ms    | ~2.1 min    | ~346x          |
-| Numba JIT        | 98 ms     | < 1.5 min   | ~633x          |
+| Numba JIT        | 48 ms     | 44 sec      | ~1292x         |
 | NetLogo 7.4      | ~5 s      | ~76 min     | ~12x           |
 
 *Measured on Intel i7-11800H, 64 GB RAM. Numba times exclude JIT warmup.*
@@ -218,17 +229,18 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.6.0** -- ~65% complete as of March 2026.
+**v0.7.0** -- InSTREAM-SD complete, NetLogo parity achieved (March 2026).
 
 ### Current Metrics
 
 | Metric          | Value                          |
 |-----------------|--------------------------------|
-| Tests           | 435+                           |
+| Tests           | 455                            |
 | Validation      | 11/11 NetLogo reference tests  |
-| Step time       | 98 ms (Numba JIT)              |
+| Step time       | 48 ms (Example A, Numba JIT)   |
 | Species         | Multi-species support          |
 | Reaches         | Multi-reach support            |
+| Sub-daily       | InSTREAM-SD hourly + peaking   |
 | Output          | 6 file types + CLI             |
 | Example B       | 3 reaches x 3 species working  |
 
@@ -245,12 +257,15 @@ property-based tests, and performance regression tests.
 - Output system (6 file types: population, habitat, individual, redd, mortality, spatial)
 - CLI interface (`instream` command)
 - NumPy and Numba compute backends
+- InSTREAM-SD sub-daily scheduling (hourly + peaking flow)
+- Growth accumulation with day-boundary application
 - 11/11 NetLogo validation tests passing
-- 435+ unit, integration, property-based, and validation tests
+- 455 unit, integration, property-based, and validation tests
 
 ### Planned
 
-- JAX GPU backend
+- JAX GPU backend (stub interface ready)
+- FEM mesh reader for River2D/GMSH (stub ready)
 - Angler harvest module
 - Habitat restoration scenario tools
 - Sensitivity analysis framework
