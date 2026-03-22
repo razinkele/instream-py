@@ -11,7 +11,6 @@ from instream.io.timeseries import read_time_series
 from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
 from instream.io.population_reader import (
     read_initial_populations,
-    build_initial_trout_state,
 )
 from instream.io.time_manager import TimeManager
 from instream.space.polygon_mesh import PolygonMesh
@@ -180,6 +179,99 @@ class InSTREAMModel(mesa.Model):
         # Previous flow for peak detection
         self._prev_flow = np.zeros(len(self.reach_order), dtype=np.float64)
 
+        # Pre-build per-species parameter arrays for fast per-fish lookup
+        n_sp = len(self.species_order)
+        self._sp_arrays = {}
+        for field in [
+            "cmax_A",
+            "cmax_B",
+            "weight_A",
+            "weight_B",
+            "resp_A",
+            "resp_B",
+            "resp_D",
+            "react_dist_A",
+            "react_dist_B",
+            "max_speed_A",
+            "max_speed_B",
+            "capture_R1",
+            "capture_R9",
+            "turbid_threshold",
+            "turbid_min",
+            "turbid_exp",
+            "light_threshold",
+            "light_min",
+            "light_exp",
+            "energy_density",
+            "search_area",
+            "move_radius_max",
+            "move_radius_L1",
+            "move_radius_L9",
+            "superind_max_length",
+            "mort_high_temp_T1",
+            "mort_high_temp_T9",
+            "mort_condition_S_at_K5",
+            "mort_condition_S_at_K8",
+            "mort_strand_survival_when_dry",
+            "pisciv_length",
+            "mort_fish_pred_L1",
+            "mort_fish_pred_L9",
+            "mort_fish_pred_D1",
+            "mort_fish_pred_D9",
+            "mort_fish_pred_P1",
+            "mort_fish_pred_P9",
+            "mort_fish_pred_I1",
+            "mort_fish_pred_I9",
+            "mort_fish_pred_T1",
+            "mort_fish_pred_T9",
+            "mort_fish_pred_hiding_factor",
+            "mort_terr_pred_L1",
+            "mort_terr_pred_L9",
+            "mort_terr_pred_D1",
+            "mort_terr_pred_D9",
+            "mort_terr_pred_V1",
+            "mort_terr_pred_V9",
+            "mort_terr_pred_I1",
+            "mort_terr_pred_I9",
+            "mort_terr_pred_H1",
+            "mort_terr_pred_H9",
+            "mort_terr_pred_hiding_factor",
+        ]:
+            self._sp_arrays[field] = np.array(
+                [
+                    getattr(self.config.species[s], field, 0.0)
+                    for s in self.species_order
+                ],
+                dtype=np.float64,
+            )
+
+        # Per-species cmax temp tables (list of arrays, indexed by species_idx)
+        self._sp_cmax_table_x = [
+            self.species_params[s].cmax_temp_table_x for s in self.species_order
+        ]
+        self._sp_cmax_table_y = [
+            self.species_params[s].cmax_temp_table_y for s in self.species_order
+        ]
+
+        # Pre-build per-reach parameter arrays
+        n_r = len(self.reach_order)
+        self._rp_arrays = {}
+        for field in [
+            "drift_conc",
+            "search_prod",
+            "shelter_speed_frac",
+            "prey_energy_density",
+            "fish_pred_min",
+            "terr_pred_min",
+            "max_spawn_flow",
+            "shear_A",
+            "shear_B",
+        ]:
+            self._rp_arrays[field] = np.array(
+                [getattr(self.reach_params[r], field, 0.0) for r in self.reach_order],
+                dtype=np.float64,
+            )
+
         # Load initial trout population
         pop_file = self.config.simulation.population_file
         if pop_file:
@@ -195,19 +287,42 @@ class InSTREAMModel(mesa.Model):
             pop_path = pop_candidates[0]
 
         populations = read_initial_populations(pop_path)
+        total = sum(p["number"] for p in populations)
+        if total > self.config.performance.trout_capacity:
+            raise ValueError(
+                "Total fish ({}) exceeds capacity ({}).".format(
+                    total, self.config.performance.trout_capacity
+                )
+            )
 
-        # Use first species' weight params for initial population
-        first_sp_name = self.species_order[0]
-        first_sp_cfg = self.config.species[first_sp_name]
+        from instream.state.trout_state import TroutState
 
-        self.trout_state = build_initial_trout_state(
-            populations=populations,
-            capacity=self.config.performance.trout_capacity,
-            weight_A=first_sp_cfg.weight_A,
-            weight_B=first_sp_cfg.weight_B,
-            species_index=0,
-            seed=self.config.simulation.seed,
-        )
+        self.trout_state = TroutState.zeros(self.config.performance.trout_capacity)
+        rng_pop = np.random.default_rng(self.config.simulation.seed)
+        idx = 0
+        for pop in populations:
+            sp_name = pop["species"]
+            sp_idx = self._species_name_to_idx.get(sp_name, 0)
+            sp_cfg = self.config.species.get(
+                sp_name, self.config.species[self.species_order[0]]
+            )
+            n = pop["number"]
+            lengths = rng_pop.triangular(
+                pop["length_min"], pop["length_mode"], pop["length_max"], n
+            )
+            weights = sp_cfg.weight_A * lengths**sp_cfg.weight_B
+            end = idx + n
+            self.trout_state.alive[idx:end] = True
+            self.trout_state.species_idx[idx:end] = sp_idx
+            self.trout_state.age[idx:end] = pop["age"]
+            self.trout_state.length[idx:end] = lengths
+            self.trout_state.weight[idx:end] = weights
+            self.trout_state.condition[idx:end] = 1.0
+            self.trout_state.superind_rep[idx:end] = 1
+            self.trout_state.sex[idx:end] = rng_pop.integers(
+                0, 2, size=n, dtype=np.int32
+            )
+            idx = end
 
         # Assign initial cell and reach indices to fish
         self._assign_initial_positions()
@@ -357,93 +472,38 @@ class InSTREAMModel(mesa.Model):
             )
         cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
 
-        # 7. Habitat selection & activity
-        sp_cfg = self.config.species[self.species_order[0]]
-        temperature = float(self.reach_state.temperature[0])
-        turbidity = float(self.reach_state.turbidity[0])
-
+        # 7. Habitat selection & activity (per-fish species/reach dispatch)
         # Compute piscivore density for fitness evaluation
         pisciv_densities = self._compute_piscivore_density()
 
         select_habitat_and_activity(
             self.trout_state,
             self.fem_space,
-            move_radius_max=sp_cfg.move_radius_max,
-            move_radius_L1=sp_cfg.move_radius_L1,
-            move_radius_L9=sp_cfg.move_radius_L9,
-            temperature=temperature,
-            turbidity=turbidity,
-            drift_conc=rp.drift_conc,
-            search_prod=rp.search_prod,
-            search_area=sp_cfg.search_area,
-            shelter_speed_frac=rp.shelter_speed_frac,
+            # Per-reach arrays
+            temperature=self.reach_state.temperature,  # shape (num_reaches,)
+            turbidity=self.reach_state.turbidity,  # shape (num_reaches,)
+            max_swim_temp_term=self.reach_state.max_swim_temp_term,  # (num_reaches, num_species)
+            resp_temp_term=self.reach_state.resp_temp_term,  # (num_reaches, num_species)
+            # Per-species arrays
+            sp_arrays=self._sp_arrays,
+            sp_cmax_table_x=self._sp_cmax_table_x,
+            sp_cmax_table_y=self._sp_cmax_table_y,
+            # Per-reach parameter arrays
+            rp_arrays=self._rp_arrays,
+            # Scalars
             step_length=step_length,
-            cmax_A=sp_cfg.cmax_A,
-            cmax_B=sp_cfg.cmax_B,
-            cmax_temp_table_x=self.species_params[
-                self.species_order[0]
-            ].cmax_temp_table_x,
-            cmax_temp_table_y=self.species_params[
-                self.species_order[0]
-            ].cmax_temp_table_y,
-            react_dist_A=sp_cfg.react_dist_A,
-            react_dist_B=sp_cfg.react_dist_B,
-            turbid_threshold=sp_cfg.turbid_threshold,
-            turbid_min=sp_cfg.turbid_min,
-            turbid_exp=sp_cfg.turbid_exp,
-            light_threshold=sp_cfg.light_threshold,
-            light_min=sp_cfg.light_min,
-            light_exp=sp_cfg.light_exp,
-            capture_R1=sp_cfg.capture_R1,
-            capture_R9=sp_cfg.capture_R9,
-            max_speed_A=sp_cfg.max_speed_A,
-            max_speed_B=sp_cfg.max_speed_B,
-            max_swim_temp_term=float(self.reach_state.max_swim_temp_term[0, 0]),
-            resp_A=sp_cfg.resp_A,
-            resp_B=sp_cfg.resp_B,
-            resp_D=sp_cfg.resp_D,
-            resp_temp_term=float(self.reach_state.resp_temp_term[0, 0]),
-            prey_energy_density=rp.prey_energy_density,
-            fish_energy_density=sp_cfg.energy_density,
-            # Survival parameters (Phase 5)
-            mort_high_temp_T1=sp_cfg.mort_high_temp_T1,
-            mort_high_temp_T9=sp_cfg.mort_high_temp_T9,
-            mort_condition_S_at_K5=sp_cfg.mort_condition_S_at_K5,
-            mort_condition_S_at_K8=sp_cfg.mort_condition_S_at_K8,
-            mort_strand_survival_when_dry=sp_cfg.mort_strand_survival_when_dry,
-            fish_pred_min=rp.fish_pred_min,
-            fish_pred_L1=sp_cfg.mort_fish_pred_L1,
-            fish_pred_L9=sp_cfg.mort_fish_pred_L9,
-            fish_pred_D1=sp_cfg.mort_fish_pred_D1,
-            fish_pred_D9=sp_cfg.mort_fish_pred_D9,
-            fish_pred_P1=sp_cfg.mort_fish_pred_P1,
-            fish_pred_P9=sp_cfg.mort_fish_pred_P9,
-            fish_pred_I1=sp_cfg.mort_fish_pred_I1,
-            fish_pred_I9=sp_cfg.mort_fish_pred_I9,
-            fish_pred_T1=sp_cfg.mort_fish_pred_T1,
-            fish_pred_T9=sp_cfg.mort_fish_pred_T9,
-            fish_pred_hiding_factor=sp_cfg.mort_fish_pred_hiding_factor,
             pisciv_densities=pisciv_densities,
-            terr_pred_min=rp.terr_pred_min,
-            terr_pred_L1=sp_cfg.mort_terr_pred_L1,
-            terr_pred_L9=sp_cfg.mort_terr_pred_L9,
-            terr_pred_D1=sp_cfg.mort_terr_pred_D1,
-            terr_pred_D9=sp_cfg.mort_terr_pred_D9,
-            terr_pred_V1=sp_cfg.mort_terr_pred_V1,
-            terr_pred_V9=sp_cfg.mort_terr_pred_V9,
-            terr_pred_I1=sp_cfg.mort_terr_pred_I1,
-            terr_pred_I9=sp_cfg.mort_terr_pred_I9,
-            terr_pred_H1=sp_cfg.mort_terr_pred_H1,
-            terr_pred_H9=sp_cfg.mort_terr_pred_H9,
-            terr_pred_hiding_factor=sp_cfg.mort_terr_pred_hiding_factor,
         )
 
         # 8. Growth: use growth rate from habitat selection (not recomputed)
+        _wA_arr = self._sp_arrays["weight_A"]
+        _wB_arr = self._sp_arrays["weight_B"]
         alive = self.trout_state.alive_indices()
         for i in alive:
             cell = self.trout_state.cell_idx[i]
             if cell < 0 or cell >= self.fem_space.num_cells:
                 continue
+            sp_idx = int(self.trout_state.species_idx[i])
             growth = self.trout_state.last_growth_rate[i]
             daily_growth = growth * step_length
             new_w, new_l, new_k = apply_growth(
@@ -451,17 +511,18 @@ class InSTREAMModel(mesa.Model):
                 float(self.trout_state.length[i]),
                 float(self.trout_state.condition[i]),
                 daily_growth,
-                sp_cfg.weight_A,
-                sp_cfg.weight_B,
+                float(_wA_arr[sp_idx]),
+                float(_wB_arr[sp_idx]),
             )
             self.trout_state.weight[i] = new_w
             self.trout_state.length[i] = new_l
             self.trout_state.condition[i] = new_k
 
-        # Split superindividuals
-        split_superindividuals(self.trout_state, sp_cfg.superind_max_length)
+        # Split superindividuals (per-species max length)
+        _sml_arr = self._sp_arrays["superind_max_length"]
+        split_superindividuals(self.trout_state, float(np.max(_sml_arr)))
 
-        # 9. Survival / mortality
+        # 9. Survival / mortality (per-fish species/reach dispatch)
         alive = self.trout_state.alive_indices()
         n_capacity = self.trout_state.alive.shape[0]
         survival_probs = np.ones(n_capacity, dtype=np.float64)
@@ -469,22 +530,32 @@ class InSTREAMModel(mesa.Model):
         # Compute piscivore density for survival evaluation
         pisciv_densities_surv = self._compute_piscivore_density()
 
+        _spa = self._sp_arrays
+        _rpa = self._rp_arrays
+        _temp_arr = self.reach_state.temperature
+
         for i in alive:
             cell = self.trout_state.cell_idx[i]
             if cell < 0 or cell >= self.fem_space.num_cells:
                 continue
+            sp_idx = int(self.trout_state.species_idx[i])
+            r_idx = int(self.trout_state.reach_idx[i])
             act_idx = int(self.trout_state.activity[i])
+            _temperature = float(_temp_arr[r_idx])
 
             s_ht = survival_high_temperature(
-                temperature, sp_cfg.mort_high_temp_T1, sp_cfg.mort_high_temp_T9
+                _temperature,
+                float(_spa["mort_high_temp_T1"][sp_idx]),
+                float(_spa["mort_high_temp_T9"][sp_idx]),
             )
             s_str = survival_stranding(
-                float(cs.depth[cell]), sp_cfg.mort_strand_survival_when_dry
+                float(cs.depth[cell]),
+                float(_spa["mort_strand_survival_when_dry"][sp_idx]),
             )
             s_cond = survival_condition(
                 float(self.trout_state.condition[i]),
-                sp_cfg.mort_condition_S_at_K5,
-                sp_cfg.mort_condition_S_at_K8,
+                float(_spa["mort_condition_S_at_K5"][sp_idx]),
+                float(_spa["mort_condition_S_at_K8"][sp_idx]),
             )
 
             # Fish predation with computed piscivore density
@@ -493,20 +564,20 @@ class InSTREAMModel(mesa.Model):
                 float(cs.depth[cell]),
                 float(cs.light[cell]),
                 float(pisciv_densities_surv[cell]),
-                temperature,
+                _temperature,
                 act_idx,
-                rp.fish_pred_min,
-                sp_cfg.mort_fish_pred_L1,
-                sp_cfg.mort_fish_pred_L9,
-                sp_cfg.mort_fish_pred_D1,
-                sp_cfg.mort_fish_pred_D9,
-                sp_cfg.mort_fish_pred_P1,
-                sp_cfg.mort_fish_pred_P9,
-                sp_cfg.mort_fish_pred_I1,
-                sp_cfg.mort_fish_pred_I9,
-                sp_cfg.mort_fish_pred_T1,
-                sp_cfg.mort_fish_pred_T9,
-                sp_cfg.mort_fish_pred_hiding_factor,
+                float(_rpa["fish_pred_min"][r_idx]),
+                float(_spa["mort_fish_pred_L1"][sp_idx]),
+                float(_spa["mort_fish_pred_L9"][sp_idx]),
+                float(_spa["mort_fish_pred_D1"][sp_idx]),
+                float(_spa["mort_fish_pred_D9"][sp_idx]),
+                float(_spa["mort_fish_pred_P1"][sp_idx]),
+                float(_spa["mort_fish_pred_P9"][sp_idx]),
+                float(_spa["mort_fish_pred_I1"][sp_idx]),
+                float(_spa["mort_fish_pred_I9"][sp_idx]),
+                float(_spa["mort_fish_pred_T1"][sp_idx]),
+                float(_spa["mort_fish_pred_T9"][sp_idx]),
+                float(_spa["mort_fish_pred_hiding_factor"][sp_idx]),
             )
 
             # Terrestrial predation
@@ -519,18 +590,18 @@ class InSTREAMModel(mesa.Model):
                 act_idx,
                 int(cs.available_hiding_places[cell]),
                 int(self.trout_state.superind_rep[i]),
-                rp.terr_pred_min,
-                sp_cfg.mort_terr_pred_L1,
-                sp_cfg.mort_terr_pred_L9,
-                sp_cfg.mort_terr_pred_D1,
-                sp_cfg.mort_terr_pred_D9,
-                sp_cfg.mort_terr_pred_V1,
-                sp_cfg.mort_terr_pred_V9,
-                sp_cfg.mort_terr_pred_I1,
-                sp_cfg.mort_terr_pred_I9,
-                sp_cfg.mort_terr_pred_H1,
-                sp_cfg.mort_terr_pred_H9,
-                sp_cfg.mort_terr_pred_hiding_factor,
+                float(_rpa["terr_pred_min"][r_idx]),
+                float(_spa["mort_terr_pred_L1"][sp_idx]),
+                float(_spa["mort_terr_pred_L9"][sp_idx]),
+                float(_spa["mort_terr_pred_D1"][sp_idx]),
+                float(_spa["mort_terr_pred_D9"][sp_idx]),
+                float(_spa["mort_terr_pred_V1"][sp_idx]),
+                float(_spa["mort_terr_pred_V9"][sp_idx]),
+                float(_spa["mort_terr_pred_I1"][sp_idx]),
+                float(_spa["mort_terr_pred_I9"][sp_idx]),
+                float(_spa["mort_terr_pred_H1"][sp_idx]),
+                float(_spa["mort_terr_pred_H9"][sp_idx]),
+                float(_spa["mort_terr_pred_hiding_factor"][sp_idx]),
             )
 
             daily_surv = s_ht * s_str * s_cond * s_fp * s_tp
@@ -539,11 +610,11 @@ class InSTREAMModel(mesa.Model):
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)
 
-        # 10. Spawning
-        self._do_spawning(step_length, temperature, turbidity, flow)
+        # 10. Spawning (per-fish species/reach dispatch)
+        self._do_spawning(step_length)
 
-        # 11. Redd survival, development, emergence
-        self._do_redd_step(step_length, temperature)
+        # 11. Redd survival, development, emergence (per-redd species/reach)
+        self._do_redd_step(step_length)
 
         # 12. Migration
         self._do_migration()
@@ -554,40 +625,51 @@ class InSTREAMModel(mesa.Model):
         # 14. Census data collection
         self._collect_census_if_needed()
 
-    def _do_spawning(self, step_length, temperature, turbidity, flow):
-        """Check spawning readiness and create redds."""
-        sp_cfg = self.config.species[self.species_order[0]]
-        rp = self.reach_params[self.reach_order[0]]
+    def _do_spawning(self, step_length):
+        """Check spawning readiness and create redds (per-fish species/reach)."""
         doy = self.time_manager.julian_date
 
-        # Parse spawn season DOY
-        try:
-            start_parts = sp_cfg.spawn_start_day.split("-")
-            spawn_start_doy = int(
-                pd.Timestamp(f"2000-{start_parts[0]}-{start_parts[1]}").day_of_year
-            )
-            end_parts = sp_cfg.spawn_end_day.split("-")
-            spawn_end_doy = int(
-                pd.Timestamp(f"2000-{end_parts[0]}-{end_parts[1]}").day_of_year
-            )
-        except (ValueError, IndexError, AttributeError) as e:
-            import logging
+        # Pre-parse spawn season DOY per species
+        spawn_doy_cache = {}
+        for sp_name, sp_cfg in self.config.species.items():
+            try:
+                start_parts = sp_cfg.spawn_start_day.split("-")
+                spawn_start_doy = int(
+                    pd.Timestamp(
+                        "2000-{}-{}".format(start_parts[0], start_parts[1])
+                    ).day_of_year
+                )
+                end_parts = sp_cfg.spawn_end_day.split("-")
+                spawn_end_doy = int(
+                    pd.Timestamp(
+                        "2000-{}-{}".format(end_parts[0], end_parts[1])
+                    ).day_of_year
+                )
+            except (ValueError, IndexError, AttributeError):
+                spawn_start_doy = 244  # Sep 1
+                spawn_end_doy = 304  # Oct 31
+            spawn_doy_cache[sp_name] = (spawn_start_doy, spawn_end_doy)
 
-            logging.getLogger(__name__).warning(
-                "Could not parse spawn dates (%s), using defaults Sep 1 - Oct 31", e
-            )
-            spawn_start_doy = 244  # Sep 1
-            spawn_end_doy = 304  # Oct 31
-
-        self._reset_spawn_season_if_needed(spawn_start_doy)
+        # Reset spawn season using earliest start across species
+        earliest_start = min(v[0] for v in spawn_doy_cache.values())
+        self._reset_spawn_season_if_needed(earliest_start)
 
         alive = self.trout_state.alive_indices()
         cs = self.fem_space.cell_state
 
-        # Pre-computed spawn depth/velocity table arrays
-        depth_xs, depth_ys, vel_xs, vel_ys = self._spawn_tables[self.species_order[0]]
-
         for i in alive:
+            sp_idx = int(self.trout_state.species_idx[i])
+            sp_name = self.species_order[sp_idx]
+            sp_cfg = self.config.species[sp_name]
+            r_idx = int(self.trout_state.reach_idx[i])
+            rname = self.reach_order[r_idx]
+            rp = self.reach_params[rname]
+            temperature = float(self.reach_state.temperature[r_idx])
+            flow = float(self.reach_state.flow[r_idx])
+            spawn_start_doy, spawn_end_doy = spawn_doy_cache[sp_name]
+
+            depth_xs, depth_ys, vel_xs, vel_ys = self._spawn_tables[sp_name]
+
             if not ready_to_spawn(
                 sex=int(self.trout_state.sex[i]),
                 age=int(self.trout_state.age[i]),
@@ -644,7 +726,7 @@ class InSTREAMModel(mesa.Model):
 
             created = create_redd(
                 self.redd_state,
-                species_idx=0,
+                species_idx=sp_idx,
                 cell_idx=best_cell,
                 reach_idx=reach_idx,
                 weight=float(self.trout_state.weight[i]),
@@ -666,59 +748,74 @@ class InSTREAMModel(mesa.Model):
                 if healthy_wt > 0:
                     self.trout_state.condition[i] = new_w / healthy_wt
 
-    def _do_redd_step(self, step_length, temperature):
-        """Redd survival, egg development, and emergence."""
-        sp_cfg = self.config.species[self.species_order[0]]
-        rp_cfg = self.config.reaches[self.reach_order[0]]
+    def _do_redd_step(self, step_length):
+        """Redd survival, egg development, and emergence (per-redd species/reach)."""
         cs = self.fem_space.cell_state
 
         alive_redds = np.where(self.redd_state.alive)[0]
         if len(alive_redds) == 0:
             return
 
-        # Get conditions at each redd's cell
-        redd_temps = np.full(len(self.redd_state.alive), temperature)
-        redd_depths = np.zeros(len(self.redd_state.alive))
-        redd_flows = np.full(
-            len(self.redd_state.alive), float(self.reach_state.flow[0])
-        )
-        redd_peaks = np.full(
-            len(self.redd_state.alive), bool(self.reach_state.is_flow_peak[0])
-        )
+        n_redd_cap = len(self.redd_state.alive)
+
+        # Build per-redd condition arrays from each redd's reach
+        redd_temps = np.zeros(n_redd_cap, dtype=np.float64)
+        redd_depths = np.zeros(n_redd_cap, dtype=np.float64)
+        redd_flows = np.zeros(n_redd_cap, dtype=np.float64)
+        redd_peaks = np.zeros(n_redd_cap, dtype=bool)
 
         for i in alive_redds:
+            r_idx = int(self.redd_state.reach_idx[i])
+            redd_temps[i] = float(self.reach_state.temperature[r_idx])
+            redd_flows[i] = float(self.reach_state.flow[r_idx])
+            redd_peaks[i] = bool(self.reach_state.is_flow_peak[r_idx])
             cell = self.redd_state.cell_idx[i]
             if 0 <= cell < self.fem_space.num_cells:
                 redd_depths[i] = cs.depth[cell]
 
-        # Apply redd survival
-        new_eggs, lo, hi, dw, sc = apply_redd_survival(
-            self.redd_state.num_eggs,
-            self.redd_state.frac_developed,
-            redd_temps,
-            redd_depths,
-            redd_flows,
-            redd_peaks,
-            step_length=step_length,
-            lo_T1=sp_cfg.mort_redd_lo_temp_T1,
-            lo_T9=sp_cfg.mort_redd_lo_temp_T9,
-            hi_T1=sp_cfg.mort_redd_hi_temp_T1,
-            hi_T9=sp_cfg.mort_redd_hi_temp_T9,
-            dewater_surv=sp_cfg.mort_redd_dewater_surv,
-            shear_A=rp_cfg.shear_A,
-            shear_B=rp_cfg.shear_B,
-            scour_depth=sp_cfg.mort_redd_scour_depth,
-        )
-        self.redd_state.num_eggs[:] = np.round(new_eggs).astype(np.int32)
-
-        # Track mortality
-        self.redd_state.eggs_lo_temp[:] += np.round(lo).astype(np.int32)
-        self.redd_state.eggs_hi_temp[:] += np.round(hi).astype(np.int32)
-        self.redd_state.eggs_dewatering[:] += np.round(dw).astype(np.int32)
-        self.redd_state.eggs_scour[:] += np.round(sc).astype(np.int32)
-
-        # Develop eggs
+        # Apply redd survival per redd (species/reach-specific params)
+        # Process each redd individually to use correct species/reach params
         for i in alive_redds:
+            sp_idx = int(self.redd_state.species_idx[i])
+            sp_name = self.species_order[sp_idx]
+            sp_cfg = self.config.species[sp_name]
+            r_idx = int(self.redd_state.reach_idx[i])
+            rname = self.reach_order[r_idx]
+            rp_cfg = self.config.reaches[rname]
+            temperature = redd_temps[i]
+
+            # Single-redd survival (wrap in 1-element arrays for apply_redd_survival)
+            eggs_arr = np.array([self.redd_state.num_eggs[i]], dtype=np.float64)
+            frac_arr = np.array([self.redd_state.frac_developed[i]], dtype=np.float64)
+            temp_arr = np.array([temperature], dtype=np.float64)
+            depth_arr = np.array([redd_depths[i]], dtype=np.float64)
+            flow_arr = np.array([redd_flows[i]], dtype=np.float64)
+            peak_arr = np.array([redd_peaks[i]], dtype=bool)
+
+            new_eggs, lo, hi, dw, sc = apply_redd_survival(
+                eggs_arr,
+                frac_arr,
+                temp_arr,
+                depth_arr,
+                flow_arr,
+                peak_arr,
+                step_length=step_length,
+                lo_T1=sp_cfg.mort_redd_lo_temp_T1,
+                lo_T9=sp_cfg.mort_redd_lo_temp_T9,
+                hi_T1=sp_cfg.mort_redd_hi_temp_T1,
+                hi_T9=sp_cfg.mort_redd_hi_temp_T9,
+                dewater_surv=sp_cfg.mort_redd_dewater_surv,
+                shear_A=rp_cfg.shear_A,
+                shear_B=rp_cfg.shear_B,
+                scour_depth=sp_cfg.mort_redd_scour_depth,
+            )
+            self.redd_state.num_eggs[i] = int(np.round(new_eggs[0]))
+            self.redd_state.eggs_lo_temp[i] += int(np.round(lo[0]))
+            self.redd_state.eggs_hi_temp[i] += int(np.round(hi[0]))
+            self.redd_state.eggs_dewatering[i] += int(np.round(dw[0]))
+            self.redd_state.eggs_scour[i] += int(np.round(sc[0]))
+
+            # Develop eggs
             self.redd_state.frac_developed[i] = develop_eggs(
                 float(self.redd_state.frac_developed[i]),
                 temperature,
@@ -733,28 +830,32 @@ class InSTREAMModel(mesa.Model):
             if self.redd_state.num_eggs[i] <= 0:
                 self.redd_state.alive[i] = False
 
-        # Emergence
-        redd_emergence(
-            self.redd_state,
-            self.trout_state,
-            self.rng,
-            sp_cfg.emerge_length_min,
-            sp_cfg.emerge_length_mode,
-            sp_cfg.emerge_length_max,
-            sp_cfg.weight_A,
-            sp_cfg.weight_B,
-            species_index=0,
-        )
+        # Emergence: per-species emergence params
+        # Group redds by species for emergence
+        for sp_idx, sp_name in enumerate(self.species_order):
+            sp_cfg = self.config.species[sp_name]
+            redd_emergence(
+                self.redd_state,
+                self.trout_state,
+                self.rng,
+                sp_cfg.emerge_length_min,
+                sp_cfg.emerge_length_mode,
+                sp_cfg.emerge_length_max,
+                sp_cfg.weight_A,
+                sp_cfg.weight_B,
+                species_index=sp_idx,
+            )
 
     def _compute_piscivore_density(self):
-        """Compute piscivore density (count / area) per cell."""
-        sp_cfg = self.config.species[self.species_order[0]]
-        pisciv_length = getattr(sp_cfg, "pisciv_length", 999.0)
+        """Compute piscivore density (count / area) per cell (per-species threshold)."""
+        _pisciv_arr = self._sp_arrays["pisciv_length"]
         n_cells = self.fem_space.num_cells
         pisciv_count = np.zeros(n_cells, dtype=np.float64)
         alive = self.trout_state.alive_indices()
         for i in alive:
             cell = self.trout_state.cell_idx[i]
+            sp_idx = int(self.trout_state.species_idx[i])
+            pisciv_length = float(_pisciv_arr[sp_idx])
             if 0 <= cell < n_cells and self.trout_state.length[i] >= pisciv_length:
                 pisciv_count[cell] += self.trout_state.superind_rep[i]
         cs = self.fem_space.cell_state

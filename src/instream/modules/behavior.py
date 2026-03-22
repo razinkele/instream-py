@@ -436,6 +436,9 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     Performance-optimized: pre-extracts params to locals, pre-computes
     step-level and per-fish invariants, inlines fitness/growth/survival
     computation to eliminate function-call and dict-lookup overhead.
+
+    Now supports per-fish species/reach dispatch via sp_arrays, rp_arrays,
+    and per-reach temperature/turbidity arrays.
     """
     # Lazy import to avoid circular dependency (survival imports evaluate_logistic)
     from instream.modules.survival import (  # noqa: E402
@@ -444,12 +447,43 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         survival_condition as _surv_cond,
     )
 
+    # --- Extract per-species / per-reach arrays ---
+    _sp = params.get("sp_arrays", None)
+    _rp = params.get("rp_arrays", None)
+    _sp_cmax_table_x = params.get("sp_cmax_table_x", None)
+    _sp_cmax_table_y = params.get("sp_cmax_table_y", None)
+
+    # Temperature/turbidity: accept arrays (per-reach) or scalars (backward compat)
+    _raw_temp = params["temperature"]
+    _raw_turb = params["turbidity"]
+    _raw_mstt = params["max_swim_temp_term"]
+    _raw_rtt = params["resp_temp_term"]
+    _temperature_arr = np.atleast_1d(np.asarray(_raw_temp, dtype=np.float64))
+    _turbidity_arr = np.atleast_1d(np.asarray(_raw_turb, dtype=np.float64))
+    _max_swim_tt_arr = np.atleast_2d(np.asarray(_raw_mstt, dtype=np.float64))
+    _resp_tt_arr = np.atleast_2d(np.asarray(_raw_rtt, dtype=np.float64))
+
+    # Build candidate lists using per-species max movement radius (use global max)
+    if _sp is not None:
+        _move_max = float(np.max(_sp["move_radius_max"]))
+        _move_L1 = float(_sp["move_radius_L1"][0])
+        _move_L9 = float(_sp["move_radius_L9"][0])
+        # For multi-species, use most permissive radius for candidate building
+        # (the fitness evaluation will still be per-fish correct)
+        for si in range(len(_sp["move_radius_max"])):
+            if _sp["move_radius_max"][si] > _move_max:
+                _move_max = float(_sp["move_radius_max"][si])
+    else:
+        _move_max = params.get("move_radius_max", 0.0)
+        _move_L1 = params.get("move_radius_L1", 0.0)
+        _move_L9 = params.get("move_radius_L9", 0.0)
+
     candidate_lists = build_candidate_lists(
         trout_state,
         fem_space,
-        params["move_radius_max"],
-        params["move_radius_L1"],
-        params["move_radius_L9"],
+        _move_max,
+        _move_L1,
+        _move_L9,
     )
 
     cs = fem_space.cell_state
@@ -464,68 +498,65 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
     activities = ["drift", "search", "hide"]
 
-    # === PRE-EXTRACT params to locals (eliminates 37M+ dict lookups) ===
-    _temperature = params["temperature"]
-    _turbidity = params["turbidity"]
-    _drift_conc = params["drift_conc"]
-    _search_prod = params["search_prod"]
-    _search_area = params["search_area"]
-    _shelter_speed_frac = params["shelter_speed_frac"]
+    # === PRE-EXTRACT species param arrays to locals ===
     _step_length = params["step_length"]
-    _cmax_A = params["cmax_A"]
-    _cmax_B = params["cmax_B"]
-    _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
-    _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
-    _react_dist_A = params["react_dist_A"]
-    _react_dist_B = params["react_dist_B"]
-    _turbid_threshold = params["turbid_threshold"]
-    _turbid_min = params["turbid_min"]
-    _turbid_exp = params["turbid_exp"]
-    _light_threshold = params["light_threshold"]
-    _light_min = params["light_min"]
-    _light_exp = params["light_exp"]
-    _capture_R1 = params["capture_R1"]
-    _capture_R9 = params["capture_R9"]
-    _max_speed_A = params["max_speed_A"]
-    _max_speed_B = params["max_speed_B"]
-    _max_swim_temp_term = params["max_swim_temp_term"]
-    _resp_A = params["resp_A"]
-    _resp_B = params["resp_B"]
-    _resp_D = params["resp_D"]
-    _resp_temp_term = params["resp_temp_term"]
-    _prey_energy_density = params["prey_energy_density"]
-    _fish_energy_density = params["fish_energy_density"]
-    # Survival parameters (with defaults)
-    _mort_ht_T1 = params.get("mort_high_temp_T1", 28.0)
-    _mort_ht_T9 = params.get("mort_high_temp_T9", 24.0)
-    _mort_cond_S5 = params.get("mort_condition_S_at_K5", 0.8)
-    _mort_cond_S8 = params.get("mort_condition_S_at_K8", 0.992)
-    _fp_min = params.get("fish_pred_min", 0.99)
-    _fp_L1 = params.get("fish_pred_L1", 10.0)
-    _fp_L9 = params.get("fish_pred_L9", 3.0)
-    _fp_D1 = params.get("fish_pred_D1", 50.0)
-    _fp_D9 = params.get("fish_pred_D9", 10.0)
-    _fp_P1 = params.get("fish_pred_P1", 0.5)
-    _fp_P9 = params.get("fish_pred_P9", 0.1)
-    _fp_I1 = params.get("fish_pred_I1", 200.0)
-    _fp_I9 = params.get("fish_pred_I9", 50.0)
-    _fp_T1 = params.get("fish_pred_T1", 25.0)
-    _fp_T9 = params.get("fish_pred_T9", 15.0)
-    _fp_hiding_factor = params.get("fish_pred_hiding_factor", 0.5)
-    _tp_min = params.get("terr_pred_min", 0.99)
-    _tp_L1 = params.get("terr_pred_L1", 15.0)
-    _tp_L9 = params.get("terr_pred_L9", 5.0)
-    _tp_D1 = params.get("terr_pred_D1", 50.0)
-    _tp_D9 = params.get("terr_pred_D9", 10.0)
-    _tp_V1 = params.get("terr_pred_V1", 50.0)
-    _tp_V9 = params.get("terr_pred_V9", 10.0)
-    _tp_I1 = params.get("terr_pred_I1", 200.0)
-    _tp_I9 = params.get("terr_pred_I9", 50.0)
-    _tp_H1 = params.get("terr_pred_H1", 50.0)
-    _tp_H9 = params.get("terr_pred_H9", 10.0)
-    _tp_hiding_factor = params.get("terr_pred_hiding_factor", 0.5)
-    _mort_strand_dry = params.get("mort_strand_survival_when_dry", 0.5)
     _pisciv_densities = params.get("pisciv_densities", None)
+
+    if _sp is not None:
+        _spa_cmax_A = _sp["cmax_A"]
+        _spa_cmax_B = _sp["cmax_B"]
+        _spa_react_dist_A = _sp["react_dist_A"]
+        _spa_react_dist_B = _sp["react_dist_B"]
+        _spa_turbid_threshold = _sp["turbid_threshold"]
+        _spa_turbid_min = _sp["turbid_min"]
+        _spa_turbid_exp = _sp["turbid_exp"]
+        _spa_light_threshold = _sp["light_threshold"]
+        _spa_light_min = _sp["light_min"]
+        _spa_light_exp = _sp["light_exp"]
+        _spa_capture_R1 = _sp["capture_R1"]
+        _spa_capture_R9 = _sp["capture_R9"]
+        _spa_max_speed_A = _sp["max_speed_A"]
+        _spa_max_speed_B = _sp["max_speed_B"]
+        _spa_resp_A = _sp["resp_A"]
+        _spa_resp_B = _sp["resp_B"]
+        _spa_resp_D = _sp["resp_D"]
+        _spa_search_area = _sp["search_area"]
+        _spa_energy_density = _sp["energy_density"]
+        _spa_mort_ht_T1 = _sp["mort_high_temp_T1"]
+        _spa_mort_ht_T9 = _sp["mort_high_temp_T9"]
+        _spa_mort_cond_S5 = _sp["mort_condition_S_at_K5"]
+        _spa_mort_cond_S8 = _sp["mort_condition_S_at_K8"]
+        _spa_mort_strand_dry = _sp["mort_strand_survival_when_dry"]
+        _spa_fp_L1 = _sp["mort_fish_pred_L1"]
+        _spa_fp_L9 = _sp["mort_fish_pred_L9"]
+        _spa_fp_D1 = _sp["mort_fish_pred_D1"]
+        _spa_fp_D9 = _sp["mort_fish_pred_D9"]
+        _spa_fp_P1 = _sp["mort_fish_pred_P1"]
+        _spa_fp_P9 = _sp["mort_fish_pred_P9"]
+        _spa_fp_I1 = _sp["mort_fish_pred_I1"]
+        _spa_fp_I9 = _sp["mort_fish_pred_I9"]
+        _spa_fp_T1 = _sp["mort_fish_pred_T1"]
+        _spa_fp_T9 = _sp["mort_fish_pred_T9"]
+        _spa_fp_hiding_factor = _sp["mort_fish_pred_hiding_factor"]
+        _spa_tp_L1 = _sp["mort_terr_pred_L1"]
+        _spa_tp_L9 = _sp["mort_terr_pred_L9"]
+        _spa_tp_D1 = _sp["mort_terr_pred_D1"]
+        _spa_tp_D9 = _sp["mort_terr_pred_D9"]
+        _spa_tp_V1 = _sp["mort_terr_pred_V1"]
+        _spa_tp_V9 = _sp["mort_terr_pred_V9"]
+        _spa_tp_I1 = _sp["mort_terr_pred_I1"]
+        _spa_tp_I9 = _sp["mort_terr_pred_I9"]
+        _spa_tp_H1 = _sp["mort_terr_pred_H1"]
+        _spa_tp_H9 = _sp["mort_terr_pred_H9"]
+        _spa_tp_hiding_factor = _sp["mort_terr_pred_hiding_factor"]
+
+    if _rp is not None:
+        _rpa_drift_conc = _rp["drift_conc"]
+        _rpa_search_prod = _rp["search_prod"]
+        _rpa_shelter_speed_frac = _rp["shelter_speed_frac"]
+        _rpa_prey_energy_density = _rp["prey_energy_density"]
+        _rpa_fish_pred_min = _rp["fish_pred_min"]
+        _rpa_terr_pred_min = _rp["terr_pred_min"]
 
     # Cell arrays to locals
     _c_depth = cs.depth
@@ -536,24 +567,6 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     _c_ashelter = cs.available_vel_shelter
     _c_ahiding = cs.available_hiding_places
     _c_dist_esc = cs.dist_escape
-
-    # === STEP-LEVEL INVARIANTS (computed ONCE, not 1.2M times) ===
-    _cmax_temp = cmax_temp_function(_temperature, _cmax_table_x, _cmax_table_y)
-    _s_high_temp = _surv_ht(_temperature, _mort_ht_T1, _mort_ht_T9)
-    # Fish predation temperature term (same for all cells)
-    _fp_temp_logistic = evaluate_logistic(_temperature, _fp_T1, _fp_T9)
-    # Turbidity function (same for all cells)
-    if _turbidity <= _turbid_threshold:
-        _turbid_func = 1.0
-    else:
-        _turbid_func = _turbid_min + (1.0 - _turbid_min) * math.exp(
-            _turbid_exp * (_turbidity - _turbid_threshold)
-        )
-    # Capture success midpoint/slope (same for all cells)
-    _cap_mid = (_capture_R1 + _capture_R9) * 0.5
-    _cap_slope = (
-        _LN81 / (_capture_R9 - _capture_R1) if _capture_R9 != _capture_R1 else 0.0
-    )
 
     for i in alive_sorted:
         candidates = candidate_lists[i]
@@ -575,11 +588,181 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
         prev_cons = float(np.sum(trout_state.consumption_memory[i]))
 
+        # === PER-FISH species/reach lookup ===
+        _fish_reach = int(trout_state.reach_idx[i])
+        _fish_species = int(trout_state.species_idx[i])
+
+        # Clamp indices to valid range for backward compat with scalar inputs
+        _fr = min(_fish_reach, len(_temperature_arr) - 1)
+        _fs = (
+            min(_fish_species, _max_swim_tt_arr.shape[1] - 1)
+            if _max_swim_tt_arr.ndim >= 2
+            else 0
+        )
+        _fr_r = min(_fish_reach, _max_swim_tt_arr.shape[0] - 1)
+
+        _temperature = float(_temperature_arr[_fr])
+        _turbidity = float(_turbidity_arr[_fr])
+        _max_swim_temp_term = float(_max_swim_tt_arr[_fr_r, _fs])
+        _resp_temp_term = float(_resp_tt_arr[_fr_r, _fs])
+
+        if _sp is not None:
+            _cmax_A = float(_spa_cmax_A[_fish_species])
+            _cmax_B = float(_spa_cmax_B[_fish_species])
+            _react_dist_A = float(_spa_react_dist_A[_fish_species])
+            _react_dist_B = float(_spa_react_dist_B[_fish_species])
+            _turbid_threshold = float(_spa_turbid_threshold[_fish_species])
+            _turbid_min = float(_spa_turbid_min[_fish_species])
+            _turbid_exp = float(_spa_turbid_exp[_fish_species])
+            _light_threshold = float(_spa_light_threshold[_fish_species])
+            _light_min = float(_spa_light_min[_fish_species])
+            _light_exp = float(_spa_light_exp[_fish_species])
+            _capture_R1 = float(_spa_capture_R1[_fish_species])
+            _capture_R9 = float(_spa_capture_R9[_fish_species])
+            _max_speed_A = float(_spa_max_speed_A[_fish_species])
+            _max_speed_B = float(_spa_max_speed_B[_fish_species])
+            _resp_A = float(_spa_resp_A[_fish_species])
+            _resp_B = float(_spa_resp_B[_fish_species])
+            _resp_D = float(_spa_resp_D[_fish_species])
+            _search_area = float(_spa_search_area[_fish_species])
+            _fish_energy_density = float(_spa_energy_density[_fish_species])
+            _mort_ht_T1 = float(_spa_mort_ht_T1[_fish_species])
+            _mort_ht_T9 = float(_spa_mort_ht_T9[_fish_species])
+            _mort_cond_S5 = float(_spa_mort_cond_S5[_fish_species])
+            _mort_cond_S8 = float(_spa_mort_cond_S8[_fish_species])
+            _mort_strand_dry = float(_spa_mort_strand_dry[_fish_species])
+            _fp_L1 = float(_spa_fp_L1[_fish_species])
+            _fp_L9 = float(_spa_fp_L9[_fish_species])
+            _fp_D1 = float(_spa_fp_D1[_fish_species])
+            _fp_D9 = float(_spa_fp_D9[_fish_species])
+            _fp_P1 = float(_spa_fp_P1[_fish_species])
+            _fp_P9 = float(_spa_fp_P9[_fish_species])
+            _fp_I1 = float(_spa_fp_I1[_fish_species])
+            _fp_I9 = float(_spa_fp_I9[_fish_species])
+            _fp_T1 = float(_spa_fp_T1[_fish_species])
+            _fp_T9 = float(_spa_fp_T9[_fish_species])
+            _fp_hiding_factor = float(_spa_fp_hiding_factor[_fish_species])
+            _tp_L1 = float(_spa_tp_L1[_fish_species])
+            _tp_L9 = float(_spa_tp_L9[_fish_species])
+            _tp_D1 = float(_spa_tp_D1[_fish_species])
+            _tp_D9 = float(_spa_tp_D9[_fish_species])
+            _tp_V1 = float(_spa_tp_V1[_fish_species])
+            _tp_V9 = float(_spa_tp_V9[_fish_species])
+            _tp_I1 = float(_spa_tp_I1[_fish_species])
+            _tp_I9 = float(_spa_tp_I9[_fish_species])
+            _tp_H1 = float(_spa_tp_H1[_fish_species])
+            _tp_H9 = float(_spa_tp_H9[_fish_species])
+            _tp_hiding_factor = float(_spa_tp_hiding_factor[_fish_species])
+            _cmax_table_x = np.asarray(
+                _sp_cmax_table_x[_fish_species], dtype=np.float64
+            )
+            _cmax_table_y = np.asarray(
+                _sp_cmax_table_y[_fish_species], dtype=np.float64
+            )
+        else:
+            # Backward compatibility: scalar params from dict
+            _cmax_A = params["cmax_A"]
+            _cmax_B = params["cmax_B"]
+            _react_dist_A = params["react_dist_A"]
+            _react_dist_B = params["react_dist_B"]
+            _turbid_threshold = params["turbid_threshold"]
+            _turbid_min = params["turbid_min"]
+            _turbid_exp = params["turbid_exp"]
+            _light_threshold = params["light_threshold"]
+            _light_min = params["light_min"]
+            _light_exp = params["light_exp"]
+            _capture_R1 = params["capture_R1"]
+            _capture_R9 = params["capture_R9"]
+            _max_speed_A = params["max_speed_A"]
+            _max_speed_B = params["max_speed_B"]
+            _resp_A = params["resp_A"]
+            _resp_B = params["resp_B"]
+            _resp_D = params["resp_D"]
+            _search_area = params["search_area"]
+            _fish_energy_density = params["fish_energy_density"]
+            _mort_ht_T1 = params.get("mort_high_temp_T1", 28.0)
+            _mort_ht_T9 = params.get("mort_high_temp_T9", 24.0)
+            _mort_cond_S5 = params.get("mort_condition_S_at_K5", 0.8)
+            _mort_cond_S8 = params.get("mort_condition_S_at_K8", 0.992)
+            _mort_strand_dry = params.get("mort_strand_survival_when_dry", 0.5)
+            _fp_L1 = params.get("fish_pred_L1", 10.0)
+            _fp_L9 = params.get("fish_pred_L9", 3.0)
+            _fp_D1 = params.get("fish_pred_D1", 50.0)
+            _fp_D9 = params.get("fish_pred_D9", 10.0)
+            _fp_P1 = params.get("fish_pred_P1", 0.5)
+            _fp_P9 = params.get("fish_pred_P9", 0.1)
+            _fp_I1 = params.get("fish_pred_I1", 200.0)
+            _fp_I9 = params.get("fish_pred_I9", 50.0)
+            _fp_T1 = params.get("fish_pred_T1", 25.0)
+            _fp_T9 = params.get("fish_pred_T9", 15.0)
+            _fp_hiding_factor = params.get("fish_pred_hiding_factor", 0.5)
+            _tp_L1 = params.get("terr_pred_L1", 15.0)
+            _tp_L9 = params.get("terr_pred_L9", 5.0)
+            _tp_D1 = params.get("terr_pred_D1", 50.0)
+            _tp_D9 = params.get("terr_pred_D9", 10.0)
+            _tp_V1 = params.get("terr_pred_V1", 50.0)
+            _tp_V9 = params.get("terr_pred_V9", 10.0)
+            _tp_I1 = params.get("terr_pred_I1", 200.0)
+            _tp_I9 = params.get("terr_pred_I9", 50.0)
+            _tp_H1 = params.get("terr_pred_H1", 50.0)
+            _tp_H9 = params.get("terr_pred_H9", 10.0)
+            _tp_hiding_factor = params.get("terr_pred_hiding_factor", 0.5)
+            _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
+            _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
+
+        if _rp is not None:
+            _drift_conc = float(
+                _rpa_drift_conc[min(_fish_reach, len(_rpa_drift_conc) - 1)]
+            )
+            _search_prod = float(
+                _rpa_search_prod[min(_fish_reach, len(_rpa_search_prod) - 1)]
+            )
+            _shelter_speed_frac = float(
+                _rpa_shelter_speed_frac[
+                    min(_fish_reach, len(_rpa_shelter_speed_frac) - 1)
+                ]
+            )
+            _prey_energy_density = float(
+                _rpa_prey_energy_density[
+                    min(_fish_reach, len(_rpa_prey_energy_density) - 1)
+                ]
+            )
+            _fp_min = float(
+                _rpa_fish_pred_min[min(_fish_reach, len(_rpa_fish_pred_min) - 1)]
+            )
+            _tp_min = float(
+                _rpa_terr_pred_min[min(_fish_reach, len(_rpa_terr_pred_min) - 1)]
+            )
+        else:
+            # Backward compatibility: scalar reach params from dict
+            _drift_conc = params["drift_conc"]
+            _search_prod = params["search_prod"]
+            _shelter_speed_frac = params["shelter_speed_frac"]
+            _prey_energy_density = params["prey_energy_density"]
+            _fp_min = params.get("fish_pred_min", 0.99)
+            _tp_min = params.get("terr_pred_min", 0.99)
+
         # === PER-FISH INVARIANTS (computed ONCE, not 3579x) ===
         _fl = float(trout_state.length[i])
         _fw = float(trout_state.weight[i])
         _fc = float(trout_state.condition[i])
         _frep = int(trout_state.superind_rep[i])
+
+        # Step-level invariants that now vary per fish (species/reach dependent)
+        _cmax_temp = cmax_temp_function(_temperature, _cmax_table_x, _cmax_table_y)
+        _s_high_temp = _surv_ht(_temperature, _mort_ht_T1, _mort_ht_T9)
+        _fp_temp_logistic = evaluate_logistic(_temperature, _fp_T1, _fp_T9)
+        if _turbidity <= _turbid_threshold:
+            _turbid_func = 1.0
+        else:
+            _turbid_func = _turbid_min + (1.0 - _turbid_min) * math.exp(
+                _turbid_exp * (_turbidity - _turbid_threshold)
+            )
+        _cap_mid = (_capture_R1 + _capture_R9) * 0.5
+        _cap_slope = (
+            _LN81 / (_capture_R9 - _capture_R1) if _capture_R9 != _capture_R1 else 0.0
+        )
+
         _cmax_wt = _cmax_A * _fw**_cmax_B
         _cstepmax = c_stepmax(_cmax_wt, _cmax_temp, prev_cons, _step_length)
         _max_spd = (_max_speed_A * _fl + _max_speed_B) * _max_swim_temp_term
@@ -872,6 +1055,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         best_activities[i] = best_a
         trout_state.cell_idx[i] = best_c
         trout_state.activity[i] = best_a
+        # Update reach_idx from the chosen cell's reach
+        trout_state.reach_idx[i] = cs.reach_idx[best_c]
 
         # Store raw growth rate (tracked in inner loop, no second call needed)
         trout_state.last_growth_rate[i] = best_growth
