@@ -131,18 +131,7 @@ def insert_changelog_entry(changelog_path, new_section):
 def get_test_count():
     """Run pytest --co -q and count collected tests."""
     result = subprocess.run(
-        [
-            "conda",
-            "run",
-            "-n",
-            "shiny",
-            "python",
-            "-m",
-            "pytest",
-            "tests/",
-            "--co",
-            "-q",
-        ],
+        [sys.executable, "-m", "pytest", "tests/", "--co", "-q"],
         capture_output=True,
         text=True,
         cwd=str(PROJECT_ROOT),
@@ -228,18 +217,7 @@ def run_tests():
     """Run pytest and return True if all tests pass."""
     print("Running tests...")
     result = subprocess.run(
-        [
-            "conda",
-            "run",
-            "-n",
-            "shiny",
-            "python",
-            "-m",
-            "pytest",
-            "tests/",
-            "-q",
-            "--tb=short",
-        ],
+        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=short"],
         cwd=str(PROJECT_ROOT),
     )
     return result.returncode == 0

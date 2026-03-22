@@ -229,13 +229,13 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.7.0** -- InSTREAM-SD complete, NetLogo parity achieved (March 2026).
+**v0.9.0** -- InSTREAM-SD complete, NetLogo parity achieved (March 2026).
 
 ### Current Metrics
 
 | Metric          | Value                          |
 |-----------------|--------------------------------|
-| Tests           | 455                            |
+| Tests           | 490                            |
 | Validation      | 11/11 NetLogo reference tests  |
 | Step time       | 48 ms (Example A, Numba JIT)   |
 | Species         | Multi-species support          |
