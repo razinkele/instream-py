@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-03-22
+
+### Added
+- **InSTREAM-SD sub-daily scheduling**: multiple habitat selections per day with variable flow
+- Auto-detection of input frequency (hourly, 6-hourly, daily) from time-series timestamps
+- SubDailyScheduler with row-pointer advancement, is_day_boundary, substep_index
+- Partial resource repletion between sub-steps (drift + search food regeneration)
+- Growth accumulation in memory arrays, applied once at day boundary
+- Solar irradiance cached per day, cell light recomputed each sub-step (depth-dependent)
+- Synthetic hourly and peaking fixture data for testing
+- 10 new sub-daily integration tests + 2 daily regression tests
+- GitHub Actions CI pipeline
+
+### Changed
+- model.step() restructured into sub-step operations (every step) and day-boundary operations (end of day)
+- TroutState.max_steps_per_day auto-sized from detected input frequency
+- Survival applied each sub-step with `** step_length` scaling
+- Spawning, redd development, census, age increment only at day boundaries
+
+### Fixed
+- Substep index off-by-one in TimeManager (solar cache population)
+- Growth accumulation count at day boundary
+
+---
+
 ## [0.6.0] - 2026-03-22
 
 ### Added
