@@ -105,29 +105,54 @@ class InSTREAMModel(mesa.Model):
             spawn_field=gis.get("frac_spawn", "FRACSPWN"),
         )
 
-        # Load hydraulic tables per reach
-        # For simplicity, we assume a single reach for now and load the first.
-        # Multi-reach: we'd need to load per-reach tables and merge cell indices.
-        reach_cfg = self.config.reaches[self.reach_order[0]]
+        # Load hydraulic tables for ALL reaches
+        self._reach_hydraulic_data = {}
+        for rname in self.reach_order:
+            rcfg = self.config.reaches[rname]
+            d_path = self.data_dir / rcfg.depth_file
+            if not d_path.exists():
+                d_path = self.data_dir / Path(rcfg.depth_file).name
+            v_path = self.data_dir / rcfg.velocity_file
+            if not v_path.exists():
+                v_path = self.data_dir / Path(rcfg.velocity_file).name
+            d_flows, d_vals = read_depth_table(d_path)
+            v_flows, v_vals = read_velocity_table(v_path)
+            d_vals = d_vals * 100.0  # m -> cm
+            v_vals = v_vals * 100.0  # m/s -> cm/s
+            self._reach_hydraulic_data[rname] = {
+                "depth_flows": d_flows,
+                "depth_values": d_vals,
+                "vel_flows": v_flows,
+                "vel_values": v_vals,
+            }
 
-        depth_path = self.data_dir / reach_cfg.depth_file
-        if not depth_path.exists():
-            depth_path = self.data_dir / Path(reach_cfg.depth_file).name
-        vel_path = self.data_dir / reach_cfg.velocity_file
-        if not vel_path.exists():
-            vel_path = self.data_dir / Path(reach_cfg.velocity_file).name
-
-        depth_flows, depth_values = read_depth_table(depth_path)
-        vel_flows, vel_values = read_velocity_table(vel_path)
-
-        # Convert from SI units (m, m/s) to inSTREAM internal units (cm, cm/s)
-        depth_values = depth_values * 100.0  # m -> cm
-        vel_values = vel_values * 100.0  # m/s -> cm/s
-
-        # Build CellState and FEMSpace
+        # Build CellState using the first reach's tables for FEMSpace init
+        # (backward compat; per-reach updates happen in step())
+        first_hdata = self._reach_hydraulic_data[self.reach_order[0]]
         cell_state = self.mesh.to_cell_state(
-            depth_flows, depth_values, vel_flows, vel_values
+            first_hdata["depth_flows"],
+            first_hdata["depth_values"],
+            first_hdata["vel_flows"],
+            first_hdata["vel_values"],
         )
+
+        # Remap cell reach_idx to match model's reach_order (config ordering).
+        # The mesh assigns reach_idx based on first-appearance in shapefile,
+        # which may differ from config ordering.  Use a temp array to avoid
+        # collision when swapping indices.
+        mesh_unique = list(dict.fromkeys(self.mesh.reach_names))
+        needs_remap = any(
+            self._reach_name_to_idx.get(rname, mesh_idx) != mesh_idx
+            for mesh_idx, rname in enumerate(mesh_unique)
+        )
+        if needs_remap:
+            new_reach_idx = cell_state.reach_idx.copy()
+            for mesh_idx, rname in enumerate(mesh_unique):
+                model_idx = self._reach_name_to_idx[rname]
+                mask = cell_state.reach_idx == mesh_idx
+                new_reach_idx[mask] = model_idx
+            cell_state.reach_idx[:] = new_reach_idx
+
         self.fem_space = FEMSpace(cell_state, self.mesh.neighbor_indices)
 
         # Load time-series data per reach
