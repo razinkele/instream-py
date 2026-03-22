@@ -1,0 +1,261 @@
+# inSTREAM-py
+
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-green)
+![Status: In Development](https://img.shields.io/badge/status-in%20development-orange)
+
+## Overview
+
+**inSTREAM-py** is a Python conversion of the
+[inSTREAM/inSALMO 7.4](https://www.fs.usda.gov/research/treesearch/56100)
+individual-based model for salmonid populations in streams. The original
+NetLogo implementation is being ported to Python using:
+
+- **Mesa 3.x** for agent-based model orchestration
+- **NumPy structured-of-arrays (SoA)** state containers for cache-friendly
+  batch operations
+- **Numba JIT** compilation for compute-intensive kernels
+- An optional **JAX** backend for GPU acceleration (planned)
+
+The model simulates trout growth, survival, habitat selection, spawning, and
+migration at the individual level within spatially explicit stream reaches
+defined by finite-element meshes.
+
+For background on the inSTREAM modelling framework, see:
+
+- Railsback, S.F., Harvey, B.C., et al. (2009). *inSTREAM: the individual-based
+  stream trout research and environmental assessment model.* Gen. Tech. Rep.
+  PSW-GTR-218.
+- Railsback, S.F. & Harvey, B.C. (2020). *Modeling populations of adaptive
+  individuals.* Princeton University Press.
+
+## Features
+
+- **Wisconsin bioenergetics** -- temperature-dependent consumption, respiration,
+  and growth
+- **Five survival sources** -- high temperature, stranding, poor condition, fish
+  predation, and terrestrial predation
+- **Fitness-based habitat selection** -- expected maturity via survival-integrated
+  fitness function
+- **Spawning and redd lifecycle** -- redd creation, egg development,
+  fry emergence with density-dependent capacity
+- **Multi-species, multi-reach architecture** -- arbitrary number of species and
+  stream reaches connected by a junction network
+- **Numba JIT backend** -- critical inner loops compiled to machine code for
+  60x+ speedup over pure Python
+- **Pluggable compute backends** -- NumPy (default), Numba, and JAX (planned)
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/instream-py.git
+cd instream-py
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run the example simulation
+instream run configs/example_a.yaml
+```
+
+## Installation
+
+Requires **Python 3.11** or later.
+
+```bash
+# Core install (NumPy backend only)
+pip install -e .
+
+# With Numba JIT acceleration
+pip install -e ".[numba]"
+
+# With JAX GPU backend (experimental)
+pip install -e ".[jax]"
+
+# Full development environment (tests, Numba, Hypothesis)
+pip install -e ".[dev]"
+```
+
+### Dependencies
+
+| Package    | Version  | Purpose                        |
+|------------|----------|--------------------------------|
+| mesa       | >= 3.1   | Agent-based model framework    |
+| numpy      | >= 1.24  | Array computation              |
+| scipy      | >= 1.11  | Spatial queries (KD-tree)      |
+| pandas     | >= 2.0   | Time series and data I/O       |
+| geopandas  | >= 0.14  | Shapefile reading              |
+| shapely    | >= 2.0   | Polygon geometry               |
+| pydantic   | >= 2.0   | Configuration validation       |
+| pyyaml     | >= 6.0   | YAML parsing                   |
+
+## Usage
+
+```python
+from instream.model import InSTREAMModel
+
+# Create and run a simulation
+model = InSTREAMModel("configs/example_a.yaml")
+
+# Step through time
+for _ in range(365):
+    model.step()
+
+# Access state arrays
+trout = model.trout_state
+print(f"Live fish: {trout.alive.sum()}")
+print(f"Mean length: {trout.length[trout.alive].mean():.1f} cm")
+print(f"Mean weight: {trout.weight[trout.alive].mean():.2f} g")
+
+# Access redd state
+redds = model.redd_state
+print(f"Active redds: {redds.alive.sum()}")
+```
+
+## Configuration
+
+Simulations are configured through a single YAML file. See
+[`configs/example_a.yaml`](configs/example_a.yaml) for a complete example.
+
+Top-level sections:
+
+```yaml
+simulation:      # start/end dates, output frequency, random seed
+performance:     # backend choice (numpy/numba/jax), capacity limits
+spatial:         # shapefile path, GIS column mappings
+light:           # latitude, light correction factors
+species:         # per-species biological parameters (bioenergetics,
+                 # survival, spawning, movement)
+reaches:         # per-reach environmental parameters, file paths
+```
+
+Species parameters include Wisconsin bioenergetics coefficients, survival
+logistic parameters, spawning schedules, and movement rules. Reach parameters
+specify drift food concentration, predation minimums, and paths to hydraulic
+input files.
+
+## Data Requirements
+
+Each reach requires the following input files:
+
+| File                   | Format    | Description                                                    |
+|------------------------|-----------|----------------------------------------------------------------|
+| Shapefile (`.shp`)     | ESRI shp  | Polygon mesh defining cells with attributes: cell ID, reach name, area, distance to escape cover, hiding places, velocity shelter fraction, spawning fraction |
+| Depths CSV             | CSV       | Columns: `flow` + one column per cell ID. Depth (cm) at each flow level |
+| Velocities CSV         | CSV       | Columns: `flow` + one column per cell ID. Velocity (cm/s) at each flow level |
+| Time series CSV        | CSV       | Daily records: date, flow (m^3/s), temperature (C), turbidity (NTU), daylight hours |
+| Population file        | CSV       | Optional. Initial population: species, age, length per individual |
+
+All file paths in the YAML configuration are relative to the config file's
+parent directory.
+
+## Performance
+
+Benchmark results on a 912-day simulation (Example A, ~300 fish):
+
+| Backend          | Full step | 912-day run | vs NetLogo |
+|------------------|-----------|-------------|------------|
+| Python (pure)    | 62 s      | ~129 min    | --         |
+| NumPy vectorized | 179 ms    | ~2.1 min    | ~30x       |
+| Numba JIT        | < 100 ms  | < 1.5 min   | ~50x       |
+| NetLogo 7.4      | ~5 s      | ~76 min     | 1x         |
+
+*Measured on Intel i7-11800H, 64 GB RAM. Numba times exclude JIT warmup.*
+
+## Architecture
+
+```
+InSTREAMModel (Mesa Model)
+  |
+  +-- TimeManager          # date progression, season tracking
+  +-- FEMSpace             # polygon mesh, KD-tree spatial queries
+  +-- ReachState           # per-reach hydraulics, daily conditions
+  +-- CellState            # per-cell depth, velocity, food, shelter
+  +-- TroutState (SoA)     # arrays: x, y, length, weight, alive, ...
+  +-- ReddState (SoA)      # arrays: x, y, eggs, development, ...
+  |
+  +-- Modules:
+       +-- reach           # hydraulic interpolation, cell updates
+       +-- growth          # Wisconsin bioenergetics
+       +-- survival        # 5 mortality sources + redd survival
+       +-- behavior        # fitness-based habitat selection
+       +-- spawning        # redd creation, egg development, emergence
+       +-- migration       # inter-reach movement
+```
+
+**Key design decisions:**
+
+- **SoA state containers** store all individuals of a type in contiguous NumPy
+  arrays, enabling vectorized operations and good cache locality.
+- **FEMSpace** wraps a polygon mesh with a KD-tree for fast nearest-cell
+  lookups and neighbor queries.
+- **Pluggable backends** allow swapping NumPy for Numba or JAX without changing
+  model logic. Backend selection is controlled via the `performance.backend`
+  config key.
+
+## Testing
+
+```bash
+# Run the full test suite
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ -v --cov=instream --cov-report=term-missing
+
+# Skip slow tests
+pytest tests/ -v -m "not slow"
+
+# Run only property-based tests
+pytest tests/test_properties.py -v
+```
+
+The test suite includes unit tests, integration tests, Hypothesis
+property-based tests, and performance regression tests.
+
+## Project Status
+
+**~58% complete** as of March 2026.
+
+### Completed
+
+- Core model infrastructure (Mesa orchestration, SoA state, FEMSpace)
+- YAML configuration with NLS parameter conversion
+- Wisconsin bioenergetics (growth, consumption, respiration)
+- Five survival sources with logistic functions
+- Fitness-based habitat selection with survival integration
+- Spawning, egg development, and redd emergence
+- Migration framework
+- NumPy and Numba compute backends
+- 376+ unit tests with Hypothesis property-based testing
+
+### Planned
+
+- JAX GPU backend
+- Multi-reach migration with junction network routing
+- Angler harvest module
+- Habitat restoration scenario tools
+- Sensitivity analysis framework
+- Full NetLogo validation suite
+- Shiny dashboard for interactive visualization
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 or later**
+(GPL-3.0-or-later). See [LICENSE](LICENSE) for the full text.
+
+## Citation
+
+If you use inSTREAM-py in your research, please cite:
+
+> Railsback, S.F., Harvey, B.C., Hayse, J.W., & LaGory, K.E. (2005).
+> Tests of theory for diel variation in salmonid feeding activity and habitat
+> use. *Ecology*, 86(4), 947-959.
+
+> Railsback, S.F., Harvey, B.C., Jackson, S.K., & Lamberson, R.H. (2009).
+> InSTREAM: the individual-based stream trout research and environmental
+> assessment model. Gen. Tech. Rep. PSW-GTR-218. Albany, CA: USDA Forest
+> Service, Pacific Southwest Research Station.
+
+> Railsback, S.F. & Harvey, B.C. (2020). *Modeling populations of adaptive
+> individuals.* Monographs in Population Biology 63. Princeton University Press.
