@@ -3,6 +3,15 @@
 import math
 import numpy as np
 
+try:
+    from instream.backends.numba_backend.fitness import (
+        _evaluate_all_cells as _numba_eval,
+    )
+
+    _HAS_NUMBA_FITNESS = True
+except ImportError:
+    _HAS_NUMBA_FITNESS = False
+
 from instream.modules.growth import (
     growth_rate_for,
     max_swim_speed,
@@ -400,8 +409,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     _step_length = params["step_length"]
     _cmax_A = params["cmax_A"]
     _cmax_B = params["cmax_B"]
-    _cmax_table_x = params["cmax_temp_table_x"]
-    _cmax_table_y = params["cmax_temp_table_y"]
+    _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
+    _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
     _react_dist_A = params["react_dist_A"]
     _react_dist_B = params["react_dist_B"]
     _turbid_threshold = params["turbid_threshold"]
@@ -517,180 +526,277 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
         # Evaluate fitness for all candidate cells x activities
         # Fish sees CURRENT resource levels (depleted by larger fish above)
-        for c_idx in candidates:
-            # --- Read cell values ONCE per cell ---
-            cd = float(_c_depth[c_idx])
-            cv = float(_c_vel[c_idx])
-            cl = float(_c_light[c_idx])
-            c_adrift_val = float(_c_adrift[c_idx])
-            c_asearch_val = float(_c_asearch[c_idx])
-            c_ashelter_val = float(_c_ashelter[c_idx])
-            c_ahiding_val = int(_c_ahiding[c_idx])
-            c_dist_esc_val = float(_c_dist_esc[c_idx])
-            _pisciv_d = (
-                float(_pisciv_densities[c_idx])
-                if _pisciv_densities is not None
-                else 0.0
+        if _HAS_NUMBA_FITNESS:
+            # --- Numba fast path: compiled inner loop ---
+            candidates_i32 = candidates.astype(np.int32)
+            _hiding_arr = (
+                _c_ahiding.astype(np.float64)
+                if _c_ahiding.dtype != np.float64
+                else _c_ahiding
             )
-
-            # Stranding survival (same for all activities at this cell)
-            s_str = _surv_str(cd, _mort_strand_dry)
-
-            # Light function for drift intake (per-cell, same for all activities)
-            if cl >= _light_threshold:
-                _light_func = 1.0
-            else:
-                _light_func = _light_min + (1.0 - _light_min) * math.exp(
-                    _light_exp * (_light_threshold - cl)
+            _pisciv_safe = (
+                _pisciv_densities
+                if _pisciv_densities is not None
+                else np.zeros_like(_c_depth)
+            )
+            best_c, best_a, _, best_growth = _numba_eval(
+                _fl,
+                _fw,
+                _fc,
+                prev_cons,
+                _frep,
+                _c_depth,
+                _c_vel,
+                _c_light,
+                _c_dist_esc,
+                _c_adrift,
+                _c_asearch,
+                _c_ashelter,
+                _hiding_arr,
+                _pisciv_safe,
+                candidates_i32,
+                _turbidity,
+                _temperature,
+                _drift_conc,
+                _search_prod,
+                _search_area,
+                _shelter_speed_frac,
+                _step_length,
+                _cmax_A,
+                _cmax_B,
+                _cmax_table_x,
+                _cmax_table_y,
+                _react_dist_A,
+                _react_dist_B,
+                _turbid_threshold,
+                _turbid_min,
+                _turbid_exp,
+                _light_threshold,
+                _light_min,
+                _light_exp,
+                _capture_R1,
+                _capture_R9,
+                _max_speed_A,
+                _max_speed_B,
+                _max_swim_temp_term,
+                _resp_A,
+                _resp_B,
+                _resp_D,
+                _resp_temp_term,
+                _prey_energy_density,
+                _fish_energy_density,
+                _mort_ht_T1,
+                _mort_ht_T9,
+                _mort_cond_S5,
+                _mort_cond_S8,
+                _fp_min,
+                _fp_L1,
+                _fp_L9,
+                _fp_D1,
+                _fp_D9,
+                _fp_P1,
+                _fp_P9,
+                _fp_I1,
+                _fp_I9,
+                _fp_T1,
+                _fp_T9,
+                _fp_hiding_factor,
+                _tp_min,
+                _tp_L1,
+                _tp_L9,
+                _tp_D1,
+                _tp_D9,
+                _tp_V1,
+                _tp_V9,
+                _tp_I1,
+                _tp_I9,
+                _tp_H1,
+                _tp_H9,
+                _tp_hiding_factor,
+                _mort_strand_dry,
+            )
+        else:
+            # --- Python fallback: inline inner loop ---
+            for c_idx in candidates:
+                # --- Read cell values ONCE per cell ---
+                cd = float(_c_depth[c_idx])
+                cv = float(_c_vel[c_idx])
+                cl = float(_c_light[c_idx])
+                c_adrift_val = float(_c_adrift[c_idx])
+                c_asearch_val = float(_c_asearch[c_idx])
+                c_ashelter_val = float(_c_ashelter[c_idx])
+                c_ahiding_val = int(_c_ahiding[c_idx])
+                c_dist_esc_val = float(_c_dist_esc[c_idx])
+                _pisciv_d = (
+                    float(_pisciv_densities[c_idx])
+                    if _pisciv_densities is not None
+                    else 0.0
                 )
 
-            # Adjusted detection distance for this cell
-            _detect_adj = _detect_base * _turbid_func * _light_func
+                # Stranding survival (same for all activities at this cell)
+                s_str = _surv_str(cd, _mort_strand_dry)
 
-            # Fish predation survival terms that vary by cell (not activity)
-            _fp_D_term = evaluate_logistic(cd, _fp_D1, _fp_D9)
-            _fp_P_term = evaluate_logistic(_pisciv_d, _fp_P1, _fp_P9)
-            _fp_I_term = evaluate_logistic(cl, _fp_I1, _fp_I9)
+                # Light function for drift intake (per-cell, same for all activities)
+                if cl >= _light_threshold:
+                    _light_func = 1.0
+                else:
+                    _light_func = _light_min + (1.0 - _light_min) * math.exp(
+                        _light_exp * (_light_threshold - cl)
+                    )
 
-            # Terrestrial predation terms that vary by cell (not activity)
-            _tp_D_term = evaluate_logistic(cd, _tp_D1, _tp_D9)
-            _tp_V_term = evaluate_logistic(cv, _tp_V1, _tp_V9)
-            _tp_I_term = evaluate_logistic(cl, _tp_I1, _tp_I9)
-            _tp_H_term = evaluate_logistic(c_dist_esc_val, _tp_H1, _tp_H9)
+                # Adjusted detection distance for this cell
+                _detect_adj = _detect_base * _turbid_func * _light_func
 
-            for a_idx in range(3):
-                # --- Activity 0: drift, 1: search, 2: hide ---
+                # Fish predation survival terms that vary by cell (not activity)
+                _fp_D_term = evaluate_logistic(cd, _fp_D1, _fp_D9)
+                _fp_P_term = evaluate_logistic(_pisciv_d, _fp_P1, _fp_P9)
+                _fp_I_term = evaluate_logistic(cl, _fp_I1, _fp_I9)
 
-                # Speed check
-                if a_idx == 1:  # search
-                    if cv > _max_spd:
-                        continue
-                elif a_idx == 0:  # drift
-                    if c_ashelter_val > _fl**2:
-                        d_speed = cv * _shelter_speed_frac
-                    else:
-                        d_speed = cv
-                    if d_speed > _max_spd:
-                        continue
+                # Terrestrial predation terms that vary by cell (not activity)
+                _tp_D_term = evaluate_logistic(cd, _tp_D1, _tp_D9)
+                _tp_V_term = evaluate_logistic(cv, _tp_V1, _tp_V9)
+                _tp_I_term = evaluate_logistic(cl, _tp_I1, _tp_I9)
+                _tp_H_term = evaluate_logistic(c_dist_esc_val, _tp_H1, _tp_H9)
 
-                # --- Compute growth rate inline ---
-                if a_idx == 0:  # drift
-                    if cd <= 0 or cv <= 0:
-                        intake = 0.0
-                    else:
-                        capture_height = min(cd, _detect_adj)
-                        capture_area = 2.0 * _detect_adj * capture_height
-                        vel_ratio = cv / _max_spd if _max_spd > 0 else 999.0
-                        if _capture_R9 == _capture_R1:
-                            capture_success = 0.5
+                for a_idx in range(3):
+                    # --- Activity 0: drift, 1: search, 2: hide ---
+
+                    # Speed check
+                    if a_idx == 1:  # search
+                        if cv > _max_spd:
+                            continue
+                    elif a_idx == 0:  # drift
+                        if c_ashelter_val > _fl**2:
+                            d_speed = cv * _shelter_speed_frac
                         else:
-                            cap_arg = -_cap_slope * (vel_ratio - _cap_mid)
-                            if cap_arg > 500.0:
-                                cap_arg = 500.0
-                            elif cap_arg < -500.0:
-                                cap_arg = -500.0
-                            capture_success = 1.0 / (1.0 + math.exp(cap_arg))
-                        gross = (
-                            capture_area * _drift_conc * cv * 86400.0 * capture_success
-                        )
-                        gross = min(gross, _cstepmax)
-                        intake = min(gross, c_adrift_val / max(_frep, 1))
-                    # Swim speed for respiration
-                    if c_ashelter_val > _fl**2:
-                        swim_spd = cv * _shelter_speed_frac
-                    else:
-                        swim_spd = cv
-                    # Respiration
-                    if _max_spd <= 0:
-                        resp_val = 999999.0
-                    else:
-                        ratio = swim_spd / _max_spd
-                        if ratio > 20:
-                            resp_val = 999999.0
-                        else:
-                            resp_val = (
-                                _resp_std
-                                * _resp_temp_term
-                                * math.exp(_resp_D * ratio**2)
-                            )
-                    net_energy = intake * _prey_energy_density - resp_val
+                            d_speed = cv
+                        if d_speed > _max_spd:
+                            continue
 
-                elif a_idx == 1:  # search
-                    if _max_spd <= 0:
-                        intake = 0.0
-                    else:
-                        vel_ratio_s = (_max_spd - cv) / _max_spd
-                        if vel_ratio_s < 0:
+                    # --- Compute growth rate inline ---
+                    if a_idx == 0:  # drift
+                        if cd <= 0 or cv <= 0:
                             intake = 0.0
                         else:
-                            gross = _search_prod * _search_area * vel_ratio_s
+                            capture_height = min(cd, _detect_adj)
+                            capture_area = 2.0 * _detect_adj * capture_height
+                            vel_ratio = cv / _max_spd if _max_spd > 0 else 999.0
+                            if _capture_R9 == _capture_R1:
+                                capture_success = 0.5
+                            else:
+                                cap_arg = -_cap_slope * (vel_ratio - _cap_mid)
+                                if cap_arg > 500.0:
+                                    cap_arg = 500.0
+                                elif cap_arg < -500.0:
+                                    cap_arg = -500.0
+                                capture_success = 1.0 / (1.0 + math.exp(cap_arg))
+                            gross = (
+                                capture_area
+                                * _drift_conc
+                                * cv
+                                * 86400.0
+                                * capture_success
+                            )
                             gross = min(gross, _cstepmax)
-                            intake = min(gross, c_asearch_val / max(_frep, 1))
-                    # Respiration (swim speed = velocity for search)
-                    if _max_spd <= 0:
-                        resp_val = 999999.0
-                    else:
-                        ratio = cv / _max_spd
-                        if ratio > 20:
+                            intake = min(gross, c_adrift_val / max(_frep, 1))
+                        # Swim speed for respiration
+                        if c_ashelter_val > _fl**2:
+                            swim_spd = cv * _shelter_speed_frac
+                        else:
+                            swim_spd = cv
+                        # Respiration
+                        if _max_spd <= 0:
                             resp_val = 999999.0
                         else:
-                            resp_val = (
-                                _resp_std
-                                * _resp_temp_term
-                                * math.exp(_resp_D * ratio**2)
-                            )
-                    net_energy = intake * _prey_energy_density - resp_val
+                            ratio = swim_spd / _max_spd
+                            if ratio > 20:
+                                resp_val = 999999.0
+                            else:
+                                resp_val = (
+                                    _resp_std
+                                    * _resp_temp_term
+                                    * math.exp(_resp_D * ratio**2)
+                                )
+                        net_energy = intake * _prey_energy_density - resp_val
 
-                else:  # hide (a_idx == 2)
-                    # Respiration at rest (swim_speed = 0)
-                    if _max_spd <= 0:
-                        resp_val = 999999.0
+                    elif a_idx == 1:  # search
+                        if _max_spd <= 0:
+                            intake = 0.0
+                        else:
+                            vel_ratio_s = (_max_spd - cv) / _max_spd
+                            if vel_ratio_s < 0:
+                                intake = 0.0
+                            else:
+                                gross = _search_prod * _search_area * vel_ratio_s
+                                gross = min(gross, _cstepmax)
+                                intake = min(gross, c_asearch_val / max(_frep, 1))
+                        # Respiration (swim speed = velocity for search)
+                        if _max_spd <= 0:
+                            resp_val = 999999.0
+                        else:
+                            ratio = cv / _max_spd
+                            if ratio > 20:
+                                resp_val = 999999.0
+                            else:
+                                resp_val = (
+                                    _resp_std
+                                    * _resp_temp_term
+                                    * math.exp(_resp_D * ratio**2)
+                                )
+                        net_energy = intake * _prey_energy_density - resp_val
+
+                    else:  # hide (a_idx == 2)
+                        # Respiration at rest (swim_speed = 0)
+                        if _max_spd <= 0:
+                            resp_val = 999999.0
+                        else:
+                            # ratio = 0, exp(0) = 1
+                            resp_val = _resp_std * _resp_temp_term
+                        net_energy = -resp_val
+
+                    growth = net_energy / _fish_energy_density
+
+                    # --- Compute survival inline ---
+                    # Fish predation: activity-dependent hiding factor
+                    if a_idx == 2:  # hide
+                        fp_hide = _fp_hiding_factor
                     else:
-                        # ratio = 0, exp(0) = 1
-                        resp_val = _resp_std * _resp_temp_term
-                    net_energy = -resp_val
+                        fp_hide = 0.0
+                    fp_rel_risk = (
+                        (1.0 - _fp_L_term)
+                        * (1.0 - _fp_D_term)
+                        * (1.0 - _fp_P_term)
+                        * (1.0 - _fp_I_term)
+                        * (1.0 - _fp_temp_logistic)
+                        * (1.0 - fp_hide)
+                    )
+                    s_fp = _fp_min + (1.0 - _fp_min) * (1.0 - fp_rel_risk)
 
-                growth = net_energy / _fish_energy_density
+                    # Terrestrial predation
+                    if (
+                        a_idx == 2 and c_ahiding_val >= _frep
+                    ):  # hide with available spots
+                        tp_hide = _tp_hiding_factor
+                    else:
+                        tp_hide = 0.0
+                    tp_rel_risk = (
+                        (1.0 - _tp_L_term)
+                        * (1.0 - _tp_D_term)
+                        * (1.0 - _tp_V_term)
+                        * (1.0 - _tp_I_term)
+                        * (1.0 - _tp_H_term)
+                        * (1.0 - tp_hide)
+                    )
+                    s_tp = _tp_min + (1.0 - _tp_min) * (1.0 - tp_rel_risk)
 
-                # --- Compute survival inline ---
-                # Fish predation: activity-dependent hiding factor
-                if a_idx == 2:  # hide
-                    fp_hide = _fp_hiding_factor
-                else:
-                    fp_hide = 0.0
-                fp_rel_risk = (
-                    (1.0 - _fp_L_term)
-                    * (1.0 - _fp_D_term)
-                    * (1.0 - _fp_P_term)
-                    * (1.0 - _fp_I_term)
-                    * (1.0 - _fp_temp_logistic)
-                    * (1.0 - fp_hide)
-                )
-                s_fp = _fp_min + (1.0 - _fp_min) * (1.0 - fp_rel_risk)
+                    non_starve = _s_high_temp * s_str * s_fp * s_tp
+                    f = growth * _step_length * non_starve * _s_cond
 
-                # Terrestrial predation
-                if a_idx == 2 and c_ahiding_val >= _frep:  # hide with available spots
-                    tp_hide = _tp_hiding_factor
-                else:
-                    tp_hide = 0.0
-                tp_rel_risk = (
-                    (1.0 - _tp_L_term)
-                    * (1.0 - _tp_D_term)
-                    * (1.0 - _tp_V_term)
-                    * (1.0 - _tp_I_term)
-                    * (1.0 - _tp_H_term)
-                    * (1.0 - tp_hide)
-                )
-                s_tp = _tp_min + (1.0 - _tp_min) * (1.0 - tp_rel_risk)
-
-                non_starve = _s_high_temp * s_str * s_fp * s_tp
-                f = growth * _step_length * non_starve * _s_cond
-
-                if f > best_fitness:
-                    best_fitness = f
-                    best_c = c_idx
-                    best_a = a_idx
-                    best_growth = growth
+                    if f > best_fitness:
+                        best_fitness = f
+                        best_c = c_idx
+                        best_a = a_idx
+                        best_growth = growth
 
         # Assign fish to chosen cell + activity
         best_cells[i] = best_c
