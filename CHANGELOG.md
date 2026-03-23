@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-03-23
+
+### Added
+- Add /deploy skill for laguna.ku.lt Shiny Server deployment
+- Add main Shiny app entry point with sidebar, tabs, and extended_task
+- Add spatial panel module (shiny_deckgl map + matplotlib fallback)
+- Add population panel module (plotly line chart)
+- Add simulation wrapper with config overrides and results collection
+
+### Changed
+- Update README with Shiny frontend, JAX backend, FEM mesh in completed features
+- Add frontend optional-dependencies (shiny, plotly, shiny-deckgl)
+
+---
+
 ## [0.9.0] - 2026-03-22
 
 ### Added
