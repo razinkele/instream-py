@@ -15,7 +15,7 @@ NetLogo implementation is being ported to Python using:
 - **NumPy structured-of-arrays (SoA)** state containers for cache-friendly
   batch operations
 - **Numba JIT** compilation for compute-intensive kernels
-- An optional **JAX** backend for GPU acceleration (planned)
+- An optional **JAX** backend for GPU-accelerated vectorized kernels
 
 The model simulates trout growth, survival, habitat selection, spawning, and
 migration at the individual level within spatially explicit stream reaches
@@ -43,7 +43,7 @@ For background on the inSTREAM modelling framework, see:
   stream reaches connected by a junction network
 - **Numba JIT backend** -- critical inner loops compiled to machine code for
   60x+ speedup over pure Python
-- **Pluggable compute backends** -- NumPy (default), Numba, and JAX (planned)
+- **Pluggable compute backends** -- NumPy (default), Numba, and JAX
 
 ## Quick Start
 
@@ -229,13 +229,13 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.9.0** -- InSTREAM-SD complete, NetLogo parity achieved (March 2026).
+**v0.10.0** -- Shiny frontend + deploy skill (March 2026).
 
 ### Current Metrics
 
 | Metric          | Value                          |
 |-----------------|--------------------------------|
-| Tests           | 490                            |
+| Tests           | 499                            |
 | Validation      | 11/11 NetLogo reference tests  |
 | Step time       | 48 ms (Example A, Numba JIT)   |
 | Species         | Multi-species support          |
@@ -260,17 +260,18 @@ property-based tests, and performance regression tests.
 - InSTREAM-SD sub-daily scheduling (hourly + peaking flow)
 - Growth accumulation with day-boundary application
 - 11/11 NetLogo validation tests passing
-- 455 unit, integration, property-based, and validation tests
+- 499 unit, integration, property-based, and validation tests
+- JAX GPU backend with vectorized growth/survival kernels
+- FEM mesh reader (River2D/GMSH via meshio)
+- Shiny for Python frontend (configure, run, explore simulations)
+- Deploy skill for laguna.ku.lt Shiny Server
 
 ### Planned
 
-- JAX GPU backend (stub interface ready)
-- FEM mesh reader for River2D/GMSH (stub ready)
 - Angler harvest module
 - Habitat restoration scenario tools
 - Sensitivity analysis framework
-- Shiny dashboard for interactive visualization
-- CI/CD pipeline and packaging
+- Scenario comparison (side-by-side simulation runs)
 
 ## License
 
