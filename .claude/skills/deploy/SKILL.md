@@ -22,7 +22,8 @@ conda run -n shiny python -m pytest tests/ -q --tb=short
 ### 2. Confirm with User
 
 Show what will be deployed:
-- `app/` → `/srv/shiny-server/inSTREAMPY/` (with `--delete`)
+- `app/` → `/srv/shiny-server/inSTREAMPY/` (with `--delete`, excludes configs/data/src)
+- `src/instream/` → `.../src/instream/` (the simulation engine, direct copy)
 - `configs/` → `.../configs/` (additive)
 - `tests/fixtures/` → `.../data/` (additive)
 
@@ -33,7 +34,11 @@ Ask: "Deploy to laguna.ku.lt? (y/n)"
 Run each command. If any fails, stop and report — do not continue.
 
 ```bash
-rsync -avz --delete --exclude=configs --exclude=data "app/" "razinka@laguna.ku.lt:/srv/shiny-server/inSTREAMPY/"
+rsync -avz --delete --exclude=configs --exclude=data --exclude=src "app/" "razinka@laguna.ku.lt:/srv/shiny-server/inSTREAMPY/"
+```
+
+```bash
+rsync -avz --delete "src/instream/" "razinka@laguna.ku.lt:/srv/shiny-server/inSTREAMPY/src/instream/"
 ```
 
 ```bash
@@ -42,6 +47,11 @@ rsync -avz "configs/" "razinka@laguna.ku.lt:/srv/shiny-server/inSTREAMPY/configs
 
 ```bash
 rsync -avz "tests/fixtures/" "razinka@laguna.ku.lt:/srv/shiny-server/inSTREAMPY/data/"
+```
+
+The app needs `instream` on `sys.path`. Add to `app.py` if not present:
+```python
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 ```
 
 ### 4. Permissions + Restart
@@ -67,7 +77,7 @@ Report: files synced, permissions set, server restarted, app.py confirmed.
 | Server | laguna.ku.lt |
 | SSH user | razinka (passwordless) |
 | Target | /srv/shiny-server/inSTREAMPY |
-| Package | `instream` installed via `pip install -e .` on server |
+| Package | `src/instream/` copied directly to server (no pip install) |
 
 ## Shell Rules
 
