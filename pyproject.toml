@@ -38,6 +38,12 @@ docs = [
     "sphinx",
     "sphinx-rtd-theme",
 ]
+frontend = [
+    "shiny>=1.0",
+    "shiny-deckgl>=1.9",
+    "plotly>=6.0",
+    "shinyswatch>=0.9",
+]
 
 [project.scripts]
 instream = "instream.cli:main"
