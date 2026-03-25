@@ -354,19 +354,27 @@ def _build_trajectories_data(traj_df, cells_gdf, species_order, color_mode="spec
     if traj_df.empty:
         return [], []
 
-    gdf_wgs84 = (
-        cells_gdf.to_crs(epsg=4326) if cells_gdf.crs != "EPSG:4326" else cells_gdf
-    )
+    if cells_gdf.crs is not None and cells_gdf.crs.to_epsg() != 4326:
+        gdf_wgs84 = cells_gdf.to_crs(epsg=4326)
+    else:
+        gdf_wgs84 = cells_gdf
     centroids = gdf_wgs84.geometry.centroid
     centroid_lut = np.column_stack([centroids.x, centroids.y])
 
     paths = []
     properties = []
 
-    for fish_idx, group in traj_df.sort_values("day_num").groupby("fish_idx"):
+    for fish_idx, group in traj_df.sort_values("day_num").groupby(
+        "fish_idx", sort=False
+    ):
         cell_indices = group["cell_idx"].values
         day_nums = group["day_num"].values
 
+        if cell_indices.max() >= len(centroid_lut):
+            raise ValueError(
+                f"cell_idx {cell_indices.max()} out of range for centroid_lut "
+                f"(size {len(centroid_lut)})"
+            )
         coords = centroid_lut[cell_indices]
         path = [
             [float(coords[i, 0]), float(coords[i, 1]), int(day_nums[i])]
@@ -393,7 +401,7 @@ def _build_trajectories_data(traj_df, cells_gdf, species_order, color_mode="spec
             "species": species_name,
             "activity": int(last["activity"]),
             "life_history": int(last["life_history"]),
-            "color": color + [220],
+            "color": [*color, 220],
         }
 
         paths.append(path)
