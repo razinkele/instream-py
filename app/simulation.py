@@ -27,7 +27,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
         data_dir: Optional path to data directory. Defaults to config file's parent.
 
     Returns:
-        dict with keys: daily, environment, cells, snapshots, redds, config, summary
+        dict with keys: daily, environment, cells, snapshots, redds, config, summary, trajectories
     """
     from instream.model import InSTREAMModel
 
@@ -73,6 +73,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
 
         # --- Step loop with data collection ---
         daily_records = []
+        trajectory_records = []
         snapshots = {}
         step_num = 0
 
@@ -125,15 +126,34 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
                         }
                     )
 
-                # Periodic snapshot (every 30 days + census days)
+                # --- Shared day index and alive mask ---
+                # day_num is 1-based (first boundary fires after first step)
                 day_num = (pd.Timestamp(current_date) - start).days
+                alive_mask = ts.alive
+
+                # --- Trajectory collection (0-based for animation timeline) ---
+                if alive_mask.any():
+                    alive_idx = np.where(alive_mask)[0]
+                    trajectory_records.append(
+                        pd.DataFrame(
+                            {
+                                "fish_idx": alive_idx,
+                                "cell_idx": ts.cell_idx[alive_mask],
+                                "species_idx": ts.species_idx[alive_mask],
+                                "activity": ts.activity[alive_mask],
+                                "life_history": ts.life_history[alive_mask],
+                                "day_num": day_num - 1,
+                            }
+                        )
+                    )
+
+                # Periodic snapshot (every 30 days + census days)
                 dt = pd.Timestamp(current_date)
                 is_census = any(
                     dt.month == int(s.split("-")[0]) and dt.day == int(s.split("-")[1])
                     for s in census_specs
                 )
                 if day_num % 30 == 0 or is_census:
-                    alive_mask = ts.alive
                     if alive_mask.any():
                         snapshots[current_date] = pd.DataFrame(
                             {
@@ -151,6 +171,22 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
         # Final progress
         if progress_queue is not None:
             progress_queue.put((total_steps, total_steps))
+
+        # --- Concatenate trajectory records ---
+        trajectories = (
+            pd.concat(trajectory_records, ignore_index=True)
+            if trajectory_records
+            else pd.DataFrame(
+                columns=[
+                    "fish_idx",
+                    "cell_idx",
+                    "species_idx",
+                    "activity",
+                    "life_history",
+                    "day_num",
+                ]
+            )
+        )
 
         # --- Build cells GeoDataFrame ---
         cells = _build_cells_gdf(model, raw)
@@ -174,6 +210,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
             "environment": environment,
             "cells": cells,
             "snapshots": snapshots,
+            "trajectories": trajectories,
             "redds": redds,
             "config": raw,
             "summary": summary,
@@ -251,6 +288,126 @@ def _build_cells_gdf(model, raw_config):
         "frac_spawn",
     ]
     return gdf[[c for c in keep if c in gdf.columns]]
+
+
+def _value_to_rgba(values, cmap="viridis", alpha=160):
+    """Map numeric values to [R, G, B, A] lists via matplotlib colormap."""
+    import matplotlib
+
+    values = np.asarray(values, dtype=float)
+    mask = np.isfinite(values)
+    result = [[0, 0, 0, 0]] * len(values)
+
+    if not mask.any():
+        return result
+
+    valid = values[mask]
+    vmin, vmax = valid.min(), valid.max()
+    if vmin == vmax:
+        normed = np.full_like(valid, 0.5)
+    else:
+        normed = (valid - vmin) / (vmax - vmin)
+
+    colormap = matplotlib.colormaps[cmap]
+    colors = colormap(normed)
+    result = list(result)
+    idx = 0
+    for i in range(len(values)):
+        if mask[i]:
+            r, g, b, _ = colors[idx]
+            result[i] = [int(r * 255), int(g * 255), int(b * 255), alpha]
+            idx += 1
+    return result
+
+
+_TAB10 = [
+    [31, 119, 180],
+    [255, 127, 14],
+    [44, 160, 44],
+    [214, 39, 40],
+    [148, 103, 189],
+    [140, 86, 75],
+    [227, 119, 194],
+    [127, 127, 127],
+    [188, 189, 34],
+    [23, 190, 207],
+]
+_ACTIVITY_COLORS = {
+    0: [66, 133, 244],  # drift = blue
+    1: [52, 168, 83],  # search = green
+    2: [154, 160, 166],  # hide = gray
+    3: [234, 67, 53],  # guard = red
+    4: [251, 188, 4],  # hold = yellow
+}
+_LIFE_HISTORY_COLORS = {
+    0: [0, 150, 136],  # resident = teal
+    1: [0, 188, 212],  # anad_juve = cyan
+    2: [255, 152, 0],  # anad_adult = orange
+}
+
+
+def _build_trajectories_data(traj_df, cells_gdf, species_order, color_mode="species"):
+    """Convert trajectory DataFrame + cells GeoDataFrame into format for format_trips().
+
+    Returns (paths, properties) — two parallel lists for format_trips().
+    """
+    if traj_df.empty:
+        return [], []
+
+    if cells_gdf.crs is not None and cells_gdf.crs.to_epsg() != 4326:
+        gdf_wgs84 = cells_gdf.to_crs(epsg=4326)
+    else:
+        gdf_wgs84 = cells_gdf
+    centroids = gdf_wgs84.geometry.centroid
+    centroid_lut = np.column_stack([centroids.x, centroids.y])
+
+    paths = []
+    properties = []
+
+    for fish_idx, group in traj_df.sort_values("day_num").groupby(
+        "fish_idx", sort=False
+    ):
+        cell_indices = group["cell_idx"].values
+        day_nums = group["day_num"].values
+
+        if cell_indices.max() >= len(centroid_lut):
+            raise ValueError(
+                f"cell_idx {cell_indices.max()} out of range for centroid_lut "
+                f"(size {len(centroid_lut)})"
+            )
+        coords = centroid_lut[cell_indices]
+        path = [
+            [float(coords[i, 0]), float(coords[i, 1]), int(day_nums[i])]
+            for i in range(len(coords))
+        ]
+
+        last = group.iloc[-1]
+        sp_idx = int(last["species_idx"])
+        species_name = (
+            species_order[sp_idx]
+            if sp_idx < len(species_order)
+            else f"species_{sp_idx}"
+        )
+
+        if color_mode == "activity":
+            color = _ACTIVITY_COLORS.get(int(last["activity"]), [127, 127, 127])
+        elif color_mode == "life_history":
+            color = _LIFE_HISTORY_COLORS.get(int(last["life_history"]), [127, 127, 127])
+        else:
+            color = _TAB10[sp_idx % len(_TAB10)]
+
+        props = {
+            "fish_idx": int(fish_idx),
+            "species": species_name,
+            "activity": int(last["activity"]),
+            "life_history": int(last["life_history"]),
+            "color": [*color, 220],
+        }
+
+        paths.append(path)
+        properties.append(props)
+
+    return paths, properties
 
 
 def _build_redds_df(model):
