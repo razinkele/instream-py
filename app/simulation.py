@@ -27,7 +27,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
         data_dir: Optional path to data directory. Defaults to config file's parent.
 
     Returns:
-        dict with keys: daily, environment, cells, snapshots, redds, config, summary
+        dict with keys: daily, environment, cells, snapshots, redds, config, summary, trajectories
     """
     from instream.model import InSTREAMModel
 
@@ -126,10 +126,12 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
                         }
                     )
 
-                # --- Trajectory collection ---
-                # traj_day_num is 0-based: first recorded day = 0
-                traj_day_num = (pd.Timestamp(current_date) - start).days - 1
+                # --- Shared day index and alive mask ---
+                # day_num is 1-based (first boundary fires after first step)
+                day_num = (pd.Timestamp(current_date) - start).days
                 alive_mask = ts.alive
+
+                # --- Trajectory collection (0-based for animation timeline) ---
                 if alive_mask.any():
                     alive_idx = np.where(alive_mask)[0]
                     trajectory_records.append(
@@ -140,20 +142,18 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
                                 "species_idx": ts.species_idx[alive_mask],
                                 "activity": ts.activity[alive_mask],
                                 "life_history": ts.life_history[alive_mask],
-                                "day_num": traj_day_num,
+                                "day_num": day_num - 1,
                             }
                         )
                     )
 
                 # Periodic snapshot (every 30 days + census days)
-                day_num = (pd.Timestamp(current_date) - start).days
                 dt = pd.Timestamp(current_date)
                 is_census = any(
                     dt.month == int(s.split("-")[0]) and dt.day == int(s.split("-")[1])
                     for s in census_specs
                 )
                 if day_num % 30 == 0 or is_census:
-                    alive_mask = ts.alive
                     if alive_mask.any():
                         snapshots[current_date] = pd.DataFrame(
                             {
