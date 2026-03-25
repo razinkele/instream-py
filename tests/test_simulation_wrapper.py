@@ -122,3 +122,54 @@ class TestRunSimulation:
         s = results["summary"]
         for key in ("final_date", "fish_alive", "redds_alive", "total_outmigrants"):
             assert key in s
+
+    def test_trajectories_key_present(self):
+        """run_simulation returns trajectories DataFrame."""
+        results = run_simulation(
+            self.CONFIG,
+            overrides={"simulation": {"end_date": "2011-04-10"}},
+            data_dir=self.DATA_DIR,
+        )
+        assert "trajectories" in results, "Missing 'trajectories' key"
+
+    def test_trajectories_columns(self):
+        """trajectories DataFrame has required columns."""
+        results = run_simulation(
+            self.CONFIG,
+            overrides={"simulation": {"end_date": "2011-04-10"}},
+            data_dir=self.DATA_DIR,
+        )
+        traj = results["trajectories"]
+        assert isinstance(traj, pd.DataFrame)
+        for col in (
+            "fish_idx",
+            "cell_idx",
+            "species_idx",
+            "activity",
+            "life_history",
+            "day_num",
+        ):
+            assert col in traj.columns, f"Missing column: {col}"
+
+    def test_trajectories_row_count(self):
+        """trajectories has one row per alive fish per day."""
+        results = run_simulation(
+            self.CONFIG,
+            overrides={"simulation": {"end_date": "2011-04-05"}},
+            data_dir=self.DATA_DIR,
+        )
+        traj = results["trajectories"]
+        assert len(traj) > 0
+        days = traj["day_num"].nunique()
+        assert days == 5, f"Expected 5 days, got {days}"
+
+    def test_trajectories_day_num_range(self):
+        """day_num is 0-based and matches simulation duration."""
+        results = run_simulation(
+            self.CONFIG,
+            overrides={"simulation": {"end_date": "2011-04-10"}},
+            data_dir=self.DATA_DIR,
+        )
+        traj = results["trajectories"]
+        assert traj["day_num"].min() == 0
+        assert traj["day_num"].max() == 9  # 10 days, 0-indexed

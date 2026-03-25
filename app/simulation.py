@@ -73,6 +73,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
 
         # --- Step loop with data collection ---
         daily_records = []
+        trajectory_records = []
         snapshots = {}
         step_num = 0
 
@@ -125,6 +126,25 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
                         }
                     )
 
+                # --- Trajectory collection ---
+                # traj_day_num is 0-based: first recorded day = 0
+                traj_day_num = (pd.Timestamp(current_date) - start).days - 1
+                alive_mask = ts.alive
+                if alive_mask.any():
+                    alive_idx = np.where(alive_mask)[0]
+                    trajectory_records.append(
+                        pd.DataFrame(
+                            {
+                                "fish_idx": alive_idx,
+                                "cell_idx": ts.cell_idx[alive_mask],
+                                "species_idx": ts.species_idx[alive_mask],
+                                "activity": ts.activity[alive_mask],
+                                "life_history": ts.life_history[alive_mask],
+                                "day_num": traj_day_num,
+                            }
+                        )
+                    )
+
                 # Periodic snapshot (every 30 days + census days)
                 day_num = (pd.Timestamp(current_date) - start).days
                 dt = pd.Timestamp(current_date)
@@ -152,6 +172,22 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
         if progress_queue is not None:
             progress_queue.put((total_steps, total_steps))
 
+        # --- Concatenate trajectory records ---
+        trajectories = (
+            pd.concat(trajectory_records, ignore_index=True)
+            if trajectory_records
+            else pd.DataFrame(
+                columns=[
+                    "fish_idx",
+                    "cell_idx",
+                    "species_idx",
+                    "activity",
+                    "life_history",
+                    "day_num",
+                ]
+            )
+        )
+
         # --- Build cells GeoDataFrame ---
         cells = _build_cells_gdf(model, raw)
 
@@ -174,6 +210,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
             "environment": environment,
             "cells": cells,
             "snapshots": snapshots,
+            "trajectories": trajectories,
             "redds": redds,
             "config": raw,
             "summary": summary,
