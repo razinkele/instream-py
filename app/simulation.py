@@ -14,7 +14,9 @@ import pandas as pd
 import yaml
 
 
-def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=None):
+def run_simulation(
+    config_path, overrides=None, progress_queue=None, metrics_queue=None, data_dir=None
+):
     """Run inSTREAM simulation and collect results.
 
     Runs synchronously — designed to be called from a worker thread
@@ -24,6 +26,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
         config_path: Path to YAML config file.
         overrides: Dict of parameter overrides (nested, matching YAML structure).
         progress_queue: Optional queue.Queue for (step, total) progress updates.
+        metrics_queue: Optional queue.Queue for per-day dashboard snapshots.
         data_dir: Optional path to data directory. Defaults to config file's parent.
 
     Returns:
@@ -67,6 +70,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
         # --- Track emerged fry (model has no cumulative counter) ---
         prev_alive_redds = set(np.where(model.redd_state.alive)[0])
         emerged_total = 0
+        prev_alive_total = int(model.trout_state.alive.sum())
 
         # --- Census day parsing for snapshot collection ---
         census_specs = model.config.simulation.census_days  # list of "MM-dd" strings
@@ -91,9 +95,13 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
                         emerged_total += int(model.redd_state.eggs_initial[idx])
                 prev_alive_redds = curr_alive_redds
 
-            # Progress update every 10 steps
+            # Progress update every 10 steps (sleep(0) releases the GIL so
+            # the Shiny async event loop can process reactive updates)
             if progress_queue is not None and step_num % 10 == 0:
                 progress_queue.put((step_num, total_steps))
+                import time
+
+                time.sleep(0)
 
             # Per-step metrics (only at day boundaries to avoid sub-daily noise)
             if model.time_manager.is_day_boundary or model.steps_per_day == 1:
@@ -126,6 +134,33 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
                         }
                     )
 
+                # --- Dashboard metrics snapshot ---
+                if metrics_queue is not None:
+                    alive_now = int(ts.alive.sum())
+                    activity = ts.activity[ts.alive]
+                    metrics_queue.put(
+                        {
+                            "date": current_date,
+                            "alive": {
+                                sp: int((ts.alive & (ts.species_idx == si)).sum())
+                                for si, sp in enumerate(model.species_order)
+                            },
+                            "deaths_today": max(prev_alive_total - alive_now, 0),
+                            "drift_count": int((activity == 0).sum()),
+                            "search_count": int((activity == 1).sum()),
+                            "hide_count": int((activity == 2).sum()),
+                            "other_count": int(
+                                ((activity == 3) | (activity == 4)).sum()
+                            ),
+                            "redd_count": int(rs.alive.sum()),
+                            "eggs_total": int(rs.num_eggs[rs.alive].sum())
+                            if rs.alive.any()
+                            else 0,
+                            "emerged_cumulative": emerged_total,
+                        }
+                    )
+                    prev_alive_total = alive_now
+
                 # --- Shared day index and alive mask ---
                 # day_num is 1-based (first boundary fires after first step)
                 day_num = (pd.Timestamp(current_date) - start).days
@@ -142,7 +177,7 @@ def run_simulation(config_path, overrides=None, progress_queue=None, data_dir=No
                                 "species_idx": ts.species_idx[alive_mask],
                                 "activity": ts.activity[alive_mask],
                                 "life_history": ts.life_history[alive_mask],
-                                "day_num": day_num - 1,
+                                "day_num": max(day_num - 1, 0),
                             }
                         )
                     )
@@ -296,7 +331,7 @@ def _value_to_rgba(values, cmap="viridis", alpha=160):
 
     values = np.asarray(values, dtype=float)
     mask = np.isfinite(values)
-    result = [[0, 0, 0, 0]] * len(values)
+    result = [[0, 0, 0, 0] for _ in range(len(values))]
 
     if not mask.any():
         return result
