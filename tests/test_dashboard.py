@@ -52,8 +52,12 @@ class TestMetricsSnapshot:
             metrics_queue=metrics_q,
             data_dir=DATA_DIR,
         )
+        # Skip cells-init message
+        first = metrics_q.get_nowait()
+        assert first.get("type") == "cells"
         snap = metrics_q.get_nowait()
         required = {
+            "type",
             "date",
             "alive",
             "deaths_today",
@@ -64,6 +68,7 @@ class TestMetricsSnapshot:
             "redd_count",
             "eggs_total",
             "emerged_cumulative",
+            "positions",
         }
         assert required.issubset(snap.keys()), f"Missing keys: {required - snap.keys()}"
 
@@ -83,6 +88,8 @@ class TestMetricsSnapshot:
             metrics_queue=metrics_q,
             data_dir=DATA_DIR,
         )
+        # Skip cells-init message
+        metrics_q.get_nowait()
         snap = metrics_q.get_nowait()
         assert isinstance(snap["alive"], dict)
         assert all(isinstance(v, int) for v in snap["alive"].values())
@@ -105,6 +112,8 @@ class TestMetricsSnapshot:
         )
         while not metrics_q.empty():
             snap = metrics_q.get_nowait()
+            if snap.get("type") == "cells":
+                continue
             assert snap["deaths_today"] >= 0
 
     def test_activity_counts_sum_to_alive(self):
@@ -125,6 +134,8 @@ class TestMetricsSnapshot:
         )
         while not metrics_q.empty():
             snap = metrics_q.get_nowait()
+            if snap.get("type") == "cells":
+                continue
             alive_total = sum(snap["alive"].values())
             activity_total = (
                 snap["drift_count"]
@@ -268,3 +279,121 @@ class TestPayloadBuilder:
 
         feed = payload["traces"]["feeding"]
         assert len(feed["y"]) == 4
+
+
+class TestDashboardE2E:
+    """End-to-end: run simulation, verify dashboard data collected and payload works."""
+
+    def test_full_simulation_populates_queue(self):
+        from simulation import run_simulation
+
+        metrics_q = queue.Queue()
+        config = str(CONFIGS_DIR / "example_a.yaml")
+        overrides = {
+            "simulation": {"start_date": "2011-04-01", "end_date": "2011-06-30"},
+            "performance": {"backend": "numpy"},
+        }
+        run_simulation(
+            config,
+            overrides,
+            progress_queue=None,
+            metrics_queue=metrics_q,
+            data_dir=DATA_DIR,
+        )
+
+        all_messages = []
+        while not metrics_q.empty():
+            all_messages.append(metrics_q.get_nowait())
+
+        # Filter out cells-init message
+        snapshots = [m for m in all_messages if m.get("type") != "cells"]
+
+        # ~91 days → ~91 snapshots
+        assert len(snapshots) > 80
+        # First and last dates should span the range
+        assert snapshots[0]["date"] < snapshots[-1]["date"]
+        # Population tracked throughout
+        assert all(sum(s["alive"].values()) >= 0 for s in snapshots)
+
+        # Payload builder works on the full dataset
+        from modules.dashboard_panel import build_dashboard_payload
+
+        payload = build_dashboard_payload(snapshots, 0, reset=True)
+        assert payload is not None
+        assert payload["reset"] is True
+        assert "species" in payload
+        assert len(payload["traces"]["population"]["x"][0]) == len(snapshots)
+        assert len(payload["traces"]["mortality"]["y"][0]) == len(snapshots)
+        assert len(payload["traces"]["feeding"]["y"]) == 4
+        assert len(payload["traces"]["redds"]["y"][0]) == len(snapshots)
+
+
+class TestMetricsSnapshotV2:
+    """Verify cells-init message, type fields, and positions in metrics queue."""
+
+    def _run_short_sim(self):
+        from simulation import run_simulation
+
+        metrics_q = queue.Queue()
+        config = str(CONFIGS_DIR / "example_a.yaml")
+        overrides = {
+            "simulation": {"start_date": "2011-04-01", "end_date": "2011-04-10"},
+            "performance": {"backend": "numpy"},
+        }
+        run_simulation(
+            config,
+            overrides,
+            progress_queue=None,
+            metrics_queue=metrics_q,
+            data_dir=DATA_DIR,
+        )
+        messages = []
+        while not metrics_q.empty():
+            messages.append(metrics_q.get_nowait())
+        return messages
+
+    def test_snapshot_has_type_field(self):
+        messages = self._run_short_sim()
+        assert len(messages) >= 2, "Expected at least cells + 1 snapshot"
+        assert messages[0]["type"] == "cells"
+        for msg in messages[1:]:
+            assert msg["type"] == "snapshot", (
+                f"Expected type 'snapshot', got {msg.get('type')}"
+            )
+
+    def test_cells_init_has_geodataframe(self):
+        import geopandas as gpd
+
+        messages = self._run_short_sim()
+        cells_msg = messages[0]
+        assert cells_msg["type"] == "cells"
+        gdf = cells_msg["cells_geojson"]
+        assert isinstance(gdf, gpd.GeoDataFrame)
+        # Should be in WGS84
+        assert gdf.crs is None or gdf.crs.to_epsg() == 4326
+
+    def test_snapshot_has_positions(self):
+        messages = self._run_short_sim()
+        snapshots = [m for m in messages if m["type"] == "snapshot"]
+        assert len(snapshots) > 0
+        snap = snapshots[0]
+        assert "positions" in snap
+        pos = snap["positions"]
+        assert set(pos.keys()) == {"fish_idx", "cell_idx", "species_idx", "activity"}
+        # All arrays should be the same length (parallel arrays)
+        lengths = [len(pos[k]) for k in pos]
+        assert len(set(lengths)) == 1, (
+            f"Parallel arrays have different lengths: {lengths}"
+        )
+
+    def test_dashboard_payload_ignores_cells_message(self):
+        from modules.dashboard_panel import build_dashboard_payload
+
+        messages = self._run_short_sim()
+        # Filter out cells messages (as dashboard_panel does)
+        snapshot_data = [d for d in messages if d.get("type") != "cells"]
+        assert all(d["type"] == "snapshot" for d in snapshot_data)
+        payload = build_dashboard_payload(snapshot_data, 0, reset=True)
+        assert payload is not None
+        assert payload["reset"] is True
+        assert "species" in payload

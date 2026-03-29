@@ -72,6 +72,19 @@ def run_simulation(
         emerged_total = 0
         prev_alive_total = int(model.trout_state.alive.sum())
 
+        # --- Push cells init message for movement map ---
+        if metrics_queue is not None:
+            _init_cells = _build_cells_gdf(model, raw)
+            keep = [
+                c
+                for c in ["cell_id", "reach", "area", "frac_spawn"]
+                if c in _init_cells.columns
+            ]
+            _init_cells = _init_cells[keep + ["geometry"]]
+            if _init_cells.crs is not None and _init_cells.crs.to_epsg() != 4326:
+                _init_cells = _init_cells.to_crs(epsg=4326)
+            metrics_queue.put({"type": "cells", "cells_geojson": _init_cells})
+
         # --- Census day parsing for snapshot collection ---
         census_specs = model.config.simulation.census_days  # list of "MM-dd" strings
 
@@ -109,6 +122,10 @@ def run_simulation(
                 ts = model.trout_state
                 rs = model.redd_state
 
+                # Shared redd/egg values (used by both daily_records and metrics)
+                _redd_count = int(rs.alive.sum())
+                _eggs_total = int(rs.num_eggs[rs.alive].sum()) if rs.alive.any() else 0
+
                 for sp_idx, sp_name in enumerate(model.species_order):
                     mask = ts.alive & (ts.species_idx == sp_idx)
                     count = int(mask.sum())
@@ -123,10 +140,8 @@ def run_simulation(
                             "mean_weight": float(ts.weight[mask].mean())
                             if count > 0
                             else 0.0,
-                            "redd_count": int(rs.alive.sum()),
-                            "eggs_total": int(rs.num_eggs[rs.alive].sum())
-                            if rs.alive.any()
-                            else 0,
+                            "redd_count": _redd_count,
+                            "eggs_total": _eggs_total,
                             "emerged_cumulative": emerged_total,
                             "outmigrants_cumulative": len(
                                 getattr(model, "_outmigrants", [])
@@ -138,8 +153,10 @@ def run_simulation(
                 if metrics_queue is not None:
                     alive_now = int(ts.alive.sum())
                     activity = ts.activity[ts.alive]
+                    alive_idx = np.where(ts.alive)[0]
                     metrics_queue.put(
                         {
+                            "type": "snapshot",
                             "date": current_date,
                             "alive": {
                                 sp: int((ts.alive & (ts.species_idx == si)).sum())
@@ -152,11 +169,15 @@ def run_simulation(
                             "other_count": int(
                                 ((activity == 3) | (activity == 4)).sum()
                             ),
-                            "redd_count": int(rs.alive.sum()),
-                            "eggs_total": int(rs.num_eggs[rs.alive].sum())
-                            if rs.alive.any()
-                            else 0,
+                            "redd_count": _redd_count,
+                            "eggs_total": _eggs_total,
                             "emerged_cumulative": emerged_total,
+                            "positions": {
+                                "fish_idx": alive_idx.tolist(),
+                                "cell_idx": ts.cell_idx[alive_idx].tolist(),
+                                "species_idx": ts.species_idx[alive_idx].tolist(),
+                                "activity": ts.activity[alive_idx].tolist(),
+                            },
                         }
                     )
                     prev_alive_total = alive_now

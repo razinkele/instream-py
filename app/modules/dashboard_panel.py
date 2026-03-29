@@ -95,15 +95,18 @@ Shiny.addCustomMessageHandler('dashboard_update', function(msg) {
             return {x: msg.traces.population.x[i], y: msg.traces.population.y[i],
                     name: sp, mode: 'lines'};
         });
+        var leftLegend = {orientation: 'v', x: 0, xanchor: 'left', y: 1, yanchor: 'top',
+                          bgcolor: 'rgba(255,255,255,0.8)', font: {size: 11}};
         Plotly.react('dash-pop-chart', popTraces, {
             title: 'Population', template: 'plotly_white',
-            margin: {t:30, b:30, l:50, r:20}, hovermode: 'x unified'
+            margin: {t:30, b:30, l:50, r:20}, hovermode: 'x unified',
+            legend: leftLegend
         });
         Plotly.react('dash-mort-chart',
             [{x: msg.traces.mortality.x[0], y: msg.traces.mortality.y[0],
               name: 'Deaths', mode: 'lines', line: {color: '#c64'}}],
             {title: 'Daily Mortality', template: 'plotly_white',
-             margin: {t:30, b:30, l:50, r:20}});
+             margin: {t:30, b:30, l:50, r:20}, legend: leftLegend});
         var feedNames = ['Drift', 'Search', 'Hide', 'Other'];
         var feedColors = ['#48c', '#8c4', '#999', '#888'];
         var feedTraces = feedNames.map(function(n, i) {
@@ -112,12 +115,12 @@ Shiny.addCustomMessageHandler('dashboard_update', function(msg) {
         });
         Plotly.react('dash-feed-chart', feedTraces, {
             title: 'Feeding Activity', template: 'plotly_white',
-            margin: {t:30, b:30, l:50, r:20}});
+            margin: {t:30, b:30, l:50, r:20}, legend: leftLegend});
         Plotly.react('dash-redd-chart',
             [{x: msg.traces.redds.x[0], y: msg.traces.redds.y[0],
               name: 'Active Redds', mode: 'lines', line: {color: '#a48'}}],
             {title: 'Redds', template: 'plotly_white',
-             margin: {t:30, b:30, l:50, r:20}});
+             margin: {t:30, b:30, l:50, r:20}, legend: leftLegend});
     } else {
         var popIdx = msg.traces.population.x.map(function(_, i) { return i; });
         safeExtend('dash-pop-chart', msg.traces.population, popIdx);
@@ -200,7 +203,9 @@ def dashboard_server(input, output, session, dashboard_data_rv):
         if not data:
             return
 
-        current_len = len(data)
+        snapshot_data = [d for d in data if d.get("type") != "cells"]
+        current_len = len(snapshot_data)
+
         if current_len < _last_sent_idx[0]:
             reset = True
             start = 0
@@ -210,7 +215,7 @@ def dashboard_server(input, output, session, dashboard_data_rv):
         else:
             return
 
-        payload = build_dashboard_payload(data, start, reset=reset)
+        payload = build_dashboard_payload(snapshot_data, start, reset=reset)
         if payload is not None:
             await session.send_custom_message("dashboard_update", payload)
         _last_sent_idx[0] = current_len
