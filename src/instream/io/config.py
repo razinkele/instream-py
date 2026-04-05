@@ -34,6 +34,14 @@ class SimulationConfig(BaseModel):
     population_file: str = ""
     adult_arrival_file: str = ""
 
+    # Harvest
+    harvest_file: str = ""
+    harvest_catch_rate: float = 0.0
+    harvest_min_length: float = 0.0
+    harvest_bag_limit: int = 999999
+    harvest_season_start: str = ""
+    harvest_season_end: str = ""
+
 
 class PerformanceConfig(BaseModel):
     backend: str = "numpy"

@@ -382,6 +382,18 @@ class InSTREAMModel(mesa.Model):
         self._reach_graph = build_reach_graph(upstream, downstream)
         self._outmigrants = []
 
+        # Harvest schedule
+        self._harvest_schedule = {}
+        if self.config.simulation.harvest_file:
+            hf = self.data_dir / self.config.simulation.harvest_file
+            if hf.exists():
+                df = pd.read_csv(hf, parse_dates=["date"])
+                for _, row in df.iterrows():
+                    self._harvest_schedule[row["date"].strftime("%Y-%m-%d")] = float(
+                        row["num_anglers"]
+                    )
+        self._harvest_records = []
+
         # Mesa agent dict (for sync_trout_agents)
         self._trout_agents = {}
         sync_trout_agents(self)
@@ -705,6 +717,9 @@ class InSTREAMModel(mesa.Model):
             # Apply habitat restoration events scheduled for today
             self._apply_restoration_events()
 
+            # Harvest
+            self._do_harvest()
+
             # Apply accumulated growth (sum growth_memory across sub-steps)
             self._apply_accumulated_growth()
 
@@ -771,6 +786,47 @@ class InSTREAMModel(mesa.Model):
                 for attr, value in changes.items():
                     if hasattr(cs, attr):
                         getattr(cs, attr)[cells] = value
+
+    def _do_harvest(self):
+        """Apply angler harvest if scheduled for today."""
+        if not self._harvest_schedule:
+            return
+        from instream.modules.harvest import compute_harvest
+
+        date_str = self.time_manager.current_date.strftime("%Y-%m-%d")
+        num_anglers = self._harvest_schedule.get(date_str, 0.0)
+        if num_anglers <= 0:
+            return
+        # Check season
+        cfg = self.config.simulation
+        if cfg.harvest_season_start and cfg.harvest_season_end:
+            jd = self.time_manager.julian_date
+            try:
+                from datetime import datetime
+
+                start_jd = (
+                    datetime.strptime(cfg.harvest_season_start, "%m-%d")
+                    .timetuple()
+                    .tm_yday
+                )
+                end_jd = (
+                    datetime.strptime(cfg.harvest_season_end, "%m-%d")
+                    .timetuple()
+                    .tm_yday
+                )
+                if not (start_jd <= jd <= end_jd):
+                    return
+            except ValueError:
+                pass
+        records = compute_harvest(
+            self.trout_state,
+            num_anglers,
+            cfg.harvest_catch_rate,
+            cfg.harvest_min_length,
+            cfg.harvest_bag_limit,
+            self.rng,
+        )
+        self._harvest_records.extend(records)
 
     def _apply_accumulated_growth(self):
         """Sum growth_memory across sub-steps and apply to weight/length/condition.
