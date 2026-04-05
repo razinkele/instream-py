@@ -2,11 +2,12 @@
 
 Loads YAML configuration files and converts NetLogo .nls parameter files.
 """
+
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import numpy as np
 import yaml
@@ -19,6 +20,7 @@ from instream.state.params import SpeciesParams
 # Pydantic config models
 # ---------------------------------------------------------------------------
 
+
 class SimulationConfig(BaseModel):
     start_date: str
     end_date: str
@@ -28,6 +30,7 @@ class SimulationConfig(BaseModel):
     census_days: list[str] = []
     census_years_to_skip: int = 0
     population_file: str = ""
+    adult_arrival_file: str = ""
 
 
 class PerformanceConfig(BaseModel):
@@ -58,6 +61,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
     as an attribute without having to enumerate all ~100 fields.
     Core fields that tests rely on are declared explicitly.
     """
+
     is_anadromous: bool = False
     display_color: str = "brown"
 
@@ -197,6 +201,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
 
 class ReachConfig(BaseModel, extra="allow"):
     """Reach-specific parameters."""
+
     drift_conc: float = 0.0
     search_prod: float = 0.0
     shelter_speed_frac: float = 0.0
@@ -256,6 +261,7 @@ class ReachParams:
 # load_config
 # ---------------------------------------------------------------------------
 
+
 def load_config(path: Path) -> ModelConfig:
     """Load a YAML configuration file and return a validated ModelConfig."""
     path = Path(path)
@@ -270,7 +276,10 @@ def load_config(path: Path) -> ModelConfig:
 # params_from_config
 # ---------------------------------------------------------------------------
 
-def params_from_config(config: ModelConfig) -> tuple[dict[str, SpeciesParams], dict[str, ReachParams]]:
+
+def params_from_config(
+    config: ModelConfig,
+) -> tuple[dict[str, SpeciesParams], dict[str, ReachParams]]:
     """Convert a ModelConfig into frozen runtime parameter objects.
 
     Returns (species_params, reach_params) dicts keyed by name.
@@ -322,6 +331,7 @@ def params_from_config(config: ModelConfig) -> tuple[dict[str, SpeciesParams], d
 # nls_to_yaml — NetLogo .nls parameter file converter
 # ---------------------------------------------------------------------------
 
+
 def _parse_nls_date(val: str) -> str:
     """Convert NetLogo date 'M/d/yyyy' to ISO 'yyyy-MM-dd'."""
     parts = val.strip().strip('"').split("/")
@@ -372,7 +382,7 @@ def nls_to_yaml(nls_path: Path) -> str:
     sets: dict[str, str] = {}
     for line in text.splitlines():
         line = line.split(";")[0].strip()  # strip comments
-        m = re.match(r'^set\s+([\w\-\?]+)\s+(.+)$', line)
+        m = re.match(r"^set\s+([\w\-\?]+)\s+(.+)$", line)
         if m:
             sets[m.group(1)] = m.group(2).strip()
 
@@ -383,8 +393,10 @@ def nls_to_yaml(nls_path: Path) -> str:
             inner = val[5:].rstrip(")")
             # Handle time:create values
             items = []
-            for token in re.findall(r'time:create\s+"[^"]*"|"[^"]*"|[\w\.\-\+Ee]+', inner):
-                if token.startswith('time:create'):
+            for token in re.findall(
+                r'time:create\s+"[^"]*"|"[^"]*"|[\w\.\-\+Ee]+', inner
+            ):
+                if token.startswith("time:create"):
                     # Extract the date string
                     date_str = re.search(r'"([^"]*)"', token).group(1)
                     items.append(_parse_nls_day(date_str))
@@ -396,7 +408,9 @@ def nls_to_yaml(nls_path: Path) -> str:
     tables: dict[str, dict[float, float]] = {}
     for line in text.splitlines():
         line_stripped = line.split(";")[0].strip()
-        m = re.match(r'^table:put\s+([\w\-]+)\s+([\d\.\-Ee]+)\s+([\d\.\-Ee]+)', line_stripped)
+        m = re.match(
+            r"^table:put\s+([\w\-]+)\s+([\d\.\-Ee]+)\s+([\d\.\-Ee]+)", line_stripped
+        )
         if m:
             tname = m.group(1)
             k = float(m.group(2))
@@ -416,7 +430,11 @@ def nls_to_yaml(nls_path: Path) -> str:
         "output_frequency": _parse_value(sets.get("file-output-frequency", "1")),
         "output_units": _parse_value(sets.get("file-output-units", '"days"')),
         "seed": 0,
-        "census_days": [_parse_nls_day(d) for d in lists.get("census-days", []) if isinstance(d, str)],
+        "census_days": [
+            _parse_nls_day(d)
+            for d in lists.get("census-days", [])
+            if isinstance(d, str)
+        ],
         "census_years_to_skip": _parse_value(sets.get("census-years-to-skip", "0")),
     }
 
@@ -563,15 +581,21 @@ def nls_to_yaml(nls_path: Path) -> str:
         # Add cmax interpolation table
         cmax_table_name = f"{sp_name}-cmax-table"
         if cmax_table_name in tables:
-            sp_dict["cmax_temp_table"] = {k: v for k, v in sorted(tables[cmax_table_name].items())}
+            sp_dict["cmax_temp_table"] = {
+                k: v for k, v in sorted(tables[cmax_table_name].items())
+            }
         # Add spawn depth table
         depth_table_name = f"{sp_name}-depth-table"
         if depth_table_name in tables:
-            sp_dict["spawn_depth_table"] = {k: v for k, v in sorted(tables[depth_table_name].items())}
+            sp_dict["spawn_depth_table"] = {
+                k: v for k, v in sorted(tables[depth_table_name].items())
+            }
         # Add spawn velocity table
         vel_table_name = f"{sp_name}-vel-table"
         if vel_table_name in tables:
-            sp_dict["spawn_vel_table"] = {k: v for k, v in sorted(tables[vel_table_name].items())}
+            sp_dict["spawn_vel_table"] = {
+                k: v for k, v in sorted(tables[vel_table_name].items())
+            }
         config["species"][sp_name] = sp_dict
 
     # Reaches
@@ -605,4 +629,6 @@ def nls_to_yaml(nls_path: Path) -> str:
                 r_dict[yaml_key] = vals[i]
         config["reaches"][r_name] = r_dict
 
-    return yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return yaml.dump(
+        config, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )

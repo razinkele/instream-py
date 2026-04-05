@@ -127,7 +127,13 @@ class JaxBackend:
         return float(day_length), float(twilight_length), float(irradiance)
 
     def compute_cell_light(
-        self, depths, irradiance, turbid_coef, turbidity, light_at_night
+        self,
+        depths,
+        irradiance,
+        turbid_coef,
+        turbidity,
+        light_at_night,
+        turbid_const=0.0,
     ):
         """Compute light at mid-depth for each cell using Beer-Lambert law.
 
@@ -143,6 +149,8 @@ class JaxBackend:
             Current turbidity value (NTU).
         light_at_night : float
             Light value assigned to dry cells (depth=0).
+        turbid_const : float, optional
+            Additive turbidity constant for attenuation (default 0.0).
 
         Returns
         -------
@@ -150,7 +158,7 @@ class JaxBackend:
             Light intensity at mid-depth for each cell.
         """
         depths = jnp.asarray(depths, dtype=jnp.float64)
-        attenuation = turbid_coef * turbidity
+        attenuation = turbid_coef * turbidity + turbid_const
         light = irradiance * jnp.exp(-attenuation * depths / 2.0)
         # Dry cells get night light
         light = jnp.where(depths > 0, light, light_at_night)

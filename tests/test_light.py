@@ -262,3 +262,29 @@ class TestLightBackendParity:
         r_np = np_b.compute_cell_light(depths, 100.0, 0.0017, 5.0, 0.9)
         r_nb = nb_b.compute_cell_light(depths, 100.0, 0.0017, 5.0, 0.9)
         np.testing.assert_allclose(r_np, r_nb, rtol=1e-12)
+
+
+class TestTurbidityConstant:
+    """Test the additive turbidity constant in Beer-Lambert attenuation."""
+
+    def test_turbidity_constant_increases_attenuation(self):
+        from instream.backends.numpy_backend import NumpyBackend
+
+        backend = NumpyBackend()
+        depths = np.array([50.0, 100.0])
+        light_no_const = backend.compute_cell_light(
+            depths, 500.0, 0.01, 5.0, 0.001, 0.0
+        )
+        light_with_const = backend.compute_cell_light(
+            depths, 500.0, 0.01, 5.0, 0.001, 0.005
+        )
+        np.testing.assert_array_less(light_with_const, light_no_const)
+
+    def test_zero_constant_unchanged(self):
+        from instream.backends.numpy_backend import NumpyBackend
+
+        backend = NumpyBackend()
+        depths = np.array([0.0, 50.0, 100.0])
+        light = backend.compute_cell_light(depths, 500.0, 0.01, 5.0, 0.001, 0.0)
+        expected_50 = 500.0 * np.exp(-0.05 * 50.0 / 2.0)
+        np.testing.assert_allclose(light[1], expected_50, rtol=1e-12)

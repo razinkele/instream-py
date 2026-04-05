@@ -131,7 +131,13 @@ class NumpyBackend:
         return float(day_length), float(twilight_length), float(irradiance)
 
     def compute_cell_light(
-        self, depths, irradiance, turbid_coef, turbidity, light_at_night
+        self,
+        depths,
+        irradiance,
+        turbid_coef,
+        turbidity,
+        light_at_night,
+        turbid_const=0.0,
     ):
         """Compute light at mid-depth for each cell using Beer-Lambert law.
 
@@ -147,6 +153,8 @@ class NumpyBackend:
             Current turbidity value (NTU).
         light_at_night : float
             Light value assigned to dry cells (depth=0).
+        turbid_const : float, optional
+            Additive turbidity constant for attenuation (default 0.0).
 
         Returns
         -------
@@ -154,7 +162,7 @@ class NumpyBackend:
             Light intensity at mid-depth for each cell.
         """
         depths = np.asarray(depths, dtype=float)
-        attenuation = turbid_coef * turbidity
+        attenuation = turbid_coef * turbidity + turbid_const
         light = irradiance * np.exp(-attenuation * depths / 2.0)
         # Dry cells get night light
         light = np.where(depths > 0, light, light_at_night)

@@ -60,11 +60,13 @@ def _compute_light(
 
 
 @numba.njit(parallel=True, cache=True)
-def _compute_cell_light(depths, irradiance, turbid_coef, turbidity, light_at_night):
+def _compute_cell_light(
+    depths, irradiance, turbid_coef, turbidity, light_at_night, turbid_const
+):
     """Compute light at mid-depth for all cells (Beer-Lambert)."""
     n = depths.shape[0]
     light = np.empty(n, dtype=np.float64)
-    attenuation = turbid_coef * turbidity
+    attenuation = turbid_coef * turbidity + turbid_const
     for i in numba.prange(n):
         if depths[i] > 0.0:
             light[i] = irradiance * math.exp(-attenuation * depths[i] / 2.0)
@@ -125,7 +127,13 @@ class NumbaBackend:
         )
 
     def compute_cell_light(
-        self, depths, irradiance, turbid_coef, turbidity, light_at_night
+        self,
+        depths,
+        irradiance,
+        turbid_coef,
+        turbidity,
+        light_at_night,
+        turbid_const=0.0,
     ):
         depths = np.asarray(depths, dtype=np.float64)
         return _compute_cell_light(
@@ -134,6 +142,7 @@ class NumbaBackend:
             float(turbid_coef),
             float(turbidity),
             float(light_at_night),
+            float(turbid_const),
         )
 
     def growth_rate(self, *args, **kwargs):

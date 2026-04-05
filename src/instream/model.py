@@ -511,6 +511,7 @@ class InSTREAMModel(mesa.Model):
                 reach_cfg.light_turbid_coef,
                 float(self.reach_state.turbidity[r_idx]),
                 self._light_cfg.light_at_night,
+                reach_cfg.light_turbid_const,
             )
             cs.light[cells] = cell_light
 
