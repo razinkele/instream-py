@@ -112,17 +112,17 @@ class JaxBackend:
             twilight_length = (tw_hour_angle - hour_angle) / 360.0
             twilight_length = max(0.0, float(twilight_length))
 
-        # Mean daytime irradiance (simplified daily average)
+        # Mean daytime irradiance via daily integral formula
         solar_constant = 1360.0
-        solar_elevation = 90.0 - abs(latitude - float(decl))
-        solar_elevation = min(90.0, max(0.0, solar_elevation))
-        irradiance = (
-            solar_constant
-            * jnp.sin(jnp.radians(solar_elevation))
-            * light_correction
-            * shading
-        )
-        irradiance = max(0.0, float(irradiance)) * float(day_length)
+        ha_rad = jnp.radians(hour_angle)
+        if float(day_length) > 0:
+            irradiance = (solar_constant / jnp.pi) * (
+                jnp.sin(lat_rad) * jnp.sin(decl_rad) * ha_rad
+                + jnp.cos(lat_rad) * jnp.cos(decl_rad) * jnp.sin(ha_rad)
+            )
+            irradiance = max(0.0, float(irradiance)) * light_correction * shading
+        else:
+            irradiance = 0.0
 
         return float(day_length), float(twilight_length), float(irradiance)
 

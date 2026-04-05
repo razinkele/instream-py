@@ -1,4 +1,5 @@
 """Numpy compute backend — reference implementation, no JIT."""
+
 import numpy as np
 
 
@@ -38,11 +39,15 @@ class NumpyBackend:
             depths = depth_values[:, n_flows - 1].copy()
             vels = vel_values[:, n_flows - 1].copy()
         else:
-            idx = np.searchsorted(table_flows, flow, side='right') - 1
+            idx = np.searchsorted(table_flows, flow, side="right") - 1
             idx = np.clip(idx, 0, n_flows - 2)
             frac = (flow - table_flows[idx]) / (table_flows[idx + 1] - table_flows[idx])
-            depths = depth_values[:, idx] + frac * (depth_values[:, idx + 1] - depth_values[:, idx])
-            vels = vel_values[:, idx] + frac * (vel_values[:, idx + 1] - vel_values[:, idx])
+            depths = depth_values[:, idx] + frac * (
+                depth_values[:, idx + 1] - depth_values[:, idx]
+            )
+            vels = vel_values[:, idx] + frac * (
+                vel_values[:, idx + 1] - vel_values[:, idx]
+            )
 
         # Clamp negative depths to zero; zero velocity where dry
         depths = np.maximum(depths, 0.0)
@@ -50,8 +55,15 @@ class NumpyBackend:
         vels = np.maximum(vels, 0.0)
         return depths, vels
 
-    def compute_light(self, julian_date, latitude, light_correction, shading,
-                      light_at_night, twilight_angle):
+    def compute_light(
+        self,
+        julian_date,
+        latitude,
+        light_correction,
+        shading,
+        light_at_night,
+        twilight_angle,
+    ):
         """Compute day length, twilight length, and mean daytime irradiance.
 
         Parameters
@@ -94,29 +106,33 @@ class NumpyBackend:
         if abs(denom) < 1e-15:
             twilight_length = 0.0
         else:
-            cos_tw = (-np.sin(np.radians(twilight_angle))
-                      - np.sin(lat_rad) * np.sin(decl_rad)) / denom
+            cos_tw = (
+                -np.sin(np.radians(twilight_angle)) - np.sin(lat_rad) * np.sin(decl_rad)
+            ) / denom
             cos_tw = np.clip(cos_tw, -1.0, 1.0)
             tw_hour_angle = np.degrees(np.arccos(cos_tw))
             twilight_length = (tw_hour_angle - hour_angle) / 360.0
             twilight_length = max(0.0, float(twilight_length))
 
-        # Mean daytime irradiance (simplified daily average)
-        # TODO: Phase 3 — replace with daily-integral irradiance from NetLogo
-        # calcDayLength/calcDailyMeanSolar. Current formula uses noon elevation
-        # approximation which overestimates irradiance (avg elevation < noon).
-        # Correct noon elevation: 90 - |latitude - declination|.
+        # Mean daytime irradiance via daily integral formula:
+        # I = (S0/pi) * (sin(lat)*sin(dec)*H + cos(lat)*cos(dec)*sin(H))
+        # where H = hour angle at sunset in radians.
         solar_constant = 1360.0
-        solar_elevation = 90.0 - abs(latitude - decl)  # noon elevation
-        solar_elevation = min(90.0, max(0.0, solar_elevation))
-        irradiance = (solar_constant * np.sin(np.radians(solar_elevation))
-                      * light_correction * shading)
-        irradiance = max(0.0, float(irradiance)) * day_length  # scale by day fraction
+        ha_rad = np.radians(hour_angle)
+        if day_length > 0:
+            irradiance = (solar_constant / np.pi) * (
+                np.sin(lat_rad) * np.sin(decl_rad) * ha_rad
+                + np.cos(lat_rad) * np.cos(decl_rad) * np.sin(ha_rad)
+            )
+            irradiance = max(0.0, float(irradiance)) * light_correction * shading
+        else:
+            irradiance = 0.0
 
         return float(day_length), float(twilight_length), float(irradiance)
 
-    def compute_cell_light(self, depths, irradiance, turbid_coef, turbidity,
-                           light_at_night):
+    def compute_cell_light(
+        self, depths, irradiance, turbid_coef, turbidity, light_at_night
+    ):
         """Compute light at mid-depth for each cell using Beer-Lambert law.
 
         Parameters
@@ -153,8 +169,9 @@ class NumpyBackend:
     def fitness_all(self, trout_arrays, cell_arrays, candidates, **params):
         raise NotImplementedError("Phase 4")
 
-    def deplete_resources(self, fish_order, chosen_cells, available_drift,
-                          available_search, **params):
+    def deplete_resources(
+        self, fish_order, chosen_cells, available_drift, available_search, **params
+    ):
         raise NotImplementedError("Phase 4")
 
     def spawn_suitability(self, depths, velocities, frac_spawn, **params):
