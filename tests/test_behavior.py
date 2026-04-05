@@ -1101,3 +1101,41 @@ class TestFitnessMemory:
         for _ in range(100):
             ts.fitness_memory[0] = frac * ts.fitness_memory[0] + (1.0 - frac) * 0.6
         np.testing.assert_allclose(ts.fitness_memory[0], 0.6, rtol=1e-3)
+
+
+class TestDriftRegenDistance:
+    def test_cells_near_feeding_fish_skip_regen(self):
+        """Cells within drift_regen_distance of a feeding fish should not regenerate drift."""
+        import numpy as np
+
+        occupied_cells = np.array([0])
+        centroids_x = np.array([0.0, 50.0, 200.0])
+        centroids_y = np.array([0.0, 0.0, 0.0])
+        drift_regen_distance = 100.0
+        regen_blocked = np.zeros(3, dtype=bool)
+        for oc in occupied_cells:
+            dx = centroids_x - centroids_x[oc]
+            dy = centroids_y - centroids_y[oc]
+            dist = np.sqrt(dx**2 + dy**2)
+            regen_blocked |= (dist <= drift_regen_distance) & (dist > 0)
+        assert not regen_blocked[0]  # occupied cell itself not blocked
+        assert regen_blocked[1]  # cell 1 within range
+        assert not regen_blocked[2]  # cell 2 outside range
+
+    def test_zero_distance_no_blocking(self):
+        """drift_regen_distance=0 should not block any cells."""
+        import numpy as np
+
+        occupied_cells = np.array([0])
+        centroids_x = np.array([0.0, 50.0])
+        centroids_y = np.array([0.0, 0.0])
+        regen_blocked = np.zeros(2, dtype=bool)
+        drift_regen_distance = 0.0
+        if drift_regen_distance > 0:
+            for oc in occupied_cells:
+                dx = centroids_x - centroids_x[oc]
+                dy = centroids_y - centroids_y[oc]
+                dist = np.sqrt(dx**2 + dy**2)
+                regen_blocked |= (dist <= drift_regen_distance) & (dist > 0)
+        assert not regen_blocked[0]
+        assert not regen_blocked[1]

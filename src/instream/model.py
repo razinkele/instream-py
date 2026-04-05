@@ -529,6 +529,31 @@ class InSTREAMModel(mesa.Model):
                     cs.frac_vel_shelter[cells] * cs.area[cells]
                 )
             cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
+
+            # Block drift regen for cells near feeding fish
+            for r_idx, rname in enumerate(self.reach_order):
+                rp = self.reach_params[rname]
+                if rp.drift_regen_distance <= 0:
+                    continue
+                cells = np.where(cs.reach_idx == r_idx)[0]
+                if len(cells) == 0:
+                    continue
+                alive = self.trout_state.alive_indices()
+                drift_cells = set()
+                for i in alive:
+                    if (
+                        int(self.trout_state.activity[i]) == 0
+                        and int(self.trout_state.reach_idx[i]) == r_idx
+                    ):
+                        drift_cells.add(int(self.trout_state.cell_idx[i]))
+                if not drift_cells:
+                    continue
+                for oc in drift_cells:
+                    dx = cs.centroid_x[cells] - cs.centroid_x[oc]
+                    dy = cs.centroid_y[cells] - cs.centroid_y[oc]
+                    dist = np.sqrt(dx**2 + dy**2)
+                    blocked = (dist <= rp.drift_regen_distance) & (dist > 0)
+                    cs.available_drift[cells[blocked]] = 0.0
         else:
             self._replenish_resources_partial(step_length)
             # Vel shelter and hiding places reset fully each sub-step
