@@ -205,6 +205,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
 class ReachConfig(BaseModel, extra="allow"):
     """Reach-specific parameters."""
 
+    restoration_events: list = []
     drift_conc: float = 0.0
     search_prod: float = 0.0
     shelter_speed_frac: float = 0.0

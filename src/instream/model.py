@@ -702,6 +702,9 @@ class InSTREAMModel(mesa.Model):
         # B) DAY-BOUNDARY ONLY OPERATIONS
         # ----------------------------------------------------------------
         if is_boundary:
+            # Apply habitat restoration events scheduled for today
+            self._apply_restoration_events()
+
             # Apply accumulated growth (sum growth_memory across sub-steps)
             self._apply_accumulated_growth()
 
@@ -743,6 +746,31 @@ class InSTREAMModel(mesa.Model):
             # Reset memory for next day
             self.trout_state.growth_memory[:] = 0.0
             self.trout_state.consumption_memory[:] = 0.0
+
+    def _apply_restoration_events(self):
+        """Apply habitat restoration events scheduled for the current date."""
+        current = self.time_manager.current_date
+        date_str = current.strftime("%Y-%m-%d")
+        cs = self.fem_space.cell_state
+
+        for r_idx, rname in enumerate(self.reach_order):
+            reach_cfg = self.config.reaches[rname]
+            events = getattr(reach_cfg, "restoration_events", [])
+            for event in events:
+                if event.get("date") != date_str:
+                    continue
+                # Determine target cells
+                cells_spec = event.get("cells", "all")
+                if cells_spec == "all":
+                    cells = np.where(cs.reach_idx == r_idx)[0]
+                else:
+                    cells = np.array(cells_spec, dtype=np.int32)
+
+                # Apply changes
+                changes = event.get("changes", {})
+                for attr, value in changes.items():
+                    if hasattr(cs, attr):
+                        getattr(cs, attr)[cells] = value
 
     def _apply_accumulated_growth(self):
         """Sum growth_memory across sub-steps and apply to weight/length/condition.
