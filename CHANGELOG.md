@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-04-05
+
+### Added
+- Angler harvest module with size-selective mortality, bag limits, and CSV schedule (`modules/harvest.py`)
+- Morris one-at-a-time sensitivity analysis framework (`modules/sensitivity.py`)
+- Config-driven habitat restoration scenarios (cell property modification at scheduled dates)
+- Fitness memory (exponential moving average) for smoother habitat selection decisions
+- Drift regeneration distance blocking for cells near drift-feeding fish
+- Spawn defense area exclusion for new redd placement
+- YearShuffler wiring for stochastic multi-year time series remapping
+- Anadromous adult life history transitions and post-spawn mortality
+- Habitat summary and growth report output types (7 total output writers)
+- SpeciesParams completed with all ~90 species parameter fields
+- Cross-backend parity tests for survival, spawn_suitability, evaluate_logistic
+- `InSTREAMModel` now accepts `ModelConfig` objects directly (enables programmatic config)
+
+### Fixed
+- Migration now uses per-species `migrate_fitness_L1/L9` instead of species_order[0]
+- Solar irradiance uses daily-integral formula instead of overestimating noon-elevation
+- Beer-Lambert light attenuation includes `light_turbid_const` additive term
+- Superindividual split uses per-species `superind_max_length` threshold
+- Numba `evaluate_logistic` supports array L1/L9 parameters
+
+### Performance
+- Vectorized survival computation in NumPy backend (replaces 80-line per-fish loop)
+- Implemented `survival`, `growth_rate`, `spawn_suitability`, `deplete_resources` in all 3 backends
+- Survival loop in model.py replaced with single `backend.survival()` dispatch
+
+### Infrastructure
+- 674 tests (was 499), 11/11 validation tests passing
+- Gap-closure design spec and reviewed implementation plans
+
+---
+
 ## [0.10.0] - 2026-03-23
 
 ### Added

@@ -44,6 +44,9 @@ For background on the inSTREAM modelling framework, see:
 - **Numba JIT backend** -- critical inner loops compiled to machine code for
   60x+ speedup over pure Python
 - **Pluggable compute backends** -- NumPy (default), Numba, and JAX
+- **Angler harvest** -- size-selective fishing mortality with bag limits
+- **Sensitivity analysis** -- Morris one-at-a-time parameter screening
+- **Habitat restoration** -- config-driven cell property changes at scheduled dates
 
 ## Quick Start
 
@@ -196,6 +199,8 @@ InSTREAMModel (Mesa Model)
        +-- behavior        # fitness-based habitat selection
        +-- spawning        # redd creation, egg development, emergence
        +-- migration       # inter-reach movement
+       +-- harvest         # angler fishing mortality
+       +-- sensitivity     # Morris parameter screening
 ```
 
 **Key design decisions:**
@@ -229,19 +234,19 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.10.0** -- Shiny frontend + deploy skill (March 2026).
+**v0.11.0** -- Simulation correctness, backend vectorization, new features (April 2026).
 
 ### Current Metrics
 
 | Metric          | Value                          |
 |-----------------|--------------------------------|
-| Tests           | 499                            |
+| Tests           | 674                            |
 | Validation      | 11/11 NetLogo reference tests  |
 | Step time       | 48 ms (Example A, Numba JIT)   |
 | Species         | Multi-species support          |
 | Reaches         | Multi-reach support            |
 | Sub-daily       | InSTREAM-SD hourly + peaking   |
-| Output          | 6 file types + CLI             |
+| Output          | 7 file types + CLI             |
 | Example B       | 3 reaches x 3 species working  |
 
 ### Completed
@@ -254,24 +259,31 @@ property-based tests, and performance regression tests.
 - Spawning, egg development, and redd emergence
 - Multi-reach migration with junction network routing
 - Multi-species support (Example B: 3 reaches x 3 species)
-- Output system (6 file types: population, habitat, individual, redd, mortality, spatial)
+- Output system (7 file types: population, habitat, individual, redd, mortality, spatial, growth report)
 - CLI interface (`instream` command)
-- NumPy and Numba compute backends
+- NumPy, Numba, and JAX compute backends (survival vectorized across all 3)
 - InSTREAM-SD sub-daily scheduling (hourly + peaking flow)
 - Growth accumulation with day-boundary application
 - 11/11 NetLogo validation tests passing
-- 499 unit, integration, property-based, and validation tests
+- 674 unit, integration, property-based, and validation tests
 - JAX GPU backend with vectorized growth/survival kernels
 - FEM mesh reader (River2D/GMSH via meshio)
 - Shiny for Python frontend (configure, run, explore simulations)
 - Deploy skill for laguna.ku.lt Shiny Server
+- Angler harvest module with size-selective mortality and bag limits
+- Morris sensitivity analysis (one-at-a-time parameter screening)
+- Config-driven habitat restoration scenarios
+- Fitness memory (EMA), drift regen distance, spawn defense area
+- Per-species migration params, superindividual split thresholds
+- Anadromous adult life history with post-spawn mortality
+- Daily-integral solar irradiance (replaces noon-elevation approximation)
+- YearShuffler for stochastic multi-year input remapping
 
 ### Planned
 
-- Angler harvest module
-- Habitat restoration scenario tools
-- Sensitivity analysis framework
 - Scenario comparison (side-by-side simulation runs)
+- Full Numba JIT compilation of fitness_all inner loop
+- Sphinx documentation build
 
 ## License
 
