@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix 7 ecological correctness gaps so every simulation process matches NetLogo 7.4 semantics.
+**Goal:** Fix 9 ecological correctness gaps so every simulation process matches NetLogo 7.4 semantics.
 
 **Architecture:** Each gap is independent — fix one, test, commit, move to the next. No gap depends on another within this sprint. All changes are backward-compatible via default parameter values.
 
@@ -79,7 +79,7 @@ In `src/instream/model.py`, find the `_sp_arrays` construction (line 194). Add `
 
 - [ ] **Step 4: Fix _do_migration to use per-species params**
 
-In `src/instream/model.py`, replace lines 998-1012:
+In `src/instream/model.py`, replace the entire `_do_migration` method (lines 990-1012):
 
 ```python
     def _do_migration(self):
@@ -127,9 +127,9 @@ git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" comm
 ## Task 2: Solar irradiance daily integral
 
 **Files:**
-- Modify: `src/instream/backends/numpy_backend/__init__.py:100-112`
-- Modify: `src/instream/backends/numba_backend/__init__.py:40-54`
-- Modify: `src/instream/backends/jax_backend/__init__.py:115-127`
+- Modify: `src/instream/backends/numpy_backend/__init__.py:104-114` (irradiance block)
+- Modify: `src/instream/backends/numba_backend/__init__.py:41-53` (irradiance block)
+- Modify: `src/instream/backends/jax_backend/__init__.py:115-125` (irradiance block)
 - Test: `tests/test_light.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -161,11 +161,14 @@ class TestDailyIntegralIrradiance:
         assert irr == 0.0
 
     def test_irradiance_equator_equinox(self):
-        """Known analytical case: equator at equinox."""
+        """Known analytical case: equator at equinox.
+
+        At equator on equinox: declination ≈ 0, H = pi/2.
+        Daily-integrated insolation: (S0/pi) * sin(H) = S0/pi ≈ 433 W/m^2.
+        This is a daily integral (total energy proxy), not a daily mean.
+        """
         from instream.backends.numpy_backend import NumpyBackend
         backend = NumpyBackend()
-        # At equator on equinox: declination ≈ 0, day_length = 0.5
-        # Daily integral: (S0/pi) * (0 + cos(0)*cos(0)*sin(pi/2)) = S0/pi ≈ 433
         _dl, _tl, irr = backend.compute_light(80, 0.0, 1.0, 1.0, 0.0, 6.0)
         expected = 1360.0 / np.pi  # ≈ 432.9
         assert abs(irr - expected) < 50.0, (
@@ -195,7 +198,7 @@ Expected: FAIL — current noon elevation overestimates irradiance.
 
 - [ ] **Step 3: Implement daily integral in NumPy backend**
 
-In `src/instream/backends/numpy_backend/__init__.py`, replace lines 100-110:
+In `src/instream/backends/numpy_backend/__init__.py`, replace lines 104-114 (the irradiance block, from `# Mean daytime irradiance` through `irradiance = max(0.0, ...) * day_length`):
 
 ```python
         # Mean daytime irradiance via daily integral formula:
@@ -221,7 +224,7 @@ Expected: PASS for `test_irradiance_less_than_noon_peak`, `test_irradiance_zero_
 
 - [ ] **Step 5: Update Numba backend**
 
-In `src/instream/backends/numba_backend/__init__.py`, replace lines 40-52:
+In `src/instream/backends/numba_backend/__init__.py`, replace lines 41-53 (from `# Mean daytime irradiance` through `irradiance = irradiance * day_length`). **Important:** Clear Numba cache after this change (`rm -rf src/instream/backends/numba_backend/__pycache__/`):
 
 ```python
     # Mean daytime irradiance via daily integral formula
@@ -281,8 +284,8 @@ git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" comm
 ## Task 3: Light turbidity constant in Beer-Lambert
 
 **Files:**
-- Modify: `src/instream/backends/numpy_backend/__init__.py:136-141`
-- Modify: `src/instream/backends/numba_backend/__init__.py:57-68`
+- Modify: `src/instream/backends/numpy_backend/__init__.py:114-141` (compute_cell_light method)
+- Modify: `src/instream/backends/numba_backend/__init__.py:57-68` (clear cache after!)
 - Modify: `src/instream/backends/jax_backend/__init__.py:129-157`
 - Modify: `src/instream/backends/_interface.py:19-21`
 - Modify: `src/instream/model.py:506-513` (pass turbid_const to compute_cell_light)
@@ -515,21 +518,28 @@ Check `src/instream/io/config.py` SpeciesConfig. If `fitness_memory_frac` is not
 
 Default 0.0 means: `new = 0.0 * old + 1.0 * current` = no memory (current behavior).
 
+**Note:** `fitness_memory_frac` is a NEW field. The existing `fitness_horizon` in SpeciesConfig is a different concept (days-ahead projection for fitness evaluation). Do not confuse or merge them.
+
 - [ ] **Step 7: Update fitness memory after habitat selection in model.py**
 
 In `src/instream/model.py`, after the `select_habitat_and_activity` call (find the line that writes `trout_state.last_growth_rate`), add:
 
 ```python
         # Update fitness memory (EMA)
+        # On first step, initialize fitness_memory from last_growth_rate to avoid
+        # spurious day-1 migration (fitness_memory starts at 0.0 otherwise).
         alive = self.trout_state.alive_indices()
         frac = self._sp_arrays["fitness_memory_frac"]
         for i in alive:
             sp_idx = int(self.trout_state.species_idx[i])
             f = float(frac[sp_idx])
             current = float(self.trout_state.last_growth_rate[i])
-            self.trout_state.fitness_memory[i] = (
-                f * self.trout_state.fitness_memory[i] + (1.0 - f) * current
-            )
+            old = self.trout_state.fitness_memory[i]
+            if old == 0.0 and current != 0.0:
+                # First real update: seed with current value
+                self.trout_state.fitness_memory[i] = current
+            else:
+                self.trout_state.fitness_memory[i] = f * old + (1.0 - f) * current
 ```
 
 - [ ] **Step 8: Use fitness_memory in migration decisions**
@@ -875,28 +885,64 @@ In `src/instream/model.py`, in `__init__`, after the `TimeManager` instantiation
         self._year_shuffler = None
         if self.config.simulation.shuffle_years:
             from instream.io.time_manager import YearShuffler
-            available_years = sorted(set(
-                d.year for d in self.time_manager._dates
-            ))
+            # Extract available years from the first reach's time-series DataFrame
+            first_ts = next(iter(self.time_manager._time_series.values()))
+            available_years = sorted(set(first_ts.index.year))
             self._year_shuffler = YearShuffler(
                 available_years,
                 seed=self.config.simulation.shuffle_seed,
             )
 ```
 
-- [ ] **Step 5: Use shuffler in time series lookup**
+**Note:** `TimeManager` stores time series in `_time_series` (a dict of DataFrames), NOT `_dates`.
 
-In `src/instream/model.py`, in the `step()` method where `time_manager.get_conditions(rname)` is called (around line 460), add year remapping:
+- [ ] **Step 5: Add year_override to TimeManager.get_conditions**
+
+In `src/instream/io/time_manager.py`, modify the `get_conditions` method to accept an optional `year_override` parameter. Find the method and update its signature and lookup logic:
 
 ```python
-        current_date = self.time_manager.current_date
-        lookup_date = current_date
-        if self._year_shuffler is not None:
-            mapped_year = self._year_shuffler.get_year(current_date.year)
-            lookup_date = current_date.replace(year=mapped_year)
+    def get_conditions(self, reach_name, year_override=None):
+        """Return conditions dict for current date.
+
+        Parameters
+        ----------
+        reach_name : str
+        year_override : int or None
+            If set, look up this year instead of current_date's year.
+        """
+        df = self._time_series[reach_name]
+        lookup_date = self._current_date
+        if year_override is not None:
+            # Remap to the override year, keeping month/day
+            try:
+                lookup_date = self._current_date.replace(year=year_override)
+            except ValueError:
+                # Feb 29 in non-leap year — use Feb 28
+                lookup_date = self._current_date.replace(year=year_override, day=28)
+        idx = df.index.get_indexer([lookup_date], method="nearest")[0]
+        # Relax gap check when year remapping is active
+        if year_override is None:
+            gap_days = abs((df.index[idx] - self._current_date).days)
+            if gap_days > 1.5:
+                raise ValueError(f"No data within 1.5 days of {self._current_date}")
+        row = df.iloc[idx]
+        return {col: float(row[col]) for col in df.columns}
 ```
 
-Then use `lookup_date` instead of `current_date` when fetching conditions from time series.
+- [ ] **Step 6: Use shuffler in model.step()**
+
+In `src/instream/model.py`, in the `step()` method where `get_conditions(rname)` is called (around line 460), pass the year override:
+
+```python
+        year_override = None
+        if self._year_shuffler is not None:
+            year_override = self._year_shuffler.get_year(
+                self.time_manager.current_date.year
+            )
+
+        for r_idx, rname in enumerate(self.reach_order):
+            conditions = self.time_manager.get_conditions(rname, year_override=year_override)
+```
 
 - [ ] **Step 6: Run full test suite**
 
@@ -909,6 +955,187 @@ Expected: All PASS. Default `shuffle_years=False` means shuffler is never create
 ```bash
 git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" add src/instream/io/config.py src/instream/model.py tests/test_time.py
 git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" commit -m "feat: wire YearShuffler for stochastic multi-year time series"
+```
+
+---
+
+## Task 8: Per-species superindividual split threshold
+
+**Files:**
+- Modify: `src/instream/model.py:657` (split_superindividuals call)
+- Modify: `src/instream/modules/growth.py` (split_superindividuals function)
+- Test: `tests/test_growth.py`
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `tests/test_growth.py`:
+
+```python
+class TestSplitSuperindividualPerSpecies:
+    def test_small_species_splits_at_own_threshold(self):
+        """Each species should use its own superind_max_length, not global max."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.growth import split_superindividuals
+
+        ts = TroutState.zeros(4)
+        # Species 0: max_length=10. Fish at length 12 with rep=2 → should split
+        ts.alive[0] = True
+        ts.species_idx[0] = 0
+        ts.length[0] = 12.0
+        ts.superind_rep[0] = 2
+        # Species 1: max_length=20. Fish at length 12 with rep=2 → should NOT split
+        ts.alive[1] = True
+        ts.species_idx[1] = 1
+        ts.length[1] = 12.0
+        ts.superind_rep[1] = 2
+
+        max_lengths = np.array([10.0, 20.0])
+        split_superindividuals(ts, max_lengths)
+
+        assert ts.superind_rep[0] == 1, "species 0 fish should have been split"
+        assert ts.superind_rep[1] == 2, "species 1 fish should NOT have been split"
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `conda run -n shiny python -m pytest tests/test_growth.py::TestSplitSuperindividualPerSpecies -v`
+
+Expected: FAIL — `split_superindividuals` currently takes a scalar threshold.
+
+- [ ] **Step 3: Update split_superindividuals to accept per-species array**
+
+In `src/instream/modules/growth.py`, find `split_superindividuals` and update to accept an array:
+
+```python
+def split_superindividuals(trout_state, max_length):
+    """Split superindividuals exceeding their species-specific max length.
+
+    Parameters
+    ----------
+    trout_state : TroutState
+    max_length : float or array
+        If scalar, applied to all fish. If array of shape (n_species,),
+        indexed by species_idx.
+    """
+    max_length = np.atleast_1d(np.asarray(max_length, dtype=np.float64))
+    per_species = max_length.shape[0] > 1
+
+    alive = trout_state.alive_indices()
+    for i in alive:
+        if trout_state.superind_rep[i] <= 1:
+            continue
+        sp_idx = int(trout_state.species_idx[i])
+        threshold = float(max_length[sp_idx]) if per_species else float(max_length[0])
+        if trout_state.length[i] >= threshold:
+            # ... existing split logic ...
+```
+
+- [ ] **Step 4: Update model.py to pass per-species array**
+
+In `src/instream/model.py`, replace the `split_superindividuals` call (line ~657):
+
+```python
+            split_superindividuals(self.trout_state, self._sp_arrays["superind_max_length"])
+```
+
+- [ ] **Step 5: Run full test suite**
+
+Run: `conda run -n shiny python -m pytest tests/ -v`
+
+Expected: All PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" add src/instream/model.py src/instream/modules/growth.py tests/test_growth.py
+git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" commit -m "fix: use per-species superindividual split threshold"
+```
+
+---
+
+## Task 9: Life history transitions for anadromous adults
+
+**Files:**
+- Modify: `src/instream/model.py:1140` (adult arrivals life_history assignment)
+- Modify: `src/instream/model.py` (_do_spawning — add post-spawn mortality for anad_adult)
+- Test: `tests/test_spawning.py`
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `tests/test_spawning.py`:
+
+```python
+class TestAnadromousAdultLifeHistory:
+    def test_adult_arrival_sets_anad_adult_life_history(self):
+        """Adult arrivals for anadromous species should get life_history=2."""
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(5)
+        # Simulate adult arrival slot assignment
+        slot = 0
+        ts.alive[slot] = True
+        ts.life_history[slot] = 2  # anad_adult
+        assert ts.life_history[slot] == 2
+
+    def test_anad_adult_dies_after_spawning(self):
+        """Anadromous adults (life_history=2) should die after spawning."""
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(5)
+        ts.alive[0] = True
+        ts.life_history[0] = 2
+        ts.spawned_this_season[0] = True
+        # Post-spawn mortality for anad_adult
+        alive = ts.alive_indices()
+        for i in alive:
+            if ts.life_history[i] == 2 and ts.spawned_this_season[i]:
+                ts.alive[i] = False
+        assert not ts.alive[0]
+```
+
+- [ ] **Step 2: Run test to verify it passes (logic test)**
+
+Run: `conda run -n shiny python -m pytest tests/test_spawning.py::TestAnadromousAdultLifeHistory -v`
+
+Expected: PASS (tests the logic pattern, not model wiring yet).
+
+- [ ] **Step 3: Fix adult arrival life_history in model.py**
+
+In `src/instream/model.py`, find `_do_adult_arrivals` (around line 1140). Where `life_history` is set, check species config for anadromous flag:
+
+```python
+            # Set life history based on species type
+            sp_cfg = self.config.species.get(sp_name)
+            if sp_cfg and getattr(sp_cfg, "is_anadromous", False):
+                self.trout_state.life_history[slot] = 2  # anad_adult
+            else:
+                self.trout_state.life_history[slot] = 0  # resident
+```
+
+Add `is_anadromous: bool = False` to `SpeciesConfig` if not present.
+
+- [ ] **Step 4: Add post-spawn mortality for anadromous adults**
+
+In `src/instream/model.py`, in `_do_spawning` or at the end of the day-boundary block, add:
+
+```python
+        # Post-spawn mortality for anadromous adults (NetLogo behavior)
+        alive = self.trout_state.alive_indices()
+        for i in alive:
+            if (self.trout_state.life_history[i] == 2
+                    and self.trout_state.spawned_this_season[i]):
+                self.trout_state.alive[i] = False
+```
+
+- [ ] **Step 5: Run full test suite**
+
+Run: `conda run -n shiny python -m pytest tests/ -v`
+
+Expected: All PASS. Default `is_anadromous=False` means no change for existing configs.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" add src/instream/model.py src/instream/io/config.py tests/test_spawning.py
+git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" commit -m "feat: add anadromous adult life history and post-spawn mortality"
 ```
 
 ---
