@@ -721,6 +721,15 @@ class InSTREAMModel(mesa.Model):
             # Spawning (per-fish species/reach dispatch)
             self._do_spawning(step_length)
 
+            # Post-spawn mortality for anadromous adults (NetLogo behavior)
+            alive = self.trout_state.alive_indices()
+            for i in alive:
+                if (
+                    self.trout_state.life_history[i] == 2
+                    and self.trout_state.spawned_this_season[i]
+                ):
+                    self.trout_state.alive[i] = False
+
             # Redd survival, development, emergence (per-redd species/reach)
             self._do_redd_step(step_length)
 
@@ -1215,7 +1224,8 @@ class InSTREAMModel(mesa.Model):
             ts.reach_idx[slots] = r_idx
             ts.sex[slots] = sex
             ts.superind_rep[slots] = 1
-            ts.life_history[slots] = 0
+            lh_val = 2 if getattr(sp_cfg, "is_anadromous", False) else 0
+            ts.life_history[slots] = lh_val
             ts.in_shelter[slots] = False
             ts.spawned_this_season[slots] = False
             ts.activity[slots] = 0
