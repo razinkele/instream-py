@@ -1,7 +1,6 @@
 """Tests for output writer module."""
 
 
-
 def test_write_population_census(tmp_path):
     from instream.io.output import write_population_census
 
@@ -83,3 +82,62 @@ def test_write_outmigrants_empty(tmp_path):
     assert path.exists()
     lines = path.read_text().strip().split("\n")
     assert len(lines) == 1  # header only
+
+
+import numpy as np
+
+
+class TestWriteHabitatSummary:
+    def test_writes_csv_with_correct_columns(self, tmp_path):
+        from instream.io.output import write_habitat_summary
+
+        cs = type(
+            "CS",
+            (),
+            {
+                "reach_idx": np.array([0, 0, 0]),
+                "depth": np.array([15.0, 45.0, 120.0]),
+                "velocity": np.array([8.0, 25.0, 70.0]),
+                "area": np.array([100.0, 200.0, 300.0]),
+            },
+        )()
+        path = write_habitat_summary(cs, {0: "TestReach"}, str(tmp_path), "2012-06-01")
+        import csv
+
+        with open(path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        assert len(rows) > 0
+        assert "reach" in rows[0]
+        assert "depth_class" in rows[0]
+        assert "total_area_cm2" in rows[0]
+
+
+class TestWriteGrowthReport:
+    def test_writes_per_species_stats(self, tmp_path):
+        from instream.io.output import write_growth_report
+        from instream.state.trout_state import TroutState
+
+        ts = TroutState.zeros(5)
+        ts.alive[0] = True
+        ts.alive[1] = True
+        ts.species_idx[0] = 0
+        ts.species_idx[1] = 0
+        ts.length[0] = 10.0
+        ts.length[1] = 12.0
+        ts.weight[0] = 5.0
+        ts.weight[1] = 8.0
+        ts.condition[0] = 0.9
+        ts.condition[1] = 0.95
+        ts.last_growth_rate[0] = 0.1
+        ts.last_growth_rate[1] = -0.05
+        path = write_growth_report(ts, ["Chinook"], str(tmp_path), "2012-06-01")
+        import csv
+
+        with open(path) as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        assert len(rows) == 1
+        assert rows[0]["species"] == "Chinook"
+        assert int(rows[0]["num_alive"]) == 2
+        assert float(rows[0]["mean_length"]) == 11.0

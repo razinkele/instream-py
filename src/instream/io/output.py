@@ -165,6 +165,96 @@ def write_cell_snapshot(cell_state, current_date, output_dir, filename=None):
     return path
 
 
+def write_habitat_summary(cell_state, reach_idx_map, output_dir, date_str):
+    """Write habitat summary: total area in each depth/velocity class per reach.
+
+    Parameters
+    ----------
+    cell_state : CellState
+    reach_idx_map : dict mapping reach_idx -> reach_name
+    output_dir : str or Path
+    date_str : str
+    """
+    depth_bins = [0, 10, 30, 60, 100, 200, 500]  # cm
+    vel_bins = [0, 5, 15, 30, 60, 100]  # cm/s
+    depth_labels = ["0-10", "10-30", "30-60", "60-100", "100-200", "200+"]
+    vel_labels = ["0-5", "5-15", "15-30", "30-60", "60-100", "100+"]
+
+    path = Path(output_dir) / f"habitat-summary-{date_str}.csv"
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            ["reach", "depth_class", "velocity_class", "total_area_cm2", "num_cells"]
+        )
+        for r_idx, rname in reach_idx_map.items():
+            cells = np.where(cell_state.reach_idx == r_idx)[0]
+            for di in range(len(depth_labels)):
+                d_lo = depth_bins[di]
+                d_hi = depth_bins[di + 1] if di + 1 < len(depth_bins) else float("inf")
+                for vi in range(len(vel_labels)):
+                    v_lo = vel_bins[vi]
+                    v_hi = vel_bins[vi + 1] if vi + 1 < len(vel_bins) else float("inf")
+                    mask = (
+                        (cell_state.depth[cells] >= d_lo)
+                        & (cell_state.depth[cells] < d_hi)
+                        & (cell_state.velocity[cells] >= v_lo)
+                        & (cell_state.velocity[cells] < v_hi)
+                    )
+                    total_area = float(np.sum(cell_state.area[cells[mask]]))
+                    num_cells = int(np.sum(mask))
+                    writer.writerow(
+                        [rname, depth_labels[di], vel_labels[vi], total_area, num_cells]
+                    )
+    return str(path)
+
+
+def write_growth_report(trout_state, species_order, output_dir, date_str):
+    """Write growth/bioenergetics diagnostic report per species.
+
+    Parameters
+    ----------
+    trout_state : TroutState
+    species_order : list of str
+    output_dir : str or Path
+    date_str : str
+    """
+    path = Path(output_dir) / f"growth-report-{date_str}.csv"
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "species",
+                "num_alive",
+                "mean_length",
+                "mean_weight",
+                "mean_condition",
+                "mean_growth_rate",
+                "min_growth_rate",
+                "max_growth_rate",
+            ]
+        )
+        for sp_idx, sp_name in enumerate(species_order):
+            alive = trout_state.alive_indices()
+            sp_mask = trout_state.species_idx[alive] == sp_idx
+            sp_alive = alive[sp_mask]
+            if len(sp_alive) == 0:
+                writer.writerow([sp_name, 0, 0, 0, 0, 0, 0, 0])
+                continue
+            writer.writerow(
+                [
+                    sp_name,
+                    len(sp_alive),
+                    float(np.mean(trout_state.length[sp_alive])),
+                    float(np.mean(trout_state.weight[sp_alive])),
+                    float(np.mean(trout_state.condition[sp_alive])),
+                    float(np.mean(trout_state.last_growth_rate[sp_alive])),
+                    float(np.min(trout_state.last_growth_rate[sp_alive])),
+                    float(np.max(trout_state.last_growth_rate[sp_alive])),
+                ]
+            )
+    return str(path)
+
+
 def write_summary(model, output_dir, filename="simulation_summary.csv"):
     """Write end-of-simulation summary."""
     path = Path(output_dir) / filename
