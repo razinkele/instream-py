@@ -58,14 +58,14 @@ def morris_screening(
         prev_changed = None
 
         for point_idx, point in enumerate(traj):
-            # Set parameter values
+            # Set parameter values on a fresh config copy
             config = load_config(config_path)
             for i, spec in enumerate(param_specs):
                 level = point[i]
                 value = spec["min"] + level * (spec["max"] - spec["min"]) / (p - 1)
                 _set_param(config, spec["name"], value)
 
-            # Run simulation
+            # Run simulation (InSTREAMModel accepts ModelConfig directly)
             model = InSTREAMModel(config, data_dir=data_dir)
             for _ in range(num_steps):
                 if model.time_manager.is_done():

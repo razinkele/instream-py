@@ -6,7 +6,7 @@ from pathlib import Path
 
 import mesa
 
-from instream.io.config import load_config, params_from_config
+from instream.io.config import ModelConfig, load_config, params_from_config
 from instream.io.timeseries import read_time_series
 from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
 from instream.io.population_reader import (
@@ -60,8 +60,13 @@ class InSTREAMModel(mesa.Model):
         self, config_path, data_dir=None, end_date_override=None, output_dir=None
     ):
         super().__init__()
-        config_path = Path(config_path)
-        self.config = load_config(config_path)
+        # Accept either a file path or a pre-loaded ModelConfig object
+        if isinstance(config_path, ModelConfig):
+            self.config = config_path
+            config_path = Path(".")  # placeholder for data_dir resolution
+        else:
+            config_path = Path(config_path)
+            self.config = load_config(config_path)
         self.species_params, self.reach_params = params_from_config(self.config)
         self.output_dir = output_dir  # None = no file output
 
