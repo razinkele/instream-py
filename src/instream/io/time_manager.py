@@ -180,7 +180,7 @@ class TimeManager:
     # Condition lookup
     # ------------------------------------------------------------------
 
-    def get_conditions(self, reach_name: str) -> Dict[str, float]:
+    def get_conditions(self, reach_name: str, year_override=None) -> Dict[str, float]:
         """Look up environmental conditions for a reach at the current date.
 
         For daily mode, uses nearest-date lookup (method='nearest') from
@@ -191,6 +191,9 @@ class TimeManager:
         ----------
         reach_name : str
             Name of the reach to look up.
+        year_override : int, optional
+            If provided, replace the year in the lookup date (daily mode only).
+            Used by YearShuffler for stochastic year resampling.
 
         Returns
         -------
@@ -201,21 +204,28 @@ class TimeManager:
 
         if self._steps_per_day == 1:
             # Daily: nearest-neighbor lookup (existing behavior)
-            idx = df.index.get_indexer([self._current_date], method="nearest")[0]
+            lookup_date = self._current_date
+            if year_override is not None:
+                try:
+                    lookup_date = self._current_date.replace(year=year_override)
+                except ValueError:
+                    lookup_date = self._current_date.replace(year=year_override, day=28)
+            idx = df.index.get_indexer([lookup_date], method="nearest")[0]
             if idx < 0:
                 raise ValueError(
-                    f"No matching date for {self._current_date} in reach {reach_name}"
+                    f"No matching date for {lookup_date} in reach {reach_name}"
                 )
             nearest_date = df.index[idx]
-            gap_days = (
-                abs((nearest_date - self._current_date).total_seconds()) / 86400.0
-            )
-            if gap_days > 1.5:
-                raise ValueError(
-                    f"Nearest date {nearest_date} is {gap_days:.1f} days "
-                    f"from {self._current_date} for reach {reach_name} — "
-                    f"date is outside time-series range"
+            if year_override is None:
+                gap_days = (
+                    abs((nearest_date - self._current_date).total_seconds()) / 86400.0
                 )
+                if gap_days > 1.5:
+                    raise ValueError(
+                        f"Nearest date {nearest_date} is {gap_days:.1f} days "
+                        f"from {self._current_date} for reach {reach_name} — "
+                        f"date is outside time-series range"
+                    )
             row = df.iloc[idx]
         else:
             # Sub-daily: exact row index

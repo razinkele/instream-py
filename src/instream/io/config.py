@@ -29,6 +29,8 @@ class SimulationConfig(BaseModel):
     seed: int = 0
     census_days: list[str] = []
     census_years_to_skip: int = 0
+    shuffle_years: bool = False
+    shuffle_seed: int = 0
     population_file: str = ""
     adult_arrival_file: str = ""
 

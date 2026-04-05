@@ -312,3 +312,30 @@ class TestYearShuffler:
         # At least some years should map differently
         results = [ys1.get_year(y) != ys2.get_year(y) for y in range(2011, 2030)]
         assert any(results)
+
+
+class TestYearShufflerWiring:
+    def test_shuffler_remaps_years(self):
+        from instream.io.time_manager import YearShuffler
+
+        shuffler = YearShuffler([2011, 2012, 2013], seed=42)
+        mapped = [shuffler.get_year(y) for y in [2011, 2012, 2013]]
+        # Just check it runs and returns valid years
+        for m in mapped:
+            assert m in [2011, 2012, 2013]
+
+    def test_shuffler_consistent_with_same_seed(self):
+        from instream.io.time_manager import YearShuffler
+
+        s1 = YearShuffler([2011, 2012, 2013], seed=99)
+        s2 = YearShuffler([2011, 2012, 2013], seed=99)
+        for y in [2011, 2012, 2013, 2014, 2015]:
+            assert s1.get_year(y) == s2.get_year(y)
+
+    def test_shuffler_always_returns_available_year(self):
+        from instream.io.time_manager import YearShuffler
+
+        available = [2011, 2012, 2013]
+        shuffler = YearShuffler(available, seed=7)
+        for sim_year in range(2010, 2020):
+            assert shuffler.get_year(sim_year) in available

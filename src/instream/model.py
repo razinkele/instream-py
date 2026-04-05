@@ -179,6 +179,18 @@ class InSTREAMModel(mesa.Model):
             time_series=time_series,
         )
 
+        # Year shuffler (stochastic year resampling)
+        self._year_shuffler = None
+        if self.config.simulation.shuffle_years:
+            from instream.io.time_manager import YearShuffler
+
+            first_ts = next(iter(self.time_manager._time_series.values()))
+            available_years = sorted(set(first_ts.index.year))
+            self._year_shuffler = YearShuffler(
+                available_years,
+                seed=self.config.simulation.shuffle_seed,
+            )
+
         # Reach state
         self.reach_state = ReachState.zeros(
             num_reaches=len(self.reach_order),
@@ -446,9 +458,16 @@ class InSTREAMModel(mesa.Model):
         is_boundary = self.time_manager.is_day_boundary
 
         # 2. Get conditions for each reach
+        year_override = None
+        if self._year_shuffler is not None:
+            year_override = self._year_shuffler.get_year(
+                self.time_manager.current_date.year
+            )
         conditions = {}
         for rname in self.reach_order:
-            conditions[rname] = self.time_manager.get_conditions(rname)
+            conditions[rname] = self.time_manager.get_conditions(
+                rname, year_override=year_override
+            )
 
         # 3. Update reach state (flow, temp, turbidity, intermediates)
         update_reach_state(
