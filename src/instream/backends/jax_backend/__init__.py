@@ -37,6 +37,10 @@ class JaxBackend:
         depths : 1-D ndarray, shape (C,)
         velocities : 1-D ndarray, shape (C,)
         """
+        n_cells = depth_values.shape[0]
+        if flow <= 0.0:
+            return np.zeros(n_cells), np.zeros(n_cells)
+
         table_flows = jnp.asarray(table_flows)
         depth_values = jnp.asarray(depth_values)
         vel_values = jnp.asarray(vel_values)
@@ -586,9 +590,17 @@ class JaxBackend:
         result : ndarray, same shape as x
         """
         x = jnp.asarray(x)
+        L1 = jnp.asarray(L1)
+        L9 = jnp.asarray(L9)
         midpoint = (L1 + L9) / 2.0
-        slope = jnp.log(81.0) / (L9 - L1) if L9 != L1 else 0.0
-        return np.asarray(1.0 / (1.0 + jnp.exp(-slope * (x - midpoint))))
+        degenerate = jnp.abs(L9 - L1) < 1e-15
+        slope = jnp.where(
+            degenerate, 0.0, jnp.log(81.0) / jnp.where(degenerate, 1.0, L9 - L1)
+        )
+        raw = 1.0 / (1.0 + jnp.exp(-slope * (x - midpoint)))
+        # For degenerate case (L1==L9): step function 0.9 if x >= L1, else 0.1
+        result = jnp.where(degenerate, jnp.where(x >= L1, 0.9, 0.1), raw)
+        return np.asarray(result)
 
     def interp1d(self, x, table_x, table_y):
         """Piecewise-linear interpolation with clamping outside range.

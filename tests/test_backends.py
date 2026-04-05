@@ -1445,3 +1445,288 @@ class TestCrossBackendParity:
                     rtol=1e-10,
                     err_msg=f"{name} vs {ref_name} logistic mismatch",
                 )
+
+    def test_update_hydraulics_parity(self):
+        """All backends must produce identical hydraulic interpolation."""
+        backends = self._get_backends()
+        assert len(backends) >= 2
+        rng = np.random.default_rng(42)
+        n_cells, n_flows = 50, 8
+        table_flows = np.sort(rng.uniform(0.5, 100.0, n_flows))
+        depth_values = rng.uniform(0, 200, (n_cells, n_flows))
+        vel_values = rng.uniform(0, 100, (n_cells, n_flows))
+        test_flows = [0.0, 1.0, 5.5, 50.0, 200.0]
+        for flow in test_flows:
+            ref_d, ref_v = None, None
+            ref_name = None
+            for name, b in backends:
+                d, v = b.update_hydraulics(flow, table_flows, depth_values, vel_values)
+                if ref_d is None:
+                    ref_d, ref_v = d, v
+                    ref_name = name
+                else:
+                    rtol = 1e-10 if "jax" in name else 1e-12
+                    np.testing.assert_allclose(
+                        d,
+                        ref_d,
+                        rtol=rtol,
+                        err_msg=f"{name} vs {ref_name} depth at flow={flow}",
+                    )
+                    np.testing.assert_allclose(
+                        v,
+                        ref_v,
+                        rtol=rtol,
+                        err_msg=f"{name} vs {ref_name} vel at flow={flow}",
+                    )
+
+    def test_compute_light_parity(self):
+        """All backends must produce identical solar irradiance."""
+        backends = self._get_backends()
+        assert len(backends) >= 2
+        for jd in [1, 80, 172, 266, 355]:
+            for lat in [0.0, 30.0, 45.0, 60.0, 80.0]:
+                ref = None
+                ref_name = None
+                for name, b in backends:
+                    dl, tl, irr = b.compute_light(jd, lat, 1.0, 0.9, 0.001, 6.0)
+                    result = np.array([dl, tl, irr])
+                    if ref is None:
+                        ref = result
+                        ref_name = name
+                    else:
+                        rtol = 1e-10 if "jax" in name else 1e-12
+                        np.testing.assert_allclose(
+                            result,
+                            ref,
+                            rtol=rtol,
+                            err_msg=f"{name} vs {ref_name} light jd={jd} lat={lat}",
+                        )
+
+    def test_compute_cell_light_parity(self):
+        """All backends must produce identical Beer-Lambert attenuation."""
+        backends = self._get_backends()
+        assert len(backends) >= 2
+        depths = np.array([0.0, 10.0, 50.0, 100.0, 200.0])
+        for turbid_const in [0.0, 0.005]:
+            ref = None
+            ref_name = None
+            for name, b in backends:
+                light = b.compute_cell_light(
+                    depths, 500.0, 0.01, 5.0, 0.001, turbid_const
+                )
+                if ref is None:
+                    ref = np.asarray(light)
+                    ref_name = name
+                else:
+                    rtol = 1e-10 if "jax" in name else 1e-12
+                    np.testing.assert_allclose(
+                        np.asarray(light),
+                        ref,
+                        rtol=rtol,
+                        err_msg=f"{name} vs {ref_name} cell_light turbid_const={turbid_const}",
+                    )
+
+    def test_interp1d_parity(self):
+        """All backends must produce identical 1D interpolation."""
+        backends = self._get_backends()
+        assert len(backends) >= 2
+        table_x = np.array([0.0, 5.0, 10.0, 20.0, 30.0])
+        table_y = np.array([0.0, 0.5, 1.0, 0.8, 0.0])
+        x = np.array([-1.0, 0.0, 2.5, 7.5, 15.0, 25.0, 35.0])
+        ref = None
+        ref_name = None
+        for name, b in backends:
+            result = b.interp1d(x, table_x, table_y)
+            if ref is None:
+                ref = np.asarray(result)
+                ref_name = name
+            else:
+                np.testing.assert_allclose(
+                    np.asarray(result),
+                    ref,
+                    rtol=1e-12,
+                    err_msg=f"{name} vs {ref_name} interp1d",
+                )
+
+    def test_evaluate_logistic_array_params_parity(self):
+        """Logistic with per-element L1/L9 arrays must match across backends."""
+        backends = self._get_backends()
+        assert len(backends) >= 2
+        x = np.array([1.0, 5.0, 10.0, 15.0, 20.0])
+        L1 = np.array([3.0, 4.0, 5.0, 6.0, 7.0])
+        L9 = np.array([10.0, 12.0, 15.0, 18.0, 20.0])
+        ref = None
+        ref_name = None
+        for name, b in backends:
+            result = b.evaluate_logistic(x, L1, L9)
+            if ref is None:
+                ref = np.asarray(result)
+                ref_name = name
+            else:
+                rtol = 1e-10 if "jax" in name else 1e-12
+                np.testing.assert_allclose(
+                    np.asarray(result),
+                    ref,
+                    rtol=rtol,
+                    err_msg=f"{name} vs {ref_name} logistic array params",
+                )
+
+    def test_deplete_resources_parity(self):
+        """deplete_resources must produce identical results across backends."""
+        backends = self._get_backends()
+        # Skip JAX if its signature differs
+        compatible = [(n, b) for n, b in backends if n != "jax"]
+        if len(compatible) < 2:
+            pytest.skip("Need numpy + numba for deplete_resources parity")
+        ref_drift = None
+        ref_search = None
+        ref_name = None
+        for name, b in compatible:
+            drift = np.array([10.0, 5.0, 8.0])
+            search = np.array([10.0, 5.0, 8.0])
+            shelter = np.array([1000.0, 500.0, 800.0])
+            hiding = np.array([5.0, 3.0, 4.0])
+            b.deplete_resources(
+                fish_order=np.array([0, 1, 2]),
+                chosen_cells=np.array([0, 1, 0]),
+                available_drift=drift,
+                available_search=search,
+                chosen_activities=np.array([0, 1, 2]),
+                intake_amounts=np.array([3.0, 2.0, 0.0]),
+                fish_lengths=np.array([10.0, 8.0, 5.0]),
+                superind_reps=np.array([1, 1, 1]),
+                available_shelter=shelter,
+                available_hiding=hiding,
+            )
+            if ref_drift is None:
+                ref_drift = drift.copy()
+                ref_search = search.copy()
+                ref_name = name
+            else:
+                np.testing.assert_allclose(
+                    drift,
+                    ref_drift,
+                    rtol=1e-12,
+                    err_msg=f"{name} vs {ref_name} drift after depletion",
+                )
+                np.testing.assert_allclose(
+                    search,
+                    ref_search,
+                    rtol=1e-12,
+                    err_msg=f"{name} vs {ref_name} search after depletion",
+                )
+
+    def test_growth_rate_parity(self):
+        """growth_rate must produce identical results for numpy and numba."""
+        backends = self._get_backends()
+        compatible = [(n, b) for n, b in backends if n != "jax"]
+        if len(compatible) < 2:
+            pytest.skip("Need numpy + numba for growth_rate parity")
+        params = dict(
+            activities=np.array([0, 1, 2]),
+            lights=np.array([100.0, 100.0, 100.0]),
+            turbidities=np.array([5.0, 5.0, 5.0]),
+            drift_concs=np.array([1e-6, 1e-6, 1e-6]),
+            search_prods=np.array([1e-6, 1e-6, 1e-6]),
+            search_areas=np.array([100.0, 100.0, 100.0]),
+            available_drifts=np.array([1.0, 1.0, 1.0]),
+            available_searches=np.array([1.0, 1.0, 1.0]),
+            available_shelters=np.array([100.0, 100.0, 100.0]),
+            shelter_speed_fracs=np.array([0.5, 0.5, 0.5]),
+            superind_reps=np.array([1, 1, 1]),
+            prev_consumptions=np.array([0.0, 0.0, 0.0]),
+            step_length=1.0,
+            cmax_As=np.array([0.628, 0.628, 0.628]),
+            cmax_Bs=np.array([-0.3, -0.3, -0.3]),
+            cmax_temp_table_xs=[np.array([0.0, 10.0, 20.0, 25.0, 30.0])],
+            cmax_temp_table_ys=[np.array([0.0, 0.5, 1.0, 0.8, 0.0])],
+            species_idxs=np.array([0, 0, 0]),
+            react_dist_As=np.array([3.0, 3.0, 3.0]),
+            react_dist_Bs=np.array([0.5, 0.5, 0.5]),
+            turbid_thresholds=np.array([10.0, 10.0, 10.0]),
+            turbid_mins=np.array([0.1, 0.1, 0.1]),
+            turbid_exps=np.array([1.0, 1.0, 1.0]),
+            light_thresholds=np.array([200.0, 200.0, 200.0]),
+            light_mins=np.array([0.1, 0.1, 0.1]),
+            light_exps=np.array([1.0, 1.0, 1.0]),
+            capture_R1s=np.array([5.0, 5.0, 5.0]),
+            capture_R9s=np.array([15.0, 15.0, 15.0]),
+            max_speed_As=np.array([1.5, 1.5, 1.5]),
+            max_speed_Bs=np.array([0.0, 0.0, 0.0]),
+            max_swim_temp_terms=np.array([1.0, 1.0, 1.0]),
+            resp_As=np.array([0.0253, 0.0253, 0.0253]),
+            resp_Bs=np.array([-0.217, -0.217, -0.217]),
+            resp_Ds=np.array([0.03, 0.03, 0.03]),
+            resp_temp_terms=np.array([1.0, 1.0, 1.0]),
+            prey_energy_densities=np.array([5900.0, 5900.0, 5900.0]),
+            fish_energy_densities=np.array([5900.0, 5900.0, 5900.0]),
+        )
+        ref = None
+        ref_name = None
+        for name, b in compatible:
+            result = b.growth_rate(
+                np.array([5.0, 8.0, 12.0]),
+                np.array([2.0, 6.0, 20.0]),
+                np.array([15.0, 15.0, 15.0]),
+                np.array([10.0, 20.0, 30.0]),
+                np.array([30.0, 50.0, 100.0]),
+                **params,
+            )
+            if ref is None:
+                ref = result.copy()
+                ref_name = name
+            else:
+                np.testing.assert_allclose(
+                    result,
+                    ref,
+                    rtol=1e-12,
+                    err_msg=f"{name} vs {ref_name} growth_rate",
+                )
+
+    @pytest.mark.slow
+    def test_full_model_parity_numpy_numba(self):
+        """Running the same simulation on numpy and numba backends must produce identical population counts."""
+        from pathlib import Path
+
+        from instream.model import InSTREAMModel
+
+        pytest.importorskip("numba")
+
+        config_path = str(Path(__file__).parent.parent / "configs" / "example_a.yaml")
+        data_dir = str(Path(__file__).parent / "fixtures" / "example_a")
+
+        results = {}
+        for backend_name in ["numpy", "numba"]:
+            # Create a fresh config for each backend
+            from instream.io.config import load_config
+
+            config = load_config(config_path)
+            config.performance.backend = backend_name
+            config.simulation.seed = 12345
+
+            model = InSTREAMModel(config, data_dir=data_dir)
+            for _ in range(10):
+                if model.time_manager.is_done():
+                    break
+                model.step()
+
+            alive = model.trout_state.alive_indices()
+            results[backend_name] = {
+                "num_alive": len(alive),
+                "mean_length": float(np.mean(model.trout_state.length[alive]))
+                if len(alive) > 0
+                else 0.0,
+                "mean_weight": float(np.mean(model.trout_state.weight[alive]))
+                if len(alive) > 0
+                else 0.0,
+            }
+
+        assert results["numpy"]["num_alive"] == results["numba"]["num_alive"], (
+            f"Population mismatch: numpy={results['numpy']['num_alive']} vs numba={results['numba']['num_alive']}"
+        )
+        np.testing.assert_allclose(
+            results["numpy"]["mean_length"],
+            results["numba"]["mean_length"],
+            rtol=1e-6,
+            err_msg="Mean length mismatch",
+        )
