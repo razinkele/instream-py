@@ -303,16 +303,119 @@ def params_from_config(
         ys = np.array([table[k] for k in sorted(table.keys())], dtype=np.float64)
         species_params[name] = SpeciesParams(
             name=name,
+            # Consumption
             cmax_A=sp.cmax_A,
             cmax_B=sp.cmax_B,
+            # Weight
             weight_A=sp.weight_A,
             weight_B=sp.weight_B,
+            # Interpolation tables
             cmax_temp_table_x=xs,
             cmax_temp_table_y=ys,
+            # Anadromous
+            is_anadromous=sp.is_anadromous,
+            # Capture / detection
+            capture_R1=sp.capture_R1,
+            capture_R9=sp.capture_R9,
+            # Emergence
+            emerge_length_min=sp.emerge_length_min,
+            emerge_length_mode=sp.emerge_length_mode,
+            emerge_length_max=sp.emerge_length_max,
+            # Reactive distance
+            react_dist_A=sp.react_dist_A,
+            react_dist_B=sp.react_dist_B,
+            turbid_threshold=sp.turbid_threshold,
+            turbid_min=sp.turbid_min,
+            turbid_exp=sp.turbid_exp,
+            light_threshold=sp.light_threshold,
+            light_min=sp.light_min,
+            light_exp=sp.light_exp,
+            # Energetics
+            energy_density=sp.energy_density,
+            fitness_horizon=sp.fitness_horizon,
+            fitness_length=sp.fitness_length,
+            fitness_memory_frac=sp.fitness_memory_frac,
+            # Swimming
+            max_speed_A=sp.max_speed_A,
+            max_speed_B=sp.max_speed_B,
             max_speed_C=sp.max_speed_C,
             max_speed_D=sp.max_speed_D,
             max_speed_E=sp.max_speed_E,
+            # Migration
+            migrate_fitness_L1=sp.migrate_fitness_L1,
+            migrate_fitness_L9=sp.migrate_fitness_L9,
+            # Movement
+            move_radius_max=sp.move_radius_max,
+            move_radius_L1=sp.move_radius_L1,
+            move_radius_L9=sp.move_radius_L9,
+            # Piscivory
+            pisciv_length=sp.pisciv_length,
+            # Respiration
+            resp_A=sp.resp_A,
+            resp_B=sp.resp_B,
             resp_C=sp.resp_C,
+            resp_D=sp.resp_D,
+            # Search
+            search_area=sp.search_area,
+            # Spawning
+            spawn_defense_area=sp.spawn_defense_area,
+            spawn_egg_viability=sp.spawn_egg_viability,
+            spawn_fecund_mult=sp.spawn_fecund_mult,
+            spawn_fecund_exp=sp.spawn_fecund_exp,
+            spawn_suitability_tol=sp.spawn_suitability_tol,
+            spawn_max_flow_change=sp.spawn_max_flow_change,
+            spawn_max_temp=sp.spawn_max_temp,
+            spawn_min_age=sp.spawn_min_age,
+            spawn_min_length=sp.spawn_min_length,
+            spawn_min_cond=sp.spawn_min_cond,
+            spawn_min_temp=sp.spawn_min_temp,
+            spawn_prob=sp.spawn_prob,
+            spawn_wt_loss_fraction=sp.spawn_wt_loss_fraction,
+            # Mortality: high temp
+            mort_high_temp_T1=sp.mort_high_temp_T1,
+            mort_high_temp_T9=sp.mort_high_temp_T9,
+            mort_strand_survival_when_dry=sp.mort_strand_survival_when_dry,
+            mort_condition_S_at_K8=sp.mort_condition_S_at_K8,
+            mort_condition_S_at_K5=sp.mort_condition_S_at_K5,
+            # Mortality: terrestrial predation
+            mort_terr_pred_L1=sp.mort_terr_pred_L1,
+            mort_terr_pred_L9=sp.mort_terr_pred_L9,
+            mort_terr_pred_D1=sp.mort_terr_pred_D1,
+            mort_terr_pred_D9=sp.mort_terr_pred_D9,
+            mort_terr_pred_V1=sp.mort_terr_pred_V1,
+            mort_terr_pred_V9=sp.mort_terr_pred_V9,
+            mort_terr_pred_I1=sp.mort_terr_pred_I1,
+            mort_terr_pred_I9=sp.mort_terr_pred_I9,
+            mort_terr_pred_H1=sp.mort_terr_pred_H1,
+            mort_terr_pred_H9=sp.mort_terr_pred_H9,
+            mort_terr_pred_hiding_factor=sp.mort_terr_pred_hiding_factor,
+            # Mortality: fish predation
+            mort_fish_pred_L1=sp.mort_fish_pred_L1,
+            mort_fish_pred_L9=sp.mort_fish_pred_L9,
+            mort_fish_pred_D1=sp.mort_fish_pred_D1,
+            mort_fish_pred_D9=sp.mort_fish_pred_D9,
+            mort_fish_pred_I1=sp.mort_fish_pred_I1,
+            mort_fish_pred_I9=sp.mort_fish_pred_I9,
+            mort_fish_pred_hiding_factor=sp.mort_fish_pred_hiding_factor,
+            mort_fish_pred_P1=sp.mort_fish_pred_P1,
+            mort_fish_pred_P9=sp.mort_fish_pred_P9,
+            mort_fish_pred_T1=sp.mort_fish_pred_T1,
+            mort_fish_pred_T9=sp.mort_fish_pred_T9,
+            # Redd mortality
+            mort_redd_dewater_surv=sp.mort_redd_dewater_surv,
+            mort_redd_hi_temp_T1=sp.mort_redd_hi_temp_T1,
+            mort_redd_hi_temp_T9=sp.mort_redd_hi_temp_T9,
+            mort_redd_lo_temp_T1=sp.mort_redd_lo_temp_T1,
+            mort_redd_lo_temp_T9=sp.mort_redd_lo_temp_T9,
+            mort_redd_scour_depth=sp.mort_redd_scour_depth,
+            # Redd development
+            redd_devel_A=sp.redd_devel_A,
+            redd_devel_B=sp.redd_devel_B,
+            redd_devel_C=sp.redd_devel_C,
+            redd_area=sp.redd_area,
+            # Superindividual
+            superind_max_rep=sp.superind_max_rep,
+            superind_max_length=sp.superind_max_length,
         )
 
     reach_params: dict[str, ReachParams] = {}
