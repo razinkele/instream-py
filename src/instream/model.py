@@ -25,11 +25,6 @@ from instream.modules.growth import (
     split_superindividuals,
 )
 from instream.modules.survival import (
-    survival_high_temperature,
-    survival_stranding,
-    survival_condition,
-    survival_fish_predation,
-    survival_terrestrial_predation,
     apply_mortality,
 )
 from instream.modules.spawning import (
@@ -621,87 +616,84 @@ class InSTREAMModel(mesa.Model):
             else:
                 self.trout_state.fitness_memory[i] = f * old + (1.0 - f) * current
 
-        # 9. Survival / mortality (per-fish species/reach dispatch)
+        # 9. Survival / mortality (vectorized via backend)
         alive = self.trout_state.alive_indices()
         n_capacity = self.trout_state.alive.shape[0]
         survival_probs = np.ones(n_capacity, dtype=np.float64)
 
-        pisciv_densities_surv = self._compute_piscivore_density()
+        if len(alive) > 0:
+            pisciv_densities_surv = self._compute_piscivore_density()
 
-        _spa = self._sp_arrays
-        _rpa = self._rp_arrays
-        _temp_arr = self.reach_state.temperature
+            _spa = self._sp_arrays
+            _rpa = self._rp_arrays
 
-        for i in alive:
-            cell = self.trout_state.cell_idx[i]
-            if cell < 0 or cell >= self.fem_space.num_cells:
-                continue
-            sp_idx = int(self.trout_state.species_idx[i])
-            r_idx = int(self.trout_state.reach_idx[i])
-            act_idx = int(self.trout_state.activity[i])
-            _temperature = float(_temp_arr[r_idx])
+            # Gather per-fish arrays by indexing with species_idx and reach_idx
+            sp_idx = self.trout_state.species_idx[alive]
+            r_idx = self.trout_state.reach_idx[alive]
+            cell_idx = self.trout_state.cell_idx[alive]
 
-            s_ht = survival_high_temperature(
-                _temperature,
-                float(_spa["mort_high_temp_T1"][sp_idx]),
-                float(_spa["mort_high_temp_T9"][sp_idx]),
-            )
-            s_str = survival_stranding(
-                float(cs.depth[cell]),
-                float(_spa["mort_strand_survival_when_dry"][sp_idx]),
-            )
-            s_cond = survival_condition(
-                float(self.trout_state.condition[i]),
-                float(_spa["mort_condition_S_at_K5"][sp_idx]),
-                float(_spa["mort_condition_S_at_K8"][sp_idx]),
-            )
+            # Clamp cell indices to valid range
+            valid_cells = np.clip(cell_idx, 0, self.fem_space.num_cells - 1)
 
-            s_fp = survival_fish_predation(
-                float(self.trout_state.length[i]),
-                float(cs.depth[cell]),
-                float(cs.light[cell]),
-                float(pisciv_densities_surv[cell]),
-                _temperature,
-                act_idx,
-                float(_rpa["fish_pred_min"][r_idx]),
-                float(_spa["mort_fish_pred_L1"][sp_idx]),
-                float(_spa["mort_fish_pred_L9"][sp_idx]),
-                float(_spa["mort_fish_pred_D1"][sp_idx]),
-                float(_spa["mort_fish_pred_D9"][sp_idx]),
-                float(_spa["mort_fish_pred_P1"][sp_idx]),
-                float(_spa["mort_fish_pred_P9"][sp_idx]),
-                float(_spa["mort_fish_pred_I1"][sp_idx]),
-                float(_spa["mort_fish_pred_I9"][sp_idx]),
-                float(_spa["mort_fish_pred_T1"][sp_idx]),
-                float(_spa["mort_fish_pred_T9"][sp_idx]),
-                float(_spa["mort_fish_pred_hiding_factor"][sp_idx]),
-            )
+            # Per-fish temperatures from reach
+            temps = self.reach_state.temperature[r_idx]
 
-            s_tp = survival_terrestrial_predation(
-                float(self.trout_state.length[i]),
-                float(cs.depth[cell]),
-                float(cs.velocity[cell]),
-                float(cs.light[cell]),
-                float(cs.dist_escape[cell]),
-                act_idx,
-                int(cs.available_hiding_places[cell]),
-                int(self.trout_state.superind_rep[i]),
-                float(_rpa["terr_pred_min"][r_idx]),
-                float(_spa["mort_terr_pred_L1"][sp_idx]),
-                float(_spa["mort_terr_pred_L9"][sp_idx]),
-                float(_spa["mort_terr_pred_D1"][sp_idx]),
-                float(_spa["mort_terr_pred_D9"][sp_idx]),
-                float(_spa["mort_terr_pred_V1"][sp_idx]),
-                float(_spa["mort_terr_pred_V9"][sp_idx]),
-                float(_spa["mort_terr_pred_I1"][sp_idx]),
-                float(_spa["mort_terr_pred_I9"][sp_idx]),
-                float(_spa["mort_terr_pred_H1"][sp_idx]),
-                float(_spa["mort_terr_pred_H9"][sp_idx]),
-                float(_spa["mort_terr_pred_hiding_factor"][sp_idx]),
+            surv = self.backend.survival(
+                self.trout_state.length[alive],
+                self.trout_state.weight[alive],
+                self.trout_state.condition[alive],
+                temps,
+                cs.depth[valid_cells],
+                velocities=cs.velocity[valid_cells],
+                lights=cs.light[valid_cells],
+                activities=self.trout_state.activity[alive],
+                pisciv_densities=pisciv_densities_surv[valid_cells],
+                dist_escapes=cs.dist_escape[valid_cells],
+                available_hidings=cs.available_hiding_places[valid_cells],
+                superind_reps=self.trout_state.superind_rep[alive],
+                # Per-species params indexed by sp_idx
+                sp_mort_high_temp_T1=_spa["mort_high_temp_T1"][sp_idx],
+                sp_mort_high_temp_T9=_spa["mort_high_temp_T9"][sp_idx],
+                sp_mort_strand_survival_when_dry=_spa["mort_strand_survival_when_dry"][
+                    sp_idx
+                ],
+                sp_mort_condition_S_at_K5=_spa["mort_condition_S_at_K5"][sp_idx],
+                sp_mort_condition_S_at_K8=_spa["mort_condition_S_at_K8"][sp_idx],
+                rp_fish_pred_min=_rpa["fish_pred_min"][r_idx],
+                sp_mort_fish_pred_L1=_spa["mort_fish_pred_L1"][sp_idx],
+                sp_mort_fish_pred_L9=_spa["mort_fish_pred_L9"][sp_idx],
+                sp_mort_fish_pred_D1=_spa["mort_fish_pred_D1"][sp_idx],
+                sp_mort_fish_pred_D9=_spa["mort_fish_pred_D9"][sp_idx],
+                sp_mort_fish_pred_P1=_spa["mort_fish_pred_P1"][sp_idx],
+                sp_mort_fish_pred_P9=_spa["mort_fish_pred_P9"][sp_idx],
+                sp_mort_fish_pred_I1=_spa["mort_fish_pred_I1"][sp_idx],
+                sp_mort_fish_pred_I9=_spa["mort_fish_pred_I9"][sp_idx],
+                sp_mort_fish_pred_T1=_spa["mort_fish_pred_T1"][sp_idx],
+                sp_mort_fish_pred_T9=_spa["mort_fish_pred_T9"][sp_idx],
+                sp_mort_fish_pred_hiding_factor=_spa["mort_fish_pred_hiding_factor"][
+                    sp_idx
+                ],
+                rp_terr_pred_min=_rpa["terr_pred_min"][r_idx],
+                sp_mort_terr_pred_L1=_spa["mort_terr_pred_L1"][sp_idx],
+                sp_mort_terr_pred_L9=_spa["mort_terr_pred_L9"][sp_idx],
+                sp_mort_terr_pred_D1=_spa["mort_terr_pred_D1"][sp_idx],
+                sp_mort_terr_pred_D9=_spa["mort_terr_pred_D9"][sp_idx],
+                sp_mort_terr_pred_V1=_spa["mort_terr_pred_V1"][sp_idx],
+                sp_mort_terr_pred_V9=_spa["mort_terr_pred_V9"][sp_idx],
+                sp_mort_terr_pred_I1=_spa["mort_terr_pred_I1"][sp_idx],
+                sp_mort_terr_pred_I9=_spa["mort_terr_pred_I9"][sp_idx],
+                sp_mort_terr_pred_H1=_spa["mort_terr_pred_H1"][sp_idx],
+                sp_mort_terr_pred_H9=_spa["mort_terr_pred_H9"][sp_idx],
+                sp_mort_terr_pred_hiding_factor=_spa["mort_terr_pred_hiding_factor"][
+                    sp_idx
+                ],
             )
 
-            daily_surv = s_ht * s_str * s_cond * s_fp * s_tp
-            survival_probs[i] = daily_surv**step_length
+            # Skip fish with invalid cells
+            valid_mask = (cell_idx >= 0) & (cell_idx < self.fem_space.num_cells)
+            surv = np.where(valid_mask, surv, 1.0)
+
+            survival_probs[alive] = surv**step_length
 
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)
