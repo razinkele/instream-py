@@ -183,7 +183,23 @@ class NumpyBackend:
         raise NotImplementedError("Phase 4")
 
     def spawn_suitability(self, depths, velocities, frac_spawn, **params):
-        raise NotImplementedError("Phase 6")
+        """Compute spawn suitability scores for all cells.
+
+        Parameters
+        ----------
+        depths : 1-D array (C,)
+        velocities : 1-D array (C,)
+        frac_spawn : 1-D array (C,)
+        **params : must include area, depth_table_x, depth_table_y, vel_table_x, vel_table_y
+
+        Returns
+        -------
+        scores : 1-D array (C,)
+        """
+        area = params["area"]
+        depth_suit = np.interp(depths, params["depth_table_x"], params["depth_table_y"])
+        vel_suit = np.interp(velocities, params["vel_table_x"], params["vel_table_y"])
+        return depth_suit * vel_suit * frac_spawn * area
 
     def evaluate_logistic(self, x, L1, L9):
         """Standard logistic where f(L1)=0.1 and f(L9)=0.9.

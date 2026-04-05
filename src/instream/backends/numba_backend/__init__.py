@@ -160,8 +160,14 @@ class NumbaBackend:
     def spawn_suitability(self, *args, **kwargs):
         raise NotImplementedError("Phase 6")
 
-    def evaluate_logistic(self, *args, **kwargs):
-        raise NotImplementedError("Phase 4")
+    def evaluate_logistic(self, x, L1, L9):
+        """Standard logistic where f(L1)=0.1 and f(L9)=0.9."""
+        x = np.atleast_1d(np.asarray(x, dtype=np.float64))
+        if abs(L1 - L9) < 1e-15:
+            return np.where(x >= L1, 0.9, 0.1)
+        b = np.log(81.0) / (L9 - L1)
+        a = -b * (L1 + L9) / 2.0
+        return 1.0 / (1.0 + np.exp(-(a + b * x)))
 
     def interp1d(self, x, table_x, table_y):
         """Piecewise-linear interpolation (delegates to np.interp)."""

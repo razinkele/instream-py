@@ -895,3 +895,46 @@ def test_jax_survival_batch():
             rtol=1e-6,
             err_msg=f"Fish {i} (activity={act_names[int(activities[i])]}) mismatch",
         )
+
+
+class TestSpawnSuitabilityBackend:
+    def test_numpy_spawn_suitability_vectorized(self):
+        from instream.backends.numpy_backend import NumpyBackend
+
+        b = NumpyBackend()
+        depths = np.array([10.0, 50.0, 0.0])
+        vels = np.array([20.0, 40.0, 0.0])
+        frac = np.array([0.5, 0.8, 0.0])
+        area = np.array([100.0, 200.0, 50.0])
+        dtx = np.array([0.0, 30.0, 60.0])
+        dty = np.array([0.0, 1.0, 0.0])
+        vtx = np.array([0.0, 30.0, 60.0])
+        vty = np.array([0.0, 1.0, 0.0])
+        scores = b.spawn_suitability(
+            depths,
+            vels,
+            frac,
+            area=area,
+            depth_table_x=dtx,
+            depth_table_y=dty,
+            vel_table_x=vtx,
+            vel_table_y=vty,
+        )
+        assert scores.shape == (3,)
+        assert scores[2] == 0.0  # dry cell with no spawn fraction
+        assert scores[0] > 0.0
+        assert scores[1] > 0.0
+
+
+class TestNumbaEvaluateLogistic:
+    def test_numba_logistic_matches_numpy(self):
+        pytest.importorskip("numba")
+        from instream.backends.numpy_backend import NumpyBackend
+        from instream.backends.numba_backend import NumbaBackend
+
+        np_b = NumpyBackend()
+        nb_b = NumbaBackend()
+        x = np.array([1.0, 5.0, 10.0, 15.0, 20.0])
+        np_r = np_b.evaluate_logistic(x, 5.0, 15.0)
+        nb_r = nb_b.evaluate_logistic(x, 5.0, 15.0)
+        np.testing.assert_allclose(np_r, nb_r, rtol=1e-12)
