@@ -493,6 +493,12 @@ In `TroutState.zeros()`, add after the `last_growth_rate` line:
             fitness_memory=np.zeros(capacity, dtype=np.float64),
 ```
 
+**Important:** Also add `ts.fitness_memory[slots] = 0.0` in both new-fish initialization blocks:
+1. `model.py` `_do_adult_arrivals` (around line 1147, after `ts.last_growth_rate[slots] = 0.0`)
+2. `modules/spawning.py` `redd_emergence` (around line 357, after slot initialization)
+
+Without this, reused dead-fish slots inherit stale fitness memory values.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `conda run -n shiny python -m pytest tests/test_behavior.py::TestFitnessMemory -v`
@@ -805,6 +811,8 @@ In `src/instream/model.py`, find the `_do_spawning` method where `select_spawn_c
                     centroids_y=cs.centroid_y,
                     defense_area=defense_area,
                 )
+                if best_cell < 0:
+                    continue  # all candidates excluded by defense area
 ```
 
 - [ ] **Step 6: Run full test suite**
@@ -909,11 +917,21 @@ In `src/instream/io/time_manager.py`, modify the `get_conditions` method to acce
         reach_name : str
         year_override : int or None
             If set, look up this year instead of current_date's year.
+            Only applies to daily mode. Sub-daily mode uses row pointers.
         """
         df = self._time_series[reach_name]
+
+        if self._steps_per_day > 1:
+            # Sub-daily path: exact row pointer (unchanged — year_override not supported)
+            idx = self._row_pointers[reach_name]
+            if idx >= len(df):
+                idx = len(df) - 1
+            row = df.iloc[idx]
+            return {col: float(row[col]) for col in df.columns}
+
+        # Daily path: nearest-neighbor lookup
         lookup_date = self._current_date
         if year_override is not None:
-            # Remap to the override year, keeping month/day
             try:
                 lookup_date = self._current_date.replace(year=year_override)
             except ValueError:
@@ -944,16 +962,16 @@ In `src/instream/model.py`, in the `step()` method where `get_conditions(rname)`
             conditions = self.time_manager.get_conditions(rname, year_override=year_override)
 ```
 
-- [ ] **Step 6: Run full test suite**
+- [ ] **Step 7: Run full test suite**
 
 Run: `conda run -n shiny python -m pytest tests/ -v`
 
 Expected: All PASS. Default `shuffle_years=False` means shuffler is never created.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" add src/instream/io/config.py src/instream/model.py tests/test_time.py
+git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" add src/instream/io/config.py src/instream/io/time_manager.py src/instream/model.py tests/test_time.py
 git -C "C:/Users/DELL/OneDrive - ku.lt/HORIZON_EUROPE/inSTREAM/instream-py" commit -m "feat: wire YearShuffler for stochastic multi-year time series"
 ```
 
@@ -1006,9 +1024,21 @@ Expected: FAIL — `split_superindividuals` currently takes a scalar threshold.
 
 In `src/instream/modules/growth.py`, find `split_superindividuals` and update to accept an array:
 
+Replace only the threshold check inside `split_superindividuals`. The existing function (growth.py:331-364) has:
+
+```python
+    for i in trout_state.alive_indices():
+        if trout_state.superind_rep[i] <= 1:
+            continue
+        if trout_state.length[i] < max_length:
+            continue
+```
+
+Change the signature and threshold check to support per-species arrays:
+
 ```python
 def split_superindividuals(trout_state, max_length):
-    """Split superindividuals exceeding their species-specific max length.
+    """Split superindividuals that exceed length threshold (Task 3.10).
 
     Parameters
     ----------
@@ -1020,14 +1050,35 @@ def split_superindividuals(trout_state, max_length):
     max_length = np.atleast_1d(np.asarray(max_length, dtype=np.float64))
     per_species = max_length.shape[0] > 1
 
-    alive = trout_state.alive_indices()
-    for i in alive:
+    global _TROUT_FIELDS
+    if _TROUT_FIELDS is None:
+        _TROUT_FIELDS = [
+            f
+            for f in _dc.fields(trout_state)
+            if f.name not in ("alive", "superind_rep")
+        ]
+
+    for i in trout_state.alive_indices():
         if trout_state.superind_rep[i] <= 1:
             continue
         sp_idx = int(trout_state.species_idx[i])
         threshold = float(max_length[sp_idx]) if per_species else float(max_length[0])
-        if trout_state.length[i] >= threshold:
-            # ... existing split logic ...
+        if trout_state.length[i] < threshold:
+            continue
+        # Everything below here is UNCHANGED from existing code:
+        new_slot = trout_state.first_dead_slot()
+        if new_slot < 0:
+            continue
+        for f in _TROUT_FIELDS:
+            arr = getattr(trout_state, f.name)
+            if arr.ndim == 1:
+                arr[new_slot] = arr[i]
+            else:
+                arr[new_slot] = arr[i]
+        half = trout_state.superind_rep[i] // 2
+        trout_state.superind_rep[i] = trout_state.superind_rep[i] - half
+        trout_state.superind_rep[new_slot] = half
+        trout_state.alive[new_slot] = True
 ```
 
 - [ ] **Step 4: Update model.py to pass per-species array**
@@ -1101,16 +1152,18 @@ Expected: PASS (tests the logic pattern, not model wiring yet).
 
 In `src/instream/model.py`, find `_do_adult_arrivals` (around line 1140). Where `life_history` is set, check species config for anadromous flag:
 
+The existing code uses vectorized assignment with `slots` (an array of indices), not scalar `slot`. Replace the `ts.life_history[slots] = 0` line with:
+
 ```python
             # Set life history based on species type
             sp_cfg = self.config.species.get(sp_name)
-            if sp_cfg and getattr(sp_cfg, "is_anadromous", False):
-                self.trout_state.life_history[slot] = 2  # anad_adult
-            else:
-                self.trout_state.life_history[slot] = 0  # resident
+            lh_val = 2 if (sp_cfg and getattr(sp_cfg, "is_anadromous", False)) else 0
+            ts.life_history[slots] = lh_val
 ```
 
-Add `is_anadromous: bool = False` to `SpeciesConfig` if not present.
+Note: uses local `ts` alias (not `self.trout_state`) matching the existing code style in `_do_adult_arrivals`.
+
+Check if `is_anadromous: bool = False` already exists in `SpeciesConfig`. If not, add it.
 
 - [ ] **Step 4: Add post-spawn mortality for anadromous adults**
 
