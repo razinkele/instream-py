@@ -534,10 +534,40 @@ class JaxBackend:
     def deplete_resources(
         self, fish_order, chosen_cells, available_drift, available_search, **params
     ):
-        raise NotImplementedError("JaxBackend.deplete_resources not implemented.")
+        """Sequential resource depletion (inherently serial, uses NumPy)."""
+        activities = params["chosen_activities"]
+        intakes = params["intake_amounts"]
+        lengths = params["fish_lengths"]
+        reps = params["superind_reps"]
+        shelter = params["available_shelter"]
+        hiding = params["available_hiding"]
+        for idx in fish_order:
+            cell = int(chosen_cells[idx])
+            act = int(activities[idx])
+            rep = int(reps[idx])
+            if act == 0:
+                consumed = min(float(intakes[idx]) * rep, float(available_drift[cell]))
+                available_drift[cell] -= consumed
+                shelter_needed = float(lengths[idx]) ** 2 * rep
+                if shelter[cell] >= shelter_needed:
+                    shelter[cell] -= shelter_needed
+            elif act == 1:
+                consumed = min(float(intakes[idx]) * rep, float(available_search[cell]))
+                available_search[cell] -= consumed
+            elif act == 2:
+                if hiding[cell] >= rep:
+                    hiding[cell] -= rep
 
     def spawn_suitability(self, depths, velocities, frac_spawn, **params):
-        raise NotImplementedError("JaxBackend.spawn_suitability not implemented.")
+        """Compute spawn suitability for all cells."""
+        area = params["area"]
+        depth_suit = np.interp(
+            np.asarray(depths), params["depth_table_x"], params["depth_table_y"]
+        )
+        vel_suit = np.interp(
+            np.asarray(velocities), params["vel_table_x"], params["vel_table_y"]
+        )
+        return depth_suit * vel_suit * np.asarray(frac_spawn) * np.asarray(area)
 
     def evaluate_logistic(self, x, L1, L9):
         """Standard logistic where f(L1)=0.1 and f(L9)=0.9.
