@@ -289,6 +289,45 @@ def test_redd_emergence_assigns_random_sex():
     assert np.all(ts.growth_memory[alive] == 0.0)
 
 
+class TestSpawnDefenseArea:
+    def test_cell_within_defense_area_excluded(self):
+        from instream.modules.spawning import select_spawn_cell
+
+        scores = np.array([0.8, 0.9, 0.7])
+        candidates = np.array([10, 20, 30])
+        redd_cells = np.array([20])
+        centroids_x = np.array([0.0] * 31)
+        centroids_y = np.array([0.0] * 31)
+        centroids_x[10] = 0.0
+        centroids_x[20] = 50.0
+        centroids_x[30] = 200.0
+        defense_area = 100.0
+        best = select_spawn_cell(
+            scores,
+            candidates,
+            redd_cells=redd_cells,
+            centroids_x=centroids_x,
+            centroids_y=centroids_y,
+            defense_area=defense_area,
+        )
+        assert best == 30
+
+    def test_zero_defense_no_exclusion(self):
+        from instream.modules.spawning import select_spawn_cell
+
+        scores = np.array([0.8, 0.9])
+        candidates = np.array([10, 20])
+        best = select_spawn_cell(
+            scores,
+            candidates,
+            redd_cells=np.array([20]),
+            centroids_x=np.zeros(21),
+            centroids_y=np.zeros(21),
+            defense_area=0.0,
+        )
+        assert best == 20
+
+
 def test_superimposition_reduces_existing_eggs():
     from instream.state.redd_state import ReddState
     from instream.modules.spawning import apply_superimposition

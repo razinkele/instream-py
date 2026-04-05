@@ -137,7 +137,14 @@ def spawn_suitability(
     return depth_suit * vel_suit * frac_spawn * area
 
 
-def select_spawn_cell(scores, candidates):
+def select_spawn_cell(
+    scores,
+    candidates,
+    redd_cells=None,
+    centroids_x=None,
+    centroids_y=None,
+    defense_area=0.0,
+):
     """Select best spawning cell from candidates (Task 6.2).
 
     Parameters
@@ -146,13 +153,34 @@ def select_spawn_cell(scores, candidates):
         Suitability scores for each candidate.
     candidates : array
         Cell indices corresponding to scores.
+    redd_cells : array or None
+        Cell indices of existing alive redds.
+    centroids_x, centroids_y : array or None
+        Cell centroid coordinates.
+    defense_area : float
+        Minimum distance (cm) from existing redds. 0 = no exclusion.
 
     Returns
     -------
     int
-        Cell index of the best candidate.
+        Cell index of the best candidate, or -1 if none available.
     """
-    best_idx = int(np.argmax(scores))
+    if len(candidates) == 0:
+        return -1
+
+    valid_mask = np.ones(len(candidates), dtype=bool)
+
+    if defense_area > 0 and redd_cells is not None and len(redd_cells) > 0:
+        for rc in redd_cells:
+            dx = centroids_x[candidates] - centroids_x[rc]
+            dy = centroids_y[candidates] - centroids_y[rc]
+            dist = np.sqrt(dx**2 + dy**2)
+            valid_mask &= dist > defense_area
+
+    valid_scores = np.where(valid_mask, scores, -1.0)
+    best_idx = np.argmax(valid_scores)
+    if valid_scores[best_idx] <= 0:
+        return -1
     return int(candidates[best_idx])
 
 

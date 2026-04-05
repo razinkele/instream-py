@@ -878,7 +878,21 @@ class InSTREAMModel(mesa.Model):
             if np.max(scores) <= sp_cfg.spawn_suitability_tol:
                 continue
 
-            best_cell = select_spawn_cell(scores, candidates)
+            # Gather alive redd positions for defense area check
+            alive_redds = self.redd_state.alive
+            redd_cells = self.redd_state.cell_idx[alive_redds]
+            defense_area = getattr(sp_cfg, "spawn_defense_area", 0.0)
+
+            best_cell = select_spawn_cell(
+                scores,
+                candidates,
+                redd_cells=redd_cells,
+                centroids_x=cs.centroid_x,
+                centroids_y=cs.centroid_y,
+                defense_area=defense_area,
+            )
+            if best_cell < 0:
+                continue  # all candidates excluded by defense area
             reach_idx = int(cs.reach_idx[best_cell])
 
             new_redd_slot = create_redd(
