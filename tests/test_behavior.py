@@ -1073,3 +1073,31 @@ class TestNumbaCandidates:
             if sparse[i] is not None:
                 assert len(sparse[i]) > 0
                 assert np.all(space.cell_state.depth[sparse[i]] > 0)
+
+
+class TestFitnessMemory:
+    def test_memory_updates_with_fraction(self):
+        """Fitness memory should be EMA: new = frac * old + (1-frac) * current."""
+        from instream.state.trout_state import TroutState
+
+        ts = TroutState.zeros(2)
+        ts.alive[0] = True
+        ts.fitness_memory[0] = 0.5
+        current_fitness = 0.8
+        frac = 0.7
+        ts.fitness_memory[0] = (
+            frac * ts.fitness_memory[0] + (1.0 - frac) * current_fitness
+        )
+        np.testing.assert_allclose(ts.fitness_memory[0], 0.59, rtol=1e-12)
+
+    def test_memory_converges_to_steady_state(self):
+        """After many updates with constant fitness, memory converges."""
+        from instream.state.trout_state import TroutState
+
+        ts = TroutState.zeros(1)
+        ts.alive[0] = True
+        ts.fitness_memory[0] = 0.0
+        frac = 0.8
+        for _ in range(100):
+            ts.fitness_memory[0] = frac * ts.fitness_memory[0] + (1.0 - frac) * 0.6
+        np.testing.assert_allclose(ts.fitness_memory[0], 0.6, rtol=1e-3)

@@ -355,6 +355,7 @@ def redd_emergence(
         ts.consumption_memory[slots, :] = 0.0
         ts.survival_memory[slots, :] = 0.0
         ts.last_growth_rate[slots] = 0.0
+        ts.fitness_memory[slots] = 0.0
 
         rs.num_eggs[i] -= n_slots
         if rs.num_eggs[i] <= 0:

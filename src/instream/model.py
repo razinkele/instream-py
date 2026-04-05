@@ -247,6 +247,7 @@ class InSTREAMModel(mesa.Model):
             "mort_terr_pred_hiding_factor",
             "migrate_fitness_L1",
             "migrate_fitness_L9",
+            "fitness_memory_frac",
         ]:
             self._sp_arrays[field] = np.array(
                 [
@@ -562,6 +563,19 @@ class InSTREAMModel(mesa.Model):
             self.trout_state.growth_memory[i, substep] = (
                 self.trout_state.last_growth_rate[i]
             )
+
+        # Update fitness memory (EMA)
+        frac = self._sp_arrays["fitness_memory_frac"]
+        for i in alive:
+            sp_idx = int(self.trout_state.species_idx[i])
+            f = float(frac[sp_idx])
+            current = float(self.trout_state.last_growth_rate[i])
+            old = self.trout_state.fitness_memory[i]
+            if old == 0.0 and current != 0.0:
+                # First real update: seed with current value to avoid day-1 spurious migration
+                self.trout_state.fitness_memory[i] = current
+            else:
+                self.trout_state.fitness_memory[i] = f * old + (1.0 - f) * current
 
         # 9. Survival / mortality (per-fish species/reach dispatch)
         alive = self.trout_state.alive_indices()
@@ -1011,7 +1025,7 @@ class InSTREAMModel(mesa.Model):
                 float(sp_mig_L1[sp_idx]),
                 float(sp_mig_L9[sp_idx]),
             )
-            best_hab = float(self.trout_state.last_growth_rate[i])
+            best_hab = float(self.trout_state.fitness_memory[i])
             if should_migrate(mig_fit, best_hab, lh):
                 out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
                 self._outmigrants.extend(out)
@@ -1150,6 +1164,7 @@ class InSTREAMModel(mesa.Model):
             ts.consumption_memory[slots, :] = 0.0
             ts.survival_memory[slots, :] = 0.0
             ts.last_growth_rate[slots] = 0.0
+            ts.fitness_memory[slots] = 0.0
 
             # Track cumulative arrivals
             self._arrival_counts[key] = arrived_so_far + n_add

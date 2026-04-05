@@ -97,6 +97,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
     energy_density: float = 0.0
     fitness_horizon: float = 0.0
     fitness_length: float = 0.0
+    fitness_memory_frac: float = 0.0
 
     # Swimming
     max_speed_A: float = 0.0
