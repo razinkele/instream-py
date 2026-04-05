@@ -331,9 +331,18 @@ _TROUT_FIELDS = None
 def split_superindividuals(trout_state, max_length):
     """Split superindividuals that exceed length threshold (Task 3.10).
 
-    For each alive fish with superind_rep > 1 and length >= max_length,
-    find a dead slot, copy all attributes, and halve the rep count.
+    Parameters
+    ----------
+    trout_state : TroutState
+    max_length : float or array
+        If scalar, applied to all fish. If array of shape (n_species,),
+        indexed by species_idx.
     """
+    import numpy as _np
+
+    max_length = _np.atleast_1d(_np.asarray(max_length, dtype=_np.float64))
+    per_species = max_length.shape[0] > 1
+
     global _TROUT_FIELDS
     if _TROUT_FIELDS is None:
         _TROUT_FIELDS = [
@@ -345,7 +354,9 @@ def split_superindividuals(trout_state, max_length):
     for i in trout_state.alive_indices():
         if trout_state.superind_rep[i] <= 1:
             continue
-        if trout_state.length[i] < max_length:
+        sp_idx = int(trout_state.species_idx[i])
+        threshold = float(max_length[sp_idx]) if per_species else float(max_length[0])
+        if trout_state.length[i] < threshold:
             continue
         new_slot = trout_state.first_dead_slot()
         if new_slot < 0:

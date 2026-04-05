@@ -714,8 +714,9 @@ class InSTREAMModel(mesa.Model):
             self._apply_accumulated_growth()
 
             # Split superindividuals (per-species max length)
-            _sml_arr = self._sp_arrays["superind_max_length"]
-            split_superindividuals(self.trout_state, float(np.max(_sml_arr)))
+            split_superindividuals(
+                self.trout_state, self._sp_arrays["superind_max_length"]
+            )
 
             # Spawning (per-fish species/reach dispatch)
             self._do_spawning(step_length)

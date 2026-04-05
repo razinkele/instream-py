@@ -862,3 +862,24 @@ def test_cmax_temp_bisect_matches_np_interp():
         # High vel ratio (48/50=0.96) → low capture
         r_high = drift_intake(velocity=48.0, max_swim_speed=50.0, **kwargs)
         assert r_low > r_high
+
+
+class TestSplitSuperindividualPerSpecies:
+    def test_small_species_splits_at_own_threshold(self):
+        """Each species should use its own superind_max_length, not global max."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.growth import split_superindividuals
+
+        ts = TroutState.zeros(4)
+        ts.alive[0] = True
+        ts.species_idx[0] = 0
+        ts.length[0] = 12.0
+        ts.superind_rep[0] = 2
+        ts.alive[1] = True
+        ts.species_idx[1] = 1
+        ts.length[1] = 12.0
+        ts.superind_rep[1] = 2
+        max_lengths = np.array([10.0, 20.0])
+        split_superindividuals(ts, max_lengths)
+        assert ts.superind_rep[0] == 1, "species 0 fish should have been split"
+        assert ts.superind_rep[1] == 2, "species 1 fish should NOT have been split"
