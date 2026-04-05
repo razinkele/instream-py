@@ -1175,3 +1175,273 @@ class TestNumpyDepleteResources:
             available_hiding=hiding,
         )
         assert hiding[0] == 4.0  # 5 - 1
+
+
+class TestCrossBackendParity:
+    """Verify all backends produce identical results for the same inputs."""
+
+    def _get_backends(self):
+        """Return list of (name, backend) tuples for available backends."""
+        from instream.backends.numpy_backend import NumpyBackend
+
+        backends = [("numpy", NumpyBackend())]
+        try:
+            from instream.backends.numba_backend import NumbaBackend
+
+            backends.append(("numba", NumbaBackend()))
+        except ImportError:
+            pass
+        try:
+            from instream.backends.jax_backend import JaxBackend
+
+            backends.append(("jax", JaxBackend()))
+        except ImportError:
+            pass
+        return backends
+
+    def test_spawn_suitability_parity(self):
+        backends = self._get_backends()
+        assert len(backends) >= 2, "Need at least 2 backends"
+        depths = np.array([10.0, 50.0, 0.0, 30.0])
+        vels = np.array([20.0, 40.0, 0.0, 25.0])
+        frac = np.array([0.5, 0.8, 0.0, 1.0])
+        area = np.array([100.0, 200.0, 50.0, 150.0])
+        dtx = np.array([0.0, 30.0, 60.0])
+        dty = np.array([0.0, 1.0, 0.0])
+        vtx = np.array([0.0, 30.0, 60.0])
+        vty = np.array([0.0, 1.0, 0.0])
+        ref = None
+        for name, b in backends:
+            result = b.spawn_suitability(
+                depths,
+                vels,
+                frac,
+                area=area,
+                depth_table_x=dtx,
+                depth_table_y=dty,
+                vel_table_x=vtx,
+                vel_table_y=vty,
+            )
+            if ref is None:
+                ref = result
+                ref_name = name
+            else:
+                np.testing.assert_allclose(
+                    result,
+                    ref,
+                    rtol=1e-10,
+                    err_msg=f"{name} vs {ref_name} spawn_suitability mismatch",
+                )
+
+    def _call_survival(
+        self,
+        name,
+        backend,
+        lengths,
+        weights,
+        conditions,
+        temperatures,
+        depths,
+        velocities,
+        lights,
+        activities,
+        pisciv_densities,
+        dist_escapes,
+        available_hidings,
+        superind_reps,
+        scalar_params,
+    ):
+        """Call survival with the appropriate signature for each backend."""
+        from instream.backends.jax_backend import JaxBackend
+
+        if isinstance(backend, JaxBackend):
+            return backend.survival(
+                lengths,
+                depths,
+                velocities,
+                lights,
+                temperatures,
+                conditions,
+                activities,
+                dist_escapes,
+                available_hidings,
+                superind_reps,
+                pisciv_densities,
+                survival_when_dry=scalar_params["survival_when_dry"],
+                high_temp_T1=scalar_params["high_temp_T1"],
+                high_temp_T9=scalar_params["high_temp_T9"],
+                cond_S_at_K5=scalar_params["cond_S_at_K5"],
+                cond_S_at_K8=scalar_params["cond_S_at_K8"],
+                fish_pred_min_surv=scalar_params["fish_pred_min_surv"],
+                fish_pred_L1=scalar_params["fish_pred_L1"],
+                fish_pred_L9=scalar_params["fish_pred_L9"],
+                fish_pred_D1=scalar_params["fish_pred_D1"],
+                fish_pred_D9=scalar_params["fish_pred_D9"],
+                fish_pred_P1=scalar_params["fish_pred_P1"],
+                fish_pred_P9=scalar_params["fish_pred_P9"],
+                fish_pred_I1=scalar_params["fish_pred_I1"],
+                fish_pred_I9=scalar_params["fish_pred_I9"],
+                fish_pred_T1=scalar_params["fish_pred_T1"],
+                fish_pred_T9=scalar_params["fish_pred_T9"],
+                fish_pred_hiding_factor=scalar_params["fish_pred_hiding_factor"],
+                terr_pred_min_surv=scalar_params["terr_pred_min_surv"],
+                terr_pred_L1=scalar_params["terr_pred_L1"],
+                terr_pred_L9=scalar_params["terr_pred_L9"],
+                terr_pred_D1=scalar_params["terr_pred_D1"],
+                terr_pred_D9=scalar_params["terr_pred_D9"],
+                terr_pred_V1=scalar_params["terr_pred_V1"],
+                terr_pred_V9=scalar_params["terr_pred_V9"],
+                terr_pred_I1=scalar_params["terr_pred_I1"],
+                terr_pred_I9=scalar_params["terr_pred_I9"],
+                terr_pred_H1=scalar_params["terr_pred_H1"],
+                terr_pred_H9=scalar_params["terr_pred_H9"],
+                terr_pred_hiding_factor=scalar_params["terr_pred_hiding_factor"],
+            )
+        else:
+            n = len(lengths)
+            return backend.survival(
+                lengths,
+                weights,
+                conditions,
+                temperatures,
+                depths,
+                velocities=velocities,
+                lights=lights,
+                activities=activities,
+                pisciv_densities=pisciv_densities,
+                dist_escapes=dist_escapes,
+                available_hidings=available_hidings,
+                superind_reps=superind_reps,
+                sp_mort_high_temp_T1=np.full(n, scalar_params["high_temp_T1"]),
+                sp_mort_high_temp_T9=np.full(n, scalar_params["high_temp_T9"]),
+                sp_mort_strand_survival_when_dry=np.full(
+                    n, scalar_params["survival_when_dry"]
+                ),
+                sp_mort_condition_S_at_K5=np.full(n, scalar_params["cond_S_at_K5"]),
+                sp_mort_condition_S_at_K8=np.full(n, scalar_params["cond_S_at_K8"]),
+                rp_fish_pred_min=np.full(n, scalar_params["fish_pred_min_surv"]),
+                sp_mort_fish_pred_L1=np.full(n, scalar_params["fish_pred_L1"]),
+                sp_mort_fish_pred_L9=np.full(n, scalar_params["fish_pred_L9"]),
+                sp_mort_fish_pred_D1=np.full(n, scalar_params["fish_pred_D1"]),
+                sp_mort_fish_pred_D9=np.full(n, scalar_params["fish_pred_D9"]),
+                sp_mort_fish_pred_P1=np.full(n, scalar_params["fish_pred_P1"]),
+                sp_mort_fish_pred_P9=np.full(n, scalar_params["fish_pred_P9"]),
+                sp_mort_fish_pred_I1=np.full(n, scalar_params["fish_pred_I1"]),
+                sp_mort_fish_pred_I9=np.full(n, scalar_params["fish_pred_I9"]),
+                sp_mort_fish_pred_T1=np.full(n, scalar_params["fish_pred_T1"]),
+                sp_mort_fish_pred_T9=np.full(n, scalar_params["fish_pred_T9"]),
+                sp_mort_fish_pred_hiding_factor=np.full(
+                    n, scalar_params["fish_pred_hiding_factor"]
+                ),
+                rp_terr_pred_min=np.full(n, scalar_params["terr_pred_min_surv"]),
+                sp_mort_terr_pred_L1=np.full(n, scalar_params["terr_pred_L1"]),
+                sp_mort_terr_pred_L9=np.full(n, scalar_params["terr_pred_L9"]),
+                sp_mort_terr_pred_D1=np.full(n, scalar_params["terr_pred_D1"]),
+                sp_mort_terr_pred_D9=np.full(n, scalar_params["terr_pred_D9"]),
+                sp_mort_terr_pred_V1=np.full(n, scalar_params["terr_pred_V1"]),
+                sp_mort_terr_pred_V9=np.full(n, scalar_params["terr_pred_V9"]),
+                sp_mort_terr_pred_I1=np.full(n, scalar_params["terr_pred_I1"]),
+                sp_mort_terr_pred_I9=np.full(n, scalar_params["terr_pred_I9"]),
+                sp_mort_terr_pred_H1=np.full(n, scalar_params["terr_pred_H1"]),
+                sp_mort_terr_pred_H9=np.full(n, scalar_params["terr_pred_H9"]),
+                sp_mort_terr_pred_hiding_factor=np.full(
+                    n, scalar_params["terr_pred_hiding_factor"]
+                ),
+            )
+
+    def test_survival_parity(self):
+        backends = self._get_backends()
+        assert len(backends) >= 2
+        lengths = np.array([5.0, 8.0, 12.0, 15.0])
+        weights = np.array([2.0, 6.0, 20.0, 40.0])
+        # Use 1.0 so condition survival == 1.0 in NumPy/Numba, matching
+        # the JAX backend which omits condition survival entirely.
+        conditions = np.array([1.0, 1.0, 1.0, 1.0])
+        temperatures = np.array([15.0, 20.0, 25.0, 28.0])
+        depths = np.array([30.0, 0.0, 50.0, 100.0])
+        velocities = np.array([10.0, 0.0, 30.0, 50.0])
+        lights = np.array([100.0, 0.0, 200.0, 300.0])
+        activities = np.array([0, 1, 2, 0])
+        pisciv_densities = np.array([0.0, 0.0, 0.001, 0.002])
+        dist_escapes = np.array([50.0, 100.0, 20.0, 10.0])
+        available_hidings = np.array([5.0, 0.0, 3.0, 10.0])
+        superind_reps = np.array([1, 1, 1, 1])
+        scalar_params = dict(
+            high_temp_T1=28.0,
+            high_temp_T9=24.0,
+            survival_when_dry=0.5,
+            cond_S_at_K5=0.8,
+            cond_S_at_K8=0.992,
+            fish_pred_min_surv=0.99,
+            fish_pred_L1=10.0,
+            fish_pred_L9=5.0,
+            fish_pred_D1=50.0,
+            fish_pred_D9=20.0,
+            fish_pred_P1=0.01,
+            fish_pred_P9=0.001,
+            fish_pred_I1=200.0,
+            fish_pred_I9=100.0,
+            fish_pred_T1=25.0,
+            fish_pred_T9=15.0,
+            fish_pred_hiding_factor=0.5,
+            terr_pred_min_surv=0.99,
+            terr_pred_L1=10.0,
+            terr_pred_L9=5.0,
+            terr_pred_D1=50.0,
+            terr_pred_D9=20.0,
+            terr_pred_V1=30.0,
+            terr_pred_V9=10.0,
+            terr_pred_I1=200.0,
+            terr_pred_I9=100.0,
+            terr_pred_H1=80.0,
+            terr_pred_H9=30.0,
+            terr_pred_hiding_factor=0.5,
+        )
+        ref = None
+        for name, b in backends:
+            result = self._call_survival(
+                name,
+                b,
+                lengths,
+                weights,
+                conditions,
+                temperatures,
+                depths,
+                velocities,
+                lights,
+                activities,
+                pisciv_densities,
+                dist_escapes,
+                available_hidings,
+                superind_reps,
+                scalar_params,
+            )
+            if ref is None:
+                ref = result
+                ref_name = name
+            else:
+                rtol = 1e-10 if "jax" in name else 1e-12
+                np.testing.assert_allclose(
+                    result,
+                    ref,
+                    rtol=rtol,
+                    err_msg=f"{name} vs {ref_name} survival mismatch",
+                )
+
+    def test_evaluate_logistic_parity(self):
+        backends = self._get_backends()
+        assert len(backends) >= 2
+        x = np.array([1.0, 5.0, 10.0, 15.0, 20.0])
+        ref = None
+        for name, b in backends:
+            result = b.evaluate_logistic(x, 5.0, 15.0)
+            if ref is None:
+                ref = result
+                ref_name = name
+            else:
+                np.testing.assert_allclose(
+                    result,
+                    ref,
+                    rtol=1e-10,
+                    err_msg=f"{name} vs {ref_name} logistic mismatch",
+                )
