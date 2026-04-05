@@ -12,6 +12,7 @@ from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
 from instream.io.population_reader import (
     read_initial_populations,
 )
+from instream.io.arrival_reader import read_adult_arrivals, compute_daily_arrivals  # noqa: E402
 from instream.io.time_manager import TimeManager, detect_frequency
 from instream.space.polygon_mesh import PolygonMesh
 from instream.space.fem_space import FEMSpace
@@ -244,6 +245,8 @@ class InSTREAMModel(mesa.Model):
             "mort_terr_pred_H1",
             "mort_terr_pred_H9",
             "mort_terr_pred_hiding_factor",
+            "migrate_fitness_L1",
+            "migrate_fitness_L9",
         ]:
             self._sp_arrays[field] = np.array(
                 [
@@ -284,6 +287,8 @@ class InSTREAMModel(mesa.Model):
         pop_file = self.config.simulation.population_file
         if pop_file:
             pop_path = self.data_dir / pop_file
+            if not pop_path.exists():
+                pop_path = self.data_dir / Path(pop_file).name
         else:
             pop_candidates = list(self.data_dir.glob("*InitialPopulations*"))
             if not pop_candidates:
@@ -314,6 +319,14 @@ class InSTREAMModel(mesa.Model):
         for pop in populations:
             sp_name = pop["species"]
             sp_idx = self._species_name_to_idx.get(sp_name, 0)
+            if sp_name not in self._species_name_to_idx:
+                import warnings
+
+                warnings.warn(
+                    "Species '{}' in population file not found in config. "
+                    "Mapping to '{}' (index 0).".format(sp_name, self.species_order[0]),
+                    stacklevel=2,
+                )
             sp_cfg = self.config.species.get(
                 sp_name, self.config.species[self.species_order[0]]
             )
@@ -340,6 +353,16 @@ class InSTREAMModel(mesa.Model):
 
         # Redd state
         self.redd_state = ReddState.zeros(self.config.performance.redd_capacity)
+
+        # Adult arrival schedule
+        arrival_file = self.config.simulation.adult_arrival_file
+        if arrival_file:
+            arrival_path = self.data_dir / arrival_file
+            if not arrival_path.exists():
+                arrival_path = self.data_dir / Path(arrival_file).name
+            self._arrival_records = read_adult_arrivals(arrival_path)
+        else:
+            self._arrival_records = []
 
         # Reach connectivity graph for migration
         from instream.modules.migration import build_reach_graph
@@ -974,16 +997,18 @@ class InSTREAMModel(mesa.Model):
             migrate_fish_downstream,
         )
 
-        sp_cfg = self.config.species[self.species_order[0]]
-        mig_L1 = getattr(sp_cfg, "migrate_fitness_L1", 999.0)
-        mig_L9 = getattr(sp_cfg, "migrate_fitness_L9", 999.0)
+        sp_mig_L1 = self._sp_arrays["migrate_fitness_L1"]
+        sp_mig_L9 = self._sp_arrays["migrate_fitness_L9"]
         alive = self.trout_state.alive_indices()
         for i in alive:
             lh = int(self.trout_state.life_history[i])
             if lh != 1:
                 continue
+            sp_idx = int(self.trout_state.species_idx[i])
             mig_fit = migration_fitness(
-                float(self.trout_state.length[i]), mig_L1, mig_L9
+                float(self.trout_state.length[i]),
+                float(sp_mig_L1[sp_idx]),
+                float(sp_mig_L9[sp_idx]),
             )
             best_hab = float(self.trout_state.last_growth_rate[i])
             if should_migrate(mig_fit, best_hab, lh):
@@ -1029,8 +1054,104 @@ class InSTREAMModel(mesa.Model):
             )
 
     def _do_adult_arrivals(self):
-        """Add arriving adults if adult arrival data is configured."""
-        pass  # TODO: implement when multi-reach/species is added
+        """Add arriving adults if adult arrival data is configured.
+
+        For each arrival record whose window includes the current date,
+        compute the number of adults arriving today using a triangular
+        temporal distribution, then allocate them into dead TroutState slots.
+
+        Uses a CDF-based approach with cumulative tracking to avoid
+        rounding losses when total arrivals are small relative to the window.
+        """
+        if not self._arrival_records:
+            return
+
+        current_date = self.time_manager._current_date
+        sim_year = current_date.year
+        ts = self.trout_state
+        n_cells = self.fem_space.num_cells
+
+        # Initialize arrival tracking dict on first call
+        if not hasattr(self, "_arrival_counts"):
+            self._arrival_counts = {}
+
+        # Only process records whose year matches the current sim year
+        year_records = [r for r in self._arrival_records if r["year"] == sim_year]
+        if not year_records:
+            # Fall back: if no exact year match, use the nearest available year
+            available_years = sorted(set(r["year"] for r in self._arrival_records))
+            if available_years:
+                nearest = min(available_years, key=lambda y: abs(y - sim_year))
+                year_records = [
+                    r for r in self._arrival_records if r["year"] == nearest
+                ]
+
+        for idx, rec in enumerate(year_records):
+            # Track cumulative arrivals per record per year
+            key = (sim_year, idx)
+            arrived_so_far = self._arrival_counts.get(key, 0)
+            n_today = compute_daily_arrivals(rec, current_date, arrived_so_far)
+            if n_today <= 0:
+                continue
+
+            # Resolve species index (fall back to 0 if unknown)
+            sp_name = rec["species"]
+            sp_idx = self._species_name_to_idx.get(sp_name, 0)
+            if sp_name in self.config.species:
+                sp_cfg = self.config.species[sp_name]
+            else:
+                sp_cfg = self.config.species[self.species_order[0]]
+
+            # Resolve reach index
+            r_name = rec["reach"]
+            r_idx = self.reach_order.index(r_name) if r_name in self.reach_order else 0
+
+            # Find dead slots
+            dead_slots = np.where(~ts.alive)[0]
+            n_add = min(n_today, len(dead_slots))
+            if n_add <= 0:
+                continue
+
+            slots = dead_slots[:n_add]
+
+            # Generate lengths and weights
+            lengths = self.rng.triangular(
+                rec["length_min"], rec["length_mode"], rec["length_max"], size=n_add
+            )
+            weights = sp_cfg.weight_A * lengths**sp_cfg.weight_B
+
+            # Assign sex based on fraction female
+            frac_female = rec["frac_female"]
+            sex = (self.rng.random(n_add) < frac_female).astype(np.int32)
+
+            # Assign to random cells within the target reach
+            reach_cells = np.where(self.fem_space.cell_state.reach_idx == r_idx)[0]
+            if len(reach_cells) == 0:
+                reach_cells = np.arange(n_cells)
+            cell_choices = self.rng.choice(reach_cells, size=n_add)
+
+            # Fill slots
+            ts.alive[slots] = True
+            ts.species_idx[slots] = sp_idx
+            ts.length[slots] = lengths
+            ts.weight[slots] = weights
+            ts.condition[slots] = 1.0
+            ts.age[slots] = 3  # mature adults
+            ts.cell_idx[slots] = cell_choices
+            ts.reach_idx[slots] = r_idx
+            ts.sex[slots] = sex
+            ts.superind_rep[slots] = 1
+            ts.life_history[slots] = 0
+            ts.in_shelter[slots] = False
+            ts.spawned_this_season[slots] = False
+            ts.activity[slots] = 0
+            ts.growth_memory[slots, :] = 0.0
+            ts.consumption_memory[slots, :] = 0.0
+            ts.survival_memory[slots, :] = 0.0
+            ts.last_growth_rate[slots] = 0.0
+
+            # Track cumulative arrivals
+            self._arrival_counts[key] = arrived_so_far + n_add
 
     def write_outputs(self, output_dir=None):
         """Write all output files to the specified directory."""
