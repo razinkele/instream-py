@@ -83,8 +83,11 @@ def test_numpy_evaluate_logistic_equal_L1_L9():
     from instream.backends.numpy_backend import NumpyBackend
 
     backend = NumpyBackend()
+    # Degenerate case: L1 == L9 => step function: 0.9 if x >= L1, else 0.1
     result = backend.evaluate_logistic(np.array([5.0]), L1=5.0, L9=5.0)
-    assert np.allclose(result, 0.5)
+    assert np.allclose(result, 0.9)
+    result_below = backend.evaluate_logistic(np.array([4.0]), L1=5.0, L9=5.0)
+    assert np.allclose(result_below, 0.1)
 
 
 def test_numba_evaluate_all_cells_matches_python():
@@ -924,6 +927,137 @@ class TestSpawnSuitabilityBackend:
         assert scores[2] == 0.0  # dry cell with no spawn fraction
         assert scores[0] > 0.0
         assert scores[1] > 0.0
+
+
+class TestNumpySurvivalVectorized:
+    def test_survival_matches_scalar_loop(self):
+        """Vectorized survival must match the per-fish scalar computation."""
+        from instream.backends.numpy_backend import NumpyBackend
+        from instream.modules.survival import (
+            survival_high_temperature,
+            survival_stranding,
+            survival_condition,
+            survival_fish_predation,
+            survival_terrestrial_predation,
+        )
+
+        b = NumpyBackend()
+        n = 5
+        lengths = np.array([5.0, 8.0, 12.0, 3.0, 15.0])
+        weights = np.array([2.0, 6.0, 20.0, 0.5, 40.0])
+        conditions = np.array([0.9, 0.7, 1.0, 0.3, 0.85])
+        temperatures = np.array([15.0, 20.0, 25.0, 10.0, 28.0])
+        depths = np.array([30.0, 0.0, 50.0, 10.0, 100.0])
+        velocities = np.array([10.0, 0.0, 30.0, 5.0, 50.0])
+        lights = np.array([100.0, 0.0, 200.0, 50.0, 300.0])
+        activities = np.array([0, 1, 2, 0, 2])
+        pisciv_densities = np.array([0.0, 0.0, 0.001, 0.0, 0.002])
+        dist_escapes = np.array([50.0, 100.0, 20.0, 80.0, 10.0])
+        available_hidings = np.array([5.0, 0.0, 3.0, 1.0, 10.0])
+        superind_reps = np.array([1, 1, 1, 1, 1])
+
+        # Species params (same for all fish in this test)
+        T1, T9 = 28.0, 24.0
+        swd = 0.5
+        K5, K8 = 0.8, 0.992
+        fp_min = 0.99
+        tp_min = 0.99
+
+        vec_result = b.survival(
+            lengths,
+            weights,
+            conditions,
+            temperatures,
+            depths,
+            velocities=velocities,
+            lights=lights,
+            activities=activities,
+            pisciv_densities=pisciv_densities,
+            dist_escapes=dist_escapes,
+            available_hidings=available_hidings,
+            superind_reps=superind_reps,
+            sp_mort_high_temp_T1=np.full(n, T1),
+            sp_mort_high_temp_T9=np.full(n, T9),
+            sp_mort_strand_survival_when_dry=np.full(n, swd),
+            sp_mort_condition_S_at_K5=np.full(n, K5),
+            sp_mort_condition_S_at_K8=np.full(n, K8),
+            rp_fish_pred_min=np.full(n, fp_min),
+            sp_mort_fish_pred_L1=np.full(n, 10.0),
+            sp_mort_fish_pred_L9=np.full(n, 5.0),
+            sp_mort_fish_pred_D1=np.full(n, 50.0),
+            sp_mort_fish_pred_D9=np.full(n, 20.0),
+            sp_mort_fish_pred_P1=np.full(n, 0.01),
+            sp_mort_fish_pred_P9=np.full(n, 0.001),
+            sp_mort_fish_pred_I1=np.full(n, 200.0),
+            sp_mort_fish_pred_I9=np.full(n, 100.0),
+            sp_mort_fish_pred_T1=np.full(n, 25.0),
+            sp_mort_fish_pred_T9=np.full(n, 15.0),
+            sp_mort_fish_pred_hiding_factor=np.full(n, 0.5),
+            rp_terr_pred_min=np.full(n, tp_min),
+            sp_mort_terr_pred_L1=np.full(n, 10.0),
+            sp_mort_terr_pred_L9=np.full(n, 5.0),
+            sp_mort_terr_pred_D1=np.full(n, 50.0),
+            sp_mort_terr_pred_D9=np.full(n, 20.0),
+            sp_mort_terr_pred_V1=np.full(n, 30.0),
+            sp_mort_terr_pred_V9=np.full(n, 10.0),
+            sp_mort_terr_pred_I1=np.full(n, 200.0),
+            sp_mort_terr_pred_I9=np.full(n, 100.0),
+            sp_mort_terr_pred_H1=np.full(n, 80.0),
+            sp_mort_terr_pred_H9=np.full(n, 30.0),
+            sp_mort_terr_pred_hiding_factor=np.full(n, 0.5),
+        )
+
+        # Compute scalar reference
+        scalar_result = np.empty(n)
+        for i in range(n):
+            s_ht = survival_high_temperature(temperatures[i], T1, T9)
+            s_str = survival_stranding(depths[i], swd)
+            s_cond = survival_condition(conditions[i], K5, K8)
+            s_fp = survival_fish_predation(
+                lengths[i],
+                depths[i],
+                lights[i],
+                pisciv_densities[i],
+                temperatures[i],
+                activities[i],
+                fp_min,
+                10.0,
+                5.0,
+                50.0,
+                20.0,
+                0.01,
+                0.001,
+                200.0,
+                100.0,
+                25.0,
+                15.0,
+                0.5,
+            )
+            s_tp = survival_terrestrial_predation(
+                lengths[i],
+                depths[i],
+                velocities[i],
+                lights[i],
+                dist_escapes[i],
+                activities[i],
+                int(available_hidings[i]),
+                int(superind_reps[i]),
+                tp_min,
+                10.0,
+                5.0,
+                50.0,
+                20.0,
+                30.0,
+                10.0,
+                200.0,
+                100.0,
+                80.0,
+                30.0,
+                0.5,
+            )
+            scalar_result[i] = s_ht * s_str * s_cond * s_fp * s_tp
+
+        np.testing.assert_allclose(vec_result, scalar_result, rtol=1e-12)
 
 
 class TestNumbaEvaluateLogistic:

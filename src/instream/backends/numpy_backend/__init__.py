@@ -172,7 +172,164 @@ class NumpyBackend:
         raise NotImplementedError("Phase 3")
 
     def survival(self, lengths, weights, conditions, temperatures, depths, **params):
-        raise NotImplementedError("Phase 5")
+        """Vectorized survival probability for all alive fish.
+
+        Parameters
+        ----------
+        lengths : 1-D array (N,) — fish lengths
+        weights : 1-D array (N,) — fish weights
+        conditions : 1-D array (N,) — body condition factors
+        temperatures : 1-D array (N,) — water temperature at each fish's reach
+        depths : 1-D array (N,) — water depth at each fish's cell
+        **params : dict containing:
+            velocities, lights, activities, pisciv_densities, dist_escapes,
+            available_hidings, superind_reps,
+            sp_mort_high_temp_T1, sp_mort_high_temp_T9,
+            sp_mort_strand_survival_when_dry,
+            sp_mort_condition_S_at_K5, sp_mort_condition_S_at_K8,
+            rp_fish_pred_min, sp_mort_fish_pred_* (L1/L9/D1/D9/P1/P9/I1/I9/T1/T9/hiding_factor),
+            rp_terr_pred_min, sp_mort_terr_pred_* (L1/L9/D1/D9/V1/V9/I1/I9/H1/H9/hiding_factor)
+
+        Returns
+        -------
+        survival_probs : 1-D array (N,) — combined daily survival probability
+        """
+        # --- High temperature survival ---
+        s_ht = self.evaluate_logistic(
+            temperatures,
+            params["sp_mort_high_temp_T1"],
+            params["sp_mort_high_temp_T9"],
+        )
+
+        # --- Stranding survival ---
+        s_str = np.where(depths > 0, 1.0, params["sp_mort_strand_survival_when_dry"])
+
+        # --- Condition survival (two-piece linear) ---
+        cond = conditions
+        S_at_K5 = params["sp_mort_condition_S_at_K5"]
+        S_at_K8 = params["sp_mort_condition_S_at_K8"]
+        # Upper piece: condition > 0.8
+        slope_upper = 5.0 - 5.0 * S_at_K8
+        intercept_upper = 5.0 * S_at_K8 - 4.0
+        s_upper = cond * slope_upper + intercept_upper
+        # Lower piece: condition <= 0.8
+        slope_lower = (S_at_K8 - S_at_K5) / 0.3
+        intercept_lower = S_at_K5 - 0.5 * slope_lower
+        s_lower = cond * slope_lower + intercept_lower
+        s_cond = np.where(cond > 0.8, s_upper, s_lower)
+        s_cond = np.where(cond <= 0.0, 0.0, s_cond)
+        s_cond = np.where(cond >= 1.0, 1.0, s_cond)
+        s_cond = np.clip(s_cond, 0.0, 1.0)
+
+        # --- Fish predation survival ---
+        activities = params["activities"]
+        is_hiding_fish = activities == 2
+        hide_factor_fp = np.where(
+            is_hiding_fish, params["sp_mort_fish_pred_hiding_factor"], 0.0
+        )
+
+        fp_risk = (
+            (
+                1.0
+                - self.evaluate_logistic(
+                    lengths,
+                    params["sp_mort_fish_pred_L1"],
+                    params["sp_mort_fish_pred_L9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    depths,
+                    params["sp_mort_fish_pred_D1"],
+                    params["sp_mort_fish_pred_D9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    params["pisciv_densities"],
+                    params["sp_mort_fish_pred_P1"],
+                    params["sp_mort_fish_pred_P9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    params["lights"],
+                    params["sp_mort_fish_pred_I1"],
+                    params["sp_mort_fish_pred_I9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    temperatures,
+                    params["sp_mort_fish_pred_T1"],
+                    params["sp_mort_fish_pred_T9"],
+                )
+            )
+            * (1.0 - hide_factor_fp)
+        )
+        fish_pred_min = params["rp_fish_pred_min"]
+        s_fp = fish_pred_min + (1.0 - fish_pred_min) * (1.0 - fp_risk)
+
+        # --- Terrestrial predation survival ---
+        available_hiding = params["available_hidings"]
+        superind_reps = params["superind_reps"]
+        is_hiding_terr = is_hiding_fish & (available_hiding >= superind_reps)
+        hide_factor_tp = np.where(
+            is_hiding_terr, params["sp_mort_terr_pred_hiding_factor"], 0.0
+        )
+
+        tp_risk = (
+            (
+                1.0
+                - self.evaluate_logistic(
+                    lengths,
+                    params["sp_mort_terr_pred_L1"],
+                    params["sp_mort_terr_pred_L9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    depths,
+                    params["sp_mort_terr_pred_D1"],
+                    params["sp_mort_terr_pred_D9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    params["velocities"],
+                    params["sp_mort_terr_pred_V1"],
+                    params["sp_mort_terr_pred_V9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    params["lights"],
+                    params["sp_mort_terr_pred_I1"],
+                    params["sp_mort_terr_pred_I9"],
+                )
+            )
+            * (
+                1.0
+                - self.evaluate_logistic(
+                    params["dist_escapes"],
+                    params["sp_mort_terr_pred_H1"],
+                    params["sp_mort_terr_pred_H9"],
+                )
+            )
+            * (1.0 - hide_factor_tp)
+        )
+        terr_pred_min = params["rp_terr_pred_min"]
+        s_tp = terr_pred_min + (1.0 - terr_pred_min) * (1.0 - tp_risk)
+
+        # --- Combined ---
+        return s_ht * s_str * s_cond * s_fp * s_tp
 
     def fitness_all(self, trout_arrays, cell_arrays, candidates, **params):
         raise NotImplementedError("Phase 4")
@@ -202,27 +359,30 @@ class NumpyBackend:
         return depth_suit * vel_suit * frac_spawn * area
 
     def evaluate_logistic(self, x, L1, L9):
-        """Standard logistic where f(L1)=0.1 and f(L9)=0.9.
+        """Standard logistic where f(L1)=0.1 and f(L9)=0.9. Supports array inputs.
 
         Parameters
         ----------
         x : array-like
             Input values.
-        L1 : float
-            Value where the logistic equals 0.1.
-        L9 : float
-            Value where the logistic equals 0.9.
+        L1 : array-like
+            Value(s) where the logistic equals 0.1.
+        L9 : array-like
+            Value(s) where the logistic equals 0.9.
 
         Returns
         -------
-        result : ndarray, same shape as x
+        result : ndarray, same shape as x (broadcast with L1, L9)
         """
-        x = np.asarray(x, dtype=float)
-        midpoint = (L1 + L9) / 2.0
-        if L9 == L1:
-            return np.full_like(x, 0.5)
-        slope = np.log(81.0) / (L9 - L1)
-        return 1.0 / (1.0 + np.exp(-slope * (x - midpoint)))
+        x = np.atleast_1d(np.asarray(x, dtype=np.float64))
+        L1 = np.atleast_1d(np.asarray(L1, dtype=np.float64))
+        L9 = np.atleast_1d(np.asarray(L9, dtype=np.float64))
+        degenerate = np.abs(L1 - L9) < 1e-15
+        b = np.where(degenerate, 1.0, np.log(81.0) / (L9 - L1))
+        a = -b * (L1 + L9) / 2.0
+        result = 1.0 / (1.0 + np.exp(-(a + b * x)))
+        result = np.where(degenerate, np.where(x >= L1, 0.9, 0.1), result)
+        return result
 
     def interp1d(self, x, table_x, table_y):
         """Piecewise-linear interpolation with clamping outside range.
