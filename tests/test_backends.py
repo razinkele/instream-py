@@ -1128,3 +1128,50 @@ class TestNumbaEvaluateLogistic:
         np_r = np_b.evaluate_logistic(x, 5.0, 15.0)
         nb_r = nb_b.evaluate_logistic(x, 5.0, 15.0)
         np.testing.assert_allclose(np_r, nb_r, rtol=1e-12)
+
+
+class TestNumpyDepleteResources:
+    def test_drift_depletes_food_and_shelter(self):
+        from instream.backends.numpy_backend import NumpyBackend
+
+        b = NumpyBackend()
+        drift = np.array([10.0, 5.0])  # 2 cells
+        search = np.array([10.0, 5.0])
+        shelter = np.array([1000.0, 500.0])
+        hiding = np.array([5.0, 3.0])
+        b.deplete_resources(
+            fish_order=np.array([0]),
+            chosen_cells=np.array([0, -1]),  # fish 0 in cell 0
+            available_drift=drift,
+            available_search=search,
+            chosen_activities=np.array([0, -1]),  # drift
+            intake_amounts=np.array([3.0, 0.0]),
+            fish_lengths=np.array([10.0, 0.0]),
+            superind_reps=np.array([1, 1]),
+            available_shelter=shelter,
+            available_hiding=hiding,
+        )
+        assert drift[0] == 7.0  # 10 - 3
+        assert shelter[0] == 900.0  # 1000 - 10^2
+
+    def test_hide_depletes_hiding_places(self):
+        from instream.backends.numpy_backend import NumpyBackend
+
+        b = NumpyBackend()
+        drift = np.array([10.0])
+        search = np.array([10.0])
+        shelter = np.array([100.0])
+        hiding = np.array([5.0])
+        b.deplete_resources(
+            fish_order=np.array([0]),
+            chosen_cells=np.array([0]),
+            available_drift=drift,
+            available_search=search,
+            chosen_activities=np.array([2]),  # hide
+            intake_amounts=np.array([0.0]),
+            fish_lengths=np.array([5.0]),
+            superind_reps=np.array([1]),
+            available_shelter=shelter,
+            available_hiding=hiding,
+        )
+        assert hiding[0] == 4.0  # 5 - 1

@@ -406,7 +406,31 @@ class NumpyBackend:
     def deplete_resources(
         self, fish_order, chosen_cells, available_drift, available_search, **params
     ):
-        raise NotImplementedError("Phase 4")
+        """Sequential resource depletion in dominance order. Modifies arrays in place."""
+        activities = params["chosen_activities"]
+        intakes = params["intake_amounts"]
+        lengths = params["fish_lengths"]
+        reps = params["superind_reps"]
+        shelter = params["available_shelter"]
+        hiding = params["available_hiding"]
+
+        for idx in fish_order:
+            cell = int(chosen_cells[idx])
+            act = int(activities[idx])
+            rep = int(reps[idx])
+
+            if act == 0:  # drift
+                consumed = min(float(intakes[idx]) * rep, float(available_drift[cell]))
+                available_drift[cell] -= consumed
+                shelter_needed = float(lengths[idx]) ** 2 * rep
+                if shelter[cell] >= shelter_needed:
+                    shelter[cell] -= shelter_needed
+            elif act == 1:  # search
+                consumed = min(float(intakes[idx]) * rep, float(available_search[cell]))
+                available_search[cell] -= consumed
+            elif act == 2:  # hide
+                if hiding[cell] >= rep:
+                    hiding[cell] -= rep
 
     def spawn_suitability(self, depths, velocities, frac_spawn, **params):
         """Compute spawn suitability scores for all cells.
