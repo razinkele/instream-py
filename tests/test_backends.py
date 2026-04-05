@@ -1060,6 +1060,62 @@ class TestNumpySurvivalVectorized:
         np.testing.assert_allclose(vec_result, scalar_result, rtol=1e-12)
 
 
+class TestNumpyGrowthRateVectorized:
+    def test_growth_rate_returns_correct_shape(self):
+        from instream.backends.numpy_backend import NumpyBackend
+
+        b = NumpyBackend()
+        n = 3
+        result = b.growth_rate(
+            np.array([5.0, 8.0, 12.0]),
+            np.array([2.0, 6.0, 20.0]),
+            np.array([15.0, 15.0, 15.0]),
+            np.array([10.0, 20.0, 30.0]),
+            np.array([30.0, 50.0, 100.0]),
+            activities=np.array([0, 1, 2]),
+            lights=np.array([100.0, 100.0, 100.0]),
+            turbidities=np.array([5.0, 5.0, 5.0]),
+            drift_concs=np.array([1e-6, 1e-6, 1e-6]),
+            search_prods=np.array([1e-6, 1e-6, 1e-6]),
+            search_areas=np.array([100.0, 100.0, 100.0]),
+            available_drifts=np.array([1.0, 1.0, 1.0]),
+            available_searches=np.array([1.0, 1.0, 1.0]),
+            available_shelters=np.array([100.0, 100.0, 100.0]),
+            shelter_speed_fracs=np.array([0.5, 0.5, 0.5]),
+            superind_reps=np.array([1, 1, 1]),
+            prev_consumptions=np.array([0.0, 0.0, 0.0]),
+            step_length=1.0,
+            cmax_As=np.array([0.628, 0.628, 0.628]),
+            cmax_Bs=np.array([-0.3, -0.3, -0.3]),
+            cmax_temp_table_xs=[np.array([0.0, 10.0, 20.0, 25.0, 30.0])],
+            cmax_temp_table_ys=[np.array([0.0, 0.5, 1.0, 0.8, 0.0])],
+            species_idxs=np.array([0, 0, 0]),
+            react_dist_As=np.array([3.0, 3.0, 3.0]),
+            react_dist_Bs=np.array([0.5, 0.5, 0.5]),
+            turbid_thresholds=np.array([10.0, 10.0, 10.0]),
+            turbid_mins=np.array([0.1, 0.1, 0.1]),
+            turbid_exps=np.array([1.0, 1.0, 1.0]),
+            light_thresholds=np.array([200.0, 200.0, 200.0]),
+            light_mins=np.array([0.1, 0.1, 0.1]),
+            light_exps=np.array([1.0, 1.0, 1.0]),
+            capture_R1s=np.array([5.0, 5.0, 5.0]),
+            capture_R9s=np.array([15.0, 15.0, 15.0]),
+            max_speed_As=np.array([1.5, 1.5, 1.5]),
+            max_speed_Bs=np.array([0.0, 0.0, 0.0]),
+            max_swim_temp_terms=np.array([1.0, 1.0, 1.0]),
+            resp_As=np.array([0.0253, 0.0253, 0.0253]),
+            resp_Bs=np.array([-0.217, -0.217, -0.217]),
+            resp_Ds=np.array([0.03, 0.03, 0.03]),
+            resp_temp_terms=np.array([1.0, 1.0, 1.0]),
+            prey_energy_densities=np.array([5900.0, 5900.0, 5900.0]),
+            fish_energy_densities=np.array([5900.0, 5900.0, 5900.0]),
+        )
+        assert result.shape == (3,)
+        assert np.isfinite(result).all()
+        # Hide activity (idx 2) should have negative growth (only respiration)
+        assert result[2] < 0.0
+
+
 class TestNumbaEvaluateLogistic:
     def test_numba_logistic_matches_numpy(self):
         pytest.importorskip("numba")

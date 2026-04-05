@@ -169,7 +169,76 @@ class NumpyBackend:
         return light
 
     def growth_rate(self, lengths, weights, temperatures, velocities, depths, **params):
-        raise NotImplementedError("Phase 3")
+        """Compute growth rate for each fish. Loops internally but removes model.py overhead.
+
+        Parameters
+        ----------
+        lengths : 1-D array (N,)
+        weights : 1-D array (N,)
+        temperatures : 1-D array (N,)
+        velocities : 1-D array (N,)
+        depths : 1-D array (N,)
+        **params : per-fish arrays and shared scalars/tables
+
+        Returns
+        -------
+        result : 1-D array (N,) — growth rate in g/day for each fish
+        """
+        from instream.modules.growth import growth_rate_for
+
+        n = len(lengths)
+        result = np.empty(n, dtype=np.float64)
+
+        activities = params["activities"]
+        lights = params["lights"]
+        turbidities = params["turbidities"]
+
+        for i in range(n):
+            result[i] = growth_rate_for(
+                int(activities[i]),
+                float(lengths[i]),
+                float(weights[i]),
+                float(depths[i]),
+                float(velocities[i]),
+                float(lights[i]),
+                float(turbidities[i]),
+                float(temperatures[i]),
+                float(params["drift_concs"][i]),
+                float(params["search_prods"][i]),
+                float(params["search_areas"][i]),
+                float(params["available_drifts"][i]),
+                float(params["available_searches"][i]),
+                float(params["available_shelters"][i]),
+                float(params["shelter_speed_fracs"][i]),
+                int(params["superind_reps"][i]),
+                float(params["prev_consumptions"][i]),
+                float(params["step_length"]),
+                float(params["cmax_As"][i]),
+                float(params["cmax_Bs"][i]),
+                params["cmax_temp_table_xs"][int(params["species_idxs"][i])],
+                params["cmax_temp_table_ys"][int(params["species_idxs"][i])],
+                float(params["react_dist_As"][i]),
+                float(params["react_dist_Bs"][i]),
+                float(params["turbid_thresholds"][i]),
+                float(params["turbid_mins"][i]),
+                float(params["turbid_exps"][i]),
+                float(params["light_thresholds"][i]),
+                float(params["light_mins"][i]),
+                float(params["light_exps"][i]),
+                float(params["capture_R1s"][i]),
+                float(params["capture_R9s"][i]),
+                float(params["max_speed_As"][i]),
+                float(params["max_speed_Bs"][i]),
+                float(params["max_swim_temp_terms"][i]),
+                float(params["resp_As"][i]),
+                float(params["resp_Bs"][i]),
+                float(params["resp_Ds"][i]),
+                float(params["resp_temp_terms"][i]),
+                float(params["prey_energy_densities"][i]),
+                float(params["fish_energy_densities"][i]),
+            )
+
+        return result
 
     def survival(self, lengths, weights, conditions, temperatures, depths, **params):
         """Vectorized survival probability for all alive fish.
