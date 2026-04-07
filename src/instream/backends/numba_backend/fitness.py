@@ -10,7 +10,7 @@ _LN81 = math.log(81.0)
 @numba.njit(cache=True)
 def _logistic(x, L1, L9):
     if L9 == L1:
-        return 0.5
+        return 0.9 if x >= L1 else 0.1
     midpoint = (L1 + L9) * 0.5
     slope = _LN81 / (L9 - L1)
     arg = -slope * (x - midpoint)

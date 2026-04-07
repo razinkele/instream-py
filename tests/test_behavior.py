@@ -1139,3 +1139,34 @@ class TestDriftRegenDistance:
                 regen_blocked |= (dist <= drift_regen_distance) & (dist > 0)
         assert not regen_blocked[0]
         assert not regen_blocked[1]
+
+
+class TestLogisticDegenerateCase:
+    """When L1 == L9, logistic should act as step function."""
+
+    def test_scalar_logistic_degenerate_above(self):
+        from instream.modules.behavior import evaluate_logistic
+
+        result = evaluate_logistic(15.0, 10.0, 10.0)
+        assert result == pytest.approx(0.9)
+
+    def test_scalar_logistic_degenerate_below(self):
+        from instream.modules.behavior import evaluate_logistic
+
+        result = evaluate_logistic(5.0, 10.0, 10.0)
+        assert result == pytest.approx(0.1)
+
+    def test_scalar_logistic_degenerate_at(self):
+        from instream.modules.behavior import evaluate_logistic
+
+        result = evaluate_logistic(10.0, 10.0, 10.0)
+        assert result == pytest.approx(0.9)
+
+    def test_numba_logistic_degenerate(self):
+        try:
+            from instream.backends.numba_backend.fitness import _logistic
+        except ImportError:
+            pytest.skip("Numba not installed")
+        assert _logistic(15.0, 10.0, 10.0) == pytest.approx(0.9)
+        assert _logistic(5.0, 10.0, 10.0) == pytest.approx(0.1)
+        assert _logistic(10.0, 10.0, 10.0) == pytest.approx(0.9)

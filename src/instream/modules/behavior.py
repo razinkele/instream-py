@@ -40,8 +40,10 @@ def evaluate_logistic(x, L1, L9):
 
     Uses pure Python math (not numpy) to avoid 0-d array dispatch overhead.
     """
+    if L9 == L1:
+        return 0.9 if x >= L1 else 0.1
     midpoint = (L1 + L9) * 0.5
-    slope = _LN81 / (L9 - L1) if L9 != L1 else 0.0
+    slope = _LN81 / (L9 - L1)
     arg = -slope * (x - midpoint)
     if arg > 500.0:
         arg = 500.0
@@ -53,8 +55,10 @@ def evaluate_logistic(x, L1, L9):
 def evaluate_logistic_array(x, L1, L9):
     """Evaluate logistic function on an array."""
     x = np.asarray(x, dtype=np.float64)
+    if L9 == L1:
+        return np.where(x >= L1, 0.9, 0.1)
     midpoint = (L1 + L9) / 2.0
-    slope = np.log(81.0) / (L9 - L1) if L9 != L1 else 0.0
+    slope = np.log(81.0) / (L9 - L1)
     arg = -slope * (x - midpoint)
     arg = np.clip(arg, -500, 500)
     return 1.0 / (1.0 + np.exp(arg))
