@@ -56,10 +56,6 @@ class ComputeBackend(Protocol):
         **params,
     ) -> np.ndarray: ...
 
-    def fitness_all(
-        self, trout_arrays: dict, cell_arrays: dict, candidates: np.ndarray, **params
-    ) -> tuple[np.ndarray, np.ndarray]: ...
-
     def deplete_resources(
         self,
         fish_order: np.ndarray,

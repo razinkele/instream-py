@@ -400,9 +400,6 @@ class NumpyBackend:
         # --- Combined ---
         return s_ht * s_str * s_cond * s_fp * s_tp
 
-    def fitness_all(self, trout_arrays, cell_arrays, candidates, **params):
-        raise NotImplementedError("Phase 4")
-
     def deplete_resources(
         self, fish_order, chosen_cells, available_drift, available_search, **params
     ):

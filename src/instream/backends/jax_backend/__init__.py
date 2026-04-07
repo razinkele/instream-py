@@ -525,16 +525,6 @@ class JaxBackend:
 
         return np.asarray(survival)
 
-    def fitness_all(self, trout_arrays, cell_arrays, candidates, **params):
-        raise NotImplementedError(
-            "JaxBackend.fitness_all not implemented. "
-            "Requires sequential resource depletion which is inherently serial. "
-            "Options: (a) ignore depletion for approximate parallel eval, "
-            "(b) jax.lax.scan over fish in dominance order, "
-            "(c) batch by non-competing cell groups. "
-            "Use growth_rate() and survival() as building blocks."
-        )
-
     def deplete_resources(
         self, fish_order, chosen_cells, available_drift, available_search, **params
     ):

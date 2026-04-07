@@ -35,12 +35,6 @@ class TestBackendFactory:
         backend = get_backend("numpy")
         assert hasattr(backend, "survival")
 
-    def test_backend_has_fitness_all(self):
-        from instream.backends import get_backend
-
-        backend = get_backend("numpy")
-        assert hasattr(backend, "fitness_all")
-
     def test_backend_has_deplete_resources(self):
         from instream.backends import get_backend
 
