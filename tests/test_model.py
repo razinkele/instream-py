@@ -194,6 +194,24 @@ def test_hydraulic_table_cell_count_mismatch():
     hdata["depth_values"] = original
 
 
+def test_apply_accumulated_growth_deterministic():
+    from instream.model import InSTREAMModel
+
+    model = InSTREAMModel(
+        CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+    )
+    model.step()
+    alive = np.where(model.trout_state.alive)[0]
+    weights = model.trout_state.weight[alive].copy()
+    lengths = model.trout_state.length[alive].copy()
+    conditions = model.trout_state.condition[alive].copy()
+    assert np.all(np.isfinite(weights))
+    assert np.all(weights > 0)
+    assert np.all(np.isfinite(lengths))
+    assert np.all(lengths > 0)
+    assert np.all(np.isfinite(conditions))
+
+
 def test_multi_reach_model_loads():
     """Example B should load with 3 reaches."""
     from instream.model import InSTREAMModel

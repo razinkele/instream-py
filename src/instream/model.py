@@ -841,34 +841,43 @@ class InSTREAMModel(mesa.Model):
         self._harvest_records.extend(records)
 
     def _apply_accumulated_growth(self):
-        """Sum growth_memory across sub-steps and apply to weight/length/condition.
-
-        For daily mode (steps_per_day == 1), growth_memory[i, 0] holds the
-        single growth rate and step_length is 1.0, matching the original
-        direct apply_growth behaviour exactly.
-        """
+        """Sum growth_memory across sub-steps and apply to weight/length/condition."""
         alive = self.trout_state.alive_indices()
-        steps = self.steps_per_day  # all sub-steps completed for this day
-        sl = 1.0 / max(self.steps_per_day, 1)  # step_length per sub-step
+        if len(alive) == 0:
+            return
+        steps = self.steps_per_day
+        sl = 1.0 / max(self.steps_per_day, 1)
 
         _wA = self._sp_arrays["weight_A"]
         _wB = self._sp_arrays["weight_B"]
 
-        for i in alive:
-            cell = self.trout_state.cell_idx[i]
-            if cell < 0 or cell >= self.fem_space.num_cells:
-                continue
-            total_growth = 0.0
-            for s in range(steps):
-                total_growth += float(self.trout_state.growth_memory[i, s]) * sl
-            sp_idx = int(self.trout_state.species_idx[i])
+        # Vectorized: sum growth across sub-steps for all alive fish at once
+        total_growth = self.trout_state.growth_memory[alive, :steps].sum(axis=1) * sl
+
+        # Filter out fish with invalid cells
+        cell_idx = self.trout_state.cell_idx[alive]
+        valid = (cell_idx >= 0) & (cell_idx < self.fem_space.num_cells)
+        valid_alive = alive[valid]
+        valid_growth = total_growth[valid]
+
+        if len(valid_alive) == 0:
+            return
+
+        # Per-fish species weight params
+        sp_idx = self.trout_state.species_idx[valid_alive]
+        wA = _wA[sp_idx]
+        wB = _wB[sp_idx]
+
+        # Apply growth per fish (scalar apply_growth has conditional logic)
+        for j in range(len(valid_alive)):
+            i = valid_alive[j]
             new_w, new_l, new_k = apply_growth(
                 float(self.trout_state.weight[i]),
                 float(self.trout_state.length[i]),
                 float(self.trout_state.condition[i]),
-                total_growth,
-                float(_wA[sp_idx]),
-                float(_wB[sp_idx]),
+                float(valid_growth[j]),
+                float(wA[j]),
+                float(wB[j]),
             )
             self.trout_state.weight[i] = new_w
             self.trout_state.length[i] = new_l
