@@ -18,6 +18,15 @@ class JaxBackend:
     left as NotImplementedError pending full vectorization design.
     """
 
+    def __init__(self):
+        import warnings
+
+        warnings.warn(
+            "JaxBackend is experimental: deplete_resources and spawn_suitability "
+            "use NumPy fallbacks. Full JAX vectorization is pending.",
+            stacklevel=2,
+        )
+
     def update_hydraulics(self, flow, table_flows, depth_values, vel_values):
         """Interpolate depth and velocity for each cell at the given flow.
 
