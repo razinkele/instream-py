@@ -99,6 +99,25 @@ def test_survival_condition_negative_is_lethal():
     assert survival_condition(-0.5) == 0.0
 
 
+class TestConditionSurvivalNearOne:
+    def test_condition_above_one_returns_one(self):
+        from instream.modules.survival import survival_condition
+
+        result = survival_condition(1.05)
+        assert result == 1.0
+
+    def test_condition_exactly_one(self):
+        from instream.modules.survival import survival_condition
+
+        assert survival_condition(1.0) == 1.0
+
+    def test_condition_at_099(self):
+        from instream.modules.survival import survival_condition
+
+        result = survival_condition(0.99)
+        assert 0.99 < result < 1.0
+
+
 class TestFishPredationSurvival:
     def test_large_fish_safer(self):
         from instream.modules.survival import survival_fish_predation

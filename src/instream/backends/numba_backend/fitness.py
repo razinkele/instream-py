@@ -226,7 +226,7 @@ def _evaluate_all_cells(
     s_cond_val = 0.0
     if fish_condition <= 0.0:
         s_cond_val = 0.0
-    elif fish_condition == 1.0:
+    elif fish_condition >= 1.0:
         s_cond_val = 1.0
     elif fish_condition > 0.8:
         slope_c = 5.0 - 5.0 * mort_cond_S8
