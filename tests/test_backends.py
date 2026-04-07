@@ -1210,3 +1210,25 @@ class TestCrossBackendParity:
             rtol=1e-6,
             err_msg="Mean length mismatch",
         )
+
+
+class TestVelocityClamping:
+    def test_negative_velocity_clamped_to_zero(self):
+        from instream.backends.numpy_backend import NumpyBackend
+
+        try:
+            from instream.backends.numba_backend import NumbaBackend
+        except ImportError:
+            pytest.skip("Numba not installed")
+        np_be = NumpyBackend()
+        nb_be = NumbaBackend()
+        # Cell 1 interpolation at flow=1.5 gives negative velocity: 2 + 0.5*(-10-2) = -4
+        table_flows = np.array([1.0, 2.0])
+        depth_values = np.array([[10.0, 20.0], [15.0, 25.0]])
+        vel_values = np.array([[5.0, 1.0], [2.0, -10.0]])
+        np_d, np_v = np_be.update_hydraulics(1.5, table_flows, depth_values, vel_values)
+        nb_d, nb_v = nb_be.update_hydraulics(1.5, table_flows, depth_values, vel_values)
+        np.testing.assert_allclose(nb_d, np_d, rtol=1e-12)
+        np.testing.assert_allclose(nb_v, np_v, rtol=1e-12)
+        assert np.all(np_v >= 0.0)
+        assert np.all(nb_v >= 0.0)

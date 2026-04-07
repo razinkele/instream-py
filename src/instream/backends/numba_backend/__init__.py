@@ -97,6 +97,8 @@ def _update_hydraulics(flow, table_flows, depth_values, vel_values):
             d = 0.0
         if d == 0.0:
             v = 0.0
+        if v < 0.0:
+            v = 0.0
         depths[i] = d
         vels[i] = v
     return depths, vels
