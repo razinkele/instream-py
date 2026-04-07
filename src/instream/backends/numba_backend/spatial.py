@@ -78,60 +78,40 @@ def build_all_candidates_numba(
     """Build candidate lists for ALL fish. Returns (offsets, flat) CSR format."""
     LN81 = 4.394449154672439
     n_fish = alive.shape[0]
+    n_cells = centroid_x.shape[0]
 
-    # First pass: count
-    counts = np.zeros(n_fish, dtype=np.int64)
-    for i in range(n_fish):
-        if not alive[i] or cell_idx[i] < 0:
-            continue
-        mid = (move_radius_L1 + move_radius_L9) * 0.5
-        slp = (
-            LN81 / (move_radius_L9 - move_radius_L1)
-            if move_radius_L9 != move_radius_L1
-            else 0.0
-        )
-        arg = -slp * (lengths[i] - mid)
-        if arg > 500.0:
-            arg = 500.0
-        elif arg < -500.0:
-            arg = -500.0
-        frac = 1.0 / (1.0 + math.exp(arg))
-        radius = move_radius_max * frac
-        cands = _find_candidates_single(
-            cell_idx[i], radius, centroid_x, centroid_y, wet_mask, neighbor_indices
-        )
-        counts[i] = len(cands)
-
-    # Build offsets
+    # Pre-allocate worst-case buffer and offsets
+    flat_buf = np.empty(n_fish * n_cells, dtype=np.int32)
     offsets = np.zeros(n_fish + 1, dtype=np.int64)
-    for i in range(n_fish):
-        offsets[i + 1] = offsets[i] + counts[i]
+    pos = 0
 
-    total = int(offsets[n_fish])
-    flat = np.empty(total, dtype=np.int32)
-
-    # Second pass: fill
     for i in range(n_fish):
         if not alive[i] or cell_idx[i] < 0:
+            offsets[i + 1] = pos
             continue
-        mid = (move_radius_L1 + move_radius_L9) * 0.5
-        slp = (
-            LN81 / (move_radius_L9 - move_radius_L1)
-            if move_radius_L9 != move_radius_L1
-            else 0.0
-        )
-        arg = -slp * (lengths[i] - mid)
-        if arg > 500.0:
-            arg = 500.0
-        elif arg < -500.0:
-            arg = -500.0
-        frac = 1.0 / (1.0 + math.exp(arg))
+
+        # Compute search radius via logistic fraction
+        if move_radius_L9 == move_radius_L1:
+            frac = 0.9 if lengths[i] >= move_radius_L1 else 0.1
+        else:
+            mid = (move_radius_L1 + move_radius_L9) * 0.5
+            slp = LN81 / (move_radius_L9 - move_radius_L1)
+            arg = -slp * (lengths[i] - mid)
+            if arg > 500.0:
+                arg = 500.0
+            elif arg < -500.0:
+                arg = -500.0
+            frac = 1.0 / (1.0 + math.exp(arg))
+
         radius = move_radius_max * frac
         cands = _find_candidates_single(
             cell_idx[i], radius, centroid_x, centroid_y, wet_mask, neighbor_indices
         )
-        start = int(offsets[i])
-        for k in range(len(cands)):
-            flat[start + k] = cands[k]
+        n_cands = len(cands)
+        for k in range(n_cands):
+            flat_buf[pos + k] = cands[k]
+        pos += n_cands
+        offsets[i + 1] = pos
 
+    flat = flat_buf[:pos].copy()
     return offsets, flat
