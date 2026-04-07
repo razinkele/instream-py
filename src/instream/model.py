@@ -505,6 +505,13 @@ class InSTREAMModel(mesa.Model):
             cells = np.where(cs.reach_idx == r_idx)[0]
             if len(cells) == 0:
                 continue
+            n_rows = len(hdata["depth_values"])
+            if n_rows != len(cells):
+                raise ValueError(
+                    f"Reach '{rname}': hydraulic table has {n_rows} rows "
+                    f"but cell count is {len(cells)} — check that the hydraulic "
+                    f"CSV rows match the shapefile cells for this reach"
+                )
             depths, vels = self.backend.update_hydraulics(
                 flow,
                 hdata["depth_flows"],

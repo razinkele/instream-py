@@ -178,6 +178,22 @@ class TestModelRun:
         assert model.trout_state.num_alive() >= 0
 
 
+def test_hydraulic_table_cell_count_mismatch():
+    """Model should raise if hydraulic table rows don't match cell count for a reach."""
+    from instream.model import InSTREAMModel
+
+    model = InSTREAMModel(
+        CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
+    )
+    rname = model.reach_order[0]
+    hdata = model._reach_hydraulic_data[rname]
+    original = hdata["depth_values"]
+    hdata["depth_values"] = original[:-5]
+    with pytest.raises(ValueError, match="hydraulic table.*cell count"):
+        model.step()
+    hdata["depth_values"] = original
+
+
 def test_multi_reach_model_loads():
     """Example B should load with 3 reaches."""
     from instream.model import InSTREAMModel
