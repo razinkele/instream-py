@@ -379,151 +379,184 @@ class JaxBackend:
 
         return np.asarray(growth)
 
-    def survival(
-        self,
-        lengths,
-        depths,
-        velocities,
-        light,
-        temperatures,
-        conditions,
-        activities,
-        dist_escape,
-        available_hiding,
-        superind_rep,
-        pisciv_density,
-        *,
-        survival_when_dry=0.5,
-        high_temp_T1=28.0,
-        high_temp_T9=24.0,
-        cond_S_at_K5=0.8,
-        cond_S_at_K8=0.992,
-        fish_pred_min_surv=0.99,
-        fish_pred_L1=10.0,
-        fish_pred_L9=3.0,
-        fish_pred_D1=50.0,
-        fish_pred_D9=10.0,
-        fish_pred_P1=0.5,
-        fish_pred_P9=0.1,
-        fish_pred_I1=200.0,
-        fish_pred_I9=50.0,
-        fish_pred_T1=25.0,
-        fish_pred_T9=15.0,
-        fish_pred_hiding_factor=0.5,
-        terr_pred_min_surv=0.99,
-        terr_pred_L1=15.0,
-        terr_pred_L9=5.0,
-        terr_pred_D1=50.0,
-        terr_pred_D9=10.0,
-        terr_pred_V1=50.0,
-        terr_pred_V9=10.0,
-        terr_pred_I1=200.0,
-        terr_pred_I9=50.0,
-        terr_pred_H1=50.0,
-        terr_pred_H9=10.0,
-        terr_pred_hiding_factor=0.5,
-    ):
-        """Vectorized survival probability over arrays of fish using JAX.
+    def survival(self, lengths, weights, conditions, temperatures, depths, **params):
+        """Vectorized survival probability for all alive fish using JAX.
 
-        Computes four survival components (high temperature, stranding,
-        fish predation, terrestrial predation) and returns their product
-        as the combined non-starvation survival probability.
-
-        Condition survival is NOT included here (handled separately in
-        fitness calculations via mean_condition_survival).
-
-        All fish-indexed inputs are 1-D arrays of shape (N,).
-        Temperature is scalar (per time-step).
+        Signature matches the Protocol and numpy/numba backends exactly.
 
         Parameters
         ----------
-        lengths : array (N,)
-            Fish fork length (cm).
-        depths : array (N,)
-            Water depth at fish's cell (cm).
-        velocities : array (N,)
-            Water velocity at fish's cell (cm/s).
-        light : array (N,)
-            Light level at fish's cell.
-        temperatures : float or array
-            Water temperature (C). Scalar broadcast or per-fish.
-        conditions : array (N,)
-            Body condition factor (0..1+).
-        activities : array (N,)
-            Activity code per fish: 0=drift, 1=search, 2=hide.
-        dist_escape : array (N,)
-            Distance to nearest escape cover (cm).
-        available_hiding : array (N,)
-            Hiding places available per fish's cell.
-        superind_rep : array (N,)
-            Super-individual representation count.
-        pisciv_density : array (N,) or float
-            Piscivore density at each fish's cell.
+        lengths : 1-D array (N,) -- fish lengths (cm)
+        weights : 1-D array (N,) -- fish weights (g)
+        conditions : 1-D array (N,) -- body condition factors
+        temperatures : 1-D array (N,) -- water temperature at each fish's reach
+        depths : 1-D array (N,) -- water depth at each fish's cell (cm)
+        **params : dict containing:
+            velocities, lights, activities, pisciv_densities, dist_escapes,
+            available_hidings, superind_reps,
+            sp_mort_high_temp_T1, sp_mort_high_temp_T9,
+            sp_mort_strand_survival_when_dry,
+            sp_mort_condition_S_at_K5, sp_mort_condition_S_at_K8,
+            rp_fish_pred_min, sp_mort_fish_pred_* (L1/L9/D1/D9/P1/P9/I1/I9/T1/T9/hiding_factor),
+            rp_terr_pred_min, sp_mort_terr_pred_* (L1/L9/D1/D9/V1/V9/I1/I9/H1/H9/hiding_factor)
 
         Returns
         -------
-        survival : 1-D ndarray, shape (N,)
-            Combined daily survival probability per fish.
+        survival_probs : 1-D ndarray (N,) -- combined daily survival probability
         """
         lengths = jnp.asarray(lengths)
         depths = jnp.asarray(depths)
-        velocities = jnp.asarray(velocities)
-        light = jnp.asarray(light)
         temperatures = jnp.asarray(temperatures)
-        conditions = jnp.asarray(conditions)
-        activities = jnp.asarray(activities, dtype=jnp.int32)
-        dist_escape = jnp.asarray(dist_escape)
-        available_hiding = jnp.asarray(available_hiding)
-        superind_rep = jnp.asarray(superind_rep)
-        pisciv_density = jnp.asarray(pisciv_density)
-
-        _ln81 = jnp.log(81.0)
+        cond = jnp.asarray(conditions)
+        velocities = jnp.asarray(params["velocities"])
+        lights = jnp.asarray(params["lights"])
+        activities = jnp.asarray(params["activities"], dtype=jnp.int32)
+        pisciv_densities = jnp.asarray(params["pisciv_densities"])
+        dist_escapes = jnp.asarray(params["dist_escapes"])
+        available_hidings = jnp.asarray(params["available_hidings"])
+        superind_reps = jnp.asarray(params["superind_reps"])
 
         def _logistic(x, L1, L9):
-            midpoint = (L1 + L9) / 2.0
-            slope = jnp.where(L9 != L1, _ln81 / (L9 - L1), 0.0)
-            return 1.0 / (1.0 + jnp.exp(-slope * (x - midpoint)))
+            """Standard logistic with degenerate-case step function."""
+            x = jnp.asarray(x)
+            L1 = jnp.asarray(L1)
+            L9 = jnp.asarray(L9)
+            degenerate = jnp.abs(L1 - L9) < 1e-15
+            b = jnp.where(
+                degenerate, 1.0, jnp.log(81.0) / jnp.where(degenerate, 1.0, L9 - L1)
+            )
+            a = -b * (L1 + L9) / 2.0
+            raw = 1.0 / (1.0 + jnp.exp(-(a + b * x)))
+            return jnp.where(degenerate, jnp.where(x >= L1, 0.9, 0.1), raw)
 
-        # 1. High temperature survival
-        s_high_temp = _logistic(temperatures, high_temp_T1, high_temp_T9)
+        # --- 1. High temperature survival ---
+        s_ht = _logistic(
+            temperatures,
+            params["sp_mort_high_temp_T1"],
+            params["sp_mort_high_temp_T9"],
+        )
 
-        # 2. Stranding survival
-        s_stranding = jnp.where(depths <= 0.0, survival_when_dry, 1.0)
+        # --- 2. Stranding survival ---
+        s_str = jnp.where(depths > 0, 1.0, params["sp_mort_strand_survival_when_dry"])
 
-        # 3. Fish predation survival
+        # --- 3. Condition survival (two-piece linear) ---
+        S_at_K5 = jnp.asarray(params["sp_mort_condition_S_at_K5"])
+        S_at_K8 = jnp.asarray(params["sp_mort_condition_S_at_K8"])
+        slope_upper = 5.0 - 5.0 * S_at_K8
+        intercept_upper = 5.0 * S_at_K8 - 4.0
+        s_upper = cond * slope_upper + intercept_upper
+        slope_lower = (S_at_K8 - S_at_K5) / 0.3
+        intercept_lower = S_at_K5 - 0.5 * slope_lower
+        s_lower = cond * slope_lower + intercept_lower
+        s_cond = jnp.where(cond > 0.8, s_upper, s_lower)
+        s_cond = jnp.where(cond <= 0.0, 0.0, s_cond)
+        s_cond = jnp.where(cond >= 1.0, 1.0, s_cond)
+        s_cond = jnp.clip(s_cond, 0.0, 1.0)
+
+        # --- 4. Fish predation survival ---
         is_hiding = activities == 2
-        fish_hide = jnp.where(is_hiding, fish_pred_hiding_factor, 0.0)
-        fish_risk = (
-            (1.0 - _logistic(lengths, fish_pred_L1, fish_pred_L9))
-            * (1.0 - _logistic(depths, fish_pred_D1, fish_pred_D9))
-            * (1.0 - _logistic(pisciv_density, fish_pred_P1, fish_pred_P9))
-            * (1.0 - _logistic(light, fish_pred_I1, fish_pred_I9))
-            * (1.0 - _logistic(temperatures, fish_pred_T1, fish_pred_T9))
-            * (1.0 - fish_hide)
+        hide_factor_fp = jnp.where(
+            is_hiding, params["sp_mort_fish_pred_hiding_factor"], 0.0
         )
-        s_fish_pred = fish_pred_min_surv + (1.0 - fish_pred_min_surv) * (
-            1.0 - fish_risk
+        fp_risk = (
+            (
+                1.0
+                - _logistic(
+                    lengths,
+                    params["sp_mort_fish_pred_L1"],
+                    params["sp_mort_fish_pred_L9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    depths,
+                    params["sp_mort_fish_pred_D1"],
+                    params["sp_mort_fish_pred_D9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    pisciv_densities,
+                    params["sp_mort_fish_pred_P1"],
+                    params["sp_mort_fish_pred_P9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    lights,
+                    params["sp_mort_fish_pred_I1"],
+                    params["sp_mort_fish_pred_I9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    temperatures,
+                    params["sp_mort_fish_pred_T1"],
+                    params["sp_mort_fish_pred_T9"],
+                )
+            )
+            * (1.0 - hide_factor_fp)
         )
+        fish_pred_min = jnp.asarray(params["rp_fish_pred_min"])
+        s_fp = fish_pred_min + (1.0 - fish_pred_min) * (1.0 - fp_risk)
 
-        # 4. Terrestrial predation survival
-        in_hiding = is_hiding & (available_hiding >= superind_rep)
-        terr_hide = jnp.where(in_hiding, terr_pred_hiding_factor, 0.0)
-        terr_risk = (
-            (1.0 - _logistic(lengths, terr_pred_L1, terr_pred_L9))
-            * (1.0 - _logistic(depths, terr_pred_D1, terr_pred_D9))
-            * (1.0 - _logistic(velocities, terr_pred_V1, terr_pred_V9))
-            * (1.0 - _logistic(light, terr_pred_I1, terr_pred_I9))
-            * (1.0 - _logistic(dist_escape, terr_pred_H1, terr_pred_H9))
-            * (1.0 - terr_hide)
+        # --- 5. Terrestrial predation survival ---
+        is_hiding_terr = is_hiding & (available_hidings >= superind_reps)
+        hide_factor_tp = jnp.where(
+            is_hiding_terr, params["sp_mort_terr_pred_hiding_factor"], 0.0
         )
-        s_terr_pred = terr_pred_min_surv + (1.0 - terr_pred_min_surv) * (
-            1.0 - terr_risk
+        tp_risk = (
+            (
+                1.0
+                - _logistic(
+                    lengths,
+                    params["sp_mort_terr_pred_L1"],
+                    params["sp_mort_terr_pred_L9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    depths,
+                    params["sp_mort_terr_pred_D1"],
+                    params["sp_mort_terr_pred_D9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    velocities,
+                    params["sp_mort_terr_pred_V1"],
+                    params["sp_mort_terr_pred_V9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    lights,
+                    params["sp_mort_terr_pred_I1"],
+                    params["sp_mort_terr_pred_I9"],
+                )
+            )
+            * (
+                1.0
+                - _logistic(
+                    dist_escapes,
+                    params["sp_mort_terr_pred_H1"],
+                    params["sp_mort_terr_pred_H9"],
+                )
+            )
+            * (1.0 - hide_factor_tp)
         )
+        terr_pred_min = jnp.asarray(params["rp_terr_pred_min"])
+        s_tp = terr_pred_min + (1.0 - terr_pred_min) * (1.0 - tp_risk)
 
-        # Combined non-starvation survival
-        survival = s_high_temp * s_stranding * s_fish_pred * s_terr_pred
-
-        return np.asarray(survival)
+        # --- Combined (all 5 components) ---
+        return np.asarray(s_ht * s_str * s_cond * s_fp * s_tp)
 
     def deplete_resources(
         self, fish_order, chosen_cells, available_drift, available_search, **params
