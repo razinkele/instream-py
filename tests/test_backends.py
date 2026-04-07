@@ -295,306 +295,6 @@ def test_jax_backend_cell_light():
     np.testing.assert_allclose(jax_light, np_light, rtol=1e-10)
 
 
-# ---- JAX growth_rate tests ----
-
-
-def _growth_params():
-    """Shared bioenergetics parameters for growth_rate cross-validation."""
-    return dict(
-        drift_conc=0.001,
-        search_prod=0.001,
-        search_area=100.0,
-        shelter_speed_frac=0.3,
-        step_length=1.0,
-        cmax_A=0.628,
-        cmax_B=0.3,
-        cmax_temp_table_x=np.array([0.0, 10.0, 15.0, 20.0, 22.0, 25.0, 30.0]),
-        cmax_temp_table_y=np.array([0.0, 0.5, 0.8, 1.0, 0.9, 0.5, 0.0]),
-        react_dist_A=1.0,
-        react_dist_B=0.1,
-        turbid_threshold=10.0,
-        turbid_min=0.1,
-        turbid_exp=-0.1,
-        light_threshold=50.0,
-        light_min=0.1,
-        light_exp=-0.1,
-        capture_R1=1.3,
-        capture_R9=0.4,
-        max_speed_A=1.5,
-        max_speed_B=0.0,
-        max_swim_temp_term=1.0,
-        resp_A=0.0253,
-        resp_B=0.75,
-        resp_D=0.03,
-        resp_temp_term=1.2,
-        prey_energy_density=3500.0,
-        fish_energy_density=5500.0,
-    )
-
-
-def test_jax_growth_rate_drift_matches_python():
-    """JAX growth_rate for drift activity matches scalar Python growth_rate_for."""
-    pytest.importorskip("jax")
-    import numpy as np
-    from instream.backends.jax_backend import JaxBackend
-    from instream.modules.growth import growth_rate_for
-
-    jax_b = JaxBackend()
-    p = _growth_params()
-
-    # Single fish: drift feeding in a wet cell
-    length, weight, depth, velocity, light_val = 10.0, 5.0, 50.0, 20.0, 100.0
-    turbidity, temperature = 0.0, 12.0
-
-    py_result = growth_rate_for(
-        activity=0,
-        length=length,
-        weight=weight,
-        depth=depth,
-        velocity=velocity,
-        light=light_val,
-        turbidity=turbidity,
-        temperature=temperature,
-        available_drift=10.0,
-        available_search=10.0,
-        available_shelter=500.0,
-        superind_rep=1,
-        prev_consumption=0.0,
-        **p,
-    )
-
-    jax_result = jax_b.growth_rate(
-        activity=np.array([0]),
-        lengths=np.array([length]),
-        weights=np.array([weight]),
-        depth=np.array([depth]),
-        velocity=np.array([velocity]),
-        light=np.array([light_val]),
-        turbidity=turbidity,
-        temperature=temperature,
-        available_drift=np.array([10.0]),
-        available_search=np.array([10.0]),
-        available_shelter=np.array([500.0]),
-        superind_rep=np.array([1]),
-        prev_consumption=np.array([0.0]),
-        **p,
-    )
-
-    np.testing.assert_allclose(jax_result[0], py_result, rtol=1e-6)
-
-
-def test_jax_growth_rate_search_matches_python():
-    """JAX growth_rate for search activity matches scalar Python growth_rate_for."""
-    pytest.importorskip("jax")
-    import numpy as np
-    from instream.backends.jax_backend import JaxBackend
-    from instream.modules.growth import growth_rate_for
-
-    jax_b = JaxBackend()
-    p = _growth_params()
-
-    length, weight, depth, velocity, light_val = 8.0, 3.5, 40.0, 10.0, 200.0
-    turbidity, temperature = 5.0, 15.0
-
-    py_result = growth_rate_for(
-        activity=1,
-        length=length,
-        weight=weight,
-        depth=depth,
-        velocity=velocity,
-        light=light_val,
-        turbidity=turbidity,
-        temperature=temperature,
-        available_drift=10.0,
-        available_search=10.0,
-        available_shelter=200.0,
-        superind_rep=1,
-        prev_consumption=0.0,
-        **p,
-    )
-
-    jax_result = jax_b.growth_rate(
-        activity=np.array([1]),
-        lengths=np.array([length]),
-        weights=np.array([weight]),
-        depth=np.array([depth]),
-        velocity=np.array([velocity]),
-        light=np.array([light_val]),
-        turbidity=turbidity,
-        temperature=temperature,
-        available_drift=np.array([10.0]),
-        available_search=np.array([10.0]),
-        available_shelter=np.array([200.0]),
-        superind_rep=np.array([1]),
-        prev_consumption=np.array([0.0]),
-        **p,
-    )
-
-    np.testing.assert_allclose(jax_result[0], py_result, rtol=1e-6)
-
-
-def test_jax_growth_rate_hide_matches_python():
-    """JAX growth_rate for hide activity matches scalar Python growth_rate_for."""
-    pytest.importorskip("jax")
-    import numpy as np
-    from instream.backends.jax_backend import JaxBackend
-    from instream.modules.growth import growth_rate_for
-
-    jax_b = JaxBackend()
-    p = _growth_params()
-
-    length, weight, depth, velocity, light_val = 12.0, 8.0, 60.0, 30.0, 50.0
-    turbidity, temperature = 2.0, 18.0
-
-    py_result = growth_rate_for(
-        activity=2,
-        length=length,
-        weight=weight,
-        depth=depth,
-        velocity=velocity,
-        light=light_val,
-        turbidity=turbidity,
-        temperature=temperature,
-        available_drift=10.0,
-        available_search=10.0,
-        available_shelter=500.0,
-        superind_rep=1,
-        prev_consumption=0.0,
-        **p,
-    )
-
-    jax_result = jax_b.growth_rate(
-        activity=np.array([2]),
-        lengths=np.array([length]),
-        weights=np.array([weight]),
-        depth=np.array([depth]),
-        velocity=np.array([velocity]),
-        light=np.array([light_val]),
-        turbidity=turbidity,
-        temperature=temperature,
-        available_drift=np.array([10.0]),
-        available_search=np.array([10.0]),
-        available_shelter=np.array([500.0]),
-        superind_rep=np.array([1]),
-        prev_consumption=np.array([0.0]),
-        **p,
-    )
-
-    np.testing.assert_allclose(jax_result[0], py_result, rtol=1e-6)
-
-
-def test_jax_growth_rate_batch():
-    """JAX growth_rate handles multiple fish with different activities."""
-    pytest.importorskip("jax")
-    import numpy as np
-    from instream.backends.jax_backend import JaxBackend
-    from instream.modules.growth import growth_rate_for
-
-    jax_b = JaxBackend()
-    p = _growth_params()
-
-    n = 3
-    activities = np.array([0, 1, 2])
-    lengths = np.array([10.0, 8.0, 12.0])
-    weights = np.array([5.0, 3.5, 8.0])
-    depths = np.array([50.0, 40.0, 60.0])
-    velocities = np.array([20.0, 10.0, 30.0])
-    lights = np.array([100.0, 200.0, 50.0])
-    avail_drift = np.array([10.0, 10.0, 10.0])
-    avail_search = np.array([10.0, 10.0, 10.0])
-    avail_shelter = np.array([500.0, 200.0, 500.0])
-    superind_rep = np.array([1, 1, 1])
-    prev_consumption = np.array([0.0, 0.0, 0.0])
-    turbidity, temperature = 0.0, 15.0
-
-    jax_result = jax_b.growth_rate(
-        activity=activities,
-        lengths=lengths,
-        weights=weights,
-        depth=depths,
-        velocity=velocities,
-        light=lights,
-        turbidity=turbidity,
-        temperature=temperature,
-        available_drift=avail_drift,
-        available_search=avail_search,
-        available_shelter=avail_shelter,
-        superind_rep=superind_rep,
-        prev_consumption=prev_consumption,
-        **p,
-    )
-
-    # Cross-validate each fish individually
-    for i in range(n):
-        py_result = growth_rate_for(
-            activity=int(activities[i]),
-            length=lengths[i],
-            weight=weights[i],
-            depth=depths[i],
-            velocity=velocities[i],
-            light=lights[i],
-            turbidity=turbidity,
-            temperature=temperature,
-            available_drift=avail_drift[i],
-            available_search=avail_search[i],
-            available_shelter=avail_shelter[i],
-            superind_rep=int(superind_rep[i]),
-            prev_consumption=prev_consumption[i],
-            **p,
-        )
-        np.testing.assert_allclose(
-            jax_result[i],
-            py_result,
-            rtol=1e-6,
-            err_msg=f"Fish {i} (activity={activities[i]}) mismatch",
-        )
-
-
-def test_jax_growth_rate_dry_cell():
-    """JAX growth_rate returns zero drift intake for dry cells (depth=0)."""
-    pytest.importorskip("jax")
-    import numpy as np
-    from instream.backends.jax_backend import JaxBackend
-    from instream.modules.growth import growth_rate_for
-
-    jax_b = JaxBackend()
-    p = _growth_params()
-
-    py_result = growth_rate_for(
-        activity=0,
-        length=10.0,
-        weight=5.0,
-        depth=0.0,
-        velocity=0.0,
-        light=100.0,
-        turbidity=0.0,
-        temperature=12.0,
-        available_drift=10.0,
-        available_search=10.0,
-        available_shelter=500.0,
-        superind_rep=1,
-        prev_consumption=0.0,
-        **p,
-    )
-    jax_result = jax_b.growth_rate(
-        activity=np.array([0]),
-        lengths=np.array([10.0]),
-        weights=np.array([5.0]),
-        depth=np.array([0.0]),
-        velocity=np.array([0.0]),
-        light=np.array([100.0]),
-        turbidity=0.0,
-        temperature=12.0,
-        available_drift=np.array([10.0]),
-        available_search=np.array([10.0]),
-        available_shelter=np.array([500.0]),
-        superind_rep=np.array([1]),
-        prev_consumption=np.array([0.0]),
-        **p,
-    )
-    np.testing.assert_allclose(jax_result[0], py_result, rtol=1e-6)
-
-
 # ---- JAX survival tests ----
 
 
@@ -665,6 +365,66 @@ class TestJaxBackendSignature:
             lengths, weights, conditions, temperatures, depths, **kwargs
         )
         np.testing.assert_allclose(jax_result, np_result, rtol=1e-10)
+
+    def test_growth_rate_matches_numpy(self, backends):
+        np_be, jax_be = backends
+        rng = np.random.default_rng(42)
+        n = 3
+        lengths = rng.uniform(5, 15, n)
+        weights = rng.uniform(5, 50, n)
+        temperatures = np.full(n, 12.0)
+        velocities = rng.uniform(5, 40, n)
+        depths = rng.uniform(20, 150, n)
+        kwargs = dict(
+            activities=np.array([0, 1, 2], dtype=np.int32),
+            lights=rng.uniform(100, 400, n),
+            turbidities=np.full(n, 5.0),
+            drift_concs=np.full(n, 1e-10),
+            search_prods=np.full(n, 1e-7),
+            search_areas=np.full(n, 5000.0),
+            available_drifts=np.full(n, 1e6),
+            available_searches=np.full(n, 1e6),
+            available_shelters=np.full(n, 1e6),
+            shelter_speed_fracs=np.full(n, 0.3),
+            superind_reps=np.ones(n, dtype=np.int32),
+            prev_consumptions=np.zeros(n),
+            step_length=1.0,
+            cmax_As=np.full(n, 0.628),
+            cmax_Bs=np.full(n, -0.3),
+            cmax_temp_table_xs=[np.array([0, 5, 10, 15, 20, 25, 30], dtype=np.float64)]
+            * n,
+            cmax_temp_table_ys=[
+                np.array([0.0, 0.15, 0.5, 0.98, 1.0, 0.8, 0.0], dtype=np.float64)
+            ]
+            * n,
+            species_idxs=np.zeros(n, dtype=np.int32),
+            react_dist_As=np.full(n, 0.0),
+            react_dist_Bs=np.full(n, 0.1),
+            turbid_thresholds=np.full(n, 10.0),
+            turbid_mins=np.full(n, 0.1),
+            turbid_exps=np.full(n, -0.1),
+            light_thresholds=np.full(n, 100.0),
+            light_mins=np.full(n, 0.1),
+            light_exps=np.full(n, -0.01),
+            capture_R1s=np.full(n, 0.5),
+            capture_R9s=np.full(n, 0.9),
+            max_speed_As=np.full(n, 2.5),
+            max_speed_Bs=np.full(n, 0.0),
+            max_swim_temp_terms=np.full(n, 1.0),
+            resp_As=np.full(n, 0.0196),
+            resp_Bs=np.full(n, -0.218),
+            resp_Ds=np.full(n, 0.03),
+            resp_temp_terms=np.full(n, 1.0),
+            prey_energy_densities=np.full(n, 3500.0),
+            fish_energy_densities=np.full(n, 5900.0),
+        )
+        np_result = np_be.growth_rate(
+            lengths, weights, temperatures, velocities, depths, **kwargs
+        )
+        jax_result = jax_be.growth_rate(
+            lengths, weights, temperatures, velocities, depths, **kwargs
+        )
+        np.testing.assert_allclose(jax_result, np_result, rtol=1e-6)
 
 
 class TestSpawnSuitabilityBackend:

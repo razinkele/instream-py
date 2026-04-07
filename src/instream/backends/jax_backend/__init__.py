@@ -168,130 +168,67 @@ class JaxBackend:
         light = jnp.where(depths > 0, light, light_at_night)
         return np.asarray(light)
 
-    def growth_rate(
-        self,
-        activity,
-        lengths,
-        weights,
-        depth,
-        velocity,
-        light,
-        turbidity,
-        temperature,
-        drift_conc,
-        search_prod,
-        search_area,
-        available_drift,
-        available_search,
-        available_shelter,
-        shelter_speed_frac,
-        superind_rep,
-        prev_consumption,
-        step_length,
-        cmax_A,
-        cmax_B,
-        cmax_temp_table_x,
-        cmax_temp_table_y,
-        react_dist_A,
-        react_dist_B,
-        turbid_threshold,
-        turbid_min,
-        turbid_exp,
-        light_threshold,
-        light_min,
-        light_exp,
-        capture_R1,
-        capture_R9,
-        max_speed_A,
-        max_speed_B,
-        max_swim_temp_term,
-        resp_A,
-        resp_B,
-        resp_D,
-        resp_temp_term,
-        prey_energy_density,
-        fish_energy_density,
-    ):
+    def growth_rate(self, lengths, weights, temperatures, velocities, depths, **params):
         """Vectorized growth rate over arrays of fish using JAX element-wise ops.
 
-        All fish-indexed inputs (activity, lengths, weights, depth, velocity,
-        light, available_drift, available_search, available_shelter,
-        superind_rep, prev_consumption) are 1-D arrays of shape (N,).
-        Scalar environmental inputs (turbidity, temperature, drift_conc,
-        search_prod, search_area) and model parameters are broadcast.
+        Signature matches the Protocol and numpy/numba backends exactly.
 
         Parameters
         ----------
-        activity : array, shape (N,)
-            Activity code per fish: 0=drift, 1=search, 2=hide.
-        lengths : array, shape (N,)
-            Fish fork length (cm).
-        weights : array, shape (N,)
-            Fish weight (g).
-        depth : array, shape (N,)
-            Water depth at fish's cell (cm).
-        velocity : array, shape (N,)
-            Water velocity at fish's cell (cm/s).
-        light : array, shape (N,)
-            Light at fish's cell mid-depth.
-        turbidity : float
-            Current turbidity (NTU).
-        temperature : float
-            Water temperature (C).
-        drift_conc : float
-            Drift food concentration (g/cm^3).
-        search_prod : float
-            Search food productivity (g/cm^2/d).
-        search_area : float
-            Search area per cell (cm^2).
-        available_drift, available_search, available_shelter : arrays (N,)
-            Per-cell resource availability for each fish.
-        shelter_speed_frac : float
-            Swimming speed reduction fraction when sheltered.
-        superind_rep : array (N,)
-            Super-individual representation count.
-        prev_consumption : array (N,)
-            Food already consumed earlier this day (g).
-        step_length : float
-            Time-step as fraction of day.
-        cmax_A, cmax_B : float
-            CMax allometric parameters.
-        cmax_temp_table_x, cmax_temp_table_y : 1-D arrays
-            CMax temperature interpolation table.
-        react_dist_A, react_dist_B : float
-            Reactive distance parameters.
-        turbid_threshold, turbid_min, turbid_exp : float
-            Turbidity function parameters.
-        light_threshold, light_min, light_exp : float
-            Light function parameters.
-        capture_R1, capture_R9 : float
-            Capture success logistic parameters.
-        max_speed_A, max_speed_B, max_swim_temp_term : float
-            Max swim speed parameters.
-        resp_A, resp_B, resp_D, resp_temp_term : float
-            Respiration parameters.
-        prey_energy_density, fish_energy_density : float
-            Energy density conversion factors (J/g).
+        lengths : 1-D array (N,) -- fish fork length (cm)
+        weights : 1-D array (N,) -- fish weight (g)
+        temperatures : 1-D array (N,) -- water temperature (C)
+        velocities : 1-D array (N,) -- water velocity at fish's cell (cm/s)
+        depths : 1-D array (N,) -- water depth at fish's cell (cm)
+        **params : per-fish arrays and shared scalars/tables
 
         Returns
         -------
-        growth : 1-D ndarray, shape (N,)
-            Growth rate in g/d for each fish.
+        growth : 1-D ndarray, shape (N,) -- growth rate in g/d for each fish
         """
-        # Convert all fish-indexed inputs to JAX arrays
-        activity = jnp.asarray(activity, dtype=jnp.int32)
+        # Extract all parameters from **params (same keys as numpy backend)
+        activity = jnp.asarray(params["activities"], dtype=jnp.int32)
         lengths = jnp.asarray(lengths)
         weights = jnp.asarray(weights)
-        depth = jnp.asarray(depth)
-        velocity = jnp.asarray(velocity)
-        light = jnp.asarray(light)
-        available_drift = jnp.asarray(available_drift)
-        available_search = jnp.asarray(available_search)
-        available_shelter = jnp.asarray(available_shelter)
-        superind_rep = jnp.asarray(superind_rep)
-        prev_consumption = jnp.asarray(prev_consumption)
-        cmax_temp_table_x = jnp.asarray(cmax_temp_table_x)
-        cmax_temp_table_y = jnp.asarray(cmax_temp_table_y)
+        depth = jnp.asarray(depths)
+        velocity = jnp.asarray(velocities)
+        light = jnp.asarray(params["lights"])
+        turbidity = jnp.asarray(params["turbidities"])
+        temperature = jnp.asarray(temperatures, dtype=jnp.float64)
+        drift_conc = jnp.asarray(params["drift_concs"])
+        search_prod = jnp.asarray(params["search_prods"])
+        search_area = jnp.asarray(params["search_areas"])
+        available_drift = jnp.asarray(params["available_drifts"])
+        available_search = jnp.asarray(params["available_searches"])
+        available_shelter = jnp.asarray(params["available_shelters"])
+        shelter_speed_frac = jnp.asarray(params["shelter_speed_fracs"])
+        superind_rep = jnp.asarray(params["superind_reps"])
+        prev_consumption = jnp.asarray(params["prev_consumptions"])
+        step_length = params["step_length"]
+        cmax_A = jnp.asarray(params["cmax_As"])
+        cmax_B = jnp.asarray(params["cmax_Bs"])
+        # Known single-species limitation: use first table
+        cmax_temp_table_x = jnp.asarray(params["cmax_temp_table_xs"][0])
+        cmax_temp_table_y = jnp.asarray(params["cmax_temp_table_ys"][0])
+        react_dist_A = jnp.asarray(params["react_dist_As"])
+        react_dist_B = jnp.asarray(params["react_dist_Bs"])
+        turbid_threshold = jnp.asarray(params["turbid_thresholds"])
+        turbid_min = jnp.asarray(params["turbid_mins"])
+        turbid_exp = jnp.asarray(params["turbid_exps"])
+        light_threshold = jnp.asarray(params["light_thresholds"])
+        light_min = jnp.asarray(params["light_mins"])
+        light_exp = jnp.asarray(params["light_exps"])
+        capture_R1 = jnp.asarray(params["capture_R1s"])
+        capture_R9 = jnp.asarray(params["capture_R9s"])
+        max_speed_A = jnp.asarray(params["max_speed_As"])
+        max_speed_B = jnp.asarray(params["max_speed_Bs"])
+        max_swim_temp_term = jnp.asarray(params["max_swim_temp_terms"])
+        resp_A = jnp.asarray(params["resp_As"])
+        resp_B = jnp.asarray(params["resp_Bs"])
+        resp_D = jnp.asarray(params["resp_Ds"])
+        resp_temp_term = jnp.asarray(params["resp_temp_terms"])
+        prey_energy_density = jnp.asarray(params["prey_energy_densities"])
+        fish_energy_density = jnp.asarray(params["fish_energy_densities"])
 
         # --- CMax ---
         cmax_wt = cmax_A * weights**cmax_B
