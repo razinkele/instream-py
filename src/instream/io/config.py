@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import yaml
@@ -233,6 +233,46 @@ class ReachConfig(BaseModel, extra="allow"):
     time_series_input_file: str = ""
     depth_file: str = ""
     velocity_file: str = ""
+    is_river_mouth: bool = False
+
+
+from pydantic import ConfigDict
+
+
+class ZoneConfig(BaseModel):
+    area_km2: float
+    connections: list[str] = []
+    residence_days: list[int] = [14, 30]
+    model_config = ConfigDict(extra="allow")
+
+
+class GearConfig(BaseModel):
+    selectivity_type: str = "logistic"
+    selectivity_L50: float = 60.0
+    selectivity_slope: float = 3.0
+    selectivity_mean: float = 70.0
+    selectivity_sd: float = 8.0
+    bycatch_mortality: float = 0.1
+    zones: list[str] = []
+    open_months: list[int] = []
+    daily_effort: float = 0.001
+    model_config = ConfigDict(extra="allow")
+
+
+class MarineEnvironmentConfig(BaseModel):
+    driver: str = "static"
+    static: dict[str, dict] = {}
+    netcdf: dict = {}
+    wms: dict = {}
+    model_config = ConfigDict(extra="allow")
+
+
+class MarineConfig(BaseModel):
+    enabled: bool = True
+    time_step: str = "daily"
+    zones: dict[str, ZoneConfig] = {}
+    environment: MarineEnvironmentConfig = MarineEnvironmentConfig()
+    model_config = ConfigDict(extra="allow")
 
 
 class ModelConfig(BaseModel):
@@ -242,6 +282,7 @@ class ModelConfig(BaseModel):
     light: LightConfig = LightConfig()
     species: Dict[str, SpeciesConfig] = {}
     reaches: Dict[str, ReachConfig] = {}
+    marine: Optional[MarineConfig] = None
 
 
 # ---------------------------------------------------------------------------
