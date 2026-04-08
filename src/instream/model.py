@@ -1415,7 +1415,10 @@ class InSTREAMModel(mesa.Model):
             ts.reach_idx[slots] = r_idx
             ts.sex[slots] = sex
             ts.superind_rep[slots] = 1
-            lh_val = int(LifeStage.RETURNING_ADULT) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
+            # Scheduled arrivals from adult_arrival_file are already at their
+            # natal reach — assign SPAWNER directly. RETURNING_ADULT is only
+            # for fish returning from the marine domain (MarineDomain sets it).
+            lh_val = int(LifeStage.SPAWNER) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
             ts.life_history[slots] = lh_val
             ts.in_shelter[slots] = False
             ts.spawned_this_season[slots] = False
