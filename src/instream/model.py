@@ -172,6 +172,14 @@ class InSTREAMModel(mesa.Model):
         first_ts = next(iter(time_series.values()))
         self.steps_per_day = detect_frequency(first_ts)
 
+        # inSALMO mode: 4 habitat-selection passes per day step (dawn/day/dusk/night)
+        # when any species is anadromous, matching NetLogo's internal subdivision.
+        has_anadromous = any(
+            getattr(sc, "is_anadromous", False)
+            for sc in self.config.species.values()
+        )
+        self._insalmo_substeps = 4 if has_anadromous else 1
+
         # Time manager
         end_date = end_date_override or self.config.simulation.end_date
         self.time_manager = TimeManager(
@@ -656,47 +664,53 @@ class InSTREAMModel(mesa.Model):
             cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
 
         # 7. Habitat selection & activity (per-fish species/reach dispatch)
-        pisciv_densities = self._compute_piscivore_density()
+        # inSALMO mode: run habitat selection + migration 4x per day step
+        # (matching NetLogo's dawn/day/dusk/night substeps) even with daily data.
+        _insalmo_reps = self._insalmo_substeps if is_boundary else 1
+        _sub_step_length = step_length / _insalmo_reps
 
-        # Build skip set: anadromous spawners don't feed (inSALMO adult holding)
-        alive = self.trout_state.alive_indices()
-        skip_spawners = set()
-        for i in alive:
-            sp = int(self.trout_state.species_idx[i])
-            is_anad = getattr(self.config.species[self.species_order[sp]], "is_anadromous", False)
-            if should_skip_feeding(int(self.trout_state.life_history[i]), is_anadromous=is_anad):
-                skip_spawners.add(int(i))
-                self.trout_state.activity[i] = 2  # hide
-                self.trout_state.consumption_memory[i, substep] = 0.0
+        for _hab_rep in range(_insalmo_reps):
+            pisciv_densities = self._compute_piscivore_density()
 
-        migrating_indices = select_habitat_and_activity(
-            self.trout_state,
-            self.fem_space,
-            skip_indices=skip_spawners,
-            temperature=self.reach_state.temperature,
-            turbidity=self.reach_state.turbidity,
-            max_swim_temp_term=self.reach_state.max_swim_temp_term,
-            resp_temp_term=self.reach_state.resp_temp_term,
-            sp_arrays=self._sp_arrays,
-            sp_cmax_table_x=self._sp_cmax_table_x,
-            sp_cmax_table_y=self._sp_cmax_table_y,
-            rp_arrays=self._rp_arrays,
-            step_length=step_length,
-            pisciv_densities=pisciv_densities,
-        )
+            # Build skip set: anadromous spawners don't feed
+            alive = self.trout_state.alive_indices()
+            skip_spawners = set()
+            for i in alive:
+                sp = int(self.trout_state.species_idx[i])
+                is_anad = getattr(self.config.species[self.species_order[sp]], "is_anadromous", False)
+                if should_skip_feeding(int(self.trout_state.life_history[i]), is_anadromous=is_anad):
+                    skip_spawners.add(int(i))
+                    self.trout_state.activity[i] = 2  # hide
+                    self.trout_state.consumption_memory[i, substep] = 0.0
 
-        # Process fish that chose migration (activity=4) this substep
-        if migrating_indices:
-            from instream.modules.migration import migrate_fish_downstream
-            _is_anad = self._sp_arrays["is_anadromous"]
-            _cur_date = self.time_manager._current_date
-            for mi in migrating_indices:
-                out = migrate_fish_downstream(
-                    self.trout_state, mi, self._reach_graph,
-                    is_anadromous=_is_anad,
-                    current_date=_cur_date.date() if hasattr(_cur_date, 'date') else _cur_date,
-                )
-                self._outmigrants.extend(out)
+            migrating_indices = select_habitat_and_activity(
+                self.trout_state,
+                self.fem_space,
+                skip_indices=skip_spawners,
+                temperature=self.reach_state.temperature,
+                turbidity=self.reach_state.turbidity,
+                max_swim_temp_term=self.reach_state.max_swim_temp_term,
+                resp_temp_term=self.reach_state.resp_temp_term,
+                sp_arrays=self._sp_arrays,
+                sp_cmax_table_x=self._sp_cmax_table_x,
+                sp_cmax_table_y=self._sp_cmax_table_y,
+                rp_arrays=self._rp_arrays,
+                step_length=_sub_step_length,
+                pisciv_densities=pisciv_densities,
+            )
+
+            # Process fish that chose migration (activity=4) this substep
+            if migrating_indices:
+                from instream.modules.migration import migrate_fish_downstream
+                _is_anad = self._sp_arrays["is_anadromous"]
+                _cur_date = self.time_manager._current_date
+                for mi in migrating_indices:
+                    out = migrate_fish_downstream(
+                        self.trout_state, mi, self._reach_graph,
+                        is_anadromous=_is_anad,
+                        current_date=_cur_date.date() if hasattr(_cur_date, 'date') else _cur_date,
+                    )
+                    self._outmigrants.extend(out)
 
         # 8. Store growth rate in memory (NOT applied to weight yet)
         alive = self.trout_state.alive_indices()
