@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "instream"
-version = "0.11.0"
-description = "Python conversion of inSTREAM/inSALMO 7.4 individual-based salmonid model"
+name = "pysalmo"
+version = "1.0.0"
+description = "PySALMO — Full-lifecycle individual-based Baltic Atlantic salmon model with marine phases"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
@@ -46,6 +46,7 @@ frontend = [
 ]
 
 [project.scripts]
+pysalmo = "instream.cli:main"
 instream = "instream.cli:main"
 
 [tool.hatch.build.targets.wheel]

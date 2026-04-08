@@ -10,8 +10,9 @@
   - meshio 5.3.5 (FEM mesh reading)
   - numba 0.64.0
   - numpy, scipy, pandas, geopandas, mesa, pydantic, hypothesis
-- **Project path:** `C:\Users\DELL\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py`
-- **GitHub:** https://github.com/razinkele/instream-py
+- **Project path:** `C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py`
+- **GitHub (PySALMO):** https://github.com/razinkele/pysalmo
+- **GitHub (inSTREAM-py, upstream):** https://github.com/razinkele/instream-py
 
 ---
 

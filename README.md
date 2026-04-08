@@ -1,4 +1,4 @@
-# inSTREAM-py
+# PySALMO
 
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-green)
@@ -6,20 +6,24 @@
 
 ## Overview
 
-**inSTREAM-py** is a Python conversion of the
+**PySALMO** is a full-lifecycle individual-based model for Baltic Atlantic
+salmon (*Salmo salar*), extending the
 [inSTREAM/inSALMO 7.4](https://www.fs.usda.gov/research/treesearch/56100)
-individual-based model for salmonid populations in streams. The original
-NetLogo implementation is being ported to Python using:
+freshwater framework with novel marine phases. Built in Python using:
 
 - **Mesa 3.x** for agent-based model orchestration
 - **NumPy structured-of-arrays (SoA)** state containers for cache-friendly
   batch operations
 - **Numba JIT** compilation for compute-intensive kernels
 - An optional **JAX** backend for GPU-accelerated vectorized kernels
+- **Domain-dispatched architecture** — freshwater and marine domains share
+  state, coupled to EMODnet/HELCOM oceanographic data
 
-The model simulates trout growth, survival, habitat selection, spawning, and
-migration at the individual level within spatially explicit stream reaches
-defined by finite-element meshes.
+The model simulates the complete anadromous salmon lifecycle: freshwater
+growth, survival, habitat selection, smoltification, ocean migration,
+marine growth and mortality (including gear-specific fishing), maturation,
+adult return, spawning, and post-spawn death — all within spatially explicit
+stream reaches and configurable marine zones.
 
 For background on the inSTREAM modelling framework, see:
 
@@ -31,6 +35,8 @@ For background on the inSTREAM modelling framework, see:
 
 ## Features
 
+### Freshwater (inSTREAM/inSALMO parity)
+
 - **Wisconsin bioenergetics** -- temperature-dependent consumption, respiration,
   and growth
 - **Five survival sources** -- high temperature, stranding, poor condition, fish
@@ -41,10 +47,31 @@ For background on the inSTREAM modelling framework, see:
   fry emergence with density-dependent capacity
 - **Multi-species, multi-reach architecture** -- arbitrary number of species and
   stream reaches connected by a junction network
-- **Numba JIT backend** -- critical inner loops compiled to machine code for
-  60x+ speedup over pure Python
-- **Pluggable compute backends** -- NumPy (default), Numba, and JAX
+- **inSALMO features** -- adult holding (zero food intake), two-piece
+  condition-survival, stochastic outmigration, spawn-cell perturbation,
+  modified growth fitness
 - **Angler harvest** -- size-selective fishing mortality with bag limits
+
+### Marine (novel PySALMO extension)
+
+- **7 life stages** -- fry, parr, spawner, smolt, ocean juvenile, ocean adult,
+  returning adult (LifeStage IntEnum)
+- **Domain-dispatched step** -- FreshwaterDomain and MarineDomain share state,
+  fish transition by changing life_history
+- **Marine growth** -- O'Neill (1986) temperature function, Hanson et al.
+  bioenergetics (CMax A=0.303, B=-0.275)
+- **7 marine mortality sources** -- seal predation, cormorant predation,
+  background, temperature stress, M74 syndrome, fishing harvest, bycatch
+- **Gear-specific fishing** -- logistic/normal selectivity curves, 4 gear types
+  (trap net, drift net, longline, trolling), seasonal/zone closures, bycatch
+- **Smoltification** -- photoperiod + temperature triggered, seasonal window
+- **Environmental coupling** -- StaticDriver (YAML), planned NetCDF/WMS drivers
+  for EMODnet/HELCOM data
+
+### Performance
+
+- **Numba JIT backend** -- critical inner loops compiled to machine code
+- **Pluggable compute backends** -- NumPy (default), Numba, and JAX
 - **Sensitivity analysis** -- Morris one-at-a-time parameter screening
 - **Habitat restoration** -- config-driven cell property changes at scheduled dates
 
@@ -52,23 +79,20 @@ For background on the inSTREAM modelling framework, see:
 
 ```bash
 # Clone the repository
-git clone https://github.com/razinkele/instream-py.git
-cd instream-py
+git clone https://github.com/razinkele/pysalmo.git
+cd pysalmo
 
 # Install in development mode
 pip install -e ".[dev]"
 
 # Run Example A simulation
-instream configs/example_a.yaml --output-dir results/ --end-date 2012-01-01
+pysalmo configs/example_a.yaml --output-dir results/ --end-date 2012-01-01
 
 # Run Example B (3 reaches x 3 species)
-instream configs/example_b.yaml --data-dir tests/fixtures/example_b/ -o results_b/
+pysalmo configs/example_b.yaml --data-dir tests/fixtures/example_b/ -o results_b/
 
-# Run with hourly input (auto-detected as 24 sub-steps per day)
-instream configs/example_a.yaml --data-dir data/ -o results/
-
-# Sub-daily mode is auto-detected from time-series frequency
-# Just provide hourly/sub-hourly CSV data — no config changes needed
+# Run with marine domain enabled (add marine: section to YAML)
+pysalmo configs/baltic_salmon.yaml --output-dir results/
 ```
 
 ## Installation
@@ -185,22 +209,25 @@ Benchmark results (912-day simulation, Intel i7-11800H, 64 GB RAM):
 ```
 InSTREAMModel (Mesa Model)
   |
-  +-- TimeManager          # date progression, season tracking
-  +-- FEMSpace             # polygon mesh, KD-tree spatial queries
-  +-- ReachState           # per-reach hydraulics, daily conditions
-  +-- CellState            # per-cell depth, velocity, food, shelter
-  +-- TroutState (SoA)     # arrays: x, y, length, weight, alive, ...
-  +-- ReddState (SoA)      # arrays: x, y, eggs, development, ...
+  +-- TimeManager              # date progression, season tracking
+  +-- FreshwaterDomain
+  |    +-- FEMSpace            # polygon mesh, KD-tree spatial queries
+  |    +-- ReachState          # per-reach hydraulics, daily conditions
+  |    +-- CellState           # per-cell depth, velocity, food, shelter
+  |    +-- Modules: reach, growth, survival, behavior, spawning,
+  |                 migration, harvest, smoltification
   |
-  +-- Modules:
-       +-- reach           # hydraulic interpolation, cell updates
-       +-- growth          # Wisconsin bioenergetics
-       +-- survival        # 5 mortality sources + redd survival
-       +-- behavior        # fitness-based habitat selection
-       +-- spawning        # redd creation, egg development, emergence
-       +-- migration       # inter-reach movement
-       +-- harvest         # angler fishing mortality
-       +-- sensitivity     # Morris parameter screening
+  +-- MarineDomain (optional)
+  |    +-- MarineSpace         # zone graph, connectivity
+  |    +-- ZoneState           # per-zone temperature, prey, predation
+  |    +-- StaticDriver        # environmental data from YAML
+  |    +-- Modules: marine_growth, marine_survival, marine_fishing,
+  |                 marine_migration
+  |
+  +-- TroutState (SoA)        # shared: length, weight, life_history,
+  |                            #   zone_idx, sea_winters, natal_reach, ...
+  +-- ReddState (SoA)         # eggs, development, emergence
+  +-- LifeStage IntEnum       # FRY=0 .. RETURNING_ADULT=6
 ```
 
 **Key design decisions:**
@@ -234,13 +261,13 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.11.0** -- Simulation correctness, backend vectorization, new features (April 2026).
+**v1.0.0** -- PySALMO: Full anadromous lifecycle with marine domain (April 2026).
 
 ### Current Metrics
 
 | Metric          | Value                          |
 |-----------------|--------------------------------|
-| Tests           | 674                            |
+| Tests           | 694                            |
 | Validation      | 11/11 NetLogo reference tests  |
 | Step time       | 48 ms (Example A, Numba JIT)   |
 | Species         | Multi-species support          |
@@ -292,7 +319,7 @@ This project is licensed under the **GNU General Public License v3.0 or later**
 
 ## Citation
 
-If you use inSTREAM-py in your research, please cite:
+If you use PySALMO in your research, please cite:
 
 > Railsback, S.F., Harvey, B.C., Hayse, J.W., & LaGory, K.E. (2005).
 > Tests of theory for diel variation in salmonid feeding activity and habitat
