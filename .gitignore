@@ -42,6 +42,9 @@ __pycache__/*.nbc
 output/
 results/
 
+# Worktrees
+.worktrees/
+
 # OS
 .DS_Store
 Thumbs.db
