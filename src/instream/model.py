@@ -423,6 +423,53 @@ class InSTREAMModel(mesa.Model):
             )
             self._spawn_tables[sp_name] = (depth_xs, depth_ys, vel_xs, vel_ys)
 
+        # --- Marine domain wiring ---
+        self.marine_domain = None
+        if self.config.marine is not None and self.config.marine.enabled:
+            from instream.space.marine_space import MarineSpace
+            from instream.domains.marine import MarineDomain
+            from instream.io.env_drivers.static_driver import StaticDriver
+
+            marine_cfg = self.config.marine
+            zone_cfg = {name: {"area_km2": z.area_km2, "connections": z.connections}
+                        for name, z in marine_cfg.zones.items()}
+            ms = MarineSpace(zone_cfg)
+
+            if marine_cfg.environment.driver == "static":
+                driver = StaticDriver(marine_cfg.environment.static, ms.zone_names, ms.zone_areas)
+            else:
+                raise NotImplementedError(f"Driver: {marine_cfg.environment.driver}")
+
+            # Find first anadromous species config
+            marine_sp = {}
+            for sp_name, sc in self.config.species.items():
+                if getattr(sc, "is_anadromous", False):
+                    marine_sp = {
+                        "marine_cmax_A": getattr(sc, "marine_cmax_A", 0.303),
+                        "marine_cmax_B": getattr(sc, "marine_cmax_B", -0.275),
+                        "marine_growth_efficiency": getattr(sc, "marine_growth_efficiency", 0.50),
+                        "marine_mort_seal_L1": getattr(sc, "marine_mort_seal_L1", 40.0),
+                        "marine_mort_seal_L9": getattr(sc, "marine_mort_seal_L9", 80.0),
+                        "marine_mort_base": getattr(sc, "marine_mort_base", 0.001),
+                        "marine_mort_cormorant_L1": getattr(sc, "marine_mort_cormorant_L1", 15.0),
+                        "marine_mort_cormorant_L9": getattr(sc, "marine_mort_cormorant_L9", 40.0),
+                        "marine_mort_cormorant_zones": [ms.name_to_idx(z) for z in
+                            getattr(sc, "marine_mort_cormorant_zones", ["estuary", "coastal"])
+                            if z in ms._name_to_idx],
+                        "marine_mort_m74_prob": getattr(sc, "marine_mort_m74_prob", 0.0),
+                        "maturation_min_sea_winters": getattr(sc, "maturation_min_sea_winters", 1),
+                        "maturation_probs": {
+                            1: getattr(sc, "maturation_prob_1SW", 0.15),
+                            2: getattr(sc, "maturation_prob_2SW", 0.59),
+                            3: getattr(sc, "maturation_prob_3SW", 0.86),
+                            4: getattr(sc, "maturation_prob_4SW", 0.99),
+                        },
+                        "maturation_min_length": getattr(sc, "maturation_min_length", 55.0),
+                        "maturation_min_condition": getattr(sc, "maturation_min_condition", 0.8),
+                    }
+                    break
+            self.marine_domain = MarineDomain(ms, driver, marine_sp, gear_configs=[])
+
     def _assign_initial_positions(self):
         """Randomly assign alive fish to wet or available cells."""
         alive = self.trout_state.alive_indices()
@@ -770,6 +817,13 @@ class InSTREAMModel(mesa.Model):
 
             # Migration
             self._do_migration()
+
+            # Marine domain step
+            if self.marine_domain is not None:
+                current_d = self.time_manager._current_date
+                d = current_d.date() if hasattr(current_d, 'date') else current_d
+                self.marine_domain.update_environment(d)
+                self.marine_domain.daily_step(self.trout_state, d, self.rng)
 
             # Increment age on January 1
             self._increment_age_if_new_year()
@@ -1193,6 +1247,12 @@ class InSTREAMModel(mesa.Model):
 
         sp_mig_L1 = self._sp_arrays["migrate_fitness_L1"]
         sp_mig_L9 = self._sp_arrays["migrate_fitness_L9"]
+
+        # Build per-species anadromous flag array for smolt transition
+        is_anadromous = np.array(
+            [getattr(self.config.species[s], "is_anadromous", False)
+             for s in self.species_order], dtype=bool)
+
         alive = self.trout_state.alive_indices()
         for i in alive:
             lh = int(self.trout_state.life_history[i])
@@ -1220,11 +1280,12 @@ class InSTREAMModel(mesa.Model):
                 do_migrate = should_migrate(mig_fit, best_hab, lh)
 
             if do_migrate:
+                current_d = self.time_manager._current_date
+                d = current_d.date() if hasattr(current_d, 'date') else current_d
                 out = migrate_fish_downstream(
                     self.trout_state, i, self._reach_graph,
-                    current_date=self.time_manager._current_date.date()
-                    if hasattr(self.time_manager._current_date, 'date')
-                    else self.time_manager._current_date,
+                    current_date=d,
+                    is_anadromous=is_anadromous,
                 )
                 self._outmigrants.extend(out)
 
@@ -1354,7 +1415,7 @@ class InSTREAMModel(mesa.Model):
             ts.reach_idx[slots] = r_idx
             ts.sex[slots] = sex
             ts.superind_rep[slots] = 1
-            lh_val = int(LifeStage.SPAWNER) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
+            lh_val = int(LifeStage.RETURNING_ADULT) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
             ts.life_history[slots] = lh_val
             ts.in_shelter[slots] = False
             ts.spawned_this_season[slots] = False
@@ -1364,6 +1425,13 @@ class InSTREAMModel(mesa.Model):
             ts.survival_memory[slots, :] = 0.0
             ts.last_growth_rate[slots] = 0.0
             ts.fitness_memory[slots] = 0.0
+
+            # Reset marine fields to prevent stale data from reused dead slots
+            ts.zone_idx[slots] = -1
+            ts.sea_winters[slots] = 0
+            ts.smolt_date[slots] = 0
+            ts.natal_reach_idx[slots] = -1
+            ts.smolt_readiness[slots] = 0.0
 
             # Track cumulative arrivals
             self._arrival_counts[key] = arrived_so_far + n_add
