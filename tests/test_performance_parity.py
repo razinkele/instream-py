@@ -65,17 +65,10 @@ class TestPerformanceParity:
             pytest.skip("Model dependencies or Example A fixtures not available")
 
         from instream.model import InSTREAMModel
-        from instream.io.config import load_config
-
-        # Load config and set arrival file (NetLogo auto-discovers it,
-        # but the Python config needs it explicitly)
-        config = load_config(EXAMPLE_A_CONFIG)
-        config.simulation.adult_arrival_file = "ExampleA-AdultArrivals.csv"
-        config.simulation.population_file = "ExampleA-InitialPopulations.csv"
 
         start_time = time.perf_counter()
         model = InSTREAMModel(
-            config,
+            str(EXAMPLE_A_CONFIG),
             data_dir=str(EXAMPLE_A_DATA),
             end_date_override="2013-09-30",
         )
@@ -163,11 +156,15 @@ class TestPerformanceParity:
         )
 
     def test_adults_die_post_spawn(self, python_run, reference):
-        """All anadromous adults should die after spawning."""
+        """All anadromous adults should die after spawning.
+
+        Known gap: spawned_this_season flag triggers post-spawn death,
+        but few females successfully spawn due to spawn cell selection
+        and readiness timing differences from NetLogo. Adults that
+        DON'T spawn persist until condition mortality kills them.
+        """
         assert reference["adults_all_die_post_spawn"] is True
-        # In the Python model, post-spawn death is at model.py:~750
-        # We can't directly check final adult count from the run metrics,
-        # but the parity test validates the mechanism exists
+        # The mechanism exists (model.py:~811) but depends on spawn readiness
 
     def test_juvenile_abundance_order_of_magnitude(self, python_run, reference):
         """Juvenile peak should be within an order of magnitude of NetLogo."""

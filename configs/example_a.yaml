@@ -4,6 +4,8 @@ simulation:
   output_frequency: 1
   output_units: "days"
   seed: 0
+  population_file: "ExampleA-InitialPopulations.csv"
+  adult_arrival_file: "ExampleA-AdultArrivals.csv"
   census_days:
     - "06-15"
     - "09-30"
