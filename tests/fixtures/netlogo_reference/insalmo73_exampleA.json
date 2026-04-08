@@ -1,0 +1,24 @@
+{
+    "_source": "inSALMO 7.3 NetLogo 6.4.0, Example A, Test-Expt, seed=98",
+    "_date_generated": "2026-04-08",
+    "_simulation_period": "2011-04-01 to 2013-10-01",
+    "_species": "Chinook-Spring (CH-S)",
+
+    "adult_peak_abundance": 21,
+    "adult_peak_date": "2012-07-09",
+    "adult_final_abundance": 0,
+    "adults_all_die_post_spawn": true,
+
+    "juvenile_peak_abundance": 2151,
+    "juvenile_peak_date": "2013-01-07",
+    "juvenile_mean_length_cm": 4.29,
+    "juvenile_min_length_cm": 3.64,
+    "juvenile_max_length_cm": 6.23,
+
+    "outmigrant_total_small": 41146,
+    "outmigrant_total_medium": 6,
+    "outmigrant_total_large": 0,
+    "outmigrant_first_date": "2012-01-28",
+    "outmigrant_median_date": "2013-01-05",
+    "outmigrant_last_date": "2013-02-19"
+}
