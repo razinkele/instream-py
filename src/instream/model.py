@@ -1213,6 +1213,7 @@ class InSTREAMModel(mesa.Model):
                 sp_cfg.weight_A,
                 sp_cfg.weight_B,
                 species_index=sp_idx,
+                is_anadromous=getattr(sp_cfg, "is_anadromous", False),
             )
 
     def _compute_piscivore_density(self):

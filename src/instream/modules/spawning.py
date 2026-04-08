@@ -326,6 +326,7 @@ def redd_emergence(
     weight_A,
     weight_B,
     species_index,
+    is_anadromous=False,
 ):
     """Hatch eggs from fully-developed redds and create new trout (Task 6.5).
 
@@ -387,7 +388,12 @@ def redd_emergence(
         ts.reach_idx[slots] = rs.reach_idx[i]
         ts.sex[slots] = rng.integers(0, 2, size=n_slots, dtype=np.int32)
         ts.superind_rep[slots] = 1
-        ts.life_history[slots] = int(LifeStage.FRY)
+        # Anadromous species emerge as PARR (can migrate); residents as FRY.
+        # In inSALMO, anad juveniles are "anad-juve" from emergence.
+        if is_anadromous:
+            ts.life_history[slots] = int(LifeStage.PARR)
+        else:
+            ts.life_history[slots] = int(LifeStage.FRY)
         ts.in_shelter[slots] = False
         ts.spawned_this_season[slots] = False
         ts.activity[slots] = 0
