@@ -145,6 +145,8 @@ def select_spawn_cell(
     centroids_x=None,
     centroids_y=None,
     defense_area=0.0,
+    rng=None,
+    noise_sd=0.0,
 ):
     """Select best spawning cell from candidates (Task 6.2).
 
@@ -160,6 +162,11 @@ def select_spawn_cell(
         Cell centroid coordinates.
     defense_area : float
         Minimum distance (cm) from existing redds. 0 = no exclusion.
+    rng : numpy.random.Generator or None
+        Random number generator. When provided together with *noise_sd* > 0,
+        Gaussian noise is added to scores before selection.
+    noise_sd : float
+        Standard deviation of the noise term (default 0 = deterministic).
 
     Returns
     -------
@@ -178,7 +185,11 @@ def select_spawn_cell(
             dist = np.sqrt(dx**2 + dy**2)
             valid_mask &= dist > defense_area
 
-    valid_scores = np.where(valid_mask, scores, -1.0)
+    perturbed = np.array(scores, dtype=float)
+    if noise_sd > 0 and rng is not None:
+        perturbed = perturbed + rng.normal(0.0, noise_sd, len(perturbed))
+
+    valid_scores = np.where(valid_mask, perturbed, -1.0)
     best_idx = np.argmax(valid_scores)
     if valid_scores[best_idx] <= 0:
         return -1
