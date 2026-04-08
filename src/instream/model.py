@@ -670,6 +670,18 @@ class InSTREAMModel(mesa.Model):
         _sub_step_length = step_length / _insalmo_reps
 
         for _hab_rep in range(_insalmo_reps):
+            # Partial resource regeneration between insalmo substeps
+            # (matching NetLogo's per-substep resource replenishment)
+            if _hab_rep > 0:
+                self._replenish_resources_partial(_sub_step_length)
+                cs = self.fem_space.cell_state
+                for r_idx in range(len(self.reach_order)):
+                    cells = np.where(cs.reach_idx == r_idx)[0]
+                    cs.available_vel_shelter[cells] = (
+                        cs.frac_vel_shelter[cells] * cs.area[cells]
+                    )
+                cs.available_hiding_places[:] = self.mesh.num_hiding_places.copy()
+
             pisciv_densities = self._compute_piscivore_density()
 
             # Build skip set: anadromous spawners don't feed

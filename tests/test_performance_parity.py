@@ -231,9 +231,10 @@ class TestPerformanceParity:
         num_days = python_run["num_days"]
         ms_per_step = (elapsed / num_days) * 1000 if num_days > 0 else 0
         print(f"\n  Python: {elapsed:.1f}s total, {ms_per_step:.1f} ms/step, {num_days} days")
-        # Should complete within 5 minutes (300s)
-        assert elapsed < 300, (
-            f"Python model took {elapsed:.0f}s — expected < 300s"
+        # Should complete within 15 minutes (900s)
+        # 4x substep with resource regeneration increases runtime ~4x
+        assert elapsed < 900, (
+            f"Python model took {elapsed:.0f}s — expected < 900s"
         )
 
 
