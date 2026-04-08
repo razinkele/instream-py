@@ -30,6 +30,13 @@ class TroutState:
     consumption_memory: np.ndarray
     survival_memory: np.ndarray
 
+    # Marine state (inert for freshwater-only runs)
+    zone_idx: np.ndarray          # int32, -1 = freshwater
+    sea_winters: np.ndarray       # int32
+    smolt_date: np.ndarray        # int32, ordinal day of ocean entry
+    natal_reach_idx: np.ndarray   # int32, -1 = not set
+    smolt_readiness: np.ndarray   # float64, 0-1
+
     # Cached intermediates
     resp_std_wt_term: np.ndarray
     max_speed_len_term: np.ndarray
@@ -54,6 +61,11 @@ class TroutState:
             spawned_this_season=np.zeros(capacity, dtype=bool),
             last_growth_rate=np.zeros(capacity, dtype=np.float64),
             fitness_memory=np.zeros(capacity, dtype=np.float64),
+            zone_idx=np.full(capacity, -1, dtype=np.int32),
+            sea_winters=np.zeros(capacity, dtype=np.int32),
+            smolt_date=np.zeros(capacity, dtype=np.int32),
+            natal_reach_idx=np.full(capacity, -1, dtype=np.int32),
+            smolt_readiness=np.zeros(capacity, dtype=np.float64),
             growth_memory=np.zeros((capacity, max_steps_per_day), dtype=np.float64),
             consumption_memory=np.zeros(
                 (capacity, max_steps_per_day), dtype=np.float64
