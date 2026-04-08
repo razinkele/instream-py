@@ -314,6 +314,7 @@ def test_fem_mesh_adjacency_symmetric(tmp_path):
 
 
 def test_fem_mesh_file_not_found():
+    pytest.importorskip("meshio")
     from instream.space.fem_mesh import FEMMesh
 
     with pytest.raises(FileNotFoundError):
