@@ -45,6 +45,19 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph):
     return outmigrants
 
 
+def stochastic_should_migrate(length, L1, L9, life_history, rng):
+    """inSALMO-style daily stochastic outmigration probability.
+
+    Instead of comparing migration fitness to habitat fitness (deterministic),
+    this draws a random number and compares to the logistic migration
+    probability.  Only PARR (life_history == 1) are eligible.
+    """
+    if life_history != LifeStage.PARR:
+        return False
+    prob = evaluate_logistic(length, L1, L9)
+    return rng.random() < prob
+
+
 def bin_outmigrant(length, length_classes):
     """Bin an outmigrant by length class. Returns bin index (0-based)."""
     for i, threshold in enumerate(length_classes):

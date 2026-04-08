@@ -1187,6 +1187,7 @@ class InSTREAMModel(mesa.Model):
         from instream.modules.migration import (
             migration_fitness,
             should_migrate,
+            stochastic_should_migrate,
             migrate_fish_downstream,
         )
 
@@ -1198,13 +1199,27 @@ class InSTREAMModel(mesa.Model):
             if lh != 1:
                 continue
             sp_idx = int(self.trout_state.species_idx[i])
-            mig_fit = migration_fitness(
-                float(self.trout_state.length[i]),
-                float(sp_mig_L1[sp_idx]),
-                float(sp_mig_L9[sp_idx]),
-            )
-            best_hab = float(self.trout_state.fitness_memory[i])
-            if should_migrate(mig_fit, best_hab, lh):
+            sp_name = self.species_order[sp_idx]
+            sp_cfg = self.config.species[sp_name]
+
+            if getattr(sp_cfg, "use_stochastic_migration", False):
+                do_migrate = stochastic_should_migrate(
+                    float(self.trout_state.length[i]),
+                    float(sp_mig_L1[sp_idx]),
+                    float(sp_mig_L9[sp_idx]),
+                    lh,
+                    self.rng,
+                )
+            else:
+                mig_fit = migration_fitness(
+                    float(self.trout_state.length[i]),
+                    float(sp_mig_L1[sp_idx]),
+                    float(sp_mig_L9[sp_idx]),
+                )
+                best_hab = float(self.trout_state.fitness_memory[i])
+                do_migrate = should_migrate(mig_fit, best_hab, lh)
+
+            if do_migrate:
                 out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
                 self._outmigrants.extend(out)
 
