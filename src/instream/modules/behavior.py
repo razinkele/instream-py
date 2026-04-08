@@ -41,6 +41,17 @@ def should_skip_feeding(life_history, *, is_anadromous):
     return life_history == LifeStage.SPAWNER and is_anadromous
 
 
+def insalmo_growth_fitness(expected_length, biggest_length):
+    """inSALMO growth fitness: ln(1 + expectedLength/biggestLength).
+
+    Encourages growth across all fish sizes, unlike the standard
+    inSTREAM fitness which can saturate for small fish.
+    """
+    if biggest_length <= 0:
+        return 0.0
+    return math.log(1.0 + expected_length / biggest_length)
+
+
 def evaluate_logistic(x, L1, L9):
     """Evaluate logistic function where f(L1)=0.1 and f(L9)=0.9. Scalar version.
 
