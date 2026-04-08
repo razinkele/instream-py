@@ -73,6 +73,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
     """
 
     is_anadromous: bool = False
+    use_two_piece_condition: bool = False
     display_color: str = "brown"
 
     # Consumption

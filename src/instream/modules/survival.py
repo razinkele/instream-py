@@ -109,6 +109,54 @@ def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992):
 
 
 # ---------------------------------------------------------------------------
+# 3b. Two-piece Condition Survival (inSALMO broken-stick, vectorised)
+# ---------------------------------------------------------------------------
+
+
+def survival_condition_two_piece(conditions, *, breakpoint, S_above_K8, S_below_K5, K5):
+    """Two-piece condition survival (inSALMO broken-stick).
+
+    Above breakpoint: gentle linear decline from 1.0 to S_above_K8.
+    Below breakpoint: steep linear decline from S_above_K8 to S_below_K5 at K5.
+
+    Parameters
+    ----------
+    conditions : array_like
+        Body condition factors.
+    breakpoint : float
+        Condition value where the slope changes (e.g. 0.8).
+    S_above_K8 : float
+        Survival at the breakpoint condition.
+    S_below_K5 : float
+        Survival at condition == K5.
+    K5 : float
+        The lower reference condition (e.g. 0.5).
+
+    Returns
+    -------
+    ndarray
+        Survival probabilities, clipped to [0, 1].
+    """
+    conditions = np.asarray(conditions, dtype=np.float64)
+    surv = np.ones_like(conditions, dtype=np.float64)
+
+    # Above breakpoint: linear from (breakpoint, S_above_K8) to (1.5, 1.0)
+    above = conditions >= breakpoint
+    surv[above] = S_above_K8 + (1.0 - S_above_K8) * (
+        (conditions[above] - breakpoint) / (1.5 - breakpoint)
+    )
+
+    # Below breakpoint: linear from (K5, S_below_K5) to (breakpoint, S_above_K8)
+    below = conditions < breakpoint
+    if K5 < breakpoint:
+        slope_below = (S_above_K8 - S_below_K5) / (breakpoint - K5)
+        surv[below] = S_above_K8 - slope_below * (breakpoint - conditions[below])
+
+    surv = np.clip(surv, 0.0, 1.0)
+    return surv
+
+
+# ---------------------------------------------------------------------------
 # 4. Fish Predation Survival
 # ---------------------------------------------------------------------------
 
