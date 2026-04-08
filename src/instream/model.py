@@ -1220,7 +1220,12 @@ class InSTREAMModel(mesa.Model):
                 do_migrate = should_migrate(mig_fit, best_hab, lh)
 
             if do_migrate:
-                out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
+                out = migrate_fish_downstream(
+                    self.trout_state, i, self._reach_graph,
+                    current_date=self.time_manager._current_date.date()
+                    if hasattr(self.time_manager._current_date, 'date')
+                    else self.time_manager._current_date,
+                )
                 self._outmigrants.extend(out)
 
     def _collect_census_if_needed(self):

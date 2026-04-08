@@ -27,7 +27,7 @@ def should_migrate(migration_fit, best_habitat_fit, life_history):
     return migration_fit > best_habitat_fit
 
 
-def migrate_fish_downstream(trout_state, fish_idx, reach_graph):
+def migrate_fish_downstream(trout_state, fish_idx, reach_graph, *, current_date=None):
     """Move a fish to the downstream reach, or make it an outmigrant."""
     outmigrants = []
     current_reach = int(trout_state.reach_idx[fish_idx])
@@ -36,11 +36,15 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph):
         trout_state.reach_idx[fish_idx] = downstream[0]
     else:
         # No downstream reach — fish becomes outmigrant
-        outmigrants.append({
+        record = {
             "species_idx": int(trout_state.species_idx[fish_idx]),
             "length": float(trout_state.length[fish_idx]),
             "reach_idx": current_reach,
-        })
+        }
+        if current_date is not None:
+            record["date"] = current_date
+            record["day_of_year"] = current_date.timetuple().tm_yday
+        outmigrants.append(record)
         trout_state.alive[fish_idx] = False
     return outmigrants
 
