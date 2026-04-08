@@ -1,6 +1,7 @@
 """Spawning module — readiness checks, cell selection, redd creation (Tasks 6.1-6.3)."""
 
 import numpy as np
+from instream.agents.life_stage import LifeStage
 
 
 def ready_to_spawn(
@@ -375,7 +376,7 @@ def redd_emergence(
         ts.reach_idx[slots] = rs.reach_idx[i]
         ts.sex[slots] = rng.integers(0, 2, size=n_slots, dtype=np.int32)
         ts.superind_rep[slots] = 1
-        ts.life_history[slots] = 0
+        ts.life_history[slots] = int(LifeStage.FRY)
         ts.in_shelter[slots] = False
         ts.spawned_this_season[slots] = False
         ts.activity[slots] = 0

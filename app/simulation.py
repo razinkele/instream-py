@@ -396,9 +396,13 @@ _ACTIVITY_COLORS = {
     4: [251, 188, 4],  # hold = yellow
 }
 _LIFE_HISTORY_COLORS = {
-    0: [0, 150, 136],  # resident = teal
-    1: [0, 188, 212],  # anad_juve = cyan
-    2: [255, 152, 0],  # anad_adult = orange
+    0: [65, 105, 225],    # FRY: royal blue
+    1: [34, 139, 34],     # PARR: forest green
+    2: [220, 20, 60],     # SPAWNER: crimson
+    3: [0, 206, 209],     # SMOLT: dark turquoise
+    4: [0, 0, 139],       # OCEAN_JUVENILE: dark blue
+    5: [25, 25, 112],     # OCEAN_ADULT: midnight blue
+    6: [255, 140, 0],     # RETURNING_ADULT: dark orange
 }
 
 

@@ -13,6 +13,7 @@ from instream.io.population_reader import (
     read_initial_populations,
 )
 from instream.io.arrival_reader import read_adult_arrivals, compute_daily_arrivals  # noqa: E402
+from instream.agents.life_stage import LifeStage
 from instream.io.time_manager import TimeManager, detect_frequency
 from instream.space.polygon_mesh import PolygonMesh
 from instream.space.fem_space import FEMSpace
@@ -747,7 +748,7 @@ class InSTREAMModel(mesa.Model):
             alive = self.trout_state.alive_indices()
             for i in alive:
                 if (
-                    self.trout_state.life_history[i] == 2
+                    self.trout_state.life_history[i] == LifeStage.SPAWNER
                     and self.trout_state.spawned_this_season[i]
                 ):
                     self.trout_state.alive[i] = False
@@ -1321,7 +1322,7 @@ class InSTREAMModel(mesa.Model):
             ts.reach_idx[slots] = r_idx
             ts.sex[slots] = sex
             ts.superind_rep[slots] = 1
-            lh_val = 2 if getattr(sp_cfg, "is_anadromous", False) else 0
+            lh_val = int(LifeStage.SPAWNER) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
             ts.life_history[slots] = lh_val
             ts.in_shelter[slots] = False
             ts.spawned_this_season[slots] = False
