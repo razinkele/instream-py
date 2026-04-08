@@ -294,6 +294,7 @@ def fitness_for(
     dist_escape=100.0,
     available_hiding=10,
     mort_strand_survival_when_dry=0.5,
+    fitness_length=0.0,
 ):
     """Compute fitness for a fish at a cell with given activity.
 
@@ -412,7 +413,18 @@ def fitness_for(
         terr_pred_hiding_factor,
     )
     non_starve = s_ht * s_str * s_fp * s_tp
-    return growth * step_length * non_starve * s_cond
+    fitness = growth * step_length * non_starve * s_cond
+
+    # inSALMO growth-length penalty: reduce fitness for fish smaller than
+    # fitness_length, encouraging outmigration for small anadromous juveniles.
+    # NetLogo: fitness *= min(1, expected_length_at_horizon / fitness_length)
+    if fitness_length > 0 and length < fitness_length:
+        # Approximate expected length at horizon as current length + growth*horizon
+        # (simplified — NetLogo uses a more detailed projection)
+        growth_term = min(1.0, length / fitness_length)
+        fitness *= growth_term
+
+    return fitness
 
 
 def deplete_resources(
@@ -547,6 +559,7 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
         _spa_mort_ht_T9 = _sp["mort_high_temp_T9"]
         _spa_mort_cond_S5 = _sp["mort_condition_S_at_K5"]
         _spa_mort_cond_S8 = _sp["mort_condition_S_at_K8"]
+        _spa_fitness_length = _sp.get("fitness_length", np.zeros(len(_spa_mort_cond_S5)))
         _spa_mort_strand_dry = _sp["mort_strand_survival_when_dry"]
         _spa_fp_L1 = _sp["mort_fish_pred_L1"]
         _spa_fp_L9 = _sp["mort_fish_pred_L9"]
@@ -653,6 +666,7 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _mort_ht_T9 = float(_spa_mort_ht_T9[_fish_species])
             _mort_cond_S5 = float(_spa_mort_cond_S5[_fish_species])
             _mort_cond_S8 = float(_spa_mort_cond_S8[_fish_species])
+            _fitness_length = float(_spa_fitness_length[_fish_species])
             _mort_strand_dry = float(_spa_mort_strand_dry[_fish_species])
             _fp_L1 = float(_spa_fp_L1[_fish_species])
             _fp_L9 = float(_spa_fp_L9[_fish_species])
@@ -707,6 +721,7 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _mort_ht_T9 = params.get("mort_high_temp_T9", 24.0)
             _mort_cond_S5 = params.get("mort_condition_S_at_K5", 0.8)
             _mort_cond_S8 = params.get("mort_condition_S_at_K8", 0.992)
+            _fitness_length = params.get("fitness_length", 0.0)
             _mort_strand_dry = params.get("mort_strand_survival_when_dry", 0.5)
             _fp_L1 = params.get("fish_pred_L1", 10.0)
             _fp_L9 = params.get("fish_pred_L9", 3.0)
@@ -1066,6 +1081,11 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
 
                     non_starve = _s_high_temp * s_str * s_fp * s_tp
                     f = growth * _step_length * non_starve * _s_cond
+
+                    # inSALMO fitness_length penalty: reduce fitness for
+                    # fish smaller than fitness_length (encourages migration)
+                    if _fitness_length > 0 and _fl < _fitness_length:
+                        f *= _fl / _fitness_length
 
                     if f > best_fitness:
                         best_fitness = f
