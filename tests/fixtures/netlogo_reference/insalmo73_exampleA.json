@@ -1,5 +1,6 @@
 {
-    "_source": "inSALMO 7.3 NetLogo 6.4.0, Example A, Test-Expt, seed=98",
+    "_source": "inSALMO 7.4 NetLogo 7.0.3, Example A, Test-Expt, seed=98",
+    "_cross_validated": "Identical results from inSALMO 7.3 (NetLogo 6.4.0) and 7.4 (NetLogo 7.0.3)",
     "_date_generated": "2026-04-08",
     "_simulation_period": "2011-04-01 to 2013-10-01",
     "_species": "Chinook-Spring (CH-S)",

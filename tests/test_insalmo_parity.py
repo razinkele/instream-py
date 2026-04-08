@@ -141,9 +141,10 @@ class TestGrowthFitness:
 
 @pytest.mark.slow
 class TestInsalmoParity:
-    """Validate against inSALMO 7.3 NetLogo reference data.
+    """Validate against inSALMO 7.4 NetLogo reference data.
 
-    Reference: inSALMO 7.3, NetLogo 6.4.0, Example A, Test-Expt, seed=98
+    Reference: inSALMO 7.4, NetLogo 7.0.3, Example A, Test-Expt, seed=98
+    Cross-validated: identical results from 7.3 (NetLogo 6.4.0) and 7.4 (NetLogo 7.0.3)
     Generated: 2026-04-08
     Data: tests/fixtures/netlogo_reference/insalmo73_exampleA.json
     """
