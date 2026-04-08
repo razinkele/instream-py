@@ -39,7 +39,7 @@ from instream.modules.spawning import (
     redd_emergence,
 )
 from instream.modules.survival import apply_redd_survival
-from instream.modules.behavior import select_habitat_and_activity
+from instream.modules.behavior import select_habitat_and_activity, should_skip_feeding
 from instream.sync import sync_trout_agents
 
 
@@ -606,9 +606,21 @@ class InSTREAMModel(mesa.Model):
         # 7. Habitat selection & activity (per-fish species/reach dispatch)
         pisciv_densities = self._compute_piscivore_density()
 
+        # Build skip set: anadromous spawners don't feed (inSALMO adult holding)
+        alive = self.trout_state.alive_indices()
+        skip_spawners = set()
+        for i in alive:
+            sp = int(self.trout_state.species_idx[i])
+            is_anad = getattr(self.config.species[self.species_order[sp]], "is_anadromous", False)
+            if should_skip_feeding(int(self.trout_state.life_history[i]), is_anadromous=is_anad):
+                skip_spawners.add(int(i))
+                self.trout_state.activity[i] = 2  # hide
+                self.trout_state.consumption_memory[i, substep] = 0.0
+
         select_habitat_and_activity(
             self.trout_state,
             self.fem_space,
+            skip_indices=skip_spawners,
             temperature=self.reach_state.temperature,
             turbidity=self.reach_state.turbidity,
             max_swim_temp_term=self.reach_state.max_swim_temp_term,

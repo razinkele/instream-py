@@ -35,6 +35,12 @@ from instream.modules.growth import (
 _LN81 = math.log(81.0)
 
 
+def should_skip_feeding(life_history, *, is_anadromous):
+    """Anadromous spawners do not feed (inSALMO behavior)."""
+    from instream.agents.life_stage import LifeStage
+    return life_history == LifeStage.SPAWNER and is_anadromous
+
+
 def evaluate_logistic(x, L1, L9):
     """Evaluate logistic function where f(L1)=0.1 and f(L9)=0.9. Scalar version.
 
@@ -432,7 +438,7 @@ def deplete_resources(
                 available_hiding[cell] -= rep
 
 
-def select_habitat_and_activity(trout_state, fem_space, **params):
+def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **params):
     """Main habitat selection: for each fish, pick best cell x activity.
 
     Phase 5: fitness includes survival weighting via fitness_for().
@@ -573,6 +579,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     _c_dist_esc = cs.dist_escape
 
     for i in alive_sorted:
+        if skip_indices and i in skip_indices:
+            continue
         candidates = candidate_lists[i]
         if candidates is None or len(candidates) == 0:
             # No wet candidates — fish is stranded at current cell
