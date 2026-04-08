@@ -271,6 +271,10 @@ class InSTREAMModel(mesa.Model):
                 dtype=np.float64,
             )
 
+        self._sp_arrays["is_anadromous"] = np.array(
+            [getattr(self.config.species[s], "is_anadromous", False)
+             for s in self.species_order], dtype=bool)
+
         # Per-species cmax temp tables (list of arrays, indexed by species_idx)
         self._sp_cmax_table_x = [
             self.species_params[s].cmax_temp_table_x for s in self.species_order
@@ -665,7 +669,7 @@ class InSTREAMModel(mesa.Model):
                 self.trout_state.activity[i] = 2  # hide
                 self.trout_state.consumption_memory[i, substep] = 0.0
 
-        select_habitat_and_activity(
+        migrating_indices = select_habitat_and_activity(
             self.trout_state,
             self.fem_space,
             skip_indices=skip_spawners,
@@ -680,6 +684,19 @@ class InSTREAMModel(mesa.Model):
             step_length=step_length,
             pisciv_densities=pisciv_densities,
         )
+
+        # Process fish that chose migration (activity=4) this substep
+        if migrating_indices:
+            from instream.modules.migration import migrate_fish_downstream
+            _is_anad = self._sp_arrays["is_anadromous"]
+            _cur_date = self.time_manager._current_date
+            for mi in migrating_indices:
+                out = migrate_fish_downstream(
+                    self.trout_state, mi, self._reach_graph,
+                    is_anadromous=_is_anad,
+                    current_date=_cur_date.date() if hasattr(_cur_date, 'date') else _cur_date,
+                )
+                self._outmigrants.extend(out)
 
         # 8. Store growth rate in memory (NOT applied to weight yet)
         alive = self.trout_state.alive_indices()
@@ -1263,6 +1280,10 @@ class InSTREAMModel(mesa.Model):
             sp_idx = int(self.trout_state.species_idx[i])
             sp_name = self.species_order[sp_idx]
             sp_cfg = self.config.species[sp_name]
+
+            # Skip anadromous PARR — they migrate via habitat selection (4th activity)
+            if getattr(sp_cfg, "is_anadromous", False):
+                continue
 
             if getattr(sp_cfg, "use_stochastic_migration", False):
                 do_migrate = stochastic_should_migrate(

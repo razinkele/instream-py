@@ -583,6 +583,9 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
         _spa_tp_H1 = _sp["mort_terr_pred_H1"]
         _spa_tp_H9 = _sp["mort_terr_pred_H9"]
         _spa_tp_hiding_factor = _sp["mort_terr_pred_hiding_factor"]
+        _spa_mig_L1 = _sp["migrate_fitness_L1"]
+        _spa_mig_L9 = _sp["migrate_fitness_L9"]
+        _spa_is_anadromous = _sp.get("is_anadromous", np.zeros(len(_spa_mig_L1), dtype=bool))
 
     if _rp is not None:
         _rpa_drift_conc = _rp["drift_conc"]
@@ -690,6 +693,9 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _tp_H1 = float(_spa_tp_H1[_fish_species])
             _tp_H9 = float(_spa_tp_H9[_fish_species])
             _tp_hiding_factor = float(_spa_tp_hiding_factor[_fish_species])
+            _mig_L1 = float(_spa_mig_L1[_fish_species])
+            _mig_L9 = float(_spa_mig_L9[_fish_species])
+            _can_migrate = bool(_spa_is_anadromous[_fish_species]) and (int(trout_state.life_history[i]) == 1)
             _cmax_table_x = np.asarray(
                 _sp_cmax_table_x[_fish_species], dtype=np.float64
             )
@@ -745,6 +751,9 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _tp_H1 = params.get("terr_pred_H1", 50.0)
             _tp_H9 = params.get("terr_pred_H9", 10.0)
             _tp_hiding_factor = params.get("terr_pred_hiding_factor", 0.5)
+            _mig_L1 = params.get("migrate_fitness_L1", 4.0)
+            _mig_L9 = params.get("migrate_fitness_L9", 10.0)
+            _can_migrate = params.get("can_migrate", False)
             _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
             _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
 
@@ -1093,6 +1102,14 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
                         best_a = a_idx
                         best_growth = growth
 
+        # --- Migration as 4th activity (inSALMO parity) ---
+        if _can_migrate:
+            _mig_fit = evaluate_logistic(_fl, _mig_L1, _mig_L9)
+            if _mig_fit > best_fitness:
+                best_fitness = _mig_fit
+                best_a = 4  # MIGRATE
+                best_growth = 0.0
+
         # Assign fish to chosen cell + activity
         best_cells[i] = best_c
         best_activities[i] = best_a
@@ -1150,3 +1167,14 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
         elif best_a == 2:  # hide
             if _c_ahiding[best_c] >= _frep:
                 _c_ahiding[best_c] -= _frep
+        elif best_a == 4:  # migrate — no resource depletion
+            pass
+
+    # Collect indices of fish that chose migration (activity=4)
+    migrating = []
+    for i in alive_sorted:
+        if skip_indices and i in skip_indices:
+            continue
+        if trout_state.activity[i] == 4:
+            migrating.append(int(i))
+    return migrating
