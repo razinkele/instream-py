@@ -1,7 +1,7 @@
 ; Trout initialization input for InSTREAM-7,,,,,,
 ; Standard initialization for Example Project A,,,,,,
-; Hypothetical rainbow population,,,,,,
+; Chinook-Spring population,,,,,,
 ; Species,Reach,Age,Number,Length min,Length mode,Length max
-Rainbow,ExampleA,0,300,4,6.1,7
-Rainbow,ExampleA,1,50,9,12,15
-Rainbow,ExampleA,2,10,15,17,25
+Chinook-Spring,ExampleA,0,300,4,6.1,7
+Chinook-Spring,ExampleA,1,50,9,12,15
+Chinook-Spring,ExampleA,2,10,15,17,25

@@ -17,7 +17,7 @@ class TestReadInitialPopulations:
         from instream.io.population_reader import read_initial_populations
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         p = pops[0]
-        assert p["species"] == "Rainbow"
+        assert p["species"] == "Chinook-Spring"
         assert p["reach"] == "ExampleA"
         assert p["age"] == 0
         assert p["number"] == 300
