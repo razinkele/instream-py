@@ -588,6 +588,8 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
         _spa_mig_L1 = _sp["migrate_fitness_L1"]
         _spa_mig_L9 = _sp["migrate_fitness_L9"]
         _spa_is_anadromous = _sp.get("is_anadromous", np.zeros(len(_spa_mig_L1), dtype=bool))
+        _spa_weight_A = _sp.get("weight_A", np.full(len(_spa_mig_L1), 0.01))
+        _spa_weight_B = _sp.get("weight_B", np.full(len(_spa_mig_L1), 3.0))
 
     if _rp is not None:
         _rpa_drift_conc = _rp["drift_conc"]
@@ -701,6 +703,8 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _mig_L1 = float(_spa_mig_L1[_fish_species])
             _mig_L9 = float(_spa_mig_L9[_fish_species])
             _can_migrate = bool(_spa_is_anadromous[_fish_species]) and (int(trout_state.life_history[i]) == 1)
+            _weight_A = float(_spa_weight_A[_fish_species])
+            _weight_B = float(_spa_weight_B[_fish_species])
             _cmax_table_x = np.asarray(
                 _sp_cmax_table_x[_fish_species], dtype=np.float64
             )
@@ -760,6 +764,8 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _mig_L9 = params.get("migrate_fitness_L9", 10.0)
             _can_migrate = params.get("can_migrate", False)
             _fitness_horizon = params.get("fitness_horizon", 60.0)
+            _weight_A = params.get("weight_A", 0.01)
+            _weight_B = params.get("weight_B", 3.0)
             _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
             _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
 
@@ -1119,18 +1125,32 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
         # not instantaneous fitness. A cell with 0.99 daily survival gives
         # 0.99^60 = 0.545 over the horizon — comparable to migration fitness.
         if _can_migrate:
+            from instream.modules.survival import mean_condition_survival
             _mig_fit = evaluate_logistic(_fl, _mig_L1, _mig_L9)
-            # NetLogo: fitness = (daily_survival * condition_survival)^horizon
-            # Project non-starvation survival and condition over the full horizon.
-            # This matches NetLogo where poor-condition fish get very low
-            # projected fitness, making migration more attractive.
+
             _horizon = _fitness_horizon if _fitness_horizon > 0 else 60.0
-            _daily_surv = _best_non_starve  # non-starvation survival per day
-            _cond_surv = _best_s_cond  # condition survival per day
-            _surv_projected = (_daily_surv * _cond_surv) ** _horizon
-            # Apply fitness_length growth penalty
+            _healthy_wt = _weight_A * (_fl ** _weight_B)
+
+            # Estimate daily growth from this substep's best growth rate
+            # best_growth is a fractional rate (g/g/day); convert to g/day
+            _est_daily_growth = best_growth * _fw  # g/day
+
+            # Forward-project condition survival (NetLogo mean-condition-survival-with)
+            _mean_cond_surv = mean_condition_survival(
+                condition=_fc,
+                daily_growth=_est_daily_growth,
+                healthy_weight=_healthy_wt,
+                S5=_mort_cond_S5,
+                horizon=_horizon,
+            )
+
+            # NetLogo: fitness = (daily_survival * mean_cond_surv)^horizon
+            _surv_projected = (_best_non_starve * _mean_cond_surv) ** _horizon
+
+            # Length penalty (NetLogo: length-at-horizon / fitness_length)
             if _fitness_length > 0 and _fl < _fitness_length:
                 _surv_projected *= (_fl / _fitness_length)
+
             if _mig_fit > _surv_projected:
                 best_fitness = _mig_fit
                 best_a = 4  # MIGRATE
