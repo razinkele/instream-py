@@ -561,6 +561,7 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
         _spa_mort_cond_S5 = _sp["mort_condition_S_at_K5"]
         _spa_mort_cond_S8 = _sp["mort_condition_S_at_K8"]
         _spa_fitness_length = _sp.get("fitness_length", np.zeros(len(_spa_mort_cond_S5)))
+        _spa_fitness_horizon = _sp.get("fitness_horizon", np.full(len(_spa_mort_cond_S5), 60.0))
         _spa_mort_strand_dry = _sp["mort_strand_survival_when_dry"]
         _spa_fp_L1 = _sp["mort_fish_pred_L1"]
         _spa_fp_L9 = _sp["mort_fish_pred_L9"]
@@ -625,6 +626,8 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
         best_c = candidates[0]
         best_a = 2  # default hide
         best_growth = 0.0  # track growth to avoid second growth_rate_for call
+        _best_non_starve = 0.0  # non-starvation survival for migration comparison
+        _best_s_cond = 0.0  # condition survival for migration comparison
 
         prev_cons = float(np.sum(trout_state.consumption_memory[i]))
 
@@ -671,6 +674,7 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _mort_cond_S5 = float(_spa_mort_cond_S5[_fish_species])
             _mort_cond_S8 = float(_spa_mort_cond_S8[_fish_species])
             _fitness_length = float(_spa_fitness_length[_fish_species])
+            _fitness_horizon = float(_spa_fitness_horizon[_fish_species])
             _mort_strand_dry = float(_spa_mort_strand_dry[_fish_species])
             _fp_L1 = float(_spa_fp_L1[_fish_species])
             _fp_L9 = float(_spa_fp_L9[_fish_species])
@@ -755,6 +759,7 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
             _mig_L1 = params.get("migrate_fitness_L1", 4.0)
             _mig_L9 = params.get("migrate_fitness_L9", 10.0)
             _can_migrate = params.get("can_migrate", False)
+            _fitness_horizon = params.get("fitness_horizon", 60.0)
             _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
             _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
 
@@ -1104,11 +1109,29 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
                         best_c = c_idx
                         best_a = a_idx
                         best_growth = growth
+                        # Track survival components for migration comparison
+                        _best_non_starve = non_starve
+                        _best_s_cond = _s_cond
 
         # --- Migration as 4th activity (inSALMO parity) ---
+        # NetLogo fitness = (daily_survival)^horizon (typically 60 days).
+        # Migration fitness competes against this horizon-projected survival,
+        # not instantaneous fitness. A cell with 0.99 daily survival gives
+        # 0.99^60 = 0.545 over the horizon — comparable to migration fitness.
         if _can_migrate:
             _mig_fit = evaluate_logistic(_fl, _mig_L1, _mig_L9)
-            if _mig_fit > best_fitness:
+            # NetLogo: fitness = (daily_survival * condition_survival)^horizon
+            # Project non-starvation survival and condition over the full horizon.
+            # This matches NetLogo where poor-condition fish get very low
+            # projected fitness, making migration more attractive.
+            _horizon = _fitness_horizon if _fitness_horizon > 0 else 60.0
+            _daily_surv = _best_non_starve  # non-starvation survival per day
+            _cond_surv = _best_s_cond  # condition survival per day
+            _surv_projected = (_daily_surv * _cond_surv) ** _horizon
+            # Apply fitness_length growth penalty
+            if _fitness_length > 0 and _fl < _fitness_length:
+                _surv_projected *= (_fl / _fitness_length)
+            if _mig_fit > _surv_projected:
                 best_fitness = _mig_fit
                 best_a = 4  # MIGRATE
                 best_growth = 0.0

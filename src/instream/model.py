@@ -270,6 +270,7 @@ class InSTREAMModel(mesa.Model):
             "migrate_fitness_L9",
             "fitness_memory_frac",
             "fitness_length",
+            "fitness_horizon",
         ]:
             self._sp_arrays[field] = np.array(
                 [
