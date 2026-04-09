@@ -670,8 +670,10 @@ class InSTREAMModel(mesa.Model):
         _sub_step_length = step_length / _insalmo_reps
 
         for _hab_rep in range(_insalmo_reps):
-            # Partial resource regeneration between insalmo substeps
-            # (matching NetLogo's per-substep resource replenishment)
+            # Partial resource regeneration between insalmo substeps.
+            # NetLogo fully resets food each substep but uses a different
+            # drift formula (includes velocity/regen_distance). Partial
+            # regen gives better parity with our drift formula.
             if _hab_rep > 0:
                 self._replenish_resources_partial(_sub_step_length)
                 cs = self.fem_space.cell_state

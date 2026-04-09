@@ -413,7 +413,8 @@ def fitness_for(
         terr_pred_hiding_factor,
     )
     non_starve = s_ht * s_str * s_fp * s_tp
-    fitness = growth * step_length * non_starve * s_cond
+    # NetLogo: fitness = growth * step_length * survival^step_length
+    fitness = growth * step_length * (non_starve ** step_length) * (s_cond ** step_length)
 
     # inSALMO growth-length penalty: reduce fitness for fish smaller than
     # fitness_length, encouraging outmigration for small anadromous juveniles.
@@ -1089,7 +1090,9 @@ def select_habitat_and_activity(trout_state, fem_space, *, skip_indices=None, **
                     s_tp = _tp_min + (1.0 - _tp_min) * (1.0 - tp_rel_risk)
 
                     non_starve = _s_high_temp * s_str * s_fp * s_tp
-                    f = growth * _step_length * non_starve * _s_cond
+                    # NetLogo: fitness = growth * step_length * survival^step_length
+                    # Exponentiate survival by step_length for sub-daily parity
+                    f = growth * _step_length * (non_starve ** _step_length) * (_s_cond ** _step_length)
 
                     # inSALMO fitness_length penalty: reduce fitness for
                     # fish smaller than fitness_length (encourages migration)
