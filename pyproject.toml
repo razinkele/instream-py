@@ -54,7 +54,6 @@ packages = ["src/instream"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
-collect_ignore_glob = ["tests/_debug_alignment.py"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

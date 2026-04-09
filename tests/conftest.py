@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+collect_ignore = ["_debug_alignment.py"]
+
 # Enable JAX float64 if JAX is available
 try:
     import jax
