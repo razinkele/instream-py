@@ -320,6 +320,56 @@ def survival_terrestrial_predation(
 # ---------------------------------------------------------------------------
 
 
+def mean_condition_survival(condition, daily_growth, healthy_weight, S5, horizon):
+    """Project mean condition-survival over the fitness horizon.
+
+    Matches NetLogo inSALMO 7.4 mean-condition-survival-with.
+    Projects condition K forward linearly at rate daily_growth/healthy_weight,
+    then computes time-averaged condition-survival via trapezoidal integration.
+    """
+    K = condition
+    T = horizon
+
+    if K >= 1.0 and daily_growth >= 0.0:
+        return 1.0
+
+    def s_of_k(k):
+        k = max(0.0, min(1.0, k))
+        return 2.0 * S5 + 2.0 * k - 2.0 * k * S5 - 1.0
+
+    s_now = s_of_k(K)
+
+    if healthy_weight <= 0:
+        return max(0.0, min(1.0, s_now))
+
+    d_k = daily_growth / healthy_weight
+
+    if abs(d_k) < 1e-8:
+        return max(0.0, min(1.0, s_now))
+
+    s_k0 = 2.0 * S5 - 1.0
+
+    if d_k < 0:
+        t_at_k0 = K / (-d_k)
+        if t_at_k0 <= T:
+            area = t_at_k0 * (s_now + s_k0) / 2.0 + (T - t_at_k0) * s_k0
+        else:
+            k_at_t = K + T * d_k
+            s_at_t = s_of_k(k_at_t)
+            area = T * (s_now + s_at_t) / 2.0
+    else:
+        t_at_k1 = (1.0 - K) / d_k
+        if t_at_k1 <= T:
+            area = t_at_k1 * (s_now + 1.0) / 2.0 + (T - t_at_k1) * 1.0
+        else:
+            k_at_t = K + T * d_k
+            s_at_t = s_of_k(k_at_t)
+            area = T * (s_now + s_at_t) / 2.0
+
+    result = area / T if T > 0 else s_now
+    return max(0.0, min(1.0, result))
+
+
 def non_starve_survival(s_high_temp, s_stranding, s_fish_pred, s_terr_pred):
     """Combined non-starvation survival (product of independent sources).
 
