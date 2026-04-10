@@ -427,6 +427,16 @@ class _ModelDayBoundaryMixin:
             outmigration_probability,
         )
 
+        # Marine transition params (None when no marine config)
+        marine_domain = getattr(self, '_marine_domain', None)
+        marine_cfg = None
+        smolt_min_length = 12.0
+        smolt_readiness_threshold = 0.8
+        if marine_domain is not None:
+            marine_cfg = marine_domain.config
+            smolt_min_length = marine_cfg.smolt_min_length
+        current_date = self.time_manager.current_date
+
         sp_mig_L1 = self._sp_arrays["migrate_fitness_L1"]
         sp_mig_L9 = self._sp_arrays["migrate_fitness_L9"]
         alive = self.trout_state.alive_indices()
@@ -447,7 +457,13 @@ class _ModelDayBoundaryMixin:
             )
             best_hab = float(self.trout_state.fitness_memory[i])
             if should_migrate(mig_fit, best_hab, lh):
-                out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
+                out = migrate_fish_downstream(
+                    self.trout_state, i, self._reach_graph,
+                    marine_config=marine_cfg,
+                    smolt_readiness_threshold=smolt_readiness_threshold,
+                    smolt_min_length=smolt_min_length,
+                    current_date=current_date,
+                )
                 self._outmigrants.extend(out)
             elif not self.trout_state.alive[i]:
                 pass  # already dead
@@ -460,7 +476,13 @@ class _ModelDayBoundaryMixin:
                     sp_cfg.outmigration_max_prob,
                 )
                 if p_out > 0.0 and self.rng.random() < p_out:
-                    out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
+                    out = migrate_fish_downstream(
+                        self.trout_state, i, self._reach_graph,
+                        marine_config=marine_cfg,
+                        smolt_readiness_threshold=smolt_readiness_threshold,
+                        smolt_min_length=smolt_min_length,
+                        current_date=current_date,
+                    )
                     self._outmigrants.extend(out)
 
     def _collect_census_if_needed(self):

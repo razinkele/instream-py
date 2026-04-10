@@ -269,3 +269,85 @@ class TestMarineDomain:
         assert md._adjacency[0] == [1]
         # coastal(1) -> [baltic(2)]
         assert md._adjacency[1] == [2]
+
+
+# ===================================================================
+# Task 6 — Smolt Transition at River Mouth
+# ===================================================================
+
+from instream.modules.migration import migrate_fish_downstream
+from instream.state.trout_state import TroutState
+from instream.state.life_stage import LifeStage
+
+
+def _make_trout_at_mouth(length=15.0, readiness=0.9, life_history=LifeStage.PARR):
+    """Create a TroutState with one live PARR fish at a terminal reach."""
+    ts = TroutState.zeros(4)
+    ts.alive[0] = True
+    ts.species_idx[0] = 0
+    ts.length[0] = length
+    ts.weight[0] = 50.0
+    ts.condition[0] = 1.0
+    ts.life_history[0] = int(life_history)
+    ts.reach_idx[0] = 0
+    ts.cell_idx[0] = 0
+    ts.smolt_readiness[0] = readiness
+    return ts
+
+
+class TestSmoltTransitionAtRiverMouth:
+    def test_parr_at_river_mouth_becomes_smolt(self):
+        """PARR with sufficient readiness + length transitions to SMOLT."""
+        ts = _make_trout_at_mouth(length=15.0, readiness=0.9)
+        cfg = _make_marine_config()
+        reach_graph = {0: []}  # no downstream
+        date = datetime.date(2020, 5, 15)
+
+        out = migrate_fish_downstream(
+            ts, 0, reach_graph,
+            marine_config=cfg,
+            smolt_readiness_threshold=0.8,
+            smolt_min_length=12.0,
+            current_date=date,
+        )
+
+        assert ts.alive[0] is True or ts.alive[0]  # still alive
+        assert ts.life_history[0] == LifeStage.SMOLT
+        assert ts.zone_idx[0] == 0  # estuary
+        assert ts.natal_reach_idx[0] == 0
+        assert ts.smolt_date[0] == date.toordinal()
+        assert ts.cell_idx[0] == -1
+        assert ts.reach_idx[0] == -1
+        # Outmigrant record still produced
+        assert len(out) == 1
+        assert out[0]["reach_idx"] == 0
+
+    def test_parr_below_min_length_killed_not_smolt(self):
+        """PARR below min length is killed even with marine config."""
+        ts = _make_trout_at_mouth(length=8.0, readiness=0.9)
+        cfg = _make_marine_config()
+        reach_graph = {0: []}
+        date = datetime.date(2020, 5, 15)
+
+        out = migrate_fish_downstream(
+            ts, 0, reach_graph,
+            marine_config=cfg,
+            smolt_readiness_threshold=0.8,
+            smolt_min_length=12.0,
+            current_date=date,
+        )
+
+        assert not ts.alive[0]
+        assert ts.life_history[0] != LifeStage.SMOLT
+        assert len(out) == 1
+
+    def test_no_marine_config_kills_as_before(self):
+        """Without marine_config, fish at mouth is killed (legacy behavior)."""
+        ts = _make_trout_at_mouth(length=15.0, readiness=0.9)
+        reach_graph = {0: []}
+
+        out = migrate_fish_downstream(ts, 0, reach_graph)
+
+        assert not ts.alive[0]
+        assert ts.life_history[0] == LifeStage.PARR
+        assert len(out) == 1

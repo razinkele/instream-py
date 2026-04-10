@@ -27,21 +27,51 @@ def should_migrate(migration_fit, best_habitat_fit, life_history):
     return migration_fit > best_habitat_fit
 
 
-def migrate_fish_downstream(trout_state, fish_idx, reach_graph):
-    """Move a fish to the downstream reach, or make it an outmigrant."""
+def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
+                            marine_config=None, smolt_readiness_threshold=0.8,
+                            smolt_min_length=12.0, current_date=None):
+    """Move a fish to the downstream reach, or make it an outmigrant.
+
+    When *marine_config* is provided and the fish is a PARR at the river
+    mouth (no downstream reach) with sufficient readiness and length, it
+    transitions to SMOLT and enters the marine domain instead of dying.
+    """
     outmigrants = []
     current_reach = int(trout_state.reach_idx[fish_idx])
     downstream = reach_graph.get(current_reach, [])
     if len(downstream) > 0:
         trout_state.reach_idx[fish_idx] = downstream[0]
     else:
-        # No downstream reach — fish becomes outmigrant
+        # No downstream reach — record outmigrant
         outmigrants.append({
             "species_idx": int(trout_state.species_idx[fish_idx]),
             "length": float(trout_state.length[fish_idx]),
             "reach_idx": current_reach,
         })
-        trout_state.alive[fish_idx] = False
+
+        # Attempt smolt transition when marine domain is available
+        life_history = int(trout_state.life_history[fish_idx])
+        fish_length = float(trout_state.length[fish_idx])
+        readiness = float(trout_state.smolt_readiness[fish_idx])
+
+        if (
+            marine_config is not None
+            and life_history == LifeStage.PARR
+            and readiness >= smolt_readiness_threshold
+            and fish_length >= smolt_min_length
+        ):
+            # Transition to SMOLT and enter marine estuary (zone 0)
+            trout_state.life_history[fish_idx] = int(LifeStage.SMOLT)
+            trout_state.zone_idx[fish_idx] = 0
+            trout_state.natal_reach_idx[fish_idx] = current_reach
+            trout_state.smolt_date[fish_idx] = (
+                current_date.toordinal() if current_date is not None else 0
+            )
+            trout_state.cell_idx[fish_idx] = -1
+            trout_state.reach_idx[fish_idx] = -1
+        else:
+            # Kill as before
+            trout_state.alive[fish_idx] = False
     return outmigrants
 
 
