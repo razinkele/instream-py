@@ -6,8 +6,18 @@ build-backend = "hatchling.build"
 name = "instream"
 version = "0.12.0"
 description = "Python conversion of inSTREAM/inSALMO 7.4 individual-based salmonid model"
+authors = [{name = "inSTREAM Team"}]
+readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
     "mesa>=3.1",
     "numpy>=1.24",
@@ -18,6 +28,10 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/razinkele/instream-py"
+Repository = "https://github.com/razinkele/instream-py"
 
 [project.optional-dependencies]
 numba = [
