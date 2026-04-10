@@ -1041,3 +1041,194 @@ class TestFitnessReport:
                 atol=1e-12,
                 err_msg="Growth rate mismatch at fish {}".format(i),
             )
+
+
+class TestFitnessReportMatchesNetLogoCSV:
+    """Cross-validate Python fitness computation against NetLogo reference CSV.
+
+    The reference CSV (FitnessReportOut-netlogo.csv, ~402K rows) was generated
+    by NetLogo's test-fitness-report procedure which sweeps over combinations of
+    length, condition, predation survival, and specific growth rate.
+
+    Species parameters (Chinook-Spring, Example A):
+        weight_A = 0.0041, weight_B = 3.49
+        fitness_horizon (T) = 60 days
+        fitness_length (maturity) = 15 cm
+        mort_condition_S_at_K5 = 0.8
+    """
+
+    # --- Species parameters for Chinook-Spring (Example A) ---
+    WEIGHT_A = 0.0041
+    WEIGHT_B = 3.49
+    TIME_HORIZON = 60
+    MATURITY_LENGTH = 15.0
+    S_AT_K5 = 0.8
+
+    # ------------------------------------------------------------------
+    # Helper: mean-condition-survival-with (NetLogo reporter)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _mean_condition_survival(condition, daily_growth_abs, T, weight_A,
+                                 weight_B, length, s5):
+        """Replicates NetLogo mean-condition-survival-with reporter.
+
+        Parameters
+        ----------
+        condition : float  (k in NetLogo)
+        daily_growth_abs : float  (g/d, absolute daily weight change)
+        T : float  (time horizon in days)
+        weight_A, weight_B : float  (allometric weight parameters)
+        length : float  (current fish length cm)
+        s5 : float  (mort-condition-S-at-K5)
+        """
+        k = condition
+
+        # If condition = 1 and positive growth, survival is 1.0
+        if k == 1.0 and daily_growth_abs >= 0.0:
+            return 1.0
+
+        # Survival at current condition (linear model)
+        s_now = (2 * s5) + (2 * k) - (2 * k * s5) - 1
+
+        # Near-zero growth: steady condition
+        if abs(daily_growth_abs) < 0.0001:
+            return s_now
+
+        # Daily change in condition
+        healthy_weight = weight_A * (length ** weight_B)
+        d_k = daily_growth_abs / healthy_weight
+        s_k0 = (2 * s5) - 1  # survival at condition zero
+
+        if d_k < 0:
+            # Condition is decreasing
+            t_at_k_0 = k / (-1 * d_k)
+            if t_at_k_0 <= T:
+                # Condition reaches zero before time horizon
+                area1 = t_at_k_0 * (s_now + s_k0) / 2
+                area2 = (T - t_at_k_0) * s_k0
+                return (area1 + area2) / T
+            else:
+                # Condition remains above zero to time horizon
+                k_at_t = k + (T * d_k)
+                s_at_t = (2 * s5) + (2 * k_at_t) - (2 * k_at_t * s5) - 1
+                return (s_now + s_at_t) / 2
+        else:
+            # Condition is increasing
+            t_at_k_1 = (1.0 - k) / d_k
+            if t_at_k_1 <= T:
+                # Condition reaches 1.0 before time horizon
+                area1 = t_at_k_1 * (s_now + 1.0) / 2
+                area2 = (T - t_at_k_1) * 1.0
+                return (area1 + area2) / T
+            else:
+                # Condition remains below 1.0 to time horizon
+                k_at_t = k + (T * d_k)
+                s_at_t = (2 * s5) + (2 * k_at_t) - (2 * k_at_t * s5) - 1
+                return (s_now + s_at_t) / 2
+
+    # ------------------------------------------------------------------
+    # Helper: length-with-growth (NetLogo reporter)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _length_with_growth(length, weight, growth_abs, weight_A, weight_B):
+        """Replicates NetLogo length-with-growth reporter.
+
+        Parameters
+        ----------
+        length : float  (current fish length cm)
+        weight : float  (current fish weight g)
+        growth_abs : float  (absolute weight change over horizon, g)
+        weight_A, weight_B : float  (allometric weight parameters)
+        """
+        if growth_abs <= 0.0:
+            return length
+        new_weight = weight + growth_abs
+        healthy_weight = weight_A * (length ** weight_B)
+        if new_weight > healthy_weight:
+            # Fish reaches condition 1.0 and grows in length
+            return (new_weight / weight_A) ** (1.0 / weight_B)
+        else:
+            return length
+
+    # ------------------------------------------------------------------
+    # Helper: full fitness computation
+    # ------------------------------------------------------------------
+    @classmethod
+    def _compute_fitness(cls, length, weight, condition, daily_pred_survival,
+                         growth_ggd):
+        """Compute fitness exactly as NetLogo test-fitness-report does."""
+        T = cls.TIME_HORIZON
+
+        # Convert specific growth rate to absolute daily growth (g/d)
+        daily_growth = growth_ggd * weight
+
+        # Mean starvation survival to horizon
+        mean_starv = cls._mean_condition_survival(
+            condition, daily_growth, T,
+            cls.WEIGHT_A, cls.WEIGHT_B, length, cls.S_AT_K5,
+        )
+
+        # Core fitness
+        fitness = (daily_pred_survival * mean_starv) ** T
+
+        # Maturity-length adjustment
+        if length < cls.MATURITY_LENGTH:
+            growth_over_horizon = daily_growth * T
+            length_at_horizon = cls._length_with_growth(
+                length, weight, growth_over_horizon,
+                cls.WEIGHT_A, cls.WEIGHT_B,
+            )
+            if length_at_horizon < cls.MATURITY_LENGTH:
+                fitness *= length_at_horizon / cls.MATURITY_LENGTH
+
+        return fitness
+
+    # ------------------------------------------------------------------
+    # The test
+    # ------------------------------------------------------------------
+    def test_fitness_matches_netlogo(self):
+        """Sample every 1000th row and compare Python fitness to NetLogo."""
+        import numpy as np
+        import pandas as pd
+
+        ref_path = require_reference("FitnessReportOut-netlogo.csv")
+        df = pd.read_csv(ref_path, skiprows=2)
+
+        # Sample every 1000th row (covers ~402 rows across the full sweep)
+        sampled = df.iloc[::1000].reset_index(drop=True)
+        assert len(sampled) > 100, "Expected >100 sampled rows, got {}".format(
+            len(sampled)
+        )
+
+        mismatches = []
+        for idx, row in sampled.iterrows():
+            length = row["trout-length"]
+            weight = row["trout-weight"]
+            condition = row["trout-condition"]
+            daily_surv = row["daily-pred-survival"]
+            growth_ggd = row["growth (g/g/d)"]
+            expected_fitness = row["fitness"]
+
+            computed = self._compute_fitness(
+                length, weight, condition, daily_surv, growth_ggd,
+            )
+
+            if expected_fitness == 0.0:
+                if computed != 0.0:
+                    mismatches.append(
+                        "Row {}: expected 0.0, got {}".format(idx, computed)
+                    )
+            else:
+                rel_err = abs(computed - expected_fitness) / abs(expected_fitness)
+                if rel_err > 1e-6:
+                    mismatches.append(
+                        "Row {}: L={} K={} surv={} g={} expected={} got={} "
+                        "rel_err={:.2e}".format(
+                            idx, length, condition, daily_surv, growth_ggd,
+                            expected_fitness, computed, rel_err,
+                        )
+                    )
+
+        assert len(mismatches) == 0, "{} mismatches out of {} rows:\n{}".format(
+            len(mismatches), len(sampled), "\n".join(mismatches[:20]),
+        )
