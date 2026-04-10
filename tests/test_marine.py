@@ -351,3 +351,66 @@ class TestSmoltTransitionAtRiverMouth:
         assert not ts.alive[0]
         assert ts.life_history[0] == LifeStage.PARR
         assert len(out) == 1
+
+
+# ===================================================================
+# Task 7 — Smolt Readiness Accumulation
+# ===================================================================
+
+from instream.marine.domain import accumulate_smolt_readiness
+
+
+class TestSmoltReadiness:
+    def test_readiness_accumulates_in_spring(self):
+        """Readiness increases for PARR fish during spring window."""
+        n = 4
+        readiness = np.zeros(n, dtype=np.float64)
+        life_history = np.full(n, int(LifeStage.PARR), dtype=np.int32)
+        lengths = np.array([15.0, 15.0, 8.0, 15.0], dtype=np.float64)
+        temperature = np.full(n, 10.0, dtype=np.float64)
+
+        # Fish 2 is below min_length, fish 3 is FRY
+        life_history[3] = int(LifeStage.FRY)
+
+        accumulate_smolt_readiness(
+            readiness, life_history, lengths,
+            day_length=0.6, max_day_length=0.67,
+            temperature=temperature, optimal_temp=10.0,
+            doy=120,  # spring
+            min_length=12.0,
+        )
+
+        # Fish 0 and 1 should have increased readiness
+        assert readiness[0] > 0.0
+        assert readiness[1] > 0.0
+        # Fish 2 (too short) and 3 (FRY) should remain zero
+        assert readiness[2] == 0.0
+        assert readiness[3] == 0.0
+
+    def test_readiness_zero_outside_window(self):
+        """No accumulation outside the spring window."""
+        n = 2
+        readiness = np.zeros(n, dtype=np.float64)
+        life_history = np.full(n, int(LifeStage.PARR), dtype=np.int32)
+        lengths = np.full(n, 15.0, dtype=np.float64)
+        temperature = np.full(n, 10.0, dtype=np.float64)
+
+        # DOY 50 is outside window (90-180)
+        accumulate_smolt_readiness(
+            readiness, life_history, lengths,
+            day_length=0.5, max_day_length=0.67,
+            temperature=temperature, optimal_temp=10.0,
+            doy=50,
+            min_length=12.0,
+        )
+        assert np.all(readiness == 0.0)
+
+        # DOY 200 is also outside
+        accumulate_smolt_readiness(
+            readiness, life_history, lengths,
+            day_length=0.6, max_day_length=0.67,
+            temperature=temperature, optimal_temp=10.0,
+            doy=200,
+            min_length=12.0,
+        )
+        assert np.all(readiness == 0.0)

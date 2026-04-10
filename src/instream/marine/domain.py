@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 
 import numpy as np
 
+from instream.state.life_stage import LifeStage
+
 if TYPE_CHECKING:
     from instream.marine.config import MarineConfig
     from instream.state.trout_state import TroutState
@@ -194,3 +196,50 @@ class MarineDomain:
 
         # 4. Growth placeholder — no-op
         # 5. Survival placeholder — no-op
+
+
+# ---------------------------------------------------------------------------
+# Smolt readiness accumulation
+# ---------------------------------------------------------------------------
+
+
+def accumulate_smolt_readiness(
+    readiness: np.ndarray,
+    life_history: np.ndarray,
+    lengths: np.ndarray,
+    day_length: float,
+    max_day_length: float,
+    temperature: np.ndarray,
+    optimal_temp: float,
+    photo_weight: float = 0.6,
+    temp_weight: float = 0.4,
+    doy: int = 1,
+    window_start: int = 90,
+    window_end: int = 180,
+    min_length: float = 12.0,
+) -> None:
+    """Accumulate smolt readiness for PARR fish during the spring window.
+
+    Readiness increases based on photoperiod (day_length / max_day_length)
+    and temperature proximity to *optimal_temp*.  Only PARR fish above
+    *min_length* during DOY [window_start, window_end] are affected.
+    Modifies *readiness* in-place.
+    """
+    if doy < window_start or doy > window_end:
+        return
+
+    n = len(readiness)
+    for i in range(n):
+        if life_history[i] != int(LifeStage.PARR):
+            continue
+        if lengths[i] < min_length:
+            continue
+
+        # Photoperiod signal: fraction of maximum day length
+        photo_signal = day_length / max(max_day_length, 1e-6)
+        # Temperature signal: 1 when at optimal, declining away
+        temp_diff = abs(float(temperature[i]) - optimal_temp)
+        temp_signal = max(0.0, 1.0 - temp_diff / optimal_temp) if optimal_temp > 0 else 0.0
+
+        increment = photo_weight * photo_signal + temp_weight * temp_signal
+        readiness[i] = min(1.0, readiness[i] + increment * 0.05)  # daily tick

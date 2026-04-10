@@ -119,6 +119,42 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
         if is_boundary:
             self._do_day_boundary(step_length)
 
+            # Marine lifecycle: smolt readiness
+            marine_domain = getattr(self, '_marine_domain', None)
+            if marine_domain is not None:
+                from instream.marine.domain import accumulate_smolt_readiness
+
+                current_date = self.time_manager.current_date
+                doy = self.time_manager.julian_date
+
+                # Reset readiness on Jan 1
+                if doy == 1:
+                    self.trout_state.smolt_readiness[:] = 0.0
+
+                # Smolt readiness accumulation
+                alive_idx = self.trout_state.alive_indices()
+                if len(alive_idx) > 0:
+                    day_length = getattr(self, '_day_length', 0.5)
+                    # Max day length at summer solstice (~0.67 for 60N)
+                    max_day_length = getattr(self, '_max_day_length', 0.67)
+                    # Per-fish temperature from reach
+                    temps = np.zeros(len(self.trout_state.alive), dtype=np.float64)
+                    for i in alive_idx:
+                        r = int(self.trout_state.reach_idx[i])
+                        if 0 <= r < len(self.reach_state.temperature):
+                            temps[i] = self.reach_state.temperature[r]
+                    accumulate_smolt_readiness(
+                        self.trout_state.smolt_readiness,
+                        self.trout_state.life_history,
+                        self.trout_state.length,
+                        day_length,
+                        max_day_length,
+                        temps,
+                        optimal_temp=10.0,
+                        doy=doy,
+                        min_length=marine_domain.config.smolt_min_length,
+                    )
+
     def run(self):
         """Run the simulation until the end date."""
         while not self.time_manager.is_done():

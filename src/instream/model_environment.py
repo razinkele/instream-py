@@ -82,6 +82,9 @@ class _ModelEnvironmentMixin:
                     self._light_cfg.twilight_angle,
                 )
                 self._cached_solar[rname] = irr
+                # Cache day length for smolt readiness (last reach wins; all
+                # reaches share latitude so values are identical)
+                self._day_length = _dl
 
         # Cell light: ALWAYS recompute (depth changes with flow)
         for r_idx, rname in enumerate(self.reach_order):
