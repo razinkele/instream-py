@@ -3,6 +3,8 @@
 import math
 import numpy as np
 
+from instream.state.life_stage import LifeStage
+
 try:
     from instream.backends.numba_backend.fitness import (
         _evaluate_all_cells as _numba_eval,
@@ -585,6 +587,40 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             best_activities[i] = 2  # hide
             trout_state.cell_idx[i] = cur
             trout_state.activity[i] = 2
+            continue
+
+        # --- ADULT HOLDING: returning adults skip fitness-based selection ---
+        if int(trout_state.life_history[i]) == int(LifeStage.RETURNING_ADULT):
+            # Select the lowest-velocity wet cell within movement radius
+            hold_cell = candidates[int(np.argmin(cs.velocity[candidates]))]
+            best_cells[i] = hold_cell
+            best_activities[i] = 4  # hold
+            trout_state.cell_idx[i] = hold_cell
+            trout_state.activity[i] = 4
+            trout_state.reach_idx[i] = cs.reach_idx[hold_cell]
+            # Holding = only respiration, no feeding → negative growth
+            _fish_species_h = int(trout_state.species_idx[i])
+            _fish_reach_h = int(trout_state.reach_idx[i])
+            _fr_h = min(_fish_reach_h, len(_temperature_arr) - 1)
+            _fs_h = (
+                min(_fish_species_h, _max_swim_tt_arr.shape[1] - 1)
+                if _max_swim_tt_arr.ndim >= 2
+                else 0
+            )
+            _fr_r_h = min(_fish_reach_h, _max_swim_tt_arr.shape[0] - 1)
+            _resp_temp_term_h = float(_resp_tt_arr[_fr_r_h, _fs_h])
+            if _sp is not None:
+                _resp_A_h = float(_sp["resp_A"][_fish_species_h])
+                _resp_B_h = float(_sp["resp_B"][_fish_species_h])
+                _fed_h = float(_sp["energy_density"][_fish_species_h])
+            else:
+                _resp_A_h = params["resp_A"]
+                _resp_B_h = params["resp_B"]
+                _fed_h = params["fish_energy_density"]
+            _fw_h = float(trout_state.weight[i])
+            resp_std_h = _resp_A_h * _fw_h ** _resp_B_h
+            resp_h = resp_std_h * _resp_temp_term_h  # swim speed = 0, exp(0) = 1
+            trout_state.last_growth_rate[i] = -resp_h / _fed_h
             continue
 
         best_fitness = -np.inf
