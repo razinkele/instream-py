@@ -205,6 +205,143 @@ class TestHabitatSelection:
 
 
 @pytest.mark.slow
+class TestSubDailyPopulationStability:
+    """Verify sub-daily mode produces plausible dynamics."""
+
+    FIXTURES_A = Path(__file__).parent / "fixtures" / "example_a"
+    FIXTURES_SD = Path(__file__).parent / "fixtures" / "subdaily"
+
+    @pytest.fixture(scope="class")
+    def model(self, tmp_path_factory):
+        import yaml
+        from instream.model import InSTREAMModel
+
+        tmp_path = tmp_path_factory.mktemp("subdaily_bv")
+        timeseries_csv = self.FIXTURES_SD / "hourly_example_a.csv"
+        config = yaml.safe_load((CONFIGS / "example_a.yaml").read_text())
+        config["simulation"]["start_date"] = "2010-10-01"
+        config["simulation"]["end_date"] = "2010-10-03"
+        for rname in config["reaches"]:
+            config["reaches"][rname]["time_series_input_file"] = str(timeseries_csv)
+        out = tmp_path / "subdaily_bv_config.yaml"
+        out.write_text(yaml.dump(config, default_flow_style=False))
+        m = InSTREAMModel(str(out), data_dir=str(self.FIXTURES_A))
+        # Run two full days of hourly steps (48 sub-steps)
+        steps = 0
+        while not m.time_manager.is_done() and steps < 48:
+            m.step()
+            steps += 1
+        return m
+
+    def test_population_persists_subdaily(self, model):
+        alive = model.trout_state.num_alive()
+        assert alive > 0, "Population went extinct in sub-daily mode"
+
+    def test_steps_per_day_is_24_for_hourly(self, model):
+        assert model.steps_per_day == 24, (
+            f"Expected 24 steps/day for hourly data, got {model.steps_per_day}"
+        )
+
+    def test_alive_fish_have_positive_weight(self, model):
+        alive = model.trout_state.alive_indices()
+        if len(alive) == 0:
+            pytest.skip("No alive fish to check")
+        weights = model.trout_state.weight[alive]
+        assert np.all(weights > 0), "Found alive fish with weight <= 0 in sub-daily mode"
+
+    def test_alive_fish_on_valid_cells(self, model):
+        """Fish should still be on wet cells after sub-daily steps."""
+        alive = model.trout_state.alive_indices()
+        if len(alive) == 0:
+            pytest.skip("No alive fish to check")
+        cells = model.trout_state.cell_idx[alive]
+        depths = model.fem_space.cell_state.depth[cells]
+        assert np.all(depths > 0), "Found fish on dry cells in sub-daily mode"
+
+
+@pytest.mark.slow
+class TestHarvestBehavior:
+    """Verify harvest module produces realistic catch."""
+
+    def test_harvest_callable(self):
+        from instream.modules.harvest import compute_harvest
+        assert callable(compute_harvest)
+
+    def test_harvest_reduces_eligible_population(self):
+        """Harvest with high angler pressure should kill eligible fish."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.harvest import compute_harvest
+
+        rng = np.random.default_rng(0)
+        ts = TroutState.zeros(20)
+        for i in range(20):
+            ts.alive[i] = True
+            ts.length[i] = 15.0  # all above minimum
+            ts.weight[i] = 5.0
+        records = compute_harvest(
+            ts, num_anglers=50, catch_rate=1.0, min_length=10.0, bag_limit=100, rng=rng
+        )
+        assert len(records) > 0, "Expected harvest records with high angler pressure"
+        assert np.sum(~ts.alive[:20]) > 0, "Expected some fish to be killed by harvest"
+
+    def test_harvest_records_respect_min_length(self):
+        """Harvested fish must all be >= min_length."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.harvest import compute_harvest
+
+        rng = np.random.default_rng(1)
+        ts = TroutState.zeros(30)
+        for i in range(30):
+            ts.alive[i] = True
+            ts.length[i] = 5.0 + i * 0.5  # lengths 5.0 to 19.5
+            ts.weight[i] = 1.0
+        min_len = 12.0
+        records = compute_harvest(
+            ts, num_anglers=20, catch_rate=1.0, min_length=min_len, bag_limit=100, rng=rng
+        )
+        for r in records:
+            assert r["length"] >= min_len, (
+                f"Harvested fish with length {r['length']} < min_length {min_len}"
+            )
+
+    def test_harvest_within_bag_limit(self):
+        """Total harvest must not exceed the bag limit."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.harvest import compute_harvest
+
+        rng = np.random.default_rng(2)
+        ts = TroutState.zeros(50)
+        for i in range(50):
+            ts.alive[i] = True
+            ts.length[i] = 20.0
+            ts.weight[i] = 8.0
+        bag_limit = 5
+        records = compute_harvest(
+            ts, num_anglers=100, catch_rate=1.0, min_length=5.0, bag_limit=bag_limit, rng=rng
+        )
+        assert len(records) <= bag_limit, (
+            f"Harvest {len(records)} exceeded bag limit {bag_limit}"
+        )
+
+    def test_no_harvest_when_population_undersized(self):
+        """No fish should be harvested when all are below minimum length."""
+        from instream.state.trout_state import TroutState
+        from instream.modules.harvest import compute_harvest
+
+        rng = np.random.default_rng(3)
+        ts = TroutState.zeros(10)
+        for i in range(10):
+            ts.alive[i] = True
+            ts.length[i] = 5.0
+            ts.weight[i] = 0.5
+        records = compute_harvest(
+            ts, num_anglers=100, catch_rate=1.0, min_length=20.0, bag_limit=50, rng=rng
+        )
+        assert len(records) == 0, "Expected no harvest when all fish are undersized"
+        assert np.all(ts.alive[:10]), "All fish should remain alive when none are eligible"
+
+
+@pytest.mark.slow
 class TestSpawningAndRecruitment:
     """Verify spawning produces fry within biological parameters."""
 
