@@ -123,8 +123,8 @@ class TestSubDailyPopulationStability:
     @pytest.fixture(scope="class")
     def model(self):
         # Configure exactly like test_subdaily.py does for hourly mode
-        # ... (fill in after reading test_subdaily.py in Step 1)
-        pass
+        # Read test_subdaily.py in Step 1 to fill in this fixture
+        pytest.skip("implement after reading test_subdaily.py config pattern")
 
     def test_population_persists_subdaily(self, model):
         alive = model.trout_state.alive.sum()
@@ -167,7 +167,7 @@ class TestHarvestBehavior:
     def test_harvest_with_eligible_fish(self):
         # Based on how test_harvest.py sets up its test
         # Create a model with harvest config, run, check catch records
-        pass
+        pytest.skip("implement after reading test_harvest.py")
 ```
 
 - [ ] **Step 3: Run and commit**
@@ -495,12 +495,12 @@ class TestSpawnPerturbation:
     def test_fecundity_varies_with_noise(self):
         # Call create_redd with fecundity_noise > 0, different seeds
         # Assert egg counts differ
-        pass
+        pytest.skip("implement in Step 2")
 
     def test_zero_noise_is_deterministic(self):
         # Call create_redd with fecundity_noise=0
         # Assert same egg count regardless of seed
-        pass
+        pytest.skip("implement in Step 2")
 ```
 
 - [ ] **Step 2: Add lognormal noise to fecundity in create_redd**
@@ -536,7 +536,7 @@ class TestAdultHolding:
     def test_returning_adult_uses_hold_activity(self):
         # Set up fish with life_history=LifeStage.RETURNING_ADULT
         # After habitat selection, activity should be 4
-        pass
+        pytest.skip("implement in Step 2")
 ```
 
 - [ ] **Step 4: Run tests, commit**
@@ -623,11 +623,11 @@ Use `InSALMO7.4_test.nlogox` in GUI. Generate reference data for:
 class TestInSALMOBehaviors:
     def test_returning_adults_hold(self):
         """Verify returning adults use holding behavior."""
-        pass
+        pytest.skip("implement after generating NetLogo reference data")
 
     def test_outmigration_occurs(self):
         """Verify some juveniles outmigrate based on fitness."""
-        pass
+        pytest.skip("implement after generating NetLogo reference data")
 ```
 
 - [ ] **Step 3: Run and commit**
