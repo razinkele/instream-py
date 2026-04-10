@@ -390,3 +390,41 @@ def test_superimposition_no_effect_different_cell():
     apply_superimposition(rs, 1, 1000)
     assert rs.num_eggs[0] == 100  # unchanged
     assert rs.num_eggs[1] == 50  # unchanged
+
+
+class TestFecundityNoise:
+    """Tests for lognormal fecundity noise in create_redd."""
+
+    def test_fecundity_varies_with_noise(self):
+        """With noise > 0 and different seeds, egg counts should differ."""
+        from instream.state.redd_state import ReddState
+        from instream.modules.spawning import create_redd
+
+        eggs = []
+        for seed in [42, 99, 7]:
+            rs = ReddState.zeros(10)
+            rng = np.random.default_rng(seed)
+            create_redd(
+                rs, species_idx=0, cell_idx=0, reach_idx=0,
+                weight=500.0, fecund_mult=1.0, fecund_exp=1.0,
+                egg_viability=1.0, fecundity_noise=0.3, rng=rng,
+            )
+            eggs.append(int(rs.num_eggs[0]))
+        assert len(set(eggs)) > 1, f"All egg counts identical: {eggs}"
+
+    def test_zero_noise_deterministic(self):
+        """With noise=0, egg count is the same regardless of seed."""
+        from instream.state.redd_state import ReddState
+        from instream.modules.spawning import create_redd
+
+        eggs = []
+        for seed in [42, 99, 7]:
+            rs = ReddState.zeros(10)
+            rng = np.random.default_rng(seed)
+            create_redd(
+                rs, species_idx=0, cell_idx=0, reach_idx=0,
+                weight=500.0, fecund_mult=1.0, fecund_exp=1.0,
+                egg_viability=1.0, fecundity_noise=0.0, rng=rng,
+            )
+            eggs.append(int(rs.num_eggs[0]))
+        assert len(set(eggs)) == 1, f"Egg counts should be identical: {eggs}"

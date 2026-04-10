@@ -22,6 +22,7 @@ def ready_to_spawn(
     spawn_start_doy,
     spawn_end_doy,
     rng,
+    spawn_date_jitter_days=0,
 ):
     """Check whether a fish is ready to spawn (Task 6.1).
 
@@ -82,13 +83,20 @@ def ready_to_spawn(
     if temperature < spawn_min_temp or temperature > spawn_max_temp:
         return False
 
-    # Season window
-    if spawn_start_doy <= spawn_end_doy:
-        if day_of_year < spawn_start_doy or day_of_year > spawn_end_doy:
+    # Season window (with optional per-fish jitter)
+    eff_start = spawn_start_doy
+    eff_end = spawn_end_doy
+    if spawn_date_jitter_days > 0:
+        jitter = int(rng.integers(-spawn_date_jitter_days, spawn_date_jitter_days + 1))
+        eff_start = max(1, eff_start + jitter)
+        eff_end = min(365, eff_end + jitter)
+
+    if eff_start <= eff_end:
+        if day_of_year < eff_start or day_of_year > eff_end:
             return False
     else:
         # Wraps around year boundary (e.g. Nov-Feb)
-        if day_of_year < spawn_start_doy and day_of_year > spawn_end_doy:
+        if day_of_year < eff_start and day_of_year > eff_end:
             return False
 
     # Flow check
@@ -193,6 +201,8 @@ def create_redd(
     fecund_mult,
     fecund_exp,
     egg_viability,
+    fecundity_noise=0.0,
+    rng=None,
 ):
     """Create a new redd in the first available slot (Task 6.3).
 
@@ -208,6 +218,11 @@ def create_redd(
         Fecundity parameters: eggs = fecund_mult * weight^fecund_exp * egg_viability.
     egg_viability : float
         Fraction of eggs that are viable (0-1).
+    fecundity_noise : float
+        If > 0, multiply deterministic egg count by exp(N(0, fecundity_noise))
+        to introduce lognormal noise. Default 0.0 (deterministic).
+    rng : numpy.random.Generator or None
+        Random number generator (required when fecundity_noise > 0).
 
     Returns
     -------
@@ -218,7 +233,10 @@ def create_redd(
     if slot < 0:
         return -1
 
-    num_eggs = int(fecund_mult * weight**fecund_exp * egg_viability)
+    num_eggs = fecund_mult * weight**fecund_exp * egg_viability
+    if fecundity_noise > 0.0 and rng is not None:
+        num_eggs *= np.exp(rng.normal(0.0, fecundity_noise))
+    num_eggs = int(num_eggs)
 
     redd_state.alive[slot] = True
     redd_state.species_idx[slot] = species_idx
