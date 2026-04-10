@@ -26,7 +26,7 @@
 
 ### Section 2: InSALMON Foundation
 - Create: `src/instream/state/life_stage.py`
-- Modify: `src/instream/state/trout_state.py`, `src/instream/model_day_boundary.py`, `src/instream/modules/migration.py`, `src/instream/modules/spawning.py`, `src/instream/modules/survival.py`, `src/instream/modules/behavior.py`, `src/instream/state/params.py`, `src/instream/io/config.py`, `src/instream/model.py`
+- Modify: `src/instream/state/trout_state.py`, `src/instream/model_day_boundary.py`, `src/instream/modules/migration.py`, `src/instream/modules/spawning.py`, `src/instream/modules/survival.py`, `src/instream/modules/behavior.py`, `src/instream/state/params.py`, `src/instream/io/config.py`, `src/instream/model.py`, `src/instream/model_environment.py`
 - Modify: `tests/test_spawning.py` (life_history assertions)
 
 ---
@@ -700,3 +700,18 @@ git push origin master --tags
 | 13 | InSALMON | Growth-fitness integration (step reorder) | 2 days |
 | 14 | InSALMON | InSALMO validation gate | 2 days |
 | 15 | Release | Documentation and release | 1 day |
+| — | Buffer | Section 1 overflow (Day 10) + Section 2 overflow (Day 20) | 2 days |
+
+**Task estimates sum to 17 days. With 2 buffer days: 19 days. Expected total: 22 working days** (accounting for investigation time, NetLogo GUI runs, and debugging). Best case 17, worst case 28.
+
+---
+
+## Out of Scope (v0.14.0+)
+
+- Marine domain (MarineDomain class, zones, ocean growth/survival, fishing)
+- Environmental drivers (NetCDF, WMS)
+- FreshwaterDomain/MarineDomain refactor of model.py (domain-dispatched step)
+- TroutState marine fields (zone_idx, sea_winters, smolt_date, natal_reach_idx)
+- Smoltification readiness accumulation (photoperiod + temperature trigger)
+- Multi-generation simulation
+- Ensemble runs
