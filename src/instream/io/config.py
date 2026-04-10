@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import yaml
@@ -249,6 +249,7 @@ class ModelConfig(BaseModel):
     light: LightConfig = LightConfig()
     species: Dict[str, SpeciesConfig] = {}
     reaches: Dict[str, ReachConfig] = {}
+    marine: Optional["MarineConfig"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -762,3 +763,11 @@ def nls_to_yaml(nls_path: Path) -> str:
     return yaml.dump(
         config, default_flow_style=False, sort_keys=False, allow_unicode=True
     )
+
+
+# ---------------------------------------------------------------------------
+# Deferred import to resolve forward reference in ModelConfig.marine
+# ---------------------------------------------------------------------------
+from instream.marine.config import MarineConfig  # noqa: E402
+
+ModelConfig.model_rebuild()
