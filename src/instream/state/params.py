@@ -164,6 +164,14 @@ class SpeciesParams:
     superind_max_rep: float = 0.0
     superind_max_length: float = 0.0
 
+    # --- New InSALMON parameters ---
+    mort_condition_K_crit: float = 0.8
+    fecundity_noise: float = 0.0
+    spawn_date_jitter_days: int = 0
+    outmigration_max_prob: float = 0.1
+    outmigration_min_length: float = 8.0
+    fitness_growth_weight: float = 1.0
+
     def __post_init__(self):
         # Make numpy arrays read-only to enforce true immutability
         for fld in ("cmax_temp_table_x", "cmax_temp_table_y"):

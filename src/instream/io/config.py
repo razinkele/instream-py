@@ -209,6 +209,14 @@ class SpeciesConfig(BaseModel, extra="allow"):
     spawn_depth_table: Dict[float, float] = {}
     spawn_vel_table: Dict[float, float] = {}
 
+    # New InSALMON parameters
+    mort_condition_K_crit: float = 0.8
+    fecundity_noise: float = 0.0
+    spawn_date_jitter_days: int = 0
+    outmigration_max_prob: float = 0.1
+    outmigration_min_length: float = 8.0
+    fitness_growth_weight: float = 1.0
+
 
 class ReachConfig(BaseModel, extra="allow"):
     """Reach-specific parameters."""
@@ -416,6 +424,13 @@ def params_from_config(
             # Superindividual
             superind_max_rep=sp.superind_max_rep,
             superind_max_length=sp.superind_max_length,
+            # New InSALMON parameters
+            mort_condition_K_crit=sp.mort_condition_K_crit,
+            fecundity_noise=sp.fecundity_noise,
+            spawn_date_jitter_days=sp.spawn_date_jitter_days,
+            outmigration_max_prob=sp.outmigration_max_prob,
+            outmigration_min_length=sp.outmigration_min_length,
+            fitness_growth_weight=sp.fitness_growth_weight,
         )
 
     reach_params: dict[str, ReachParams] = {}
