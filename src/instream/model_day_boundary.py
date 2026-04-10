@@ -38,9 +38,11 @@ class _ModelDayBoundaryMixin:
 
         self._do_spawning(step_length)
 
-        # Post-spawn mortality for anadromous adults
+        # Post-spawn mortality for anadromous adults (freshwater only)
         alive = self.trout_state.alive_indices()
         for i in alive:
+            if self.trout_state.zone_idx[i] >= 0:
+                continue  # skip marine fish
             if (
                 self.trout_state.life_history[i] == LifeStage.SPAWNER
                 and self.trout_state.spawned_this_season[i]
@@ -202,6 +204,11 @@ class _ModelDayBoundaryMixin:
         self._reset_spawn_season_if_needed(earliest_start)
 
         alive = self.trout_state.alive_indices()
+        # Filter to freshwater fish only (zone_idx == -1)
+        marine_domain = getattr(self, '_marine_domain', None)
+        if marine_domain is not None:
+            fw_mask = self.trout_state.zone_idx[alive] == -1
+            alive = alive[fw_mask]
         cs = self.fem_space.cell_state
 
         for i in alive:
@@ -424,6 +431,8 @@ class _ModelDayBoundaryMixin:
         sp_mig_L9 = self._sp_arrays["migrate_fitness_L9"]
         alive = self.trout_state.alive_indices()
         for i in alive:
+            if self.trout_state.zone_idx[i] >= 0:
+                continue  # skip marine fish
             lh = int(self.trout_state.life_history[i])
             if lh != LifeStage.PARR:
                 continue

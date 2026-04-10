@@ -576,7 +576,13 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     _c_ahiding = cs.available_hiding_places
     _c_dist_esc = cs.dist_escape
 
+    _zone_idx = getattr(trout_state, 'zone_idx', None)
+
     for i in alive_sorted:
+        # Skip marine fish (zone_idx >= 0) — they don't use freshwater cells
+        if _zone_idx is not None and _zone_idx[i] >= 0:
+            continue
+
         candidates = candidate_lists[i]
         if candidates is None or len(candidates) == 0:
             # No wet candidates — fish is stranded at current cell

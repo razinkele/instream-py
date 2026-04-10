@@ -73,8 +73,15 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
         )
 
         # 8. Store growth rate in memory (NOT applied to weight yet)
+        #    Skip marine fish (zone_idx >= 0) — they don't use freshwater cells
         alive = self.trout_state.alive_indices()
-        for i in alive:
+        marine_domain = getattr(self, '_marine_domain', None)
+        if marine_domain is not None:
+            fw_mask = self.trout_state.zone_idx[alive] == -1
+            freshwater_alive = alive[fw_mask]
+        else:
+            freshwater_alive = alive
+        for i in freshwater_alive:
             self.trout_state.growth_memory[i, substep] = (
                 self.trout_state.last_growth_rate[i]
             )
@@ -83,10 +90,16 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
         survival_probs = self._do_survival(step_length)
 
         # Update fitness memory (EMA) using both growth and survival projection
+        #   Skip marine fish (zone_idx >= 0)
         frac = self._sp_arrays["fitness_memory_frac"]
         alpha_arr = self._sp_arrays["fitness_growth_weight"]
         alive_after = self.trout_state.alive_indices()
-        for i in alive_after:
+        if marine_domain is not None:
+            fw_mask_after = self.trout_state.zone_idx[alive_after] == -1
+            fw_alive_after = alive_after[fw_mask_after]
+        else:
+            fw_alive_after = alive_after
+        for i in fw_alive_after:
             sp_idx = int(self.trout_state.species_idx[i])
             f = float(frac[sp_idx])
             alpha = float(alpha_arr[sp_idx])

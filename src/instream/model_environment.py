@@ -125,7 +125,8 @@ class _ModelEnvironmentMixin:
                 drift_cells = set()
                 for i in alive:
                     if (
-                        int(self.trout_state.activity[i]) == 0
+                        self.trout_state.zone_idx[i] == -1
+                        and int(self.trout_state.activity[i]) == 0
                         and int(self.trout_state.reach_idx[i]) == r_idx
                     ):
                         drift_cells.add(int(self.trout_state.cell_idx[i]))
@@ -151,9 +152,17 @@ class _ModelEnvironmentMixin:
         """Evaluate and apply survival / mortality for all alive trout.
 
         This covers step 9 of the sub-step loop.
+        Marine fish (zone_idx >= 0) are excluded — their survival_probs stay 1.0.
         """
         cs = self.fem_space.cell_state
         alive = self.trout_state.alive_indices()
+
+        # Filter to freshwater fish only (zone_idx == -1)
+        marine_domain = getattr(self, '_marine_domain', None)
+        if marine_domain is not None:
+            fw_mask = self.trout_state.zone_idx[alive] == -1
+            alive = alive[fw_mask]
+
         n_capacity = self.trout_state.alive.shape[0]
         survival_probs = np.ones(n_capacity, dtype=np.float64)
 
