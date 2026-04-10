@@ -341,17 +341,18 @@ def redd_survival_lo_temp(
     T9: float = 4.0,
     step_length: float = 1.0,
 ) -> float:
-    """Fraction of eggs surviving low-temperature mortality for one step.
+    """Daily survival probability for low-temperature redd mortality.
 
     The logistic is *increasing* (T1 < T9): cold temperatures yield low
     logistic values -> high mortality.
 
-    ``survival = logistic(T) ** step_length``
-    Clamped to [0, 1].
+    Returns the daily logistic value (step_length parameter is accepted
+    for API compatibility but not used — step_length scaling is handled
+    in apply_redd_survival via the constant-hazard formula, matching
+    NetLogo's ``(1 - s_daily) * eggs * step_length`` approach).
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
-    survival = logistic_val**step_length
-    return float(np.clip(survival, 0.0, 1.0))
+    return float(np.clip(logistic_val, 0.0, 1.0))
 
 
 # ---------------------------------------------------------------------------
@@ -365,17 +366,18 @@ def redd_survival_hi_temp(
     T9: float = 17.5,
     step_length: float = 1.0,
 ) -> float:
-    """Fraction of eggs surviving high-temperature mortality for one step.
+    """Daily survival probability for high-temperature redd mortality.
 
     The logistic is *decreasing* (T1 > T9): hot temperatures yield low
     logistic values -> high mortality.
 
-    ``survival = logistic(T) ** step_length``
-    Clamped to [0, 1].
+    Returns the daily logistic value (step_length parameter is accepted
+    for API compatibility but not used — step_length scaling is handled
+    in apply_redd_survival via the constant-hazard formula, matching
+    NetLogo's ``(1 - s_daily) * eggs * step_length`` approach).
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
-    survival = logistic_val**step_length
-    return float(np.clip(survival, 0.0, 1.0))
+    return float(np.clip(logistic_val, 0.0, 1.0))
 
 
 # ---------------------------------------------------------------------------
@@ -472,19 +474,22 @@ def apply_redd_survival(
     for i in range(n):
         current = eggs[i]
 
-        # Low-temperature mortality
-        lo_surv = redd_survival_lo_temp(
-            float(temperatures[i]), lo_T1, lo_T9, step_length
+        # Low-temperature mortality (constant-hazard model, matches NetLogo)
+        # NetLogo: deaths = random-poisson((1 - s_daily) * eggs * step_length)
+        lo_surv_daily = redd_survival_lo_temp(
+            float(temperatures[i]), lo_T1, lo_T9
         )
-        killed = current * (1.0 - lo_surv)
+        lo_mortality_rate = (1.0 - lo_surv_daily) * current * step_length
+        killed = min(lo_mortality_rate, current)  # deterministic expectation
         lo_deaths[i] = killed
         current -= killed
 
-        # High-temperature mortality
-        hi_surv = redd_survival_hi_temp(
-            float(temperatures[i]), hi_T1, hi_T9, step_length
+        # High-temperature mortality (constant-hazard model, matches NetLogo)
+        hi_surv_daily = redd_survival_hi_temp(
+            float(temperatures[i]), hi_T1, hi_T9
         )
-        killed = current * (1.0 - hi_surv)
+        hi_mortality_rate = (1.0 - hi_surv_daily) * current * step_length
+        killed = min(hi_mortality_rate, current)
         hi_deaths[i] = killed
         current -= killed
 
