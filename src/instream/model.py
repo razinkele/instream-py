@@ -79,21 +79,26 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                 self.trout_state.last_growth_rate[i]
             )
 
-        # Update fitness memory (EMA)
+        # 9. Survival / mortality (vectorized via backend)
+        survival_probs = self._do_survival(step_length)
+
+        # Update fitness memory (EMA) using both growth and survival projection
         frac = self._sp_arrays["fitness_memory_frac"]
-        for i in alive:
+        alpha_arr = self._sp_arrays["fitness_growth_weight"]
+        alive_after = self.trout_state.alive_indices()
+        for i in alive_after:
             sp_idx = int(self.trout_state.species_idx[i])
             f = float(frac[sp_idx])
-            current = float(self.trout_state.last_growth_rate[i])
+            alpha = float(alpha_arr[sp_idx])
+            growth_signal = float(self.trout_state.last_growth_rate[i])
+            surv_signal = float(survival_probs[i])
+            current = alpha * growth_signal + (1.0 - alpha) * surv_signal
             old = self.trout_state.fitness_memory[i]
             if old == 0.0 and current != 0.0:
                 # First real update: seed with current value to avoid day-1 spurious migration
                 self.trout_state.fitness_memory[i] = current
             else:
                 self.trout_state.fitness_memory[i] = f * old + (1.0 - f) * current
-
-        # 9. Survival / mortality (vectorized via backend)
-        self._do_survival(step_length)
 
         # ----------------------------------------------------------------
         # B) DAY-BOUNDARY ONLY OPERATIONS

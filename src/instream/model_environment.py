@@ -235,6 +235,8 @@ class _ModelEnvironmentMixin:
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)
 
+        return survival_probs
+
     def _replenish_resources_partial(self, step_length):
         """Partially replenish drift and search food between sub-steps.
 
