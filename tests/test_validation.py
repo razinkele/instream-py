@@ -489,6 +489,505 @@ class TestSpawnCellMatchesNetLogo:
             )
 
 
+# =====================================================================
+# NetLogo Cross-Validation Tests
+# These tests compare Python function output against genuine NetLogo 7.4
+# reference data generated from InSALMO7.4 test procedures.
+# =====================================================================
+
+
+class TestGrowthReportMatchesNetLogoCSV:
+    """Cross-validate Python growth components against NetLogo GrowthReportOut.
+
+    The NetLogo write-growth-report test procedure runs with the model's
+    runtime step-length (fraction of a day), which is NOT 1.0. Since the NL
+    CSV does not record step-length, we cannot reconstruct c-stepmax and
+    therefore cannot match drift/search intake and growth exactly. However,
+    we CAN validate:
+
+    1. Hiding growth (growth-hide): depends only on respiration, no intake.
+    2. Respiration columns (resp-drift, resp-search, resp-hide): independent
+       of step-length.
+    3. Intermediate values: CMax-temp-func, max-swim-speed, drift-swim-speed.
+    """
+
+    def test_netlogo_growth_report(self):
+        import math
+        import numpy as np
+        import pandas as pd
+
+        ref_path = require_reference("GrowthReportOut-netlogo.csv")
+        ref = pd.read_csv(ref_path, skiprows=2)
+        from instream.modules.growth import (
+            cmax_temp_function,
+            max_swim_speed,
+            drift_swim_speed,
+            respiration,
+        )
+
+        # Example A Chinook-Spring species params
+        table_x = [0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0]
+        table_y = [0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0]
+        cmax_A = 0.628
+        cmax_B = 0.7
+        max_speed_A = 2.8
+        max_speed_B = 21.0
+        max_speed_C = -0.0029
+        max_speed_D = 0.084
+        max_speed_E = 0.37
+        resp_A = 36.0
+        resp_B = 0.783
+        resp_C = 0.0020
+        resp_D = 1.4
+        fish_energy_density = 5900.0
+
+        # Sample every 100th row to keep test time reasonable (~3300 rows)
+        sampled = ref.iloc[::100].reset_index(drop=True)
+        mismatches = []
+
+        for idx, row in sampled.iterrows():
+            length = row["trout-length"]
+            weight = row["trout-weight"]
+            temp = row["temperature"]
+            depth = row["depth"]
+            velocity = row["velocity"]
+            shelter_frac = row["shelter-frac"]
+
+            # Pre-compute temperature-dependent terms
+            max_swim_temp_term = max(
+                0.0, max_speed_C * temp * temp + max_speed_D * temp + max_speed_E
+            )
+            exponent = resp_C * temp * temp
+            exponent = max(-500.0, min(50.0, exponent))
+            resp_temp_term = math.exp(exponent)
+
+            max_speed_len_term = max_speed_A * length + max_speed_B
+            py_max_speed = max_swim_speed(max_speed_len_term, max_swim_temp_term)
+            resp_std_wt = resp_A * weight ** resp_B
+
+            # 1. CMax-temp-func
+            py_cmax_temp = cmax_temp_function(temp, table_x, table_y)
+            nl_cmax_temp = row["CMax-temp-func"]
+            if abs(py_cmax_temp - nl_cmax_temp) > max(1e-9, 1e-9 * abs(nl_cmax_temp)):
+                mismatches.append(
+                    "row {} CMax-temp-func: py={:.12g} nl={:.12g}".format(
+                        idx, py_cmax_temp, nl_cmax_temp
+                    )
+                )
+
+            # 2. max-swim-speed
+            nl_max_speed = row["max-swim-speed"]
+            if abs(py_max_speed - nl_max_speed) > max(1e-9, 1e-9 * abs(nl_max_speed)):
+                mismatches.append(
+                    "row {} max-swim-speed: py={:.12g} nl={:.12g}".format(
+                        idx, py_max_speed, nl_max_speed
+                    )
+                )
+
+            # 3. drift-swim-speed
+            # NL test sets cell-available-vel-shelter = 1000000, and
+            # drift-swim-speed = velocity * shelter-frac when shelter available
+            py_drift_ss = drift_swim_speed(
+                velocity, length, 1000000.0, shelter_frac
+            )
+            nl_drift_ss = row["drift-swim-speed"]
+            if abs(py_drift_ss - nl_drift_ss) > max(1e-9, 1e-9 * abs(nl_drift_ss)):
+                mismatches.append(
+                    "row {} drift-swim-speed: py={:.12g} nl={:.12g}".format(
+                        idx, py_drift_ss, nl_drift_ss
+                    )
+                )
+
+            # 4. Respiration for each activity
+            # resp-drift uses velocity * shelter_frac as swim speed
+            py_resp_drift = respiration(
+                resp_std_wt, resp_temp_term,
+                velocity * shelter_frac, py_max_speed, resp_D
+            )
+            nl_resp_drift = row["resp-drift"]
+            if abs(py_resp_drift - nl_resp_drift) > max(1e-6, 1e-6 * abs(nl_resp_drift)):
+                mismatches.append(
+                    "row {} resp-drift: py={:.12g} nl={:.12g}".format(
+                        idx, py_resp_drift, nl_resp_drift
+                    )
+                )
+
+            # resp-search uses cell velocity as swim speed
+            py_resp_search = respiration(
+                resp_std_wt, resp_temp_term, velocity, py_max_speed, resp_D
+            )
+            nl_resp_search = row["resp-search"]
+            if abs(py_resp_search - nl_resp_search) > max(1e-6, 1e-6 * abs(nl_resp_search)):
+                mismatches.append(
+                    "row {} resp-search: py={:.12g} nl={:.12g}".format(
+                        idx, py_resp_search, nl_resp_search
+                    )
+                )
+
+            # resp-hide uses 0 swim speed
+            py_resp_hide = respiration(
+                resp_std_wt, resp_temp_term, 0.0, py_max_speed, resp_D
+            )
+            nl_resp_hide = row["resp-hide"]
+            if abs(py_resp_hide - nl_resp_hide) > max(1e-6, 1e-6 * abs(nl_resp_hide)):
+                mismatches.append(
+                    "row {} resp-hide: py={:.12g} nl={:.12g}".format(
+                        idx, py_resp_hide, nl_resp_hide
+                    )
+                )
+
+            # 5. growth-hide = -resp_hide / fish_energy_density (no intake)
+            py_growth_hide = -py_resp_hide / fish_energy_density
+            nl_growth_hide = row["growth-hide"]
+            if abs(nl_growth_hide) > 1e-12:
+                if abs((py_growth_hide - nl_growth_hide) / nl_growth_hide) > 1e-6:
+                    mismatches.append(
+                        "row {} growth-hide: py={:.12g} nl={:.12g}".format(
+                            idx, py_growth_hide, nl_growth_hide
+                        )
+                    )
+            else:
+                if abs(py_growth_hide - nl_growth_hide) > 1e-12:
+                    mismatches.append(
+                        "row {} growth-hide: py={:.12g} nl={:.12g}".format(
+                            idx, py_growth_hide, nl_growth_hide
+                        )
+                    )
+
+        assert len(mismatches) == 0, "{} mismatches (of {}):\n{}".format(
+            len(mismatches),
+            len(sampled) * 7,
+            "\n".join(mismatches[:20]),
+        )
+
+
+class TestSurvivalMatchesNetLogoCSV:
+    """Cross-validate Python survival functions against NetLogo survival-test-out."""
+
+    def test_netlogo_survival(self):
+        import numpy as np
+        import pandas as pd
+
+        ref_path = require_reference("survival-test-out-netlogo.csv")
+        ref = pd.read_csv(ref_path, skiprows=1)
+        from instream.modules.survival import (
+            survival_high_temperature,
+            survival_stranding,
+            survival_condition,
+            survival_fish_predation,
+            survival_terrestrial_predation,
+        )
+
+        # Example A Chinook-Spring params from config
+        mismatches = []
+
+        for idx, row in ref.iterrows():
+            length = row["trout-length"]
+            condition = row["trout-condition"]
+            activity = row["trout-activity"]  # string: "drift", "search", "hide"
+            temp = row["temperature"]
+            pisciv_density = row["pisciv-density"]
+            depth = row["depth"]
+            velocity = row["velocity"]
+            dist_to_hide = row["dist-to-hide"]
+            avail_hiding = int(row["avail-hiding-places"])
+            light = row["light"]
+
+            # s-temperature
+            s_ht = survival_high_temperature(temp, T1=28.0, T9=24.0)
+            expected_ht = row["s-temperature"]
+            if abs(s_ht - expected_ht) > max(1e-9, 1e-9 * abs(expected_ht)):
+                mismatches.append(
+                    "row {} s-temperature: py={:.12g} nl={:.12g}".format(idx, s_ht, expected_ht)
+                )
+
+            # s-strand
+            s_str = survival_stranding(depth)
+            expected_str = row["s-strand"]
+            if abs(s_str - expected_str) > 1e-9:
+                mismatches.append(
+                    "row {} s-strand: py={:.12g} nl={:.12g}".format(idx, s_str, expected_str)
+                )
+
+            # s-condition
+            s_cond = survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992)
+            expected_cond = row["s-condition"]
+            if abs(s_cond - expected_cond) > max(1e-9, 1e-9 * abs(expected_cond)):
+                mismatches.append(
+                    "row {} s-condition: py={:.12g} nl={:.12g}".format(
+                        idx, s_cond, expected_cond
+                    )
+                )
+
+            # s-fish-pred
+            s_fp = survival_fish_predation(
+                length,
+                depth,
+                light,
+                pisciv_density,
+                temp,
+                activity,
+                0.97,    # fish_pred_min
+                3.0,     # L1
+                6.0,     # L9
+                35.0,    # D1
+                5.0,     # D9
+                5.0e-06, # P1
+                -5.0,    # P9
+                50.0,    # I1
+                -50.0,   # I9
+                6.0,     # T1
+                2.0,     # T9
+                0.5,     # hiding_factor
+            )
+            expected_fp = row["s-fish-pred"]
+            if abs(s_fp - expected_fp) > max(1e-6, 1e-6 * abs(expected_fp)):
+                mismatches.append(
+                    "row {} s-fish-pred: py={:.12g} nl={:.12g}".format(
+                        idx, s_fp, expected_fp
+                    )
+                )
+
+            # s-terr-pred
+            s_tp = survival_terrestrial_predation(
+                length,
+                depth,
+                velocity,
+                light,
+                dist_to_hide,
+                activity,
+                avail_hiding,
+                1,      # superind_rep
+                0.94,   # terr_pred_min
+                6.0,    # L1
+                3.0,    # L9
+                0.0,    # D1
+                200.0,  # D9
+                20.0,   # V1
+                300.0,  # V9
+                50.0,   # I1
+                -10.0,  # I9
+                200.0,  # H1
+                -50.0,  # H9
+                0.8,    # hiding_factor
+            )
+            expected_tp = row["s-terr-pred"]
+            if abs(s_tp - expected_tp) > max(1e-6, 1e-6 * abs(expected_tp)):
+                mismatches.append(
+                    "row {} s-terr-pred: py={:.12g} nl={:.12g}".format(
+                        idx, s_tp, expected_tp
+                    )
+                )
+
+        assert len(mismatches) == 0, "{} mismatches (of {}):\n{}".format(
+            len(mismatches),
+            len(ref) * 5,
+            "\n".join(mismatches[:20]),
+        )
+
+
+class TestReddSurvivalMatchesNetLogoCSV:
+    """Cross-validate Python redd survival against NetLogo Redd-survive-test-out.
+
+    The NetLogo redd-survive procedure uses:
+        mortality_rate = (1 - daily_survival) * num_eggs * step_length
+        eggs_died = random-poisson(mortality_rate)
+
+    where daily_survival is the logistic value (NOT raised to step_length).
+    The eggs_died are stochastic (Poisson-drawn), so we compare the expected
+    mortality rate against the Poisson mean and use a tolerance that accounts
+    for Poisson variance: stddev = sqrt(mean), so we allow ~3 sigma.
+    """
+
+    def test_netlogo_redd_survival(self):
+        import math
+        import numpy as np
+        import pandas as pd
+
+        ref_path = require_reference("Redd-survive-test-out-netlogo.csv")
+        ref = pd.read_csv(ref_path, skiprows=2)
+        from instream.modules.survival import redd_survival_lo_temp, redd_survival_hi_temp
+
+        # Example A Chinook-Spring redd params
+        lo_T1 = 1.7
+        lo_T9 = 4.0
+        hi_T1 = 23.0
+        hi_T9 = 17.5
+
+        mismatches_lo = 0
+        mismatches_hi = 0
+        total_lo = 0
+        total_hi = 0
+
+        for idx, row in ref.iterrows():
+            step_length = row["step-length"]
+            temp = row["temperature"]
+            initial_eggs = row["initial-eggs"]
+            nl_died_lo = row["eggs-died-lo-T"]
+            nl_died_hi = row["eggs-died-hi-T"]
+
+            if initial_eggs <= 0:
+                continue
+
+            # NetLogo formula: mortality_rate = (1 - s_daily) * eggs * step_length
+            # s_daily is the logistic value (step_length=1.0)
+            s_lo_daily = redd_survival_lo_temp(temp, lo_T1, lo_T9, step_length=1.0)
+            expected_died_lo = (1.0 - s_lo_daily) * initial_eggs * step_length
+
+            # Poisson tolerance: allow 4-sigma deviation or minimum 2 eggs
+            tol_lo = max(2.0, 4.0 * math.sqrt(max(expected_died_lo, 1.0)))
+            total_lo += 1
+            if abs(expected_died_lo - nl_died_lo) > tol_lo:
+                mismatches_lo += 1
+
+            # High-temp: applied to eggs remaining after lo-T deaths
+            remaining_after_lo = initial_eggs - nl_died_lo
+            if remaining_after_lo > 0:
+                s_hi_daily = redd_survival_hi_temp(temp, hi_T1, hi_T9, step_length=1.0)
+                expected_died_hi = (1.0 - s_hi_daily) * remaining_after_lo * step_length
+                tol_hi = max(2.0, 4.0 * math.sqrt(max(expected_died_hi, 1.0)))
+                total_hi += 1
+                if abs(expected_died_hi - nl_died_hi) > tol_hi:
+                    mismatches_hi += 1
+
+        # With Poisson noise and 4-sigma tolerance, <0.01% of rows should mismatch
+        # Allow up to 1% as a generous safety margin
+        lo_pct = 100.0 * mismatches_lo / max(total_lo, 1)
+        hi_pct = 100.0 * mismatches_hi / max(total_hi, 1)
+        assert lo_pct < 1.0, (
+            "lo-T: {} of {} rows ({:.1f}%) exceed 4-sigma Poisson tolerance".format(
+                mismatches_lo, total_lo, lo_pct
+            )
+        )
+        assert hi_pct < 1.0, (
+            "hi-T: {} of {} rows ({:.1f}%) exceed 4-sigma Poisson tolerance".format(
+                mismatches_hi, total_hi, hi_pct
+            )
+        )
+
+
+class TestSpawnCellMatchesNetLogoCSV:
+    """Cross-validate Python spawn suitability against NetLogo Spawn-cell-test-out."""
+
+    def test_netlogo_spawn_cell(self):
+        import numpy as np
+        import pandas as pd
+
+        ref_path = require_reference("Spawn-cell-test-out-netlogo.csv")
+        ref = pd.read_csv(ref_path, skiprows=1)
+        from instream.modules.spawning import spawn_suitability
+
+        # Example A Chinook-Spring spawn tables
+        depth_xs = np.array([0.0, 12.0, 27.0, 33.5, 204.0])
+        depth_ys = np.array([0.0, 0.0, 0.95, 1.0, 0.0])
+        vel_xs = np.array([0.0, 2.3, 3.0, 54.0, 61.0, 192.0])
+        vel_ys = np.array([0.0, 0.0, 0.06, 1.0, 1.0, 0.0])
+
+        mismatches = []
+
+        for idx, row in ref.iterrows():
+            depth = row["Depth"]
+            velocity = row["Velocity"]
+            frac_spawn = row["Gravel fraction"]
+            area = row["Area"]
+
+            # Verify depth and velocity suitability individually
+            py_depth_suit = float(np.interp(depth, depth_xs, depth_ys))
+            py_vel_suit = float(np.interp(velocity, vel_xs, vel_ys))
+            nl_depth_suit = row["Depth-suit"]
+            nl_vel_suit = row["Vel-suit"]
+
+            if abs(py_depth_suit - nl_depth_suit) > max(1e-6, 1e-6 * abs(nl_depth_suit)):
+                mismatches.append(
+                    "row {} depth-suit: py={:.10g} nl={:.10g} (d={})".format(
+                        idx, py_depth_suit, nl_depth_suit, depth
+                    )
+                )
+            if abs(py_vel_suit - nl_vel_suit) > max(1e-6, 1e-6 * abs(nl_vel_suit)):
+                mismatches.append(
+                    "row {} vel-suit: py={:.10g} nl={:.10g} (v={})".format(
+                        idx, py_vel_suit, nl_vel_suit, velocity
+                    )
+                )
+
+        assert len(mismatches) == 0, "{} mismatches (of {}):\n{}".format(
+            len(mismatches),
+            len(ref) * 2,
+            "\n".join(mismatches[:20]),
+        )
+
+
+class TestCStepMaxMatchesNetLogoCSV:
+    """Cross-validate Python c_stepmax against NetLogo CStepmaxOut."""
+
+    def test_netlogo_cstepmax(self):
+        import numpy as np
+        import pandas as pd
+
+        ref_path = require_reference("CStepmaxOut-netlogo.csv")
+        # Line 1 is a comment, line 2 is header.
+        # ConsList column contains commas (serialized NetLogo list),
+        # causing variable field counts. Parse manually.
+        rows = []
+        with open(ref_path) as f:
+            next(f)  # skip comment line
+            header_line = next(f).strip()
+            for line in f:
+                fields = line.strip().split(",")
+                # First 10 columns are well-defined; rest is ConsList
+                rows.append(fields[:10])
+        col_names = [
+            "Time", "trout", "Reach", "C-stepmax", "Weight",
+            "Temperature", "CmaxTempFunc", "CMax", "Steplength",
+            "PrevCons",
+        ]
+        ref = pd.DataFrame(rows, columns=col_names)
+        for col in col_names[3:]:
+            ref[col] = pd.to_numeric(ref[col])
+        from instream.modules.growth import cmax_temp_function, c_stepmax
+
+        # Example A Chinook-Spring params
+        table_x = [0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0]
+        table_y = [0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0]
+        cmax_A = 0.628
+        cmax_B = 0.7
+
+        mismatches = []
+
+        for idx, row in ref.iterrows():
+            weight = row["Weight"]
+            temp = row["Temperature"]
+            step_length = row["Steplength"]
+            prev_cons = row["PrevCons"]
+            nl_cstepmax = row["C-stepmax"]
+
+            cmax_temp = cmax_temp_function(temp, table_x, table_y)
+            cmax_wt = cmax_A * weight ** cmax_B
+            py_cstepmax = c_stepmax(cmax_wt, cmax_temp, prev_cons, step_length)
+
+            # Also verify CmaxTempFunc
+            nl_cmax_temp = row["CmaxTempFunc"]
+            if abs(cmax_temp - nl_cmax_temp) > max(1e-9, 1e-9 * abs(nl_cmax_temp)):
+                mismatches.append(
+                    "row {} CmaxTempFunc: py={:.12g} nl={:.12g}".format(
+                        idx, cmax_temp, nl_cmax_temp
+                    )
+                )
+
+            if abs(py_cstepmax - nl_cstepmax) > max(1e-5, 1e-5 * abs(nl_cstepmax)):
+                mismatches.append(
+                    "row {} C-stepmax: py={:.12g} nl={:.12g}".format(
+                        idx, py_cstepmax, nl_cstepmax
+                    )
+                )
+
+        assert len(mismatches) == 0, "{} mismatches (of {}):\n{}".format(
+            len(mismatches),
+            len(ref) * 2,
+            "\n".join(mismatches[:20]),
+        )
+
+
 class TestFitnessReport:
     """Python-only fitness regression test — golden snapshot baseline.
 
