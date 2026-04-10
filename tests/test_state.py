@@ -186,3 +186,37 @@ class TestParams:
         )
         assert isinstance(sp.cmax_temp_table_x, np.ndarray)
         assert sp.cmax_temp_table_x.dtype == np.float64
+
+
+class TestTroutStateMarineFields:
+    def test_zeros_has_zone_idx(self):
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(10)
+        assert ts.zone_idx.shape == (10,)
+        assert ts.zone_idx.dtype == np.int32
+        assert np.all(ts.zone_idx == -1)
+
+    def test_zeros_has_sea_winters(self):
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(10)
+        assert ts.sea_winters.shape == (10,)
+        assert np.all(ts.sea_winters == 0)
+
+    def test_zeros_has_smolt_date(self):
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(10)
+        assert ts.smolt_date.shape == (10,)
+        assert np.all(ts.smolt_date == -1)
+
+    def test_zeros_has_natal_reach_idx(self):
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(10)
+        assert ts.natal_reach_idx.shape == (10,)
+        assert np.all(ts.natal_reach_idx == -1)
+
+    def test_zeros_has_smolt_readiness(self):
+        from instream.state.trout_state import TroutState
+        ts = TroutState.zeros(10)
+        assert ts.smolt_readiness.shape == (10,)
+        assert ts.smolt_readiness.dtype == np.float64
+        assert np.all(ts.smolt_readiness == 0.0)

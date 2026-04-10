@@ -35,6 +35,13 @@ class TroutState:
     max_speed_len_term: np.ndarray
     cmax_wt_term: np.ndarray
 
+    # Marine domain fields
+    zone_idx: np.ndarray         # int32, -1=freshwater, 0+=marine zone
+    sea_winters: np.ndarray      # int32
+    smolt_date: np.ndarray       # int32, ordinal date (-1=never)
+    natal_reach_idx: np.ndarray  # int32, birth reach (-1=unset)
+    smolt_readiness: np.ndarray  # float64, 0-1
+
     @classmethod
     def zeros(cls, capacity: int, max_steps_per_day: int = 4) -> "TroutState":
         return cls(
@@ -62,6 +69,11 @@ class TroutState:
             resp_std_wt_term=np.zeros(capacity, dtype=np.float64),
             max_speed_len_term=np.zeros(capacity, dtype=np.float64),
             cmax_wt_term=np.zeros(capacity, dtype=np.float64),
+            zone_idx=np.full(capacity, -1, dtype=np.int32),
+            sea_winters=np.zeros(capacity, dtype=np.int32),
+            smolt_date=np.full(capacity, -1, dtype=np.int32),
+            natal_reach_idx=np.full(capacity, -1, dtype=np.int32),
+            smolt_readiness=np.zeros(capacity, dtype=np.float64),
         )
 
     def num_alive(self) -> int:
