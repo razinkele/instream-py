@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-04-09
+
+### Added
+- **InSALMON foundation**: `LifeStage` IntEnum (FRY/PARR/SPAWNER/SMOLT/OCEAN_JUVENILE/OCEAN_ADULT/RETURNING_ADULT)
+- 6 new species config parameters: `mort_condition_K_crit`, `fecundity_noise`, `spawn_date_jitter_days`, `outmigration_max_prob`, `outmigration_min_length`, `fitness_growth_weight`
+- Outmigration probability: fitness-based migration decision for PARR-stage fish
+- Condition survival enhancement: parameterized `K_crit` threshold replaces hardcoded value
+- Spawn perturbation: fecundity noise and spawn date jitter for stochastic spawning
+- Adult holding behavior: `activity=4` assigned to RETURNING_ADULT fish
+- Growth-fitness integration: alpha-weighted EMA combining growth rate and survival fitness
+- Fitness report NetLogo cross-validation (17 validation tests total)
+- Sub-daily behavioral validation (4 tests)
+- Harvest behavioral validation (5 tests)
+- JAX `spawn_suitability` with interpax (replaces `np.interp` fallback)
+- Sphinx documentation build: `docs/source/` with autodoc configuration
+- PyPI packaging: `py.typed` marker, complete classifiers, release workflow metadata
+
+### Changed
+- Validation test total: 17 tests (was 16), all passing
+
+### Fixed
+- No regressions — 729 passed, 6 skipped
+
+---
+
 ## [0.12.0] - 2026-04-10
 
 ### Added

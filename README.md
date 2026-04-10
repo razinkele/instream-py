@@ -234,14 +234,14 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.12.0** -- NetLogo cross-validation, behavioral validation suite, model.py refactor (April 2026).
+**v0.13.0** -- InSALMON foundation, deferred validation items, Sphinx docs, PyPI packaging (April 2026).
 
 ### Current Metrics
 
 | Metric          | Value                                          |
 |-----------------|------------------------------------------------|
-| Tests           | 709+                                           |
-| Validation      | 16/16 (11 original + 5 NetLogo cross-val)      |
+| Tests           | 729+                                           |
+| Validation      | 17/17 (11 original + 6 NetLogo cross-val)      |
 | model.py        | 108 lines (decomposed into 3 mixin classes)    |
 | Step time       | 48 ms (Example A, Numba JIT)                   |
 | Species         | Multi-species support                          |
@@ -266,8 +266,12 @@ property-based tests, and performance regression tests.
 - InSTREAM-SD sub-daily scheduling (hourly + peaking flow)
 - Growth accumulation with day-boundary application
 - 16/16 NetLogo validation tests passing (11 original + 5 NetLogo 7.4 cross-validation)
-- 709+ unit, integration, property-based, behavioral, and validation tests
+- 729+ unit, integration, property-based, behavioral, and validation tests
 - model.py decomposed into 3 mixin classes (model_init, model_environment, model_day_boundary); residual 108 lines
+- InSALMON foundation: LifeStage enum, outmigration probability, spawn perturbation, adult holding, growth-fitness EMA
+- JAX spawn_suitability with interpax (replaces np.interp fallback)
+- Sphinx documentation build (docs/source/ with autodoc)
+- PyPI packaging (py.typed marker, release workflow)
 - Behavioral validation suite: population dynamics, size distribution, habitat selection, spawning/recruitment (13 tests)
 - JAX GPU backend with vectorized growth/survival kernels
 - FEM mesh reader (River2D/GMSH via meshio)
@@ -286,7 +290,8 @@ property-based tests, and performance regression tests.
 
 - Scenario comparison (side-by-side simulation runs)
 - Full Numba JIT compilation of fitness_all inner loop
-- Sphinx documentation build
+- InSALMON ocean phase (SMOLT/OCEAN_JUVENILE/OCEAN_ADULT transitions and mortality)
+- PyPI release (pending final review)
 
 ## License
 
