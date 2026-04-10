@@ -1,10 +1,10 @@
-# inSTREAM-py v0.13.0 — Comprehensive Implementation Plan
+# inSTREAM-py v0.13.0 — Comprehensive Implementation Plan (revised)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close all v0.12.0 deferred items + lay InSALMON freshwater foundation.
 
-**Architecture:** Six independent gap-closure tasks (Section 1), then seven sequential InSALMON foundation tasks (Section 2), then release (Section 3).
+**Architecture:** Six independent gap-closure tasks (Section 1), then eight sequential InSALMON foundation tasks (Section 2), then release (Section 3).
 
 **Tech Stack:** Python 3.11+, Mesa 3.x, NumPy, Numba, JAX, interpax, Sphinx, hatch, pytest
 
@@ -19,19 +19,15 @@
 - Modify: `tests/test_behavioral_validation.py` (sub-daily + harvest tests)
 - Modify: `src/instream/backends/jax_backend/__init__.py` (spawn_suitability)
 - Modify: `tests/test_backend_parity.py` (parity test)
-- Create: `docs/conf.py`, `docs/index.rst`, `docs/api.rst`, `docs/Makefile`
-- Modify: `pyproject.toml` (metadata, py.typed)
-- Create: `.github/workflows/release.yml`
+- Create: `docs/source/conf.py`, `docs/source/index.rst`, `docs/source/api.rst`, `docs/Makefile`
+- Create: `.github/workflows/docs.yml`, `.github/workflows/release.yml`
+- Modify: `pyproject.toml` (metadata)
+- Create: `src/instream/py.typed`
 
 ### Section 2: InSALMON Foundation
 - Create: `src/instream/state/life_stage.py`
-- Modify: `src/instream/state/trout_state.py`
-- Modify: `src/instream/modules/behavior.py`
-- Modify: `src/instream/modules/migration.py`
-- Modify: `src/instream/modules/survival.py`
-- Modify: `src/instream/modules/spawning.py`
-- Modify: `src/instream/state/params.py`
-- Modify: `src/instream/model_day_boundary.py`
+- Modify: `src/instream/state/trout_state.py`, `src/instream/model_day_boundary.py`, `src/instream/modules/migration.py`, `src/instream/modules/spawning.py`, `src/instream/modules/survival.py`, `src/instream/modules/behavior.py`, `src/instream/state/params.py`, `src/instream/io/config.py`, `src/instream/model.py`
+- Modify: `tests/test_spawning.py` (life_history assertions)
 
 ---
 
@@ -39,48 +35,53 @@
 
 **Files:**
 - Modify: `tests/test_validation.py`
-- Reference: `tests/fixtures/reference/FitnessReportOut-netlogo.csv` (402K lines, already exists)
 
-- [ ] **Step 1: Read the NetLogo FitnessReportOut CSV header**
-
-```bash
-head -5 tests/fixtures/reference/FitnessReportOut-netlogo.csv
+The NetLogo CSV has 6 columns (skip 2 header lines):
+```
+trout-length,trout-weight,trout-condition,daily-pred-survival,growth (g/g/d),fitness
 ```
 
-Understand the column format before writing the parser.
-
-- [ ] **Step 2: Write the cross-validation test**
-
-Add to `tests/test_validation.py`:
+- [ ] **Step 1: Write the cross-validation test with actual comparison logic**
 
 ```python
 class TestFitnessReportMatchesNetLogoCSV:
-    """Cross-validate Python fitness evaluation against NetLogo write-fitness-report."""
+    """Cross-validate Python fitness against NetLogo write-fitness-report."""
 
     def test_netlogo_fitness_report(self):
         import numpy as np
         import pandas as pd
 
         ref_path = require_reference("FitnessReportOut-netlogo.csv")
-        # Determine header format from Step 1, skip comment lines
-        ref = pd.read_csv(ref_path, skiprows=2)  # adjust based on actual format
+        ref = pd.read_csv(ref_path, skiprows=2)
+        ref.columns = ref.columns.str.strip()
 
-        # Sample every 1000th row (400K rows too many)
-        ref = ref.iloc[::1000]
+        # Sample every 1000th row (402K rows)
+        ref_sample = ref.iloc[::1000].copy()
 
-        # Compare Python fitness computation against NetLogo output
-        # Exact implementation depends on column format discovered in Step 1
+        # The fitness column in NetLogo is computed by fitness-for reporter
+        # which uses: condition-based survival projection * growth projection
+        # We need to understand the exact formula from the NetLogo model
+        # Read write-fitness-report procedure to determine the formula
+        
         mismatches = 0
-        for _, row in ref.iterrows():
-            # Extract inputs and expected outputs from row
-            # Call Python fitness functions
-            # Assert close
-            pass
+        for _, row in ref_sample.iterrows():
+            length = row["trout-length"]
+            weight = row["trout-weight"]
+            condition = row["trout-condition"]
+            daily_surv = row["daily-pred-survival"]
+            growth = row["growth (g/g/d)"]
+            nl_fitness = row["fitness"]
 
-        assert mismatches == 0
+            # Compute Python fitness using same inputs
+            # Comparison logic is implemented in Step 2 after reading fitness-for formula
+        assert False, "Step 2 not yet implemented — read NetLogo fitness-for first"
 ```
 
-Adjust parsing based on actual CSV format from Step 1.
+**This Step 1 test is intentionally failing** — it is a red-phase TDD test that will pass only after Step 2 implements the actual comparison.
+
+- [ ] **Step 2: Read NetLogo fitness-for reporter and implement comparison**
+
+Search `InSALMO7.4_2026-02-06_ExampleA.nlogox` for `to-report fitness-for`. Understand the formula, then replace the `assert False` in Step 1 with actual comparison logic. The CSV columns (`trout-condition`, `daily-pred-survival`, `growth (g/g/d)`) are inputs; `fitness` is the expected output. Compute Python fitness from those inputs and assert close at `rtol=1e-6`.
 
 - [ ] **Step 3: Run test**
 
@@ -102,9 +103,17 @@ git commit -m "feat: add fitness report NetLogo cross-validation test"
 **Files:**
 - Modify: `tests/test_behavioral_validation.py`
 
-- [ ] **Step 1: Write sub-daily population stability test**
+Subdaily fixtures exist at `tests/fixtures/subdaily/hourly_example_a.csv`. Check `tests/test_subdaily.py` to see how the model is configured for subdaily mode — it likely uses a config override or modified time series path.
 
-Add to `tests/test_behavioral_validation.py`:
+- [ ] **Step 1: Read test_subdaily.py to understand subdaily configuration**
+
+```bash
+head -80 tests/test_subdaily.py
+```
+
+- [ ] **Step 2: Write sub-daily population stability test**
+
+Based on how test_subdaily.py configures the model:
 
 ```python
 @pytest.mark.slow
@@ -113,40 +122,19 @@ class TestSubDailyPopulationStability:
 
     @pytest.fixture(scope="class")
     def model(self):
-        from instream.model import InSTREAMModel
-        import datetime
-
-        # Use hourly fixture for 30-day run
-        start = datetime.date(2011, 4, 1)
-        end_date = (start + datetime.timedelta(days=30)).isoformat()
-
-        model = InSTREAMModel(
-            CONFIGS / "example_a.yaml",
-            data_dir=FIXTURES / "example_a",
-            end_date_override=end_date,
-        )
-        # Override time series to use hourly data
-        # This depends on whether the config supports subdaily input path
-        model.run()
-        return model
+        # Configure exactly like test_subdaily.py does for hourly mode
+        # ... (fill in after reading test_subdaily.py in Step 1)
+        pass
 
     def test_population_persists_subdaily(self, model):
         alive = model.trout_state.alive.sum()
         assert alive > 0, "Population went extinct in sub-daily mode"
-
-    def test_steps_per_day_gt_1(self, model):
-        assert model.steps_per_day > 1, "Not actually running in sub-daily mode"
 ```
 
-- [ ] **Step 2: Run test**
+- [ ] **Step 3: Run and commit**
 
 ```bash
 micromamba run -n shiny python -m pytest tests/test_behavioral_validation.py::TestSubDailyPopulationStability -v --tb=long -m slow
-```
-
-- [ ] **Step 3: Commit**
-
-```bash
 git add tests/test_behavioral_validation.py
 git commit -m "feat: add sub-daily behavioral validation test"
 ```
@@ -158,41 +146,31 @@ git commit -m "feat: add sub-daily behavioral validation test"
 **Files:**
 - Modify: `tests/test_behavioral_validation.py`
 
-- [ ] **Step 1: Write harvest behavior test**
+- [ ] **Step 1: Read test_harvest.py and the harvest module to understand how harvest is triggered**
 
-Add to `tests/test_behavioral_validation.py`:
+```bash
+head -60 tests/test_harvest.py
+head -40 src/instream/modules/harvest.py
+```
+
+- [ ] **Step 2: Write harvest behavior test**
 
 ```python
 @pytest.mark.slow
 class TestHarvestBehavior:
-    """Verify harvest produces realistic catch in a full simulation."""
+    """Verify harvest module produces realistic catch."""
 
-    def test_harvest_reduces_population(self):
-        from instream.model import InSTREAMModel
-        import datetime
-
-        start = datetime.date(2011, 4, 1)
-        end_date = (start + datetime.timedelta(days=180)).isoformat()
-
-        # Run without harvest
-        model_no_harvest = InSTREAMModel(
-            CONFIGS / "example_a.yaml",
-            data_dir=FIXTURES / "example_a",
-            end_date_override=end_date,
-        )
-        model_no_harvest.run()
-        pop_no_harvest = model_no_harvest.trout_state.alive.sum()
-
-        # Run with harvest enabled (need to check if config supports this)
-        # If harvest requires config changes, create a modified config
-        # For now, verify the harvest module exists and can be called
+    def test_harvest_callable(self):
         from instream.modules.harvest import compute_harvest
-        assert callable(compute_harvest), "Harvest module not available"
+        assert callable(compute_harvest)
+
+    def test_harvest_with_eligible_fish(self):
+        # Based on how test_harvest.py sets up its test
+        # Create a model with harvest config, run, check catch records
+        pass
 ```
 
-Adjust based on how harvest is configured (YAML or model attribute).
-
-- [ ] **Step 2: Run and commit**
+- [ ] **Step 3: Run and commit**
 
 ```bash
 micromamba run -n shiny python -m pytest tests/test_behavioral_validation.py::TestHarvestBehavior -v --tb=long -m slow
@@ -205,66 +183,63 @@ git commit -m "feat: add harvest behavioral validation test"
 ## Task 4: JAX Backend — spawn_suitability with interpax
 
 **Files:**
-- Modify: `src/instream/backends/jax_backend/__init__.py`
+- Modify: `src/instream/backends/jax_backend/__init__.py:534-543`
 - Modify: `tests/test_backend_parity.py`
 
-- [ ] **Step 1: Read current JAX backend spawn_suitability**
-
-```bash
-grep -A 20 "spawn_suitability" src/instream/backends/jax_backend/__init__.py
+The current JAX code at line 534:
+```python
+def spawn_suitability(self, depths, velocities, frac_spawn, **params):
+    area = params["area"]
+    depth_suit = np.interp(np.asarray(depths), params["depth_table_x"], params["depth_table_y"])
+    vel_suit = np.interp(np.asarray(velocities), params["vel_table_x"], params["vel_table_y"])
+    return depth_suit * vel_suit * np.asarray(frac_spawn) * np.asarray(area)
 ```
 
-Understand the current NumPy fallback.
-
-- [ ] **Step 2: Implement with interpax**
-
-Replace the NumPy fallback with JAX-compatible interpolation using interpax:
+- [ ] **Step 1: Replace np.interp with interpax.interp1d (keep **params signature)**
 
 ```python
-def spawn_suitability(self, depths, velocities, frac_spawns, areas,
-                       depth_xs, depth_ys, vel_xs, vel_ys):
+def spawn_suitability(self, depths, velocities, frac_spawn, **params):
+    """Compute spawn suitability for all cells (JAX-native interpolation)."""
     import interpax
-    depth_suit = interpax.interp1d(depths, depth_xs, depth_ys, method="linear")
-    vel_suit = interpax.interp1d(velocities, vel_xs, vel_ys, method="linear")
-    return depth_suit * vel_suit * frac_spawns * areas
+    area = params["area"]
+    depth_suit = interpax.interp1d(
+        jnp.asarray(depths), jnp.asarray(params["depth_table_x"]),
+        jnp.asarray(params["depth_table_y"]), method="linear"
+    )
+    vel_suit = interpax.interp1d(
+        jnp.asarray(velocities), jnp.asarray(params["vel_table_x"]),
+        jnp.asarray(params["vel_table_y"]), method="linear"
+    )
+    return depth_suit * vel_suit * jnp.asarray(frac_spawn) * jnp.asarray(area)
 ```
 
-- [ ] **Step 3: Document deplete_resources as intentional NumPy fallback**
-
-Add docstring to `deplete_resources`:
+- [ ] **Step 2: Add intentional-fallback docstring to deplete_resources**
 
 ```python
 def deplete_resources(self, ...):
-    """Deplete cell resources sequentially (inherently serial).
+    """Deplete cell resources sequentially (intentional NumPy fallback).
 
-    This method intentionally uses NumPy, not JAX. Resource depletion
-    is sequential (fish deplete shared pools in size order), which cannot
-    be parallelized with jax.vmap. The overhead is O(N_fish), negligible
-    compared to the O(N_fish × N_cells) habitat selection kernel.
+    Resource depletion is inherently serial — fish deplete shared cell
+    resource pools in size order. Cannot be parallelized with jax.vmap.
+    Overhead is O(N_fish), negligible vs O(N_fish × N_cells) habitat selection.
     """
 ```
 
-- [ ] **Step 4: Add parity test**
+- [ ] **Step 3: Add parity test**
 
-In `tests/test_backend_parity.py`, verify spawn_suitability gives identical results across numpy/jax:
+In `tests/test_backend_parity.py`, add a test that compares JAX spawn_suitability against NumPy at `rtol=1e-10`.
 
-```python
-class TestSpawnSuitabilityParity:
-    def test_jax_matches_numpy(self):
-        # ... call both backends with same inputs, assert_close at rtol=1e-10
-```
-
-- [ ] **Step 5: Run parity tests**
+- [ ] **Step 4: Run parity tests**
 
 ```bash
 micromamba run -n shiny python -m pytest tests/test_backend_parity.py -v --tb=long
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/instream/backends/jax_backend/__init__.py tests/test_backend_parity.py
-git commit -m "feat: implement JAX spawn_suitability with interpax, document deplete_resources fallback"
+git commit -m "feat: JAX-native spawn_suitability with interpax, document deplete_resources fallback"
 ```
 
 ---
@@ -272,12 +247,11 @@ git commit -m "feat: implement JAX spawn_suitability with interpax, document dep
 ## Task 5: Sphinx Documentation Build
 
 **Files:**
-- Create: `docs/source/conf.py`
-- Create: `docs/source/index.rst`
-- Create: `docs/source/api.rst`
+- Create: `docs/source/conf.py`, `docs/source/index.rst`, `docs/source/api.rst`
 - Create: `docs/Makefile`
+- Create: `.github/workflows/docs.yml`
 
-- [ ] **Step 1: Create Sphinx config**
+- [ ] **Step 1: Create docs/source/ directory and conf.py**
 
 ```python
 # docs/source/conf.py
@@ -287,63 +261,11 @@ extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "sphinx.ext.viewcode"
 html_theme = "sphinx_rtd_theme"
 ```
 
-- [ ] **Step 2: Create index.rst**
+- [ ] **Step 2: Create index.rst and api.rst**
 
-```rst
-inSTREAM-py Documentation
-=========================
+- [ ] **Step 3: Create Makefile**
 
-.. toctree::
-   :maxdepth: 2
-
-   api
-
-Indices and tables
-==================
-* :ref:`genindex`
-* :ref:`modindex`
-```
-
-- [ ] **Step 3: Create api.rst with autodoc directives**
-
-```rst
-API Reference
-=============
-
-Model
------
-.. automodule:: instream.model
-   :members:
-
-State Containers
-----------------
-.. automodule:: instream.state.trout_state
-   :members:
-.. automodule:: instream.state.redd_state
-   :members:
-
-Modules
--------
-.. automodule:: instream.modules.growth
-   :members:
-.. automodule:: instream.modules.survival
-   :members:
-.. automodule:: instream.modules.behavior
-   :members:
-.. automodule:: instream.modules.spawning
-   :members:
-```
-
-- [ ] **Step 4: Create Makefile**
-
-```makefile
-SPHINXBUILD = sphinx-build
-SOURCEDIR = source
-BUILDDIR = _build
-
-html:
-	$(SPHINXBUILD) -b html $(SOURCEDIR) $(BUILDDIR)/html
-```
+- [ ] **Step 4: Create .github/workflows/docs.yml for CI**
 
 - [ ] **Step 5: Test build**
 
@@ -351,15 +273,11 @@ html:
 micromamba run -n shiny sphinx-build -b html docs/source docs/_build/html
 ```
 
-- [ ] **Step 6: Add to .gitignore**
-
-Add `docs/_build/` to `.gitignore`.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Add docs/_build/ to .gitignore, commit**
 
 ```bash
-git add docs/source/ docs/Makefile .gitignore
-git commit -m "feat: add Sphinx documentation build with autodoc"
+git add docs/source/ docs/Makefile .github/workflows/docs.yml .gitignore
+git commit -m "feat: add Sphinx documentation build with autodoc and CI"
 ```
 
 ---
@@ -373,159 +291,118 @@ git commit -m "feat: add Sphinx documentation build with autodoc"
 
 - [ ] **Step 1: Update pyproject.toml metadata**
 
-Add missing fields:
+Add: authors, readme, classifiers, project.urls. Do NOT change version (that's Task 15).
 
-```toml
-[project]
-authors = [{name = "inSTREAM Team"}]
-readme = "README.md"
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Scientific/Engineering :: Bio-Informatics",
-]
-
-[project.urls]
-Homepage = "https://github.com/razinkele/instream-py"
-Repository = "https://github.com/razinkele/instream-py"
-```
-
-- [ ] **Step 2: Create py.typed marker**
-
-```bash
-touch src/instream/py.typed
-```
+- [ ] **Step 2: Create py.typed marker and release workflow**
 
 - [ ] **Step 3: Test build**
 
 ```bash
 micromamba run -n shiny hatch build
-micromamba run -n shiny pip install dist/instream-0.13.0.tar.gz --dry-run
-```
-
-- [ ] **Step 4: Create release workflow**
-
-```yaml
-# .github/workflows/release.yml
-name: Publish to PyPI
-on:
-  release:
-    types: [published]
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install hatch
-      - run: hatch build
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add pyproject.toml src/instream/py.typed .github/workflows/release.yml
-git commit -m "feat: add PyPI packaging and release workflow"
-```
-
----
-
-## Task 7: LifeStage IntEnum
-
-**Files:**
-- Create: `src/instream/state/life_stage.py`
-- Modify: `src/instream/state/trout_state.py`
-- Modify: `src/instream/model_day_boundary.py`
-- Modify: all files with `life_history == 0/1/2`
-
-- [ ] **Step 1: Create life_stage.py**
-
-```python
-"""Life stage definitions for inSTREAM fish agents."""
-from enum import IntEnum
-
-
-class LifeStage(IntEnum):
-    """Life history stage of a fish.
-
-    Values are stored as int8 in TroutState.life_history arrays.
-    """
-    RESIDENT = 0
-    ANAD_JUVENILE = 1
-    ANAD_ADULT = 2
-    SMOLT = 3          # future: outmigrating juvenile
-    MARINE_ADULT = 4   # future: at-sea adult
-```
-
-- [ ] **Step 2: Replace magic numbers across codebase**
-
-Search for `life_history == 0`, `life_history == 1`, `life_history == 2` and replace with `LifeStage.RESIDENT`, `LifeStage.ANAD_JUVENILE`, `LifeStage.ANAD_ADULT`.
-
-```bash
-grep -rn "life_history.*== [012]" src/instream/
-```
-
-- [ ] **Step 3: Run tests**
-
-```bash
-micromamba run -n shiny python -m pytest tests/ --tb=short -q --ignore=tests/_debug_alignment.py --ignore=tests/test_e2e_spatial.py
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/instream/state/life_stage.py src/instream/state/trout_state.py src/instream/model_day_boundary.py
-git commit -m "refactor: replace life_history magic numbers with LifeStage IntEnum"
+git add pyproject.toml src/instream/py.typed .github/workflows/release.yml
+git commit -m "feat: add PyPI packaging metadata and release workflow"
 ```
 
 ---
 
-## Task 8: Adult Holding Behavior
+## Task 7: LifeStage IntEnum (InSALMON names)
 
 **Files:**
-- Modify: `src/instream/modules/behavior.py`
-- Create: `tests/test_holding.py`
+- Create: `src/instream/state/life_stage.py`
+- Modify: 12+ files (see list below)
 
-- [ ] **Step 1: Write failing test**
+- [ ] **Step 1: Create life_stage.py with InSALMON design doc enum**
 
 ```python
-"""Tests for anadromous adult holding behavior."""
-import pytest
-import numpy as np
+"""Life stage definitions for inSTREAM/inSALMON fish agents."""
+from enum import IntEnum
 
 
-class TestAdultHolding:
-    def test_anad_adult_uses_hold_activity(self):
-        """Anadromous adults that haven't spawned should hold."""
-        from instream.state.life_stage import LifeStage
-        # Set up a fish with life_history=ANAD_ADULT, spawned_this_season=False
-        # After habitat selection, activity should be "hold" (3)
-        # Implementation depends on behavior.py structure
-        pass
+class LifeStage(IntEnum):
+    """Life history stage stored as int8 in TroutState.life_history arrays.
 
-    def test_holding_fish_selects_low_velocity(self):
-        """Holding fish should prefer low-velocity cells."""
-        pass
+    Names follow the InSALMON design doc (docs/plans/2026-04-08-insalmon-design.md)
+    to avoid a breaking rename when marine stages are activated in v0.14.0.
+    Values 3-6 are defined but not used until the marine domain is added.
+    """
+    FRY = 0              # post-emergence juvenile (was "resident")
+    PARR = 1             # anadromous juvenile, pre-smolt (was "anad_juvenile")
+    SPAWNER = 2          # active spawner (was "anad_adult")
+    SMOLT = 3            # outmigrating juvenile (v0.14.0+)
+    OCEAN_JUVENILE = 4   # marine feeding (v0.14.0+)
+    OCEAN_ADULT = 5      # marine mature (v0.14.0+)
+    RETURNING_ADULT = 6  # upstream migration to natal reach
 ```
 
-- [ ] **Step 2: Implement holding logic in behavior.py**
+- [ ] **Step 2: Find and replace all magic numbers**
 
-Read current `select_habitat_and_activity` to understand how activities are assigned, then add explicit holding branch for anad_adults.
+```bash
+grep -rn "life_history.*== [0126]" src/instream/ tests/
+grep -rn "life_history\[.*\] = [0126]" src/instream/ tests/
+grep -rn "life_history != [0126]" src/instream/ tests/
+```
+
+Replace each with the corresponding `LifeStage.XXX` name. Key locations:
+- `model_day_boundary.py`: `life_history[i] == 2` → `LifeStage.SPAWNER`, `lh != 1` → `lh != LifeStage.PARR`, `lh_val = 2` → `LifeStage.RETURNING_ADULT`
+- `modules/migration.py:24`: `life_history != 1` → `life_history != LifeStage.PARR`
+- `modules/spawning.py:378`: `life_history[slots] = 0` → `LifeStage.FRY`
+- `tests/test_spawning.py:358,370`: `life_history[slot] == 2` → `LifeStage.SPAWNER`
+
+**IMPORTANT:** Adult arrivals (`model_day_boundary.py`, currently assigns `lh_val = 2`) should use `LifeStage.RETURNING_ADULT` (6), not `LifeStage.SPAWNER` (2). Returning adults hold until spawn season, then transition to SPAWNER. This is a semantic correction, not just a rename.
+
+- [ ] **Step 3: Run full test suite**
+
+```bash
+micromamba run -n shiny python -m pytest tests/ --tb=short -q --ignore=tests/_debug_alignment.py --ignore=tests/test_e2e_spatial.py
+```
+
+- [ ] **Step 4: Commit ALL affected files**
+
+Stage ALL files modified in Step 2 (grep results will show the full list):
+
+```bash
+git add src/instream/state/life_stage.py
+git add -u src/instream/ tests/  # stages all modified tracked files in src/ and tests/
+git commit -m "refactor: replace life_history magic numbers with LifeStage IntEnum
+
+Uses InSALMON design doc names (FRY/PARR/SPAWNER/RETURNING_ADULT) to
+avoid breaking rename when marine stages are added in v0.14.0.
+Adult arrivals now use RETURNING_ADULT (6) not SPAWNER (2)."
+```
+
+---
+
+## Task 8: Config Schema Updates
+
+**Files:**
+- Modify: `src/instream/io/config.py` (SpeciesConfig Pydantic model)
+- Modify: `src/instream/state/params.py` (SpeciesParams frozen dataclass)
+
+- [ ] **Step 1: Add new parameters to SpeciesConfig**
+
+```python
+# In SpeciesConfig (io/config.py)
+mort_condition_K_crit: float = 0.8
+fecundity_noise: float = 0.0
+spawn_date_jitter_days: int = 0
+outmigration_max_prob: float = 0.1
+outmigration_min_length: float = 8.0
+fitness_growth_weight: float = 1.0  # alpha for growth-fitness integration
+```
+
+- [ ] **Step 2: Add to SpeciesParams and params_from_config**
 
 - [ ] **Step 3: Run tests, commit**
 
 ```bash
-micromamba run -n shiny python -m pytest tests/test_holding.py -v --tb=long
-git add src/instream/modules/behavior.py tests/test_holding.py
-git commit -m "feat: explicit adult holding behavior for anadromous fish"
+micromamba run -n shiny python -m pytest tests/test_config.py -v --tb=long
+git add src/instream/io/config.py src/instream/state/params.py
+git commit -m "feat: add InSALMON species parameters to config schema"
 ```
 
 ---
@@ -542,68 +419,64 @@ git commit -m "feat: explicit adult holding behavior for anadromous fish"
 ```python
 class TestOutmigrationProbability:
     def test_poor_fitness_increases_migration(self):
-        """Fish with low fitness should be more likely to migrate."""
         from instream.modules.migration import outmigration_probability
-        p_low = outmigration_probability(fitness=0.1, length=10.0, min_length=8.0)
-        p_high = outmigration_probability(fitness=0.9, length=10.0, min_length=8.0)
+        p_low = outmigration_probability(fitness=0.1, length=10.0, min_length=8.0, max_prob=0.1)
+        p_high = outmigration_probability(fitness=0.9, length=10.0, min_length=8.0, max_prob=0.1)
         assert p_low > p_high
 
     def test_below_min_length_no_migration(self):
-        """Fish below minimum smolt length should not migrate."""
         from instream.modules.migration import outmigration_probability
-        p = outmigration_probability(fitness=0.1, length=5.0, min_length=8.0)
+        p = outmigration_probability(fitness=0.1, length=5.0, min_length=8.0, max_prob=0.1)
         assert p == 0.0
 ```
 
-- [ ] **Step 2: Implement outmigration_probability**
+- [ ] **Step 2: Implement**
 
 ```python
 def outmigration_probability(fitness, length, min_length, max_prob=0.1):
-    """Probability of downstream migration based on fitness.
+    """Fitness-based probability of downstream outmigration.
 
     Fish below min_length never migrate. Above min_length, probability
-    increases as fitness decreases (poor conditions → leave).
+    increases as fitness decreases (poor conditions trigger outmigration).
     """
     if length < min_length:
         return 0.0
-    return max_prob * (1.0 - fitness)
+    return max_prob * max(0.0, 1.0 - fitness)
 ```
 
-- [ ] **Step 3: Wire into _do_migration in model_day_boundary.py**
+- [ ] **Step 3: Wire into _do_migration alongside existing should_migrate**
+
+In `model_day_boundary.py`, add the outmigration probability check for `LifeStage.PARR` fish. Outmigrated fish are marked `alive=False` and tracked in `_outmigrants` (same as current behavior).
 
 - [ ] **Step 4: Run tests, commit**
 
 ```bash
 micromamba run -n shiny python -m pytest tests/test_outmigration.py tests/test_migration.py -v --tb=long
 git add src/instream/modules/migration.py src/instream/model_day_boundary.py tests/test_outmigration.py
-git commit -m "feat: add fitness-based outmigration probability"
+git commit -m "feat: add fitness-based outmigration probability for anadromous juveniles"
 ```
 
 ---
 
-## Task 10: Condition-Based Survival Enhancement
+## Task 10: Condition Survival Enhancement
 
 **Files:**
-- Modify: `src/instream/modules/survival.py`
-- Modify: `src/instream/state/params.py`
+- Modify: `src/instream/modules/survival.py` (survival_condition, ~line 97-98)
+- Uses: `mort_condition_K_crit` from Task 8
 
-- [ ] **Step 1: Read current condition survival**
+- [ ] **Step 1: Read current hardcoded threshold**
 
-```bash
-grep -A 20 "def survival_condition" src/instream/modules/survival.py
-```
+The `0.8` at survival.py:97-98 is the critical condition breakpoint.
 
-- [ ] **Step 2: Add species-specific condition threshold parameter**
+- [ ] **Step 2: Replace with species parameter**
 
-Add `mort_condition_K_crit` to `SpeciesParams` in `state/params.py`. Default to current hardcoded value for backward compatibility.
+Pass `K_crit` from `SpeciesParams` through the call chain. Default `0.8` preserves backward compatibility.
 
-- [ ] **Step 3: Update survival_condition to use the parameter**
-
-- [ ] **Step 4: Run tests, commit**
+- [ ] **Step 3: Run tests, commit**
 
 ```bash
-micromamba run -n shiny python -m pytest tests/test_survival.py tests/test_redd_survival.py -v --tb=long
-git add src/instream/modules/survival.py src/instream/state/params.py
+micromamba run -n shiny python -m pytest tests/test_survival.py -v --tb=long
+git add src/instream/modules/survival.py
 git commit -m "feat: parameterize condition survival threshold per species"
 ```
 
@@ -613,79 +486,160 @@ git commit -m "feat: parameterize condition survival threshold per species"
 
 **Files:**
 - Modify: `src/instream/modules/spawning.py`
-- Modify: `src/instream/state/params.py`
+- Uses: `fecundity_noise`, `spawn_date_jitter_days` from Task 8
 
 - [ ] **Step 1: Write failing test**
 
 ```python
 class TestSpawnPerturbation:
     def test_fecundity_varies_with_noise(self):
-        """Egg count should vary when fecundity_noise > 0."""
-        from instream.modules.spawning import compute_fecundity
-        eggs1 = compute_fecundity(length=25.0, weight=500.0, fecundity_noise=0.1, rng=np.random.default_rng(42))
-        eggs2 = compute_fecundity(length=25.0, weight=500.0, fecundity_noise=0.1, rng=np.random.default_rng(99))
-        assert eggs1 != eggs2  # different seeds → different counts
+        # Call create_redd with fecundity_noise > 0, different seeds
+        # Assert egg counts differ
+        pass
+
+    def test_zero_noise_is_deterministic(self):
+        # Call create_redd with fecundity_noise=0
+        # Assert same egg count regardless of seed
+        pass
 ```
 
-- [ ] **Step 2: Add spawn_date_jitter and fecundity_noise parameters**
+- [ ] **Step 2: Add lognormal noise to fecundity in create_redd**
 
 - [ ] **Step 3: Run tests, commit**
 
 ```bash
 micromamba run -n shiny python -m pytest tests/test_spawning.py -v --tb=long
-git add src/instream/modules/spawning.py src/instream/state/params.py
-git commit -m "feat: add spawn date jitter and fecundity noise"
+git add src/instream/modules/spawning.py tests/test_spawning.py
+git commit -m "feat: add fecundity noise and spawn date jitter"
 ```
 
 ---
 
-## Task 12: Growth-Fitness Integration
+## Task 12: Adult Holding Behavior
 
 **Files:**
 - Modify: `src/instream/modules/behavior.py`
+- Create: `tests/test_holding.py`
 
-- [ ] **Step 1: Read current fitness memory implementation**
+Activity code 4 ("hold") is documented in `trout_state.py:19` but never assigned in behavior.py.
 
-```bash
-grep -A 30 "fitness_memory" src/instream/model.py
+- [ ] **Step 1: Read behavior.py select_habitat_and_activity to understand activity assignment**
+
+- [ ] **Step 2: Add holding branch for RETURNING_ADULT fish**
+
+Before the normal drift/search/hide fitness evaluation, check if the fish is `LifeStage.RETURNING_ADULT`. If so, select the lowest-velocity wet cell in range and assign `activity=4`.
+
+- [ ] **Step 3: Write tests**
+
+```python
+class TestAdultHolding:
+    def test_returning_adult_uses_hold_activity(self):
+        # Set up fish with life_history=LifeStage.RETURNING_ADULT
+        # After habitat selection, activity should be 4
+        pass
 ```
 
-- [ ] **Step 2: Enhance fitness to integrate survival projection**
-
-Currently fitness = EMA of growth rate. Enhance to:
-`fitness = alpha * growth_projection + (1 - alpha) * survival_projection`
-
-- [ ] **Step 3: Run tests, commit**
+- [ ] **Step 4: Run tests, commit**
 
 ```bash
-micromamba run -n shiny python -m pytest tests/test_behavior.py -v --tb=long
-git add src/instream/modules/behavior.py
-git commit -m "feat: integrate survival projection into fitness metric"
+micromamba run -n shiny python -m pytest tests/test_holding.py -v --tb=long
+git add src/instream/modules/behavior.py tests/test_holding.py
+git commit -m "feat: explicit adult holding behavior for returning adults"
 ```
 
 ---
 
-## Task 13: InSALMO Validation Gate
+## Task 13: Growth-Fitness Integration
 
 **Files:**
-- Modify: `tests/test_validation.py` or create `tests/test_insalmo_validation.py`
+- Modify: `src/instream/model.py:82-96` (fitness EMA update + _do_survival call)
+- Modify: `src/instream/model_environment.py` (_do_survival return value)
 
-- [ ] **Step 1: Run NetLogo InSALMO with inSALMO-specific parameters**
+**Current state:** Fitness EMA at model.py:82-93 runs BEFORE `_do_survival` at line 96. Survival probabilities are not available during fitness update.
 
-Use the InSALMO7.4 model with parameters that exercise adult holding and outmigration. Generate reference CSVs.
+- [ ] **Step 1: Make _do_survival return per-fish survival probabilities**
 
-- [ ] **Step 2: Write validation tests comparing Python to NetLogo for InSALMO features**
+In `model_environment.py`, change `_do_survival` to return the `survival_probs` array instead of discarding it.
+
+- [ ] **Step 2: Move fitness EMA update to AFTER _do_survival**
+
+In `model.py`, reorder:
+```python
+# Old:
+# fitness EMA update (lines 82-93)
+# _do_survival (line 96)
+
+# New:
+survival_probs = self._do_survival(step_length)
+# fitness EMA update using both growth and survival
+```
+
+- [ ] **Step 3: Implement combined fitness formula**
+
+```python
+alpha = float(self._sp_arrays["fitness_growth_weight"][sp_idx])
+growth_signal = float(self.trout_state.last_growth_rate[i])
+surv_signal = float(survival_probs[i])
+current = alpha * growth_signal + (1.0 - alpha) * surv_signal
+# Then apply EMA as before
+```
+
+With `fitness_growth_weight=1.0` (default), this is identical to current behavior (pure growth EMA). Fully backward compatible.
+
+- [ ] **Step 4: Run full suite**
+
+```bash
+micromamba run -n shiny python -m pytest tests/ --tb=short -q --ignore=tests/_debug_alignment.py --ignore=tests/test_e2e_spatial.py
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/instream/model.py src/instream/model_environment.py
+git commit -m "feat: integrate survival projection into fitness metric
+
+fitness = alpha * growth_ema + (1-alpha) * survival_ema
+Default alpha=1.0 preserves current pure-growth behavior."
+```
+
+---
+
+## Task 14: InSALMO Validation Gate
+
+**Files:**
+- Create: `tests/test_insalmo_validation.py`
+
+Requires NetLogo GUI to generate reference data for InSALMO-specific behaviors.
+
+- [ ] **Step 1: Run NetLogo with adult arrivals and outmigration enabled**
+
+Use `InSALMO7.4_test.nlogox` in GUI. Generate reference data for:
+- Adult arrival population counts
+- Outmigrant counts and lengths
+
+- [ ] **Step 2: Write validation tests**
+
+```python
+class TestInSALMOBehaviors:
+    def test_returning_adults_hold(self):
+        """Verify returning adults use holding behavior."""
+        pass
+
+    def test_outmigration_occurs(self):
+        """Verify some juveniles outmigrate based on fitness."""
+        pass
+```
 
 - [ ] **Step 3: Run and commit**
 
 ```bash
-git add tests/
+git add tests/test_insalmo_validation.py
 git commit -m "feat: add InSALMO-specific validation tests"
 ```
 
 ---
 
-## Task 14: Documentation and Release v0.13.0
+## Task 15: Documentation and Release v0.13.0
 
 **Files:**
 - Modify: `CHANGELOG.md`, `README.md`, `pyproject.toml`, `src/instream/__init__.py`
@@ -698,7 +652,7 @@ micromamba run -n shiny python -m pytest tests/ --tb=short -q --ignore=tests/_de
 
 - [ ] **Step 2: Update docs/api-reference.md**
 
-Add new modules: life_stage.py, updated behavior.py, migration.py.
+Add new modules: `life_stage.py`, updated migration.py, behavior.py.
 
 - [ ] **Step 3: Build Sphinx docs**
 
@@ -712,19 +666,15 @@ micromamba run -n shiny sphinx-build -b html docs/source docs/_build/html
 micromamba run -n shiny python -m pytest tests/test_app_smoke.py tests/test_simulation_wrapper.py -v --tb=short
 ```
 
-- [ ] **Step 5: Update CHANGELOG.md**
+- [ ] **Step 5: Update CHANGELOG.md with v0.13.0 entries**
 
-Add v0.13.0 section with all changes from this plan.
-
-- [ ] **Step 6: Bump version**
-
-Change `version` in `pyproject.toml` and `__init__.py` to `"0.13.0"`.
+- [ ] **Step 6: Bump version to 0.13.0**
 
 - [ ] **Step 7: Commit, tag, push**
 
 ```bash
-git add CHANGELOG.md README.md pyproject.toml src/instream/__init__.py
-git commit -m "release: v0.13.0 — deferred items, InSALMON foundation, Sphinx docs, PyPI packaging"
+git add CHANGELOG.md README.md pyproject.toml src/instream/__init__.py docs/
+git commit -m "release: v0.13.0 — deferred items, InSALMON foundation, Sphinx, PyPI"
 git tag v0.13.0
 git push origin master --tags
 ```
@@ -735,17 +685,18 @@ git push origin master --tags
 
 | Task | Section | Description | Est. Time |
 |------|---------|-------------|-----------|
-| 1 | Deferred | Fitness report NetLogo cross-validation | 1 day |
+| 1 | Deferred | Fitness report cross-validation (with actual logic) | 2 days |
 | 2 | Deferred | Sub-daily behavioral validation | 1 day |
 | 3 | Deferred | Harvest behavioral validation | 0.5 days |
-| 4 | Deferred | JAX spawn_suitability with interpax | 2 days |
-| 5 | Deferred | Sphinx documentation build | 1.5 days |
+| 4 | Deferred | JAX spawn_suitability with interpax (**params) | 1.5 days |
+| 5 | Deferred | Sphinx docs at docs/source/ + CI build | 1.5 days |
 | 6 | Deferred | PyPI packaging + release workflow | 1 day |
-| 7 | InSALMON | LifeStage IntEnum | 0.5 days |
-| 8 | InSALMON | Adult holding behavior | 1 day |
+| 7 | InSALMON | LifeStage IntEnum (InSALMON names, 12+ files) | 1 day |
+| 8 | InSALMON | Config schema updates for new params | 0.5 days |
 | 9 | InSALMON | Outmigration probability | 1 day |
 | 10 | InSALMON | Condition survival enhancement | 0.5 days |
 | 11 | InSALMON | Spawn perturbation | 0.5 days |
-| 12 | InSALMON | Growth-fitness integration | 1 day |
-| 13 | InSALMON | InSALMO validation gate | 1-2 days |
-| 14 | Release | Documentation and release | 1 day |
+| 12 | InSALMON | Adult holding behavior | 1 day |
+| 13 | InSALMON | Growth-fitness integration (step reorder) | 2 days |
+| 14 | InSALMON | InSALMO validation gate | 2 days |
+| 15 | Release | Documentation and release | 1 day |
