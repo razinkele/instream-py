@@ -507,7 +507,12 @@ class JaxBackend:
     def deplete_resources(
         self, fish_order, chosen_cells, available_drift, available_search, **params
     ):
-        """Sequential resource depletion (inherently serial, uses NumPy)."""
+        """Deplete cell resources sequentially (intentional NumPy fallback).
+
+        Resource depletion is inherently serial — fish deplete shared cell
+        resource pools in size order. Cannot be parallelized with jax.vmap.
+        Overhead is O(N_fish), negligible vs O(N_fish × N_cells) habitat selection.
+        """
         activities = params["chosen_activities"]
         intakes = params["intake_amounts"]
         lengths = params["fish_lengths"]
@@ -532,15 +537,18 @@ class JaxBackend:
                     hiding[cell] -= rep
 
     def spawn_suitability(self, depths, velocities, frac_spawn, **params):
-        """Compute spawn suitability for all cells."""
+        """Compute spawn suitability for all cells (JAX-native interpolation)."""
+        import interpax
         area = params["area"]
-        depth_suit = np.interp(
-            np.asarray(depths), params["depth_table_x"], params["depth_table_y"]
+        depth_suit = interpax.interp1d(
+            jnp.asarray(depths), jnp.asarray(params["depth_table_x"]),
+            jnp.asarray(params["depth_table_y"]), method="linear"
         )
-        vel_suit = np.interp(
-            np.asarray(velocities), params["vel_table_x"], params["vel_table_y"]
+        vel_suit = interpax.interp1d(
+            jnp.asarray(velocities), jnp.asarray(params["vel_table_x"]),
+            jnp.asarray(params["vel_table_y"]), method="linear"
         )
-        return depth_suit * vel_suit * np.asarray(frac_spawn) * np.asarray(area)
+        return depth_suit * vel_suit * jnp.asarray(frac_spawn) * jnp.asarray(area)
 
     def evaluate_logistic(self, x, L1, L9):
         """Standard logistic where f(L1)=0.1 and f(L9)=0.9.
