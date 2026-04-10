@@ -375,7 +375,8 @@ def redd_emergence(
         ts.reach_idx[slots] = rs.reach_idx[i]
         ts.sex[slots] = rng.integers(0, 2, size=n_slots, dtype=np.int32)
         ts.superind_rep[slots] = 1
-        ts.life_history[slots] = 0
+        from instream.state.life_stage import LifeStage
+        ts.life_history[slots] = LifeStage.FRY
         ts.in_shelter[slots] = False
         ts.spawned_this_season[slots] = False
         ts.activity[slots] = 0

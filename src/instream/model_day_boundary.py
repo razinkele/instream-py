@@ -16,6 +16,7 @@ from instream.modules.spawning import (
     redd_emergence,
 )
 from instream.modules.survival import apply_redd_survival
+from instream.state.life_stage import LifeStage
 from instream.sync import sync_trout_agents
 
 
@@ -41,7 +42,7 @@ class _ModelDayBoundaryMixin:
         alive = self.trout_state.alive_indices()
         for i in alive:
             if (
-                self.trout_state.life_history[i] == 2
+                self.trout_state.life_history[i] == LifeStage.SPAWNER
                 and self.trout_state.spawned_this_season[i]
             ):
                 self.trout_state.alive[i] = False
@@ -420,7 +421,7 @@ class _ModelDayBoundaryMixin:
         alive = self.trout_state.alive_indices()
         for i in alive:
             lh = int(self.trout_state.life_history[i])
-            if lh != 1:
+            if lh != LifeStage.PARR:
                 continue
             sp_idx = int(self.trout_state.species_idx[i])
             mig_fit = migration_fitness(
@@ -541,7 +542,8 @@ class _ModelDayBoundaryMixin:
             ts.reach_idx[slots] = r_idx
             ts.sex[slots] = sex
             ts.superind_rep[slots] = 1
-            lh_val = 2 if getattr(sp_cfg, "is_anadromous", False) else 0
+            # TODO: Change to LifeStage.RETURNING_ADULT when holding behavior is implemented (Task 12)
+            lh_val = int(LifeStage.SPAWNER) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
             ts.life_history[slots] = lh_val
             ts.in_shelter[slots] = False
             ts.spawned_this_season[slots] = False

@@ -19,7 +19,7 @@ class TroutState:
     activity: np.ndarray  # int enum: 0=drift, 1=search, 2=hide, 3=guard, 4=hold
     sex: np.ndarray  # int enum: 0=female, 1=male
     superind_rep: np.ndarray
-    life_history: np.ndarray  # int enum: 0=resident, 1=anad_juve, 2=anad_adult
+    life_history: np.ndarray  # int enum: see LifeStage (life_stage.py)
     in_shelter: np.ndarray
     spawned_this_season: np.ndarray
     last_growth_rate: np.ndarray

@@ -1,6 +1,7 @@
 """Migration — reach connectivity, downstream migration, outmigrant tracking."""
 import numpy as np
 from instream.modules.behavior import evaluate_logistic
+from instream.state.life_stage import LifeStage
 
 
 def build_reach_graph(upstream_junctions, downstream_junctions):
@@ -21,7 +22,7 @@ def migration_fitness(length, L1, L9):
 
 def should_migrate(migration_fit, best_habitat_fit, life_history):
     """Decide if fish should migrate downstream."""
-    if life_history != 1:  # only anad_juve migrates
+    if life_history != LifeStage.PARR:  # only anad_juve migrates
         return False
     return migration_fit > best_habitat_fit
 

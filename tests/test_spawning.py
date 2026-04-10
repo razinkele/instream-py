@@ -348,26 +348,28 @@ def test_superimposition_reduces_existing_eggs():
 
 class TestAnadromousAdultLifeHistory:
     def test_adult_arrival_sets_anad_adult_life_history(self):
-        """Adult arrivals for anadromous species should get life_history=2."""
+        """Adult arrivals for anadromous species should get life_history=SPAWNER."""
         from instream.state.trout_state import TroutState
+        from instream.state.life_stage import LifeStage
 
         ts = TroutState.zeros(5)
         slot = 0
         ts.alive[slot] = True
-        ts.life_history[slot] = 2  # anad_adult
-        assert ts.life_history[slot] == 2
+        ts.life_history[slot] = LifeStage.SPAWNER
+        assert ts.life_history[slot] == LifeStage.SPAWNER
 
     def test_anad_adult_dies_after_spawning(self):
-        """Anadromous adults (life_history=2) should die after spawning."""
+        """Anadromous adults (life_history=SPAWNER) should die after spawning."""
         from instream.state.trout_state import TroutState
+        from instream.state.life_stage import LifeStage
 
         ts = TroutState.zeros(5)
         ts.alive[0] = True
-        ts.life_history[0] = 2
+        ts.life_history[0] = LifeStage.SPAWNER
         ts.spawned_this_season[0] = True
         alive = ts.alive_indices()
         for i in alive:
-            if ts.life_history[i] == 2 and ts.spawned_this_season[i]:
+            if ts.life_history[i] == LifeStage.SPAWNER and ts.spawned_this_season[i]:
                 ts.alive[i] = False
         assert not ts.alive[0]
 
