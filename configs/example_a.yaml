@@ -8,6 +8,8 @@ simulation:
     - "06-15"
     - "09-30"
   census_years_to_skip: 0
+  population_file: "Example-Project-A_1Reach-1Species/ExampleA-InitialPopulations.csv"
+  adult_arrival_file: "Example-Project-A_1Reach-1Species/ExampleA-AdultArrivals.csv"
 
 performance:
   backend: "numpy"
