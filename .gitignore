@@ -42,6 +42,9 @@ __pycache__/*.nbc
 output/
 results/
 
+# Sphinx docs build
+docs/_build/
+
 # Worktrees
 .worktrees/
 

@@ -1,0 +1,31 @@
+name: Build Sphinx Docs
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/**"
+      - "src/**"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "src/**"
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install docs dependencies
+        run: pip install sphinx sphinx-rtd-theme ".[docs]"
+      - name: Build HTML docs
+        run: sphinx-build -b html docs/source docs/_build/html -W --keep-going
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-docs
+          path: docs/_build/html/
+          retention-days: 7
