@@ -45,6 +45,17 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph):
     return outmigrants
 
 
+def outmigration_probability(fitness, length, min_length, max_prob=0.1):
+    """Fitness-based probability of downstream outmigration.
+
+    Fish below min_length never migrate. Above min_length, probability
+    increases as fitness decreases.
+    """
+    if length < min_length:
+        return 0.0
+    return max_prob * max(0.0, 1.0 - fitness)
+
+
 def bin_outmigrant(length, length_classes):
     """Bin an outmigrant by length class. Returns bin index (0-based)."""
     for i, threshold in enumerate(length_classes):

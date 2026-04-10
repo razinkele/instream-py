@@ -236,6 +236,7 @@ class _ModelDayBoundaryMixin:
                 spawn_start_doy=spawn_start_doy,
                 spawn_end_doy=spawn_end_doy,
                 rng=self.rng,
+                spawn_date_jitter_days=getattr(sp_cfg, "spawn_date_jitter_days", 0),
             ):
                 continue
 
@@ -292,6 +293,8 @@ class _ModelDayBoundaryMixin:
                 fecund_mult=sp_cfg.spawn_fecund_mult,
                 fecund_exp=sp_cfg.spawn_fecund_exp,
                 egg_viability=sp_cfg.spawn_egg_viability,
+                fecundity_noise=getattr(sp_cfg, "fecundity_noise", 0.0),
+                rng=self.rng,
             )
             if new_redd_slot >= 0:
                 apply_superimposition(
@@ -414,6 +417,7 @@ class _ModelDayBoundaryMixin:
             migration_fitness,
             should_migrate,
             migrate_fish_downstream,
+            outmigration_probability,
         )
 
         sp_mig_L1 = self._sp_arrays["migrate_fitness_L1"]
@@ -424,8 +428,11 @@ class _ModelDayBoundaryMixin:
             if lh != LifeStage.PARR:
                 continue
             sp_idx = int(self.trout_state.species_idx[i])
+            sp_name = self.species_order[sp_idx]
+            sp_cfg = self.config.species[sp_name]
+            fish_length = float(self.trout_state.length[i])
             mig_fit = migration_fitness(
-                float(self.trout_state.length[i]),
+                fish_length,
                 float(sp_mig_L1[sp_idx]),
                 float(sp_mig_L9[sp_idx]),
             )
@@ -433,6 +440,19 @@ class _ModelDayBoundaryMixin:
             if should_migrate(mig_fit, best_hab, lh):
                 out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
                 self._outmigrants.extend(out)
+            elif not self.trout_state.alive[i]:
+                pass  # already dead
+            else:
+                # Supplementary fitness-based outmigration check
+                p_out = outmigration_probability(
+                    best_hab,
+                    fish_length,
+                    sp_cfg.outmigration_min_length,
+                    sp_cfg.outmigration_max_prob,
+                )
+                if p_out > 0.0 and self.rng.random() < p_out:
+                    out = migrate_fish_downstream(self.trout_state, i, self._reach_graph)
+                    self._outmigrants.extend(out)
 
     def _collect_census_if_needed(self):
         """Record census data on configured census days."""
