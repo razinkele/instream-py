@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-04-10
+
+### Added
+- Behavioral validation suite: population dynamics (Example A + B), size distribution, habitat selection, spawning/recruitment (13 tests)
+- NetLogo 7.4 cross-validation for growth report, survival, redd survival, spawn cell, CStepMax (5 tests against genuine NetLogo output)
+- FitnessReportOut from NetLogo write-fitness-report procedure
+
+### Changed
+- model.py decomposed into 3 mixin classes: model_init.py (370 lines), model_environment.py (275 lines), model_day_boundary.py (400 lines). Residual model.py: 108 lines
+- Fitness golden snapshot regenerated from validated code
+
+### Fixed
+- Species mapping warning eliminated (Example A fixture updated to use Chinook-Spring)
+- _debug_alignment.py excluded from pytest collection via conftest.py
+- Stale C:\Users\DELL path references cleaned across documentation
+- 4 outdated roadmap documents archived to docs/archive/
+
+### Infrastructure
+- 709+ tests (was 691), 16/16 validation tests passing
+- collect_ignore properly configured in conftest.py (not pyproject.toml)
+
+---
+
 ## [0.11.0] - 2026-04-05
 
 ### Added

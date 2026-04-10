@@ -234,20 +234,21 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.11.0** -- Simulation correctness, backend vectorization, new features (April 2026).
+**v0.12.0** -- NetLogo cross-validation, behavioral validation suite, model.py refactor (April 2026).
 
 ### Current Metrics
 
-| Metric          | Value                          |
-|-----------------|--------------------------------|
-| Tests           | 674                            |
-| Validation      | 11/11 NetLogo reference tests  |
-| Step time       | 48 ms (Example A, Numba JIT)   |
-| Species         | Multi-species support          |
-| Reaches         | Multi-reach support            |
-| Sub-daily       | InSTREAM-SD hourly + peaking   |
-| Output          | 7 file types + CLI             |
-| Example B       | 3 reaches x 3 species working  |
+| Metric          | Value                                          |
+|-----------------|------------------------------------------------|
+| Tests           | 709+                                           |
+| Validation      | 16/16 (11 original + 5 NetLogo cross-val)      |
+| model.py        | 108 lines (decomposed into 3 mixin classes)    |
+| Step time       | 48 ms (Example A, Numba JIT)                   |
+| Species         | Multi-species support                          |
+| Reaches         | Multi-reach support                            |
+| Sub-daily       | InSTREAM-SD hourly + peaking                   |
+| Output          | 7 file types + CLI                             |
+| Example B       | 3 reaches x 3 species working                  |
 
 ### Completed
 
@@ -264,8 +265,10 @@ property-based tests, and performance regression tests.
 - NumPy, Numba, and JAX compute backends (survival vectorized across all 3)
 - InSTREAM-SD sub-daily scheduling (hourly + peaking flow)
 - Growth accumulation with day-boundary application
-- 11/11 NetLogo validation tests passing
-- 674 unit, integration, property-based, and validation tests
+- 16/16 NetLogo validation tests passing (11 original + 5 NetLogo 7.4 cross-validation)
+- 709+ unit, integration, property-based, behavioral, and validation tests
+- model.py decomposed into 3 mixin classes (model_init, model_environment, model_day_boundary); residual 108 lines
+- Behavioral validation suite: population dynamics, size distribution, habitat selection, spawning/recruitment (13 tests)
 - JAX GPU backend with vectorized growth/survival kernels
 - FEM mesh reader (River2D/GMSH via meshio)
 - Shiny for Python frontend (configure, run, explore simulations)
