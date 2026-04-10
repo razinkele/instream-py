@@ -1,0 +1,135 @@
+<h2>Dashboard Tab Layout</h2>
+<p class="subtitle">How should the 4 live metrics be arranged?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>2×2 Grid</h3>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Dashboard — Running... 45%</div>
+        <div class="mockup-body" style="padding:8px">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div style="background:#e8f4e8; border:1px solid #4a8; border-radius:6px; padding:12px; text-align:center;">
+              <div style="font-size:11px; color:#666; text-transform:uppercase;">Population</div>
+              <div style="font-size:20px; font-weight:bold; color:#2a6;">847</div>
+              <div style="height:40px; background:linear-gradient(90deg, #4a8 0%, #4a8 60%, transparent 60%); border-radius:3px; margin-top:6px; opacity:0.3;"></div>
+              <div style="font-size:10px; color:#888; margin-top:4px;">▬ alive by species over time</div>
+            </div>
+            <div style="background:#fef3e0; border:1px solid #e8a; border-radius:6px; padding:12px; text-align:center;">
+              <div style="font-size:11px; color:#666; text-transform:uppercase;">Mortality</div>
+              <div style="font-size:20px; font-weight:bold; color:#c64;">23 today</div>
+              <div style="height:40px; display:flex; gap:2px; align-items:flex-end; justify-content:center; margin-top:6px;">
+                <div style="width:16px; background:#e44; height:60%; border-radius:2px;"></div>
+                <div style="width:16px; background:#f80; height:30%; border-radius:2px;"></div>
+                <div style="width:16px; background:#fa0; height:20%; border-radius:2px;"></div>
+                <div style="width:16px; background:#aaa; height:10%; border-radius:2px;"></div>
+              </div>
+              <div style="font-size:10px; color:#888; margin-top:4px;">stacked bars by cause</div>
+            </div>
+            <div style="background:#e8eef8; border:1px solid #68a; border-radius:6px; padding:12px; text-align:center;">
+              <div style="font-size:11px; color:#666; text-transform:uppercase;">Feeding</div>
+              <div style="font-size:20px; font-weight:bold; color:#36a;">drift 62%</div>
+              <div style="height:40px; background:linear-gradient(90deg, #48c 0%, #48c 62%, #8c4 62%, #8c4 100%); border-radius:3px; margin-top:6px; opacity:0.4;"></div>
+              <div style="font-size:10px; color:#888; margin-top:4px;">drift vs search split over time</div>
+            </div>
+            <div style="background:#f8e8f0; border:1px solid #a68; border-radius:6px; padding:12px; text-align:center;">
+              <div style="font-size:11px; color:#666; text-transform:uppercase;">Redds</div>
+              <div style="font-size:20px; font-weight:bold; color:#a48;">12 active</div>
+              <div style="height:40px; background:linear-gradient(90deg, #c8a 0%, #c8a 40%, transparent 40%); border-radius:3px; margin-top:6px; opacity:0.3;"></div>
+              <div style="font-size:10px; color:#888; margin-top:4px;">redd count + eggs + emerged</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:8px;">Equal-weight quadrants. Each has a headline number + a small chart below it. Compact, all visible at once.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>KPI Strip + Stacked Charts</h3>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Dashboard — Running... 45%</div>
+        <div class="mockup-body" style="padding:8px">
+          <!-- KPI strip -->
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <div style="flex:1; background:#e8f4e8; border-radius:4px; padding:8px; text-align:center;">
+              <div style="font-size:10px; color:#666;">ALIVE</div>
+              <div style="font-size:18px; font-weight:bold; color:#2a6;">847</div>
+            </div>
+            <div style="flex:1; background:#fef3e0; border-radius:4px; padding:8px; text-align:center;">
+              <div style="font-size:10px; color:#666;">DEATHS TODAY</div>
+              <div style="font-size:18px; font-weight:bold; color:#c64;">23</div>
+            </div>
+            <div style="flex:1; background:#e8eef8; border-radius:4px; padding:8px; text-align:center;">
+              <div style="font-size:10px; color:#666;">DRIFT %</div>
+              <div style="font-size:18px; font-weight:bold; color:#36a;">62%</div>
+            </div>
+            <div style="flex:1; background:#f8e8f0; border-radius:4px; padding:8px; text-align:center;">
+              <div style="font-size:10px; color:#666;">REDDS</div>
+              <div style="font-size:18px; font-weight:bold; color:#a48;">12</div>
+            </div>
+          </div>
+          <!-- Charts stacked -->
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <div style="background:#f8f8f8; border:1px solid #ddd; border-radius:4px; padding:8px;">
+              <div style="font-size:10px; font-weight:bold; color:#555;">Population Over Time</div>
+              <div style="height:50px; background:linear-gradient(180deg, transparent 40%, rgba(42,166,80,0.2) 100%); border-bottom:2px solid #2a6; margin-top:4px;"></div>
+            </div>
+            <div style="background:#f8f8f8; border:1px solid #ddd; border-radius:4px; padding:8px;">
+              <div style="font-size:10px; font-weight:bold; color:#555;">Mortality by Cause</div>
+              <div style="height:50px; background:linear-gradient(180deg, transparent 60%, rgba(200,60,60,0.2) 100%); border-bottom:2px solid #c64; margin-top:4px;"></div>
+            </div>
+            <div style="background:#f8f8f8; border:1px solid #ddd; border-radius:4px; padding:8px;">
+              <div style="font-size:10px; font-weight:bold; color:#555;">Feeding Activity & Redds</div>
+              <div style="height:50px; background:linear-gradient(180deg, transparent 50%, rgba(60,100,200,0.15) 100%); border-bottom:2px solid #36a; margin-top:4px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:8px;">Headline numbers at top for quick glance, full-width charts below for trends. More vertical space for charts. Scrolls on small screens.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Top Chart + Bottom Grid</h3>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Dashboard — Running... 45%</div>
+        <div class="mockup-body" style="padding:8px">
+          <!-- Main chart -->
+          <div style="background:#f8f8f8; border:1px solid #ddd; border-radius:4px; padding:10px; margin-bottom:8px;">
+            <div style="font-size:11px; font-weight:bold; color:#555;">Population & Mortality</div>
+            <div style="height:80px; position:relative; margin-top:6px;">
+              <div style="position:absolute; bottom:0; left:0; right:0; height:60%; background:linear-gradient(180deg, transparent, rgba(42,166,80,0.15)); border-bottom:2px solid #2a6;"></div>
+              <div style="position:absolute; bottom:0; left:0; right:0; height:30%; background:linear-gradient(180deg, transparent, rgba(200,60,60,0.1)); border-bottom:1px dashed #c64;"></div>
+            </div>
+            <div style="font-size:9px; color:#888; margin-top:2px;">Population (solid) + cumulative deaths (dashed)</div>
+          </div>
+          <!-- Bottom 3 cards -->
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px;">
+            <div style="background:#e8eef8; border:1px solid #68a; border-radius:4px; padding:8px; text-align:center;">
+              <div style="font-size:10px; color:#666;">FEEDING</div>
+              <div style="font-size:16px; font-weight:bold; color:#36a;">drift 62%</div>
+              <div style="height:24px; background:linear-gradient(90deg, #48c 62%, #8c4 38%); border-radius:2px; margin-top:4px; opacity:0.5;"></div>
+            </div>
+            <div style="background:#f8e8f0; border:1px solid #a68; border-radius:4px; padding:8px; text-align:center;">
+              <div style="font-size:10px; color:#666;">REDDS</div>
+              <div style="font-size:16px; font-weight:bold; color:#a48;">12 active</div>
+              <div style="font-size:10px; color:#888;">4,200 eggs</div>
+            </div>
+            <div style="background:#fef3e0; border:1px solid #e8a; border-radius:4px; padding:8px; text-align:center;">
+              <div style="font-size:10px; color:#666;">MORTALITY</div>
+              <div style="font-size:16px; font-weight:bold; color:#c64;">23 today</div>
+              <div style="font-size:10px; color:#888;">pred: 15 | starv: 8</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:8px;">Population gets the hero chart (most important). Feeding, Redds, Mortality as compact KPI cards below. Best ratio of chart space to screen area.</p>
+    </div>
+  </div>
+</div>
