@@ -388,13 +388,15 @@ class JaxBackend:
         # --- 3. Condition survival (two-piece linear) ---
         S_at_K5 = jnp.asarray(params["sp_mort_condition_S_at_K5"])
         S_at_K8 = jnp.asarray(params["sp_mort_condition_S_at_K8"])
-        slope_upper = 5.0 - 5.0 * S_at_K8
-        intercept_upper = 5.0 * S_at_K8 - 4.0
-        s_upper = cond * slope_upper + intercept_upper
-        slope_lower = (S_at_K8 - S_at_K5) / 0.3
+        K_crit = jnp.asarray(params.get("sp_mort_condition_K_crit", 0.8))
+        denom_upper = jnp.maximum(1.0 - K_crit, 1e-12)
+        slope_upper = (1.0 - S_at_K8) / denom_upper
+        s_upper = S_at_K8 + slope_upper * (cond - K_crit)
+        denom_lower = jnp.maximum(K_crit - 0.5, 1e-12)
+        slope_lower = (S_at_K8 - S_at_K5) / denom_lower
         intercept_lower = S_at_K5 - 0.5 * slope_lower
         s_lower = cond * slope_lower + intercept_lower
-        s_cond = jnp.where(cond > 0.8, s_upper, s_lower)
+        s_cond = jnp.where(cond > K_crit, s_upper, s_lower)
         s_cond = jnp.where(cond <= 0.0, 0.0, s_cond)
         s_cond = jnp.where(cond >= 1.0, 1.0, s_cond)
         s_cond = jnp.clip(s_cond, 0.0, 1.0)

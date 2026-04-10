@@ -249,6 +249,7 @@ def fitness_for(
     mort_high_temp_T9=24.0,
     mort_condition_S_at_K5=0.8,
     mort_condition_S_at_K8=0.992,
+    mort_condition_K_crit=0.8,
     fish_pred_min=0.99,
     fish_pred_L1=10.0,
     fish_pred_L9=3.0,
@@ -351,7 +352,7 @@ def fitness_for(
 
     s_ht = _ff_surv_ht(temperature, mort_high_temp_T1, mort_high_temp_T9)
     s_str = _ff_surv_str(depth, mort_strand_survival_when_dry)
-    s_cond = surv_cond_fn(condition, mort_condition_S_at_K5, mort_condition_S_at_K8)
+    s_cond = surv_cond_fn(condition, mort_condition_S_at_K5, mort_condition_S_at_K8, mort_condition_K_crit)
     s_fp = _ff_surv_fp(
         length,
         depth,
@@ -530,6 +531,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         _spa_mort_ht_T9 = _sp["mort_high_temp_T9"]
         _spa_mort_cond_S5 = _sp["mort_condition_S_at_K5"]
         _spa_mort_cond_S8 = _sp["mort_condition_S_at_K8"]
+        _spa_mort_cond_Kcrit = _sp["mort_condition_K_crit"]
         _spa_mort_strand_dry = _sp["mort_strand_survival_when_dry"]
         _spa_fp_L1 = _sp["mort_fish_pred_L1"]
         _spa_fp_L9 = _sp["mort_fish_pred_L9"]
@@ -634,6 +636,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             _mort_ht_T9 = float(_spa_mort_ht_T9[_fish_species])
             _mort_cond_S5 = float(_spa_mort_cond_S5[_fish_species])
             _mort_cond_S8 = float(_spa_mort_cond_S8[_fish_species])
+            _mort_cond_Kcrit = float(_spa_mort_cond_Kcrit[_fish_species])
             _mort_strand_dry = float(_spa_mort_strand_dry[_fish_species])
             _fp_L1 = float(_spa_fp_L1[_fish_species])
             _fp_L9 = float(_spa_fp_L9[_fish_species])
@@ -688,6 +691,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             _mort_ht_T9 = params.get("mort_high_temp_T9", 24.0)
             _mort_cond_S5 = params.get("mort_condition_S_at_K5", 0.8)
             _mort_cond_S8 = params.get("mort_condition_S_at_K8", 0.992)
+            _mort_cond_Kcrit = params.get("mort_condition_K_crit", 0.8)
             _mort_strand_dry = params.get("mort_strand_survival_when_dry", 0.5)
             _fp_L1 = params.get("fish_pred_L1", 10.0)
             _fp_L9 = params.get("fish_pred_L9", 3.0)
@@ -772,7 +776,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         _max_spd = (_max_speed_A * _fl + _max_speed_B) * _max_swim_temp_term
         _resp_std = _resp_A * _fw**_resp_B
         _detect_base = _react_dist_A + _react_dist_B * _fl
-        _s_cond = _surv_cond(_fc, _mort_cond_S5, _mort_cond_S8)
+        _s_cond = _surv_cond(_fc, _mort_cond_S5, _mort_cond_S8, _mort_cond_Kcrit)
         _fp_L_term = evaluate_logistic(_fl, _fp_L1, _fp_L9)
         _tp_L_term = evaluate_logistic(_fl, _tp_L1, _tp_L9)
 
@@ -845,6 +849,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
                 _mort_ht_T9,
                 _mort_cond_S5,
                 _mort_cond_S8,
+                _mort_cond_Kcrit,
                 _fp_min,
                 _fp_L1,
                 _fp_L9,

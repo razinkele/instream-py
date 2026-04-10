@@ -196,6 +196,7 @@ class _ModelInitMixin:
             "mort_high_temp_T9",
             "mort_condition_S_at_K5",
             "mort_condition_S_at_K8",
+            "mort_condition_K_crit",
             "mort_strand_survival_when_dry",
             "pisciv_length",
             "mort_fish_pred_L1",

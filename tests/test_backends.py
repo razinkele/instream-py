@@ -155,6 +155,7 @@ def test_numba_evaluate_all_cells_matches_python():
         24.0,
         0.8,
         0.992,
+        0.8,
         0.99,
         10.0,
         3.0,

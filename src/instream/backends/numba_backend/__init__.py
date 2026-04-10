@@ -216,13 +216,15 @@ class NumbaBackend:
         cond = conditions
         S_at_K5 = params["sp_mort_condition_S_at_K5"]
         S_at_K8 = params["sp_mort_condition_S_at_K8"]
-        slope_upper = 5.0 - 5.0 * S_at_K8
-        intercept_upper = 5.0 * S_at_K8 - 4.0
-        s_upper = cond * slope_upper + intercept_upper
-        slope_lower = (S_at_K8 - S_at_K5) / 0.3
+        K_crit = params.get("sp_mort_condition_K_crit", 0.8)
+        denom_upper = np.maximum(1.0 - K_crit, 1e-12)
+        slope_upper = (1.0 - S_at_K8) / denom_upper
+        s_upper = S_at_K8 + slope_upper * (cond - K_crit)
+        denom_lower = np.maximum(K_crit - 0.5, 1e-12)
+        slope_lower = (S_at_K8 - S_at_K5) / denom_lower
         intercept_lower = S_at_K5 - 0.5 * slope_lower
         s_lower = cond * slope_lower + intercept_lower
-        s_cond = np.where(cond > 0.8, s_upper, s_lower)
+        s_cond = np.where(cond > K_crit, s_upper, s_lower)
         s_cond = np.where(cond <= 0.0, 0.0, s_cond)
         s_cond = np.where(cond >= 1.0, 1.0, s_cond)
         s_cond = np.clip(s_cond, 0.0, 1.0)

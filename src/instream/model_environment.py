@@ -195,6 +195,7 @@ class _ModelEnvironmentMixin:
                 ],
                 sp_mort_condition_S_at_K5=_spa["mort_condition_S_at_K5"][sp_idx],
                 sp_mort_condition_S_at_K8=_spa["mort_condition_S_at_K8"][sp_idx],
+                sp_mort_condition_K_crit=_spa["mort_condition_K_crit"][sp_idx],
                 rp_fish_pred_min=_rpa["fish_pred_min"][r_idx],
                 sp_mort_fish_pred_L1=_spa["mort_fish_pred_L1"][sp_idx],
                 sp_mort_fish_pred_L9=_spa["mort_fish_pred_L9"][sp_idx],

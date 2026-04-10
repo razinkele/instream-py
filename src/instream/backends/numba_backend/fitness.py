@@ -170,6 +170,7 @@ def _evaluate_all_cells(
     mort_ht_T9,
     mort_cond_S5,
     mort_cond_S8,
+    mort_cond_Kcrit,
     fp_min,
     fp_L1,
     fp_L9,
@@ -228,12 +229,20 @@ def _evaluate_all_cells(
         s_cond_val = 0.0
     elif fish_condition >= 1.0:
         s_cond_val = 1.0
-    elif fish_condition > 0.8:
-        slope_c = 5.0 - 5.0 * mort_cond_S8
-        s_cond_val = fish_condition * slope_c + (5.0 * mort_cond_S8 - 4.0)
+    elif fish_condition > mort_cond_Kcrit:
+        denom_c = 1.0 - mort_cond_Kcrit
+        if denom_c <= 0.0:
+            s_cond_val = 1.0
+        else:
+            slope_c = (1.0 - mort_cond_S8) / denom_c
+            s_cond_val = mort_cond_S8 + slope_c * (fish_condition - mort_cond_Kcrit)
     else:
-        slope_c = (mort_cond_S8 - mort_cond_S5) / 0.3
-        s_cond_val = fish_condition * slope_c + (mort_cond_S5 - 0.5 * slope_c)
+        denom_c = mort_cond_Kcrit - 0.5
+        if denom_c <= 0.0:
+            s_cond_val = mort_cond_S8
+        else:
+            slope_c = (mort_cond_S8 - mort_cond_S5) / denom_c
+            s_cond_val = fish_condition * slope_c + (mort_cond_S5 - 0.5 * slope_c)
     s_cond_val = max(0.0, min(1.0, s_cond_val))
 
     fp_L = _logistic(fish_length, fp_L1, fp_L9)

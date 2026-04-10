@@ -67,13 +67,13 @@ def survival_stranding(depth, survival_when_dry=0.5):
 # ---------------------------------------------------------------------------
 
 
-def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992):
+def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992, K_crit=0.8):
     """Survival probability based on body condition factor (K = weight / (length^3 * p1)).
 
     Two-piece linear function:
     - condition == 1.0 -> survival = 1.0
-    - condition in (0.8, 1.0) -> linear from S_at_K8 at 0.8 to 1.0 at 1.0
-    - condition <= 0.8 -> linear from S_at_K5 at 0.5 to S_at_K8 at 0.8
+    - condition in (K_crit, 1.0) -> linear from S_at_K8 at K_crit to 1.0 at 1.0
+    - condition <= K_crit -> linear from S_at_K5 at 0.5 to S_at_K8 at K_crit
 
     Parameters
     ----------
@@ -82,7 +82,9 @@ def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992):
     S_at_K5 : float
         Survival at condition = 0.5.
     S_at_K8 : float
-        Survival at condition = 0.8.
+        Survival at condition = K_crit.
+    K_crit : float
+        Condition threshold separating the two linear pieces (default 0.8).
 
     Returns
     -------
@@ -94,14 +96,19 @@ def survival_condition(condition, S_at_K5=0.8, S_at_K8=0.992):
     if condition >= 1.0:
         return 1.0
 
-    if condition > 0.8:
-        # Upper piece: from (0.8, S_at_K8) to (1.0, 1.0)
-        slope = 5.0 - (5.0 * S_at_K8)
-        intercept = (5.0 * S_at_K8) - 4.0
-        s = condition * slope + intercept
+    if condition > K_crit:
+        # Upper piece: from (K_crit, S_at_K8) to (1.0, 1.0)
+        denom = 1.0 - K_crit
+        if denom <= 0.0:
+            return 1.0
+        slope = (1.0 - S_at_K8) / denom
+        s = S_at_K8 + slope * (condition - K_crit)
     else:
-        # Lower piece: from (0.5, S_at_K5) to (0.8, S_at_K8)
-        slope = (S_at_K8 - S_at_K5) / 0.3
+        # Lower piece: from (0.5, S_at_K5) to (K_crit, S_at_K8)
+        denom = K_crit - 0.5
+        if denom <= 0.0:
+            return S_at_K8
+        slope = (S_at_K8 - S_at_K5) / denom
         intercept = S_at_K5 - (0.5 * slope)
         s = condition * slope + intercept
 
