@@ -576,8 +576,11 @@ In `model.py` step(), after `step_length = self.time_manager.advance()`, add:
 
 ```python
         # Compute freshwater-only alive mask for domain routing
+        # NOTE: self._marine_domain is initialized in _build_model (Task 9).
+        # For safety, also set self._marine_domain = None at top of step() if not yet set.
         all_alive = self.trout_state.alive_indices()
-        if hasattr(self, '_marine_domain') and self._marine_domain is not None:
+        marine_domain = getattr(self, '_marine_domain', None)
+        if marine_domain is not None:
             fw_mask = self.trout_state.zone_idx[all_alive] == -1
             freshwater_alive = all_alive[fw_mask]
         else:
@@ -591,15 +594,24 @@ Pass `freshwater_alive` to `select_habitat_and_activity` or guard the call. The 
 For scaffolding, the simplest guard before the `select_habitat_and_activity` call:
 
 ```python
-        # Temporarily mark marine fish as not-alive for freshwater processing
-        marine_mask = self.trout_state.zone_idx >= 0
-        was_alive = self.trout_state.alive.copy()
-        self.trout_state.alive[marine_mask] = False
-
-        select_habitat_and_activity(...)
-
-        # Restore marine fish
-        self.trout_state.alive[:] = was_alive
+        # Filter freshwater fish for habitat selection — do NOT mutate alive array
+        # (mutating alive is unsafe: exceptions leave corrupted state, and
+        # select_habitat_and_activity could kill fish that get revived on restore)
+        #
+        # Instead, pass freshwater_alive to select_habitat_and_activity.
+        # The function uses trout_state.alive_indices() internally — override by
+        # temporarily setting marine fish zone_idx to a sentinel, OR better:
+        # use the freshwater_alive mask computed at the top of step() and
+        # filter inside select_habitat_and_activity using a new `fish_indices`
+        # parameter. If modifying select_habitat_and_activity is too invasive,
+        # the simplest safe approach is to set marine fish cell_idx to a
+        # known-invalid value that habitat selection's existing safety checks
+        # will skip. Marine fish already have cell_idx=-1, and the existing
+        # candidate-building code skips fish with invalid cells. Verify this
+        # by reading behavior.py's select_habitat_and_activity.
+        #
+        # The implementer MUST read behavior.py to choose the right approach.
+        # DO NOT use the alive-flag mutation pattern.
 ```
 
 - [ ] **Step 3: Guard growth memory and fitness loops (model.py:76-101)**
@@ -615,7 +627,7 @@ And the fitness EMA loop at line 88:
 
 ```python
         alive_after = self.trout_state.alive_indices()
-        if hasattr(self, '_marine_domain') and self._marine_domain is not None:
+        if getattr(self, '_marine_domain', None) is not None:
             fw_after = alive_after[self.trout_state.zone_idx[alive_after] == -1]
         else:
             fw_after = alive_after
@@ -629,7 +641,7 @@ In `_do_survival`, after computing `alive`:
 
 ```python
         # Exclude marine fish from freshwater survival
-        if hasattr(self, '_marine_domain') and self._marine_domain is not None:
+        if getattr(self, '_marine_domain', None) is not None:
             fw_mask = self.trout_state.zone_idx[alive] == -1
             fw_alive = alive[fw_mask]
         else:
@@ -797,9 +809,9 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
     return outmigrants
 ```
 
-- [ ] **Step 3: Update _do_migration caller in model_day_boundary.py**
+- [ ] **Step 3: Update _do_migration caller(s) in model_day_boundary.py**
 
-Find the `migrate_fish_downstream` call and pass marine config params:
+Find ALL calls to `migrate_fish_downstream` in `_do_migration` — there may be two: one in the `should_migrate` branch and one in the `outmigration_probability` branch. BOTH must pass the new marine params:
 
 ```python
 outmigrants = migrate_fish_downstream(
@@ -822,6 +834,8 @@ git commit -m "feat: smolt transition at river mouth instead of kill when marine
 ---
 
 ## Task 7: Smolt Readiness Accumulation
+
+**Dependency:** Task 6's smolt transition checks `smolt_readiness >= threshold`. Without Task 7, readiness stays 0.0 and no fish smoltify at river mouth (except in unit tests that manually set readiness). Task 6's unit tests work independently (they set readiness=0.9), but integration requires Task 7.
 
 **Files:**
 - Modify: `src/instream/model.py`
@@ -912,7 +926,7 @@ self._day_length = dl  # cache for smolt readiness
 In `model.py` step(), after `_do_day_boundary`, add smolt readiness:
 
 ```python
-        if is_boundary and hasattr(self, '_marine_domain') and self._marine_domain is not None:
+        if is_boundary and getattr(self, '_marine_domain', None) is not None:
             from instream.marine.domain import accumulate_smolt_readiness
             mc = self.config.marine
             accumulate_smolt_readiness(
@@ -1112,8 +1126,7 @@ After the freshwater survival block, before `if is_boundary`:
 In `src/instream/modules/spawning.py`, in `redd_emergence`, after setting `trout_state.reach_idx[slots]`:
 
 ```python
-        if hasattr(trout_state, 'natal_reach_idx'):
-            trout_state.natal_reach_idx[slots] = redd_reach_idx
+        trout_state.natal_reach_idx[slots] = redd_reach_idx
 ```
 
 - [ ] **Step 4: Run full suite**
@@ -1163,6 +1176,7 @@ class TestMarineLifecycleE2E:
     @pytest.fixture(scope="class")
     def model(self):
         from instream.model import InSTREAMModel
+        from instream.state.life_stage import LifeStage
         import datetime
         start = datetime.date(2011, 4, 1)
         end_date = (start + datetime.timedelta(days=730)).isoformat()
@@ -1171,6 +1185,15 @@ class TestMarineLifecycleE2E:
             data_dir=FIXTURES / "example_a",
             end_date_override=end_date,
         )
+        # IMPORTANT: Fish initialize as FRY (life_history=0). There is no
+        # automatic FRY→PARR transition yet (that's a v0.15.0 feature).
+        # For the E2E test, manually set age-1+ fish to PARR so they can
+        # accumulate smolt readiness and eventually smoltify.
+        ts = m.trout_state
+        alive = ts.alive_indices()
+        parr_candidates = alive[ts.age[alive] >= 1]
+        ts.life_history[parr_candidates] = int(LifeStage.PARR)
+
         m.run()
         return m
 
@@ -1198,6 +1221,55 @@ class TestMarineLifecycleE2E:
         ts = model.trout_state
         alive = ts.alive.sum()
         assert alive > 0, "Population went extinct"
+
+
+class TestMarineEdgeCases:
+    """Edge cases from the spec — non-slow, use synthetic state."""
+
+    def test_mid_december_smolt_gets_sea_winter_quickly(self):
+        """Fish entering ocean Dec 15 should get sea_winters=1 on Jan 1 (17 days later)."""
+        from instream.marine.domain import MarineDomain, ZoneState
+        from instream.state.trout_state import TroutState
+        from instream.marine.config import MarineConfig, ZoneConfig
+        import datetime
+
+        ts = TroutState.zeros(2)
+        ts.alive[0] = True
+        ts.zone_idx[0] = 0
+        ts.life_history[0] = int(LifeStage.SMOLT)
+        ts.smolt_date[0] = datetime.date(2012, 12, 15).toordinal()
+        ts.sea_winters[0] = 0
+
+        cfg = MarineConfig(
+            zones=[ZoneConfig(name="E", area_km2=50)],
+            zone_connectivity=[],
+        )
+        zs = ZoneState.zeros(1, names=["E"])
+        md = MarineDomain(ts, zs, cfg)
+        md.daily_step(datetime.date(2013, 1, 1))
+        assert ts.sea_winters[0] == 1, "Sea-winter should increment on Jan 1"
+
+    def test_unreachable_zone_fish_stays(self):
+        """Fish in a zone with no outgoing edges should stay put."""
+        from instream.marine.domain import MarineDomain, ZoneState
+        from instream.state.trout_state import TroutState
+        from instream.marine.config import MarineConfig, ZoneConfig
+        import datetime
+
+        ts = TroutState.zeros(2)
+        ts.alive[0] = True
+        ts.zone_idx[0] = 0  # zone 0 has no outgoing edges
+        ts.life_history[0] = int(LifeStage.SMOLT)
+        ts.smolt_date[0] = datetime.date(2012, 4, 1).toordinal()
+
+        cfg = MarineConfig(
+            zones=[ZoneConfig(name="E", area_km2=50), ZoneConfig(name="C", area_km2=500)],
+            zone_connectivity=[],  # no edges at all
+        )
+        zs = ZoneState.zeros(2, names=["E", "C"])
+        md = MarineDomain(ts, zs, cfg)
+        md.daily_step(datetime.date(2012, 5, 1))  # 30 days later
+        assert ts.zone_idx[0] == 0, "Fish should stay in zone 0 with no outgoing edges"
 
 
 @pytest.mark.slow
