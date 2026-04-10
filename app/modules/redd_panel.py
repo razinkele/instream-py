@@ -55,7 +55,7 @@ def redd_server(input, output, session, results_rv):
             yaxis=dict(title="Count"),
             yaxis2=dict(title="Eggs", overlaying="y", side="right"),
         )
-        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs="cdn"))
+        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
 
     @output
     @render.table

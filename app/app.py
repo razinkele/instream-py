@@ -21,6 +21,7 @@ from modules.redd_panel import redd_ui, redd_server
 from modules.spatial_panel import spatial_ui, spatial_server
 from modules.help_panel import help_ui, help_server, TEST_CASES  # noqa: F401
 from modules.dashboard_panel import dashboard_ui, dashboard_server, DASHBOARD_JS  # noqa: F401
+from modules.movement_panel import movement_ui, movement_server  # noqa: E402
 from simulation import run_simulation
 
 
@@ -121,8 +122,9 @@ app_ui = ui.page_sidebar(
         ui.tags.script(DASHBOARD_JS),
     ),
     ui.navset_tab(
-        ui.nav_panel("Population", population_ui("pop")),
         ui.nav_panel("Dashboard", dashboard_ui("dash")),
+        ui.nav_panel("Movement", movement_ui("movement")),
+        ui.nav_panel("Population", population_ui("pop")),
         ui.nav_panel("Spatial", spatial_ui("spatial")),
         ui.nav_panel("Environment", environment_ui("env")),
         ui.nav_panel("Size Distribution", distribution_ui("dist")),
@@ -306,6 +308,7 @@ def server(input, output, session):
     redd_server("redds", results_rv=results_rv)
     spatial_server("spatial", results_rv=results_rv)
     dashboard_server("dash", dashboard_data_rv=_dashboard_data)
+    movement_server("movement", dashboard_data_rv=_dashboard_data)
 
     # --- Help & Test Cases ---
     _test_key = reactive.value(None)

@@ -1,15 +1,27 @@
-"""Spatial panel — interactive deck.gl map with cell polygons and fish trips."""
+"""Spatial panel — interactive deck.gl map with cell polygons and fish trips.
+
+Architecture:
+- Cell polygon layer is sent ONCE when simulation completes (full update).
+  Changing color_var re-colors cells via partial_update (no full re-send).
+- Fish movement is visualised via the TripsLayer animation only.
+- Trips layer uses partial_update so the static cell layer is never re-sent.
+- Animation controls (play/pause/reset, speed, trail length) drive the trips.
+"""
 
 import logging
+import math
 
 from shiny import module, reactive, render, ui
 
+
 from shiny_deckgl import (
     MapWidget,
-    CARTO_DARK,
     geojson_layer,
     trips_layer,
 )
+
+# Light basemap with labels for readability
+BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 from shiny_deckgl.ibm import format_trips, trips_animation_server
 from simulation import _build_trajectories_data, _value_to_rgba
 
@@ -37,17 +49,31 @@ def spatial_ui():
         ui.layout_columns(
             ui.input_select("color_var", "Cells color:", choices=COLORING_VARS),
             ui.input_select("trips_color", "Trails color:", choices=TRIPS_COLOR_MODES),
-            ui.input_checkbox("show_trips", "Show fish trails", value=False),
-            col_widths=(4, 4, 4),
+            col_widths=(6, 6),
+        ),
+        ui.layout_columns(
+            ui.input_checkbox("show_trips", "Show fish trails", value=True),
+            ui.input_checkbox("show_heads", "Show fish icons", value=True),
+            ui.input_slider(
+                "trail_width",
+                "Trail width (px)",
+                min=1,
+                max=10,
+                value=3,
+                step=1,
+            ),
+            col_widths=(3, 3, 6),
         ),
         ui.output_ui("anim_controls"),
         ui.output_ui("map_container"),
+        full_screen=True,
+        height="100%",
+        style="min-height: 600px;",
     )
 
 
 @module.server
 def spatial_server(input, output, session, results_rv):
-    # Cache reprojected GeoDataFrame to avoid redundant CRS transforms
     @reactive.calc
     def cells_wgs84():
         results = results_rv()
@@ -60,22 +86,13 @@ def spatial_server(input, output, session, results_rv):
             return gdf.to_crs(epsg=4326)
         return gdf
 
-    # Create widget once per simulation run, stable across input changes
     _widget = reactive.value(None)
-
-    # Register animation server unconditionally (avoids duplicate registration)
-    # It will be a no-op when widget is None
-    @reactive.calc
-    def _anim():
-        widget = _widget()
-        if widget is None:
-            return None
-        return trips_animation_server("fish_anim", widget=widget, session=session)
+    _cells_sent = reactive.value(False)
+    _anim_server = reactive.value(None)
 
     @output
     @render.ui
     def anim_controls():
-        """Show animation controls only when trips checkbox is on and data exists."""
         if not input.show_trips():
             return ui.TagList()
         results = results_rv()
@@ -95,13 +112,10 @@ def spatial_server(input, output, session, results_rv):
         if gdf_wgs84 is None:
             return ui.p("Run a simulation to see results.")
 
-        # Compute view state from bounds
         bounds = gdf_wgs84.total_bounds  # [minx, miny, maxx, maxy]
         center_lon = (bounds[0] + bounds[2]) / 2
         center_lat = (bounds[1] + bounds[3]) / 2
-        # Zoom heuristic: ~14 for a small river reach, clamped to [8, 18]
-        extent = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
-        zoom = max(8, min(18, int(14 - extent * 100)))
+        zoom = _fit_bounds_zoom(bounds)
 
         widget = MapWidget(
             "spatial_map",
@@ -109,26 +123,40 @@ def spatial_server(input, output, session, results_rv):
                 "longitude": center_lon,
                 "latitude": center_lat,
                 "zoom": zoom,
+                "pitch": 0,
+                "bearing": 0,
             },
-            style=CARTO_DARK,
+            style=BASEMAP_LIGHT,
             animate=True,
             tooltip={
                 "html": "<b>{cell_id}</b><br/>{_tooltip_var}: {_tooltip_val}",
                 "style": {
-                    "backgroundColor": "#222",
-                    "color": "#fff",
+                    "backgroundColor": "#fff",
+                    "color": "#333",
                     "fontSize": "12px",
+                    "border": "1px solid #ccc",
                 },
             },
         )
         _widget.set(widget)
-        return widget.ui(height="600px")
+        _cells_sent.set(False)
+        # Register animation server once per widget lifetime
+        _anim_server.set(
+            trips_animation_server("fish_anim", widget=widget, session=session)
+        )
+        return widget.ui(height="550px")
 
+    # ------------------------------------------------------------------
+    # ONE-TIME initial layer push — sent once when simulation completes.
+    # Reads color_var inside reactive.isolate so it doesn't re-fire.
+    # ------------------------------------------------------------------
     @reactive.effect
-    async def _update_layers():
+    async def _send_cells_once():
         widget = _widget()
         gdf_wgs84 = cells_wgs84()
         if widget is None or gdf_wgs84 is None:
+            return
+        if _cells_sent():
             return
 
         results = results_rv()
@@ -136,82 +164,213 @@ def spatial_server(input, output, session, results_rv):
             return
 
         try:
-            layers = []
+            with reactive.isolate():
+                color_var = input.color_var()
 
-            # --- Cell polygon layer ---
-            color_var = input.color_var()
-            if color_var in gdf_wgs84.columns:
-                colors = _value_to_rgba(gdf_wgs84[color_var].values)
-                gdf_colored = gdf_wgs84.copy()
-                gdf_colored["color"] = colors
-                gdf_colored["_tooltip_var"] = COLORING_VARS.get(color_var, color_var)
-                gdf_colored["_tooltip_val"] = (
-                    gdf_colored[color_var].round(2).astype(str)
+            cells_layer = _build_cells_layer(gdf_wgs84, color_var)
+
+            # Send only the cells layer; _update_trips handles trips
+            # after _cells_sent becomes True (avoids double-send)
+            await widget.update(session, [cells_layer], animate=True)
+            _cells_sent.set(True)
+
+        except Exception as e:
+            if "SilentException" in type(e).__name__:
+                return
+            logger.exception("Error sending initial layers")
+
+    # ------------------------------------------------------------------
+    # CELL RE-COLORING — partial_update when color_var changes
+    # ------------------------------------------------------------------
+    @reactive.effect
+    async def _recolor_cells():
+        widget = _widget()
+        if widget is None or not _cells_sent():
+            return
+        gdf_wgs84 = cells_wgs84()
+        if gdf_wgs84 is None:
+            return
+
+        color_var = input.color_var()
+
+        try:
+            cells_layer = _build_cells_layer(gdf_wgs84, color_var)
+            await widget.partial_update(session, [cells_layer])
+        except Exception as e:
+            if "SilentException" in type(e).__name__:
+                return
+            logger.exception("Error re-coloring cells")
+
+    # ------------------------------------------------------------------
+    # TRIPS layer — partial_update only, never re-sends cells
+    # ------------------------------------------------------------------
+    @reactive.effect
+    async def _update_trips():
+        widget = _widget()
+        if widget is None or not _cells_sent():
+            return
+
+        results = results_rv()
+        if results is None:
+            return
+
+        show = input.show_trips()
+        show_heads = input.show_heads()
+        trips_color = input.trips_color()
+        trail_width = input.trail_width()
+
+        # Read animation controls if registered
+        anim = _anim_server()
+        speed = anim.speed() if anim else 8.0
+        trail = anim.trail() if anim else 180
+
+        try:
+            if not show:
+                await widget.partial_update(
+                    session,
+                    [trips_layer("fish_trips", [], visible=False)],
                 )
-            else:
-                gdf_colored = gdf_wgs84.copy()
-                gdf_colored["color"] = [[100, 100, 100, 100]] * len(gdf_colored)
-                gdf_colored["_tooltip_var"] = ""
-                gdf_colored["_tooltip_val"] = ""
+                return
 
-            cells_layer = geojson_layer(
-                "cells",
-                gdf_colored,
-                getFillColor="@@=d.properties.color",
-                getLineColor=[60, 60, 60, 100],
-                lineWidthMinPixels=1,
+            traj_df = results.get("trajectories")
+            if traj_df is None or traj_df.empty:
+                return
+
+            trip_lyr = _build_trips_layer(
+                results,
+                traj_df,
+                trips_color,
+                speed=speed,
+                trail=trail,
+                width=trail_width,
+                head_icons=show_heads,
             )
-            layers.append(cells_layer)
+            if trip_lyr is not None:
+                await widget.partial_update(session, [trip_lyr])
 
-            # --- Trips layer ---
-            if input.show_trips():
-                traj_df = results.get("trajectories")
-                if traj_df is not None and not traj_df.empty:
-                    species_cfg = results["config"].get("species", {})
-                    species_order = (
-                        list(species_cfg.keys()) if species_cfg else ["unknown"]
-                    )
+        except Exception as e:
+            if "SilentException" in type(e).__name__:
+                return
+            logger.exception("Error updating trips layer")
 
-                    trips_color = input.trips_color()
-                    paths, props = _build_trajectories_data(
-                        traj_df,
-                        results["cells"],  # pass original CRS for reprojection
-                        species_order,
-                        color_mode=trips_color,
-                    )
 
-                    if paths:
-                        total_days = int(traj_df["day_num"].max()) + 1
-                        trips_data = format_trips(
-                            paths,
-                            loop_length=total_days,
-                            properties=props,
-                        )
+# ======================================================================
+# Helper functions (module-level, no reactive dependencies)
+# ======================================================================
 
-                        anim = _anim()
-                        speed = anim.speed() if anim else 8.0
-                        trail = anim.trail() if anim else 180
 
-                        trip_layer = trips_layer(
-                            "fish_trips",
-                            trips_data,
-                            getColor="@@=d.color",
-                            trailLength=trail,
-                            fadeTrail=True,
-                            widthMinPixels=3,
-                            _tripsAnimation={
-                                "loopLength": total_days,
-                                "speed": speed,
-                            },
-                        )
-                        layers.append(trip_layer)
+def _fit_bounds_zoom(bounds, map_width_px=800, map_height_px=600):
+    """Compute a zoom level that fits the given [minx, miny, maxx, maxy] bounds.
 
-            await widget.update(session, layers, animate=True)
+    Uses the Web Mercator formula to calculate the zoom that fits both
+    the longitude and latitude spans into the given pixel dimensions,
+    with a small padding margin.
+    """
+    minx, miny, maxx, maxy = bounds
+    lng_span = max(maxx - minx, 1e-6)
+    lat_span = max(maxy - miny, 1e-6)
 
-        except Exception:
-            logger.exception("Error updating spatial layers")
-            ui.notification_show(
-                "Error updating map layers. Check console for details.",
-                type="error",
-                duration=5,
-            )
+    # Mercator formula: pixels = 256 * 2^zoom * (lng_span / 360)
+    zoom_lng = math.log2(map_width_px * 360 / (256 * lng_span)) if lng_span > 0 else 20
+    # Latitude uses Mercator projection stretch factor
+    lat_rad = math.radians((miny + maxy) / 2)
+    zoom_lat = (
+        math.log2(map_height_px * 360 / (256 * lat_span / math.cos(lat_rad)))
+        if lat_span > 0
+        else 20
+    )
+
+    zoom = min(zoom_lng, zoom_lat) - 0.5  # padding
+    return max(8, min(20, zoom))
+
+
+def _build_cells_layer(gdf_wgs84, color_var):
+    """Build a GeoJSON cell polygon layer coloured by color_var."""
+    gdf_colored = gdf_wgs84.copy()
+    if color_var in gdf_colored.columns:
+        gdf_colored["color"] = _value_to_rgba(gdf_colored[color_var].values)
+        gdf_colored["_tooltip_var"] = COLORING_VARS.get(color_var, color_var)
+        gdf_colored["_tooltip_val"] = gdf_colored[color_var].round(2).astype(str)
+    else:
+        gdf_colored["color"] = [[100, 100, 100, 100] for _ in range(len(gdf_colored))]
+        gdf_colored["_tooltip_var"] = ""
+        gdf_colored["_tooltip_val"] = ""
+
+    return geojson_layer(
+        "cells",
+        gdf_colored,
+        getFillColor="@@=d.properties.color",
+        getLineColor=[120, 120, 120, 150],
+        lineWidthMinPixels=1,
+    )
+
+
+def _build_trips_layer(
+    results,
+    traj_df,
+    color_mode,
+    speed=8.0,
+    trail=180,
+    width=3,
+    head_icons=True,
+):
+    """Build a TripsLayer dict from simulation results."""
+    from shiny_deckgl.ibm import ICON_ATLAS, ICON_MAPPING
+
+    species_cfg = results["config"].get("species", {})
+    species_order = list(species_cfg.keys()) if species_cfg else ["unknown"]
+
+    paths, props = _build_trajectories_data(
+        traj_df,
+        results["cells"],
+        species_order,
+        color_mode=color_mode,
+    )
+
+    if not paths:
+        return None
+
+    total_days = max(int(traj_df["day_num"].max()) + 1, 2)
+    trips_data = format_trips(
+        paths,
+        loop_length=total_days,
+        properties=props,
+    )
+
+    # Map inSTREAM species names to fish sprites from the sprite sheet.
+    _FISH_SPRITES = [
+        "Atlantic salmon",
+        "Atlantic cod",
+        "Baltic herring",
+        "European smelt",
+    ]
+    icon_mapping = {}
+    for i, sp_name in enumerate(species_order):
+        sprite_name = _FISH_SPRITES[i % len(_FISH_SPRITES)]
+        icon_mapping[sp_name] = dict(
+            ICON_MAPPING[sprite_name]
+        )  # copy to avoid aliasing
+
+    layer_kwargs = {
+        "getColor": "@@=d.color",
+        "trailLength": trail,
+        "fadeTrail": True,
+        "widthMinPixels": width,
+        "_tripsAnimation": {
+            "loopLength": total_days,
+            "speed": speed,
+        },
+    }
+
+    if head_icons:
+        layer_kwargs["_tripsHeadIcons"] = {
+            "iconAtlas": ICON_ATLAS,
+            "iconMapping": icon_mapping,
+            "iconField": "species",
+            "getSize": 28,
+            "sizeScale": 1,
+            "sizeMinPixels": 12,
+            "sizeMaxPixels": 48,
+        }
+
+    return trips_layer("fish_trips", trips_data, **layer_kwargs)

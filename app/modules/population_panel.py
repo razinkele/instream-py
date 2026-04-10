@@ -35,4 +35,4 @@ def population_server(input, output, session, results_rv):
             title="Fish Population Over Time",
         )
         fig.update_layout(template="plotly_white", hovermode="x unified")
-        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs="cdn"))
+        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))

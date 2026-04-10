@@ -1,18 +1,26 @@
-"""Movement panel — live fish movement map during simulation."""
+"""Movement panel — live fish movement map during simulation.
+
+Architecture:
+- Widget is created inside @render.ui map_container() where the Shiny module
+  namespace context is active (required for _resolve_ns to prefix the ID).
+- _process_data() accumulates trajectory data and sends layers via
+  widget.update() (cells once) then widget.partial_update() (trips).
+- All mutable state is plain Python (not reactive.value) to avoid loops.
+"""
 
 import math
 import logging
 from datetime import datetime
 
-import numpy as np
+import numpy as np  # noqa: E402
 from shiny import module, reactive, render, ui
 
-from shiny_deckgl import MapWidget, geojson_layer, trips_layer
-from shiny_deckgl.ibm import format_trips
+from shiny_deckgl import MapWidget, geojson_layer
 
 logger = logging.getLogger(__name__)
 
-BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+# OpenStreetMap-based basemap with terrain, roads, labels — highly visible
+BASEMAP_VOYAGER = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
 
 _TAB10 = [
     [31, 119, 180, 220],
@@ -74,38 +82,39 @@ def movement_ui():
 @module.server
 def movement_server(input, output, session, dashboard_data_rv):
     # ALL state is plain mutable — NOT reactive (avoids self-triggering loops)
-    _trajectory_history = {}  # {fish_idx: [[lon, lat, day], ...]}
-    _species_map = {}  # {fish_idx: species_idx}
-    _activity_map = {}  # {fish_idx: last_activity_code}
-    _last_seen_day = {}  # {fish_idx: last day_num} for slot-reuse detection
+    _trajectory_history = {}
+    _species_map = {}
+    _activity_map = {}
+    _last_seen_day = {}
     _last_processed_idx = [0]
-    _centroid_lut = [None]  # mutable container for np.ndarray
+    _centroid_lut = [None]
     _cells_gdf = [None]
-    _widget = [None]  # plain mutable — NOT reactive.value
     _cells_sent = [False]
     _species_order = [[]]
     _start_date = [None]
 
-    # Signal for map_container to re-render when widget is created
-    _widget_version = reactive.value(0)
+    # Create widget ONCE in the module server context (namespace is active here).
+    # Never re-create it — map_container renders it once and never re-renders.
+    _map_widget = MapWidget(
+        "movement_map",
+        view_state={"longitude": 0.0, "latitude": 30.0, "zoom": 2},
+        style=BASEMAP_VOYAGER,
+        tooltip={
+            "html": "<b>{cell_id}</b>",
+            "style": {
+                "backgroundColor": "#fff",
+                "color": "#333",
+                "fontSize": "12px",
+                "border": "1px solid #ccc",
+            },
+        },
+    )
 
     @output
     @render.ui
     def map_container():
-        """Reactively render map widget or placeholder."""
-        _widget_version()  # take dependency — re-renders when widget is created
-        if _widget[0] is not None:
-            return _widget[0].ui(height="100%")
-        data = dashboard_data_rv()
-        if not data:
-            return ui.p(
-                "Run a simulation to see fish movement.",
-                style="text-align:center;color:#888;padding:60px;",
-            )
-        return ui.p(
-            "Waiting for simulation data...",
-            style="text-align:center;color:#888;padding:40px;",
-        )
+        """Render the map widget div once. Never re-renders."""
+        return _map_widget.ui(height="550px")
 
     @output
     @render.ui
@@ -118,17 +127,18 @@ def movement_server(input, output, session, dashboard_data_rv):
             return ui.p("Waiting for data...", style="color:#888;text-align:center;")
         return ui.p(
             "Day {} — {} fish tracked".format(
-                snapshots[-1]["date"],
-                len(_trajectory_history),
+                snapshots[-1]["date"], len(_trajectory_history)
             ),
             style="color:#555;text-align:center;",
         )
 
     @reactive.effect
     async def _process_data():
+        """Accumulate trajectory data and send layers to the map."""
         data = dashboard_data_rv()
         if not data:
             return
+        widget = _map_widget
 
         # Reset detection: data shrank (new simulation started)
         total_len = len(data)
@@ -138,145 +148,134 @@ def movement_server(input, output, session, dashboard_data_rv):
             _activity_map.clear()
             _last_seen_day.clear()
             _last_processed_idx[0] = 0
-            _centroid_lut[0] = None
-            _cells_gdf[0] = None
             _cells_sent[0] = False
             _start_date[0] = None
-            _widget[0] = None
 
         # Process new messages since last index
-        new_messages = data[_last_processed_idx[0] :]
+        start_idx = _last_processed_idx[0]
+        new_messages = data[start_idx:]
         if not new_messages:
             return
-        _last_processed_idx[0] = total_len
 
         try:
             for msg in new_messages:
                 if msg.get("type") == "cells":
-                    _cells_gdf[0] = msg["cells_geojson"]
-                    centroids = _cells_gdf[0].geometry.centroid
+                    gdf = msg["cells_geojson"]
+                    _cells_gdf[0] = gdf
+                    centroids = gdf.geometry.centroid
                     _centroid_lut[0] = np.column_stack([centroids.x, centroids.y])
                     _species_order[0] = []
-                    # Create widget now
-                    gdf = _cells_gdf[0]
-                    bounds = gdf.total_bounds
-                    center_lon = (bounds[0] + bounds[2]) / 2
-                    center_lat = (bounds[1] + bounds[3]) / 2
-                    zoom = _fit_bounds_zoom(bounds)
-                    _widget[0] = MapWidget(
-                        "movement_map",
-                        view_state={
-                            "longitude": center_lon,
-                            "latitude": center_lat,
-                            "zoom": zoom,
-                        },
-                        style=BASEMAP_LIGHT,
-                        tooltip={
-                            "html": "<b>{cell_id}</b>",
-                            "style": {
-                                "backgroundColor": "#fff",
-                                "color": "#333",
-                                "fontSize": "12px",
-                                "border": "1px solid #ccc",
-                            },
-                        },
-                    )
                     _cells_sent[0] = False
-                    _widget_version.set(_widget_version() + 1)
+                    continue
 
-                elif msg.get("type") == "snapshot" and _centroid_lut[0] is not None:
-                    pos = msg["positions"]
-                    date_str = msg["date"]
+                if msg.get("type") != "snapshot" or _centroid_lut[0] is None:
+                    continue
 
-                    if _start_date[0] is None:
-                        _start_date[0] = date_str
-                    dt_start = datetime.strptime(_start_date[0], "%Y-%m-%d")
-                    dt_now = datetime.strptime(date_str, "%Y-%m-%d")
-                    day_num = (dt_now - dt_start).days
+                pos = msg["positions"]
+                date_str = msg["date"]
 
-                    if not _species_order[0]:
-                        _species_order[0] = list(msg["alive"].keys())
+                if _start_date[0] is None:
+                    _start_date[0] = date_str
+                dt_start = datetime.strptime(_start_date[0], "%Y-%m-%d")
+                dt_now = datetime.strptime(date_str, "%Y-%m-%d")
+                day_num = (dt_now - dt_start).days
 
-                    for i in range(len(pos["fish_idx"])):
-                        fid = pos["fish_idx"][i]
-                        cid = pos["cell_idx"][i]
-                        sid = pos["species_idx"][i]
-                        act = pos["activity"][i]
+                if not _species_order[0]:
+                    _species_order[0] = list(msg["alive"].keys())
 
-                        if cid >= len(_centroid_lut[0]):
-                            continue
+                for i in range(len(pos["fish_idx"])):
+                    fid = pos["fish_idx"][i]
+                    cid = pos["cell_idx"][i]
+                    sid = pos["species_idx"][i]
+                    act = pos["activity"][i]
 
-                        # Slot-reuse detection: gap > 1 day means slot was recycled
-                        if fid in _last_seen_day and day_num > _last_seen_day[fid] + 1:
-                            _trajectory_history[fid] = []
-
-                        lon, lat = _centroid_lut[0][cid]
-                        if fid not in _trajectory_history:
-                            _trajectory_history[fid] = []
-                        _trajectory_history[fid].append(
-                            [float(lon), float(lat), day_num]
-                        )
-                        _species_map[fid] = sid
-                        _activity_map[fid] = act
-                        _last_seen_day[fid] = day_num
-
-            # Send layers if widget exists and we have trajectory data
-            widget = _widget[0]
-            if widget is not None and _trajectory_history:
-                # Send cells once
-                if not _cells_sent[0] and _cells_gdf[0] is not None:
-                    cells_layer = geojson_layer(
-                        "movement_cells",
-                        _cells_gdf[0],
-                        getFillColor=[200, 200, 200, 80],
-                        getLineColor=[120, 120, 120, 150],
-                        lineWidthMinPixels=1,
-                        pickable=True,
-                    )
-                    await widget.update(session, [cells_layer])
-                    _cells_sent[0] = True
-
-                # Build trips from accumulated history
-                color_mode = "species"
-                try:
-                    color_mode = input.color_mode()
-                except Exception:
-                    pass
-
-                paths = []
-                props = []
-                for fid, path in _trajectory_history.items():
-                    if len(path) < 2:
+                    if cid >= len(_centroid_lut[0]):
                         continue
-                    paths.append(path)  # 3-element [lon, lat, day_num] lists
-                    sid = _species_map.get(fid, 0)
-                    if color_mode == "activity":
-                        act = _activity_map.get(fid, 0)
-                        color = _ACTIVITY_COLORS.get(act, [127, 127, 127, 220])
-                    else:
-                        color = _TAB10[sid % len(_TAB10)]
-                    sp_name = (
-                        _species_order[0][sid]
-                        if sid < len(_species_order[0])
-                        else "species_{}".format(sid)
-                    )
-                    props.append({"species": sp_name, "color": color})
 
-                if paths:
-                    max_day = max(p[-1][2] for p in paths)
-                    trips_data = format_trips(
-                        paths, loop_length=max_day + 1, properties=props
-                    )
-                    trip_lyr = trips_layer(
-                        "fish_movement",
-                        trips_data,
-                        getColor="@@=d.color",
-                        currentTime=max_day,
-                        trailLength=max_day + 1,
-                        fadeTrail=True,
-                        widthMinPixels=2,
-                    )
-                    await widget.partial_update(session, [trip_lyr])
+                    # Slot-reuse detection
+                    if fid in _last_seen_day and day_num > _last_seen_day[fid] + 1:
+                        _trajectory_history[fid] = []
+
+                    lon, lat = _centroid_lut[0][cid]
+                    if fid not in _trajectory_history:
+                        _trajectory_history[fid] = []
+                    _trajectory_history[fid].append([float(lon), float(lat), day_num])
+                    _species_map[fid] = sid
+                    _activity_map[fid] = act
+                    _last_seen_day[fid] = day_num
+
+            _last_processed_idx[0] = total_len
+
+            # Send cells layer once + fly to bounds
+            if not _cells_sent[0] and _cells_gdf[0] is not None:
+                gdf = _cells_gdf[0]
+                bounds = gdf.total_bounds
+                center_lon = (bounds[0] + bounds[2]) / 2
+                center_lat = (bounds[1] + bounds[3]) / 2
+                zoom = _fit_bounds_zoom(bounds)
+                cells_layer = geojson_layer(
+                    "movement_cells",
+                    gdf,
+                    getFillColor=[200, 200, 200, 80],
+                    getLineColor=[120, 120, 120, 150],
+                    lineWidthMinPixels=1,
+                    pickable=True,
+                )
+                await widget.update(
+                    session,
+                    [cells_layer],
+                    view_state={
+                        "longitude": center_lon,
+                        "latitude": center_lat,
+                        "zoom": zoom,
+                    },
+                    transition_duration=1000,
+                )
+                _cells_sent[0] = True
+
+            # Build scatterplot of current fish positions (head only, no trails)
+            if not _trajectory_history:
+                return
+
+            color_mode = "species"
+            try:
+                color_mode = input.color_mode()
+            except Exception:
+                pass
+
+            points = []
+            for fid, path in _trajectory_history.items():
+                if not path:
+                    continue
+                lon, lat, _ = path[-1]  # latest position
+                sid = _species_map.get(fid, 0)
+                if color_mode == "activity":
+                    act = _activity_map.get(fid, 0)
+                    color = _ACTIVITY_COLORS.get(act, [127, 127, 127, 220])
+                else:
+                    color = _TAB10[sid % len(_TAB10)]
+                points.append(
+                    {
+                        "position": [lon, lat],
+                        "color": color,
+                    }
+                )
+
+            if points:
+                from shiny_deckgl.layers import layer
+
+                fish_lyr = layer(
+                    "ScatterplotLayer",
+                    "fish_positions",
+                    points,
+                    getPosition="@@d.position",
+                    getFillColor="@@d.color",
+                    getRadius=8,
+                    radiusMinPixels=3,
+                    radiusMaxPixels=10,
+                    pickable=True,
+                )
+                await widget.partial_update(session, [fish_lyr])
 
         except Exception as e:
             if "SilentException" in type(e).__name__:

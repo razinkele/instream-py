@@ -1,4 +1,5 @@
 """Environment panel — temperature, flow, turbidity subplots."""
+
 from shiny import module, render, ui
 
 
@@ -28,7 +29,9 @@ def environment_server(input, output, session, results_rv):
 
         reaches = df["reach"].unique()
         fig = make_subplots(
-            rows=3, cols=1, shared_xaxes=True,
+            rows=3,
+            cols=1,
+            shared_xaxes=True,
             subplot_titles=("Temperature (°C)", "Flow (m³/s)", "Turbidity (NTU)"),
             vertical_spacing=0.08,
         )
@@ -36,14 +39,40 @@ def environment_server(input, output, session, results_rv):
         for i, rname in enumerate(reaches):
             rd = df[df["reach"] == rname]
             color = colors[i % len(colors)]
-            fig.add_trace(go.Scatter(x=rd["date"], y=rd["temperature"],
-                                     name=rname, legendgroup=rname,
-                                     line=dict(color=color)), row=1, col=1)
-            fig.add_trace(go.Scatter(x=rd["date"], y=rd["flow"],
-                                     name=rname, legendgroup=rname,
-                                     showlegend=False, line=dict(color=color)), row=2, col=1)
-            fig.add_trace(go.Scatter(x=rd["date"], y=rd["turbidity"],
-                                     name=rname, legendgroup=rname,
-                                     showlegend=False, line=dict(color=color)), row=3, col=1)
+            fig.add_trace(
+                go.Scatter(
+                    x=rd["date"],
+                    y=rd["temperature"],
+                    name=rname,
+                    legendgroup=rname,
+                    line=dict(color=color),
+                ),
+                row=1,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=rd["date"],
+                    y=rd["flow"],
+                    name=rname,
+                    legendgroup=rname,
+                    showlegend=False,
+                    line=dict(color=color),
+                ),
+                row=2,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=rd["date"],
+                    y=rd["turbidity"],
+                    name=rname,
+                    legendgroup=rname,
+                    showlegend=False,
+                    line=dict(color=color),
+                ),
+                row=3,
+                col=1,
+            )
         fig.update_layout(template="plotly_white", height=600)
-        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs="cdn"))
+        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))

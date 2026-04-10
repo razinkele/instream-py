@@ -67,4 +67,4 @@ def distribution_server(input, output, session, results_rv):
             barmode="overlay",
             title=f"Fish Size Distribution — {sel}",
         )
-        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs="cdn"))
+        return sui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
