@@ -243,3 +243,68 @@ def accumulate_smolt_readiness(
 
         increment = photo_weight * photo_signal + temp_weight * temp_signal
         readiness[i] = min(1.0, readiness[i] + increment * 0.05)  # daily tick
+
+
+# ---------------------------------------------------------------------------
+# Adult return from marine to freshwater
+# ---------------------------------------------------------------------------
+
+
+def check_adult_return(
+    trout_state: "TroutState",
+    reach_cells: dict,
+    return_sea_winters: int = 1,
+    return_condition_min: float = 0.5,
+    current_date: "datetime.date | None" = None,
+    rng=None,
+) -> None:
+    """Check OCEAN_ADULT fish for return to natal freshwater reach.
+
+    Fish with sufficient *sea_winters* and *condition*, during spring
+    (DOY 90-180), transition to RETURNING_ADULT and are placed in a
+    random wet cell in their natal reach.
+
+    Parameters
+    ----------
+    trout_state : TroutState
+        Fish state arrays.
+    reach_cells : dict
+        Mapping of reach_idx -> array of wet cell indices.
+    return_sea_winters : int
+        Minimum sea-winters required for return eligibility.
+    return_condition_min : float
+        Minimum condition factor for return.
+    current_date : datetime.date
+        Current simulation date.
+    rng : numpy Generator
+        Random number generator.
+    """
+    if current_date is None:
+        return
+
+    doy = current_date.timetuple().tm_yday
+    if doy < 90 or doy > 180:
+        return
+
+    alive = trout_state.alive_indices() if hasattr(trout_state, 'alive_indices') else np.where(trout_state.is_alive)[0]
+
+    for i in alive:
+        if int(trout_state.life_history[i]) != int(LifeStage.OCEAN_ADULT):
+            continue
+        if trout_state.zone_idx[i] < 0:
+            continue  # already freshwater
+        if trout_state.sea_winters[i] < return_sea_winters:
+            continue
+        if trout_state.condition[i] < return_condition_min:
+            continue
+
+        natal = int(trout_state.natal_reach_idx[i])
+        cells = reach_cells.get(natal)
+        if cells is None or len(cells) == 0:
+            continue
+
+        # Transition to returning adult
+        trout_state.life_history[i] = int(LifeStage.RETURNING_ADULT)
+        trout_state.zone_idx[i] = -1
+        trout_state.reach_idx[i] = natal
+        trout_state.cell_idx[i] = int(rng.choice(cells)) if rng is not None else int(cells[0])

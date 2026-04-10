@@ -414,3 +414,84 @@ class TestSmoltReadiness:
             min_length=12.0,
         )
         assert np.all(readiness == 0.0)
+
+
+# ===================================================================
+# Task 8 — Adult Return
+# ===================================================================
+
+from instream.marine.domain import check_adult_return
+
+
+class TestAdultReturn:
+    def test_ocean_adult_returns_in_spring(self):
+        """OCEAN_ADULT with sufficient sea-winters returns in spring."""
+        ts = TroutState.zeros(4)
+        ts.alive[0] = True
+        ts.life_history[0] = int(LifeStage.OCEAN_ADULT)
+        ts.zone_idx[0] = 2  # baltic
+        ts.sea_winters[0] = 2
+        ts.condition[0] = 0.8
+        ts.natal_reach_idx[0] = 0
+        ts.length[0] = 60.0
+
+        reach_cells = {0: np.array([5, 10, 15])}
+        rng = np.random.default_rng(42)
+        date = datetime.date(2021, 4, 15)  # DOY ~105
+
+        check_adult_return(ts, reach_cells,
+                           return_sea_winters=1,
+                           return_condition_min=0.5,
+                           current_date=date, rng=rng)
+
+        assert ts.life_history[0] == LifeStage.RETURNING_ADULT
+        assert ts.zone_idx[0] == -1
+        assert ts.reach_idx[0] == 0
+        assert ts.cell_idx[0] in [5, 10, 15]
+
+    def test_no_return_outside_spring(self):
+        """OCEAN_ADULT does not return outside spring window."""
+        ts = TroutState.zeros(4)
+        ts.alive[0] = True
+        ts.life_history[0] = int(LifeStage.OCEAN_ADULT)
+        ts.zone_idx[0] = 2
+        ts.sea_winters[0] = 2
+        ts.condition[0] = 0.8
+        ts.natal_reach_idx[0] = 0
+
+        reach_cells = {0: np.array([5, 10])}
+        rng = np.random.default_rng(42)
+
+        # DOY 1 — January, outside spring
+        check_adult_return(ts, reach_cells,
+                           return_sea_winters=1,
+                           return_condition_min=0.5,
+                           current_date=datetime.date(2021, 1, 1),
+                           rng=rng)
+
+        assert ts.life_history[0] == LifeStage.OCEAN_ADULT
+        assert ts.zone_idx[0] == 2  # still marine
+
+    def test_returned_adult_has_valid_cell_idx(self):
+        """Returned adult's cell_idx is from the reach_cells set."""
+        ts = TroutState.zeros(4)
+        ts.alive[0] = True
+        ts.life_history[0] = int(LifeStage.OCEAN_ADULT)
+        ts.zone_idx[0] = 1
+        ts.sea_winters[0] = 1
+        ts.condition[0] = 1.0
+        ts.natal_reach_idx[0] = 2
+        ts.length[0] = 50.0
+
+        wet_cells = np.array([20, 21, 22, 23])
+        reach_cells = {2: wet_cells}
+        rng = np.random.default_rng(99)
+
+        check_adult_return(ts, reach_cells,
+                           return_sea_winters=1,
+                           return_condition_min=0.5,
+                           current_date=datetime.date(2021, 5, 1),
+                           rng=rng)
+
+        assert ts.life_history[0] == LifeStage.RETURNING_ADULT
+        assert ts.cell_idx[0] in wet_cells

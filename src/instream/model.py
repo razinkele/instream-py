@@ -119,10 +119,10 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
         if is_boundary:
             self._do_day_boundary(step_length)
 
-            # Marine lifecycle: smolt readiness
+            # Marine lifecycle: smolt readiness + adult return
             marine_domain = getattr(self, '_marine_domain', None)
             if marine_domain is not None:
-                from instream.marine.domain import accumulate_smolt_readiness
+                from instream.marine.domain import accumulate_smolt_readiness, check_adult_return
 
                 current_date = self.time_manager.current_date
                 doy = self.time_manager.julian_date
@@ -154,6 +154,24 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                         doy=doy,
                         min_length=marine_domain.config.smolt_min_length,
                     )
+
+                # Adult return from marine
+                cs = self.fem_space.cell_state
+                reach_cells = {}
+                for r_idx in range(len(self.reach_order)):
+                    wet = np.where(
+                        (cs.reach_idx == r_idx) & (cs.depth > 0)
+                    )[0]
+                    if len(wet) > 0:
+                        reach_cells[r_idx] = wet
+                check_adult_return(
+                    self.trout_state,
+                    reach_cells,
+                    return_sea_winters=marine_domain.config.return_min_sea_winters,
+                    return_condition_min=0.5,
+                    current_date=current_date,
+                    rng=self.rng,
+                )
 
     def run(self):
         """Run the simulation until the end date."""
