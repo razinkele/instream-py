@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-04-11
+
+### Fixed — Lifecycle hardening
+
+- **Ghost-smoltified fry bug**: `spawning.redd_emergence` reused dead `TroutState` slots for new fry but never reset the v0.14.0 marine fields (`zone_idx`, `sea_winters`, `smolt_date`, `smolt_readiness`). If the previous occupant had smoltified, the new fry inherited its marine state and appeared in analyses as a 3–4 cm "smolt" that had never been at sea. Same bug fixed in the adult-arrival slot reuse path in `model_day_boundary` (newly-arrived spawners were inheriting `zone_idx=2`, `sea_winters=1..3` from dead Baltic adults). Regression test in `tests/test_ghost_smolt_fix.py`.
+- **Adult-arrival slot contamination**: new `SPAWNER` fish created from the outmigrant-return queue now get their marine fields reset and their `natal_reach_idx` properly assigned to the arrival reach.
+
+### Added
+
+- **FRY → PARR automatic transition**: on January 1, every living FRY with `age >= 1` is promoted to PARR. Previously FRY had no progression rule, so natural-spawned cohorts never became smolt candidates — only test fixtures with manually-seeded PARR could exercise the freshwater → marine pipeline. 4 unit tests in `tests/test_fry_to_parr.py`.
+- **`MarineDomain.total_smoltified` and `total_returned`**: lifetime cumulative counters that survive `TroutState` slot reuse. Previously the E2E tests queried final-state arrays, which are destroyed when a dead fish's slot gets reused by new spawning. The counters are incremented by `_do_migration` and `check_adult_return` as each event occurs.
+
+### Changed
+
+- **`migrate_fish_downstream` return signature**: now returns `(outmigrants, smoltified)` instead of just `outmigrants`. The boolean indicates whether this call transitioned a PARR to SMOLT, used by `_do_migration` to increment the cumulative counter. All callers (two in `model_day_boundary`, three in `test_marine.py`, two in `test_migration.py`) updated.
+- **`check_adult_return` return signature**: now returns `int` (number of fish that returned this call) instead of `None`. The caller in `model.py` accumulates it into `MarineDomain.total_returned`.
+- **`TroutState.alive` / `is_alive` unification**: the legacy `is_alive` fallback throughout `marine/domain.py`, `marine/survival.py`, `marine/fishing.py` is removed. `_MockTroutState` in `tests/test_marine.py` renamed its attribute to match the real `TroutState.alive`. There is no longer an `is_alive` name anywhere in `src/`.
+- **E2E marine tests** now assert on the durable counters (`model._marine_domain.total_smoltified > 0`, `total_returned > 0`) instead of scanning `TroutState.smolt_date` — a historically fragile check.
+
+### Infrastructure
+
+- **845 tests** (was 841 in v0.15.0), 9 skipped, 0 failing. Full suite runtime ~18.4 min.
+- One pre-existing test in `test_behavioral_validation.py::TestPopulationDynamicsExampleB` was fixed during this cycle: it was silently broken by the initial FRY→PARR promotion (before the anadromous species gate was added) — the rainbow-trout-only Example B population was going extinct on Jan 1 when FRY got promoted to PARR and then killed at the river mouth. Gated promotion on `is_anadromous=True` restored Example B correctness.
+
+### Known gaps (carried into v0.17.0)
+
+- Sphinx `docs/source/` not yet built in CI (sections added in v0.15.0 but never rendered).
+- Kelt survival (iteroparous repeat spawning) not implemented — fish die after spawning.
+- Hatchery-vs-wild origin fish not distinguished.
+
+---
+
 ## [0.15.0] - 2026-04-11
 
 ### Added — Marine ecology (inSALMON Sub-project B)

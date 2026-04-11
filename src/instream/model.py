@@ -168,7 +168,7 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                     )[0]
                     if len(wet) > 0:
                         reach_cells[r_idx] = wet
-                check_adult_return(
+                n_ret = check_adult_return(
                     self.trout_state,
                     reach_cells,
                     return_sea_winters=marine_domain.config.return_min_sea_winters,
@@ -176,6 +176,7 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                     current_date=current_date,
                     rng=self.rng,
                 )
+                marine_domain.total_returned += n_ret
 
     def run(self):
         """Run the simulation until the end date."""

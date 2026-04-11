@@ -169,7 +169,7 @@ def _make_mock_trout_state(n: int = 10):
     ts.natal_reach_idx = np.full(n, -1, dtype=np.int32)
     ts.smolt_readiness = np.zeros(n, dtype=np.float64)
     ts.life_history = np.zeros(n, dtype=np.int32)
-    ts.is_alive = np.ones(n, dtype=bool)
+    ts.alive = np.ones(n, dtype=bool)
     # Fields required by marine growth (v0.15.0)
     ts.weight = np.full(n, 500.0, dtype=np.float64)
     ts.length = np.full(n, 36.84, dtype=np.float64)  # 0.01 * L^3 = 500 g
@@ -308,7 +308,7 @@ class TestSmoltTransitionAtRiverMouth:
         reach_graph = {0: []}  # no downstream
         date = datetime.date(2020, 5, 15)
 
-        out = migrate_fish_downstream(
+        out, smoltified = migrate_fish_downstream(
             ts, 0, reach_graph,
             marine_config=cfg,
             smolt_readiness_threshold=0.8,
@@ -317,6 +317,7 @@ class TestSmoltTransitionAtRiverMouth:
         )
 
         assert ts.alive[0] is True or ts.alive[0]  # still alive
+        assert smoltified is True
         assert ts.life_history[0] == LifeStage.SMOLT
         assert ts.zone_idx[0] == 0  # estuary
         assert ts.natal_reach_idx[0] == 0
@@ -334,7 +335,7 @@ class TestSmoltTransitionAtRiverMouth:
         reach_graph = {0: []}
         date = datetime.date(2020, 5, 15)
 
-        out = migrate_fish_downstream(
+        out, smoltified = migrate_fish_downstream(
             ts, 0, reach_graph,
             marine_config=cfg,
             smolt_readiness_threshold=0.8,
@@ -343,6 +344,7 @@ class TestSmoltTransitionAtRiverMouth:
         )
 
         assert not ts.alive[0]
+        assert smoltified is False
         assert ts.life_history[0] != LifeStage.SMOLT
         assert len(out) == 1
 
@@ -351,9 +353,10 @@ class TestSmoltTransitionAtRiverMouth:
         ts = _make_trout_at_mouth(length=15.0, readiness=0.9)
         reach_graph = {0: []}
 
-        out = migrate_fish_downstream(ts, 0, reach_graph)
+        out, smoltified = migrate_fish_downstream(ts, 0, reach_graph)
 
         assert not ts.alive[0]
+        assert smoltified is False
         assert ts.life_history[0] == LifeStage.PARR
         assert len(out) == 1
 

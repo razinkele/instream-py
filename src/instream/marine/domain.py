@@ -137,6 +137,9 @@ class MarineDomain:
         self.driver = StaticDriver(marine_config)
         self._rng = rng if rng is not None else np.random.default_rng()
         self.harvest_log: list = []
+        # Lifetime counters — never reset by slot reuse (v0.16.0)
+        self.total_smoltified: int = 0
+        self.total_returned: int = 0
 
         # Build zone-name-to-index map
         self._zone_name_to_idx: Dict[str, int] = {
@@ -163,7 +166,7 @@ class MarineDomain:
     def daily_step(self, current_date: datetime.date) -> None:
         """Process one day for all marine fish (zone_idx >= 0)."""
         ts = self.trout_state
-        alive = ts.is_alive if hasattr(ts, "is_alive") else np.ones(ts.zone_idx.shape[0], dtype=bool)
+        alive = ts.alive
         marine_mask = alive & (ts.zone_idx >= 0)
 
         if not np.any(marine_mask):
@@ -295,7 +298,7 @@ def check_adult_return(
     return_condition_min: float = 0.5,
     current_date: "datetime.date | None" = None,
     rng=None,
-) -> None:
+) -> int:
     """Check OCEAN_ADULT fish for return to natal freshwater reach.
 
     Fish with sufficient *sea_winters* and *condition*, during spring
@@ -318,13 +321,14 @@ def check_adult_return(
         Random number generator.
     """
     if current_date is None:
-        return
+        return 0
 
     doy = current_date.timetuple().tm_yday
     if doy < 90 or doy > 180:
-        return
+        return 0
 
-    alive = trout_state.alive_indices() if hasattr(trout_state, 'alive_indices') else np.where(trout_state.is_alive)[0]
+    alive = trout_state.alive_indices() if hasattr(trout_state, 'alive_indices') else np.where(trout_state.alive)[0]
+    n_returned = 0
 
     for i in alive:
         if int(trout_state.life_history[i]) != int(LifeStage.OCEAN_ADULT):
@@ -346,3 +350,6 @@ def check_adult_return(
         trout_state.zone_idx[i] = -1
         trout_state.reach_idx[i] = natal
         trout_state.cell_idx[i] = int(rng.choice(cells)) if rng is not None else int(cells[0])
+        n_returned += 1
+
+    return n_returned

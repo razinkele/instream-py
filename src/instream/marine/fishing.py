@@ -176,11 +176,7 @@ def apply_fishing_mortality(
 
     killed = survival <= 0.0
     if np.any(killed):
-        dead_idx = idx[killed]
-        if hasattr(trout_state, "alive"):
-            trout_state.alive[dead_idx] = False
-        if hasattr(trout_state, "is_alive"):
-            trout_state.is_alive[dead_idx] = False
+        trout_state.alive[idx[killed]] = False
 
     return [
         HarvestRecord(

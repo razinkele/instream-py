@@ -75,8 +75,8 @@ Key design decisions:
 
 | Metric          | Value                                          |
 |-----------------|------------------------------------------------|
-| Version         | **v0.15.0**                                    |
-| Tests           | 841+                                           |
+| Version         | **v0.16.0**                                    |
+| Tests           | 845+                                           |
 | Validation      | 17/17 (11 original + 6 NetLogo cross-val)      |
 | Marine ecology  | Hanson bioenergetics, 5-source survival, fishing |
 | Marine domain   | Baltic Sea zones, smolt exit, adult return     |

@@ -88,7 +88,7 @@ class TestDownstreamMigration:
         ts.alive[0] = True
         ts.reach_idx[0] = 0
         reach_graph = {0: [1], 1: [2], 2: []}
-        outmigrants = migrate_fish_downstream(ts, 0, reach_graph)
+        outmigrants, _ = migrate_fish_downstream(ts, 0, reach_graph)
         assert ts.reach_idx[0] == 1
         assert len(outmigrants) == 0
 
@@ -102,7 +102,7 @@ class TestDownstreamMigration:
         ts.length[0] = 8.0
         ts.species_idx[0] = 0
         reach_graph = {0: [1], 1: [2], 2: []}
-        outmigrants = migrate_fish_downstream(ts, 0, reach_graph)
+        outmigrants, _ = migrate_fish_downstream(ts, 0, reach_graph)
         assert not ts.alive[0]  # removed from simulation
         assert len(outmigrants) == 1
         assert outmigrants[0]["length"] == 8.0

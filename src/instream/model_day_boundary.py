@@ -413,10 +413,45 @@ class _ModelDayBoundaryMixin:
             )
 
     def _increment_age_if_new_year(self):
-        """Increment fish age by 1 on January 1."""
-        if self.time_manager.julian_date == 1:
-            alive = self.trout_state.alive_indices()
-            self.trout_state.age[alive] += 1
+        """Increment fish age by 1 on January 1 and promote FRY->PARR.
+
+        FRY that survive their first winter (age becomes 1 on Jan 1)
+        transition to PARR — but ONLY for anadromous species, where PARR
+        is a meaningful life stage (juvenile salmon on its way to smolt).
+        For non-anadromous species (e.g. rainbow trout) the PARR stage is
+        not used; their lifecycle is FRY -> SPAWNER at maturity.
+
+        Without this gate, promoting rainbow trout FRY to PARR would send
+        them into the migration-kill logic at the last reach (which kills
+        any PARR at the river mouth when there is no marine domain), and
+        the non-anadromous population goes extinct within one year.
+        """
+        if self.time_manager.julian_date != 1:
+            return
+
+        alive = self.trout_state.alive_indices()
+        self.trout_state.age[alive] += 1
+
+        from instream.state.life_stage import LifeStage
+
+        # Build a per-species anadromous mask once
+        anadromous_by_idx = np.array(
+            [
+                bool(getattr(self.config.species[name], "is_anadromous", False))
+                for name in self.species_order
+            ],
+            dtype=bool,
+        )
+        if not anadromous_by_idx.any():
+            return  # no anadromous species -> nothing to promote
+
+        species = self.trout_state.species_idx[alive]
+        is_anad = anadromous_by_idx[species]
+        fry_mask = self.trout_state.life_history[alive] == int(LifeStage.FRY)
+        age_mask = self.trout_state.age[alive] >= 1
+        promote = alive[fry_mask & age_mask & is_anad]
+        if len(promote) > 0:
+            self.trout_state.life_history[promote] = int(LifeStage.PARR)
 
     def _do_migration(self):
         """Evaluate migration fitness and move fish downstream if warranted."""
@@ -457,7 +492,7 @@ class _ModelDayBoundaryMixin:
             )
             best_hab = float(self.trout_state.fitness_memory[i])
             if should_migrate(mig_fit, best_hab, lh):
-                out = migrate_fish_downstream(
+                out, smoltified = migrate_fish_downstream(
                     self.trout_state, i, self._reach_graph,
                     marine_config=marine_cfg,
                     smolt_readiness_threshold=smolt_readiness_threshold,
@@ -465,6 +500,8 @@ class _ModelDayBoundaryMixin:
                     current_date=current_date,
                 )
                 self._outmigrants.extend(out)
+                if smoltified and marine_domain is not None:
+                    marine_domain.total_smoltified += 1
             elif not self.trout_state.alive[i]:
                 pass  # already dead
             else:
@@ -476,7 +513,7 @@ class _ModelDayBoundaryMixin:
                     sp_cfg.outmigration_max_prob,
                 )
                 if p_out > 0.0 and self.rng.random() < p_out:
-                    out = migrate_fish_downstream(
+                    out, smoltified = migrate_fish_downstream(
                         self.trout_state, i, self._reach_graph,
                         marine_config=marine_cfg,
                         smolt_readiness_threshold=smolt_readiness_threshold,
@@ -484,6 +521,8 @@ class _ModelDayBoundaryMixin:
                         current_date=current_date,
                     )
                     self._outmigrants.extend(out)
+                    if smoltified and marine_domain is not None:
+                        marine_domain.total_smoltified += 1
 
     def _collect_census_if_needed(self):
         """Record census data on configured census days."""
@@ -604,6 +643,17 @@ class _ModelDayBoundaryMixin:
             ts.survival_memory[slots, :] = 0.0
             ts.last_growth_rate[slots] = 0.0
             ts.fitness_memory[slots] = 0.0
+
+            # Reset marine state — slots may have been freed by a previous
+            # ocean death, and without this the new adult would inherit
+            # zone_idx, sea_winters, smolt_date, smolt_readiness from the
+            # corpse (same class of bug as spawning.redd_emergence before
+            # v0.16.0 — see tests/test_ghost_smolt_fix.py).
+            ts.zone_idx[slots] = -1
+            ts.sea_winters[slots] = 0
+            ts.smolt_date[slots] = -1
+            ts.smolt_readiness[slots] = 0.0
+            ts.natal_reach_idx[slots] = r_idx
 
             self._arrival_counts[key] = arrived_so_far + n_add
 

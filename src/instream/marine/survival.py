@@ -183,11 +183,6 @@ def apply_marine_survival(
     draws = rng.random(size=idx.shape[0])
     killed = draws > surv
     if np.any(killed):
-        dead_idx = idx[killed]
-        # Prefer TroutState.alive but fall back to is_alive for legacy mocks
-        if hasattr(trout_state, "alive"):
-            trout_state.alive[dead_idx] = False
-        if hasattr(trout_state, "is_alive"):
-            trout_state.is_alive[dead_idx] = False
+        trout_state.alive[idx[killed]] = False
 
     return int(np.sum(killed))

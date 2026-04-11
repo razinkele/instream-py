@@ -35,8 +35,16 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
     When *marine_config* is provided and the fish is a PARR at the river
     mouth (no downstream reach) with sufficient readiness and length, it
     transitions to SMOLT and enters the marine domain instead of dying.
+
+    Returns
+    -------
+    (outmigrants, smoltified) : tuple[list, bool]
+        ``outmigrants`` is a list of the outmigrant record dicts (empty when
+        the fish just moved downstream). ``smoltified`` is True iff this
+        call transitioned a PARR to SMOLT and sent it to the marine domain.
     """
     outmigrants = []
+    smoltified = False
     current_reach = int(trout_state.reach_idx[fish_idx])
     downstream = reach_graph.get(current_reach, [])
     if len(downstream) > 0:
@@ -69,10 +77,11 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
             )
             trout_state.cell_idx[fish_idx] = -1
             trout_state.reach_idx[fish_idx] = -1
+            smoltified = True
         else:
             # Kill as before
             trout_state.alive[fish_idx] = False
-    return outmigrants
+    return outmigrants, smoltified
 
 
 def outmigration_probability(fitness, length, min_length, max_prob=0.1):

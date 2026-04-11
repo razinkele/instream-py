@@ -405,6 +405,15 @@ def redd_emergence(
         ts.last_growth_rate[slots] = 0.0
         ts.fitness_memory[slots] = 0.0
 
+        # Reset marine state — slots may have been freed by a previous
+        # smolt/adult death, and without this the new fry would inherit
+        # smolt_date, zone, sea_winters, and readiness from the corpse
+        # (the ghost-smoltified-fry bug, fixed in v0.16.0).
+        ts.zone_idx[slots] = -1
+        ts.sea_winters[slots] = 0
+        ts.smolt_date[slots] = -1
+        ts.smolt_readiness[slots] = 0.0
+
         rs.num_eggs[i] -= n_slots
         if rs.num_eggs[i] <= 0:
             rs.alive[i] = False

@@ -43,18 +43,20 @@ class TestMarineLifecycleE2E:
         return m
 
     def test_some_fish_smoltified(self, model):
-        ts = model.trout_state
-        assert np.any(ts.smolt_date >= 0), "No fish ever smoltified"
+        # Durable counter — ts.smolt_date is cleared when a dead slot gets
+        # reused by a new fry (v0.16.0 ghost-smolt fix).
+        assert model._marine_domain.total_smoltified > 0, (
+            "No fish smoltified (MarineDomain.total_smoltified == 0)"
+        )
 
     def test_some_fish_returned(self, model):
-        ts = model.trout_state
-        # Fish that smoltified (smolt_date >= 0) and later returned to
-        # freshwater (zone_idx == -1) prove the full marine round-trip.
-        # They may be alive (as RETURNING_ADULT or SPAWNER) or dead
-        # (post-spawn mortality), so check all fish, not just alive.
-        smoltified = np.where(ts.smolt_date >= 0)[0]
-        returned = smoltified[ts.zone_idx[smoltified] == -1]
-        assert len(returned) > 0, "No fish returned from marine domain"
+        # Use the durable MarineDomain counter — querying final TroutState
+        # fields is unreliable because slot reuse by new fry/adults resets
+        # smolt_date / zone_idx once a returned fish dies post-spawn.
+        assert model._marine_domain.total_returned > 0, (
+            "No fish completed the marine round-trip "
+            "(MarineDomain.total_returned == 0)"
+        )
 
     def test_returned_fish_have_valid_cell(self, model):
         ts = model.trout_state
