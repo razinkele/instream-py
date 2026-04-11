@@ -38,6 +38,23 @@ class _ModelDayBoundaryMixin:
 
         self._do_spawning(step_length)
 
+        # v0.17.0 — kelt survival roll (runs BEFORE the post-spawn death
+        # block so promoted KELTs — life_history=7 — are skipped by that
+        # block which filters on SPAWNER=2).
+        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        for sp_name in self.species_order:
+            sp_cfg = self.config.species[sp_name]
+            if not getattr(sp_cfg, "is_anadromous", False):
+                continue
+            n_kelts = apply_post_spawn_kelt_survival(
+                self.trout_state,
+                kelt_survival_prob=sp_cfg.kelt_survival_prob,
+                min_kelt_condition=sp_cfg.min_kelt_condition,
+                rng=self.rng,
+            )
+            if getattr(self, "_marine_domain", None) is not None:
+                self._marine_domain.total_kelts += n_kelts
+
         # Post-spawn mortality for anadromous adults (freshwater only)
         alive = self.trout_state.alive_indices()
         for i in alive:

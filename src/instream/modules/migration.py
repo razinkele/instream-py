@@ -62,6 +62,18 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
         fish_length = float(trout_state.length[fish_idx])
         readiness = float(trout_state.smolt_readiness[fish_idx])
 
+        # v0.17.0 — KELT re-entering the ocean as OCEAN_ADULT.
+        # sea_winters, smolt_date, and natal_reach_idx are preserved
+        # intentionally so that a second-run spawner's total ocean tenure
+        # is cumulative, not reset. InSALMON extension — no NetLogo ref.
+        if marine_config is not None and life_history == int(LifeStage.KELT):
+            trout_state.life_history[fish_idx] = int(LifeStage.OCEAN_ADULT)
+            trout_state.zone_idx[fish_idx] = 0
+            trout_state.cell_idx[fish_idx] = -1
+            trout_state.reach_idx[fish_idx] = -1
+            # smolt_date, sea_winters, natal_reach_idx deliberately preserved
+            return outmigrants, False  # KELT re-entry is NOT a smoltification
+
         if (
             marine_config is not None
             and life_history == LifeStage.PARR

@@ -137,9 +137,11 @@ class MarineDomain:
         self.driver = StaticDriver(marine_config)
         self._rng = rng if rng is not None else np.random.default_rng()
         self.harvest_log: list = []
-        # Lifetime counters — never reset by slot reuse (v0.16.0)
+        # Lifetime counters — never reset by slot reuse (v0.16.0, extended v0.17.0)
         self.total_smoltified: int = 0
         self.total_returned: int = 0
+        self.total_kelts: int = 0             # v0.17.0: successful kelt rolls
+        self.total_repeat_spawners: int = 0   # v0.17.0: 2+ sea-winter returners
 
         # Build zone-name-to-index map
         self._zone_name_to_idx: Dict[str, int] = {
@@ -298,37 +300,31 @@ def check_adult_return(
     return_condition_min: float = 0.5,
     current_date: "datetime.date | None" = None,
     rng=None,
-) -> int:
+) -> tuple[int, int]:
     """Check OCEAN_ADULT fish for return to natal freshwater reach.
 
     Fish with sufficient *sea_winters* and *condition*, during spring
     (DOY 90-180), transition to RETURNING_ADULT and are placed in a
     random wet cell in their natal reach.
 
-    Parameters
-    ----------
-    trout_state : TroutState
-        Fish state arrays.
-    reach_cells : dict
-        Mapping of reach_idx -> array of wet cell indices.
-    return_sea_winters : int
-        Minimum sea-winters required for return eligibility.
-    return_condition_min : float
-        Minimum condition factor for return.
-    current_date : datetime.date
-        Current simulation date.
-    rng : numpy Generator
-        Random number generator.
+    Returns
+    -------
+    (n_returned, n_repeat_spawners) : tuple[int, int]
+        Number of fish promoted to RETURNING_ADULT this call and the
+        subset whose ``sea_winters >= 2`` (signal of a prior round-trip
+        or extended ocean residency — the strongest repeat-spawner
+        signal without adding a dedicated ``times_spawned`` field).
     """
     if current_date is None:
-        return 0
+        return 0, 0
 
     doy = current_date.timetuple().tm_yday
     if doy < 90 or doy > 180:
-        return 0
+        return 0, 0
 
     alive = trout_state.alive_indices() if hasattr(trout_state, 'alive_indices') else np.where(trout_state.alive)[0]
     n_returned = 0
+    n_repeat = 0
 
     for i in alive:
         if int(trout_state.life_history[i]) != int(LifeStage.OCEAN_ADULT):
@@ -346,10 +342,12 @@ def check_adult_return(
             continue
 
         # Transition to returning adult
+        if trout_state.sea_winters[i] >= 2:
+            n_repeat += 1
         trout_state.life_history[i] = int(LifeStage.RETURNING_ADULT)
         trout_state.zone_idx[i] = -1
         trout_state.reach_idx[i] = natal
         trout_state.cell_idx[i] = int(rng.choice(cells)) if rng is not None else int(cells[0])
         n_returned += 1
 
-    return n_returned
+    return n_returned, n_repeat

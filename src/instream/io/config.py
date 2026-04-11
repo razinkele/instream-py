@@ -104,6 +104,11 @@ class SpeciesConfig(BaseModel, extra="allow"):
     # v0.17.0 — optional hatchery stocking (InSALMON extension)
     hatchery_stocking: Optional[HatcheryStockingConfig] = None
 
+    # v0.17.0 — iteroparous spawning (InSALMON extension, no NetLogo ref)
+    # kelt_survival_prob is river-exit survival, NOT realized iteroparity.
+    kelt_survival_prob: float = 0.25
+    min_kelt_condition: float = 0.5
+
     # Consumption
     cmax_A: float = 0.0
     cmax_B: float = 0.0

@@ -89,6 +89,19 @@ class TestMarineLifecycleE2E:
             "Marine fish weights are all identical — growth may be a no-op"
         )
 
+    def test_kelt_counter_wired(self, model):
+        """v0.17.0 Phase 3: kelt roll machinery is live.
+
+        Verify the counter attributes exist and are plain Python ints
+        (not numpy scalars). The strong cohort-level assertion
+        ``total_kelts > 0`` lives in the Phase 4 calibration test where
+        a 3000-fish cohort and 0.25 river-exit probability guarantee
+        at least one successful roll.
+        """
+        md = model._marine_domain
+        assert isinstance(md.total_kelts, int)
+        assert isinstance(md.total_repeat_spawners, int)
+
     def test_v015_marine_code_path_exercised(self, model):
         """Smoke: confirm MarineDomain v0.15.0 code path ran without error.
 

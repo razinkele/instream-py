@@ -420,3 +420,75 @@ def redd_emergence(
         rs.num_eggs[i] -= n_slots
         if rs.num_eggs[i] <= 0:
             rs.alive[i] = False
+
+
+def apply_post_spawn_kelt_survival(
+    trout_state,
+    kelt_survival_prob: float,
+    min_kelt_condition: float,
+    rng,
+) -> int:
+    """Give post-spawn SPAWNER fish a chance to survive the spawning act
+    and out-migrate to the ocean as KELT.
+
+    **InSALMON extension — no NetLogo reference.** NetLogo InSALMO 7.3
+    has no kelt stage and no iteroparous survival rule; its only
+    post-spawn mechanic is the flat ``trout-spawn-wt-loss-fraction = 0.4``.
+
+    **Semantics**: ``kelt_survival_prob`` is the **river-exit survival**
+    — the probability that a post-spawn SPAWNER survives the spawning
+    act and physically reaches the river mouth as a kelt. It is NOT
+    the realized repeat-spawning rate. The realized rate emerges from
+    the chain ``kelt_survival_prob × P(ocean recondition) × P(return)``.
+
+    With the default ``kelt_survival_prob = 0.25`` and v0.17.0 calibrated
+    marine hazards, the target realized rate is 5–10% (Niemelä et al.
+    on Teno, Jutila et al. 2006 Simojoki). The Atlantic-average value
+    of ~10–11% (Fleming & Reynolds 2004; Bordeleau et al. 2019) is
+    expected for more productive rivers.
+
+    Condition is halved multiplicatively (Jonsson et al. 1997;
+    Bordeleau et al. 2019 document 40–70% post-spawn energy depletion)
+    with a floor of 0.3 so survivors remain viable.
+
+    Parameters
+    ----------
+    trout_state : TroutState
+        Modified in place: surviving SPAWNERs become KELT; the rest
+        keep SPAWNER and are killed by the existing post-spawn death
+        block that runs immediately after this function.
+    kelt_survival_prob : float
+        River-exit survival probability in [0, 1].
+    min_kelt_condition : float
+        Eligibility floor — depleted spawners below this threshold
+        cannot attempt the kelt migration.
+    rng : numpy.random.Generator
+
+    Returns
+    -------
+    int
+        Number of SPAWNERs promoted to KELT this call.
+    """
+    from instream.state.life_stage import LifeStage
+
+    eligible = (
+        trout_state.alive
+        & (trout_state.life_history == int(LifeStage.SPAWNER))
+        & trout_state.spawned_this_season
+        & (trout_state.condition >= min_kelt_condition)
+    )
+    idx = np.where(eligible)[0]
+    if len(idx) == 0:
+        return 0
+
+    draws = rng.random(len(idx))
+    promoted = idx[draws < kelt_survival_prob]
+    if len(promoted) == 0:
+        return 0
+
+    trout_state.life_history[promoted] = int(LifeStage.KELT)
+    trout_state.condition[promoted] = np.maximum(
+        trout_state.condition[promoted] * 0.5,
+        0.3,
+    )
+    return int(len(promoted))
