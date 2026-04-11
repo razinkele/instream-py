@@ -5,6 +5,7 @@ Usage:
     python scripts/release.py minor          # 0.8.0 -> 0.9.0
     python scripts/release.py major          # 0.8.0 -> 1.0.0
     python scripts/release.py --dry-run minor  # preview without changes
+    python scripts/release.py --push minor     # push after commit+tag
 """
 
 import re
@@ -88,7 +89,7 @@ def get_current_version():
 
 
 def set_version(new_version):
-    """Update version in pyproject.toml and __init__.py."""
+    """Update version in pyproject.toml, __init__.py, and docs/source/conf.py."""
     for path, pattern, replacement in [
         (
             PROJECT_ROOT / "pyproject.toml",
@@ -100,7 +101,20 @@ def set_version(new_version):
             r'__version__\s*=\s*"[^"]+"',
             f'__version__ = "{new_version}"',
         ),
+        (
+            PROJECT_ROOT / "docs" / "source" / "conf.py",
+            r'(version\s*=\s*)"[^"]+"',
+            f'\\1"{new_version}"',
+        ),
+        (
+            PROJECT_ROOT / "docs" / "source" / "conf.py",
+            r'(release\s*=\s*)"[^"]+"',
+            f'\\1"{new_version}"',
+        ),
     ]:
+        if not path.exists():
+            print(f"WARNING: {path} not found, skipping version update.")
+            continue
         content = path.read_text()
         content = re.sub(pattern, replacement, content)
         path.write_text(content)
@@ -223,16 +237,50 @@ def run_tests():
     return result.returncode == 0
 
 
+def verify_sphinx_build():
+    """Run Sphinx build and return True if it succeeds."""
+    print("Verifying Sphinx documentation build...")
+    conf_py = PROJECT_ROOT / "docs" / "source" / "conf.py"
+    if not conf_py.exists():
+        print("WARNING: docs/source/conf.py not found, skipping Sphinx verification.")
+        return True
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "sphinx",
+            "-b", "html",
+            str(PROJECT_ROOT / "docs" / "source"),
+            str(PROJECT_ROOT / "docs" / "_build" / "html"),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+    )
+    if result.returncode != 0:
+        print("WARNING: Sphinx build failed (non-blocking):")
+        print(result.stderr[-500:] if len(result.stderr) > 500 else result.stderr)
+        return False
+    print("Sphinx build succeeded.")
+    return True
+
+
 def git_commit_and_tag(version, dry_run=False):
     """Stage changed files, commit, and create annotated tag."""
-    files = ["pyproject.toml", "src/instream/__init__.py", "CHANGELOG.md", "README.md"]
+    files = [
+        "pyproject.toml",
+        "src/instream/__init__.py",
+        "CHANGELOG.md",
+        "README.md",
+        "docs/source/conf.py",
+    ]
     if dry_run:
         print(f"[dry-run] Would stage: {', '.join(files)}")
         print(f"[dry-run] Would commit: 'release: v{version}'")
         print(f"[dry-run] Would tag: v{version}")
         return
     for f in files:
-        subprocess.run(["git", "add", f], cwd=str(PROJECT_ROOT), check=True)
+        filepath = PROJECT_ROOT / f
+        if filepath.exists():
+            subprocess.run(["git", "add", f], cwd=str(PROJECT_ROOT), check=True)
     subprocess.run(
         ["git", "commit", "-m", f"release: v{version}"],
         cwd=str(PROJECT_ROOT),
@@ -243,6 +291,20 @@ def git_commit_and_tag(version, dry_run=False):
         cwd=str(PROJECT_ROOT),
         check=True,
     )
+
+
+def git_push(dry_run=False):
+    """Push commits and tags to origin master."""
+    if dry_run:
+        print("[dry-run] Would push: git push origin master --tags")
+        return
+    print("Pushing to origin master with tags...")
+    subprocess.run(
+        ["git", "push", "origin", "master", "--tags"],
+        cwd=str(PROJECT_ROOT),
+        check=True,
+    )
+    print("Push complete.")
 
 
 def main():
@@ -257,6 +319,9 @@ def main():
     )
     parser.add_argument(
         "--skip-tests", action="store_true", help="Skip running the test suite"
+    )
+    parser.add_argument(
+        "--push", action="store_true", help="Push to origin master with tags after release"
     )
     args = parser.parse_args()
 
@@ -286,11 +351,15 @@ def main():
 
     if args.dry_run:
         print(f"[dry-run] Would bump {current} -> {new_version}")
-        print("[dry-run] Would update CHANGELOG.md and README.md")
+        print("[dry-run] Would update CHANGELOG.md, README.md, docs/source/conf.py")
+        print("[dry-run] Would verify Sphinx build")
+        git_commit_and_tag(new_version, dry_run=True)
+        if args.push:
+            git_push(dry_run=True)
         print("[dry-run] No files modified.")
         return
 
-    # 3. Bump version
+    # 3. Bump version (pyproject.toml + __init__.py + docs/source/conf.py)
     set_version(new_version)
     print(f"Version bumped: {current} -> {new_version}")
 
@@ -303,10 +372,18 @@ def main():
     update_readme_metrics(PROJECT_ROOT / "README.md", new_version, test_count)
     print(f"README.md updated (tests: {test_count}).")
 
-    # 6. Commit and tag
+    # 6. Verify Sphinx build (non-blocking)
+    verify_sphinx_build()
+
+    # 7. Commit and tag
     git_commit_and_tag(new_version)
     print(f"\nRelease v{new_version} complete!")
-    print("Push with: git push origin main --tags")
+
+    # 8. Push if requested
+    if args.push:
+        git_push()
+    else:
+        print("Push with: git push origin master --tags")
 
 
 if __name__ == "__main__":
