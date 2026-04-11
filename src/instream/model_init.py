@@ -364,6 +364,18 @@ class _ModelInitMixin:
                     )
         self._harvest_records = []
 
+        # Marine domain initialization
+        self._marine_domain = None
+        if self.config.marine is not None:
+            from instream.marine.domain import MarineDomain, ZoneState
+            mc = self.config.marine
+            zone_names = [z.name for z in mc.zones]
+            zone_areas = np.array([z.area_km2 for z in mc.zones])
+            zs = ZoneState.zeros(len(mc.zones))
+            zs.name[:] = zone_names
+            zs.area_km2[:] = zone_areas
+            self._marine_domain = MarineDomain(self.trout_state, zs, mc)
+
         # Mesa agent dict (for sync_trout_agents)
         from instream.sync import sync_trout_agents
 
@@ -400,3 +412,5 @@ class _ModelInitMixin:
         self.trout_state.cell_idx[alive] = cells
         # Set reach_idx from cell's reach_idx
         self.trout_state.reach_idx[alive] = self.fem_space.cell_state.reach_idx[cells]
+        # Set natal_reach_idx for initial fish (used by marine adult return)
+        self.trout_state.natal_reach_idx[alive] = self.fem_space.cell_state.reach_idx[cells]

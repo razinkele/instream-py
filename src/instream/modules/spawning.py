@@ -391,6 +391,7 @@ def redd_emergence(
         ts.age[slots] = 0
         ts.cell_idx[slots] = rs.cell_idx[i]
         ts.reach_idx[slots] = rs.reach_idx[i]
+        ts.natal_reach_idx[slots] = rs.reach_idx[i]
         ts.sex[slots] = rng.integers(0, 2, size=n_slots, dtype=np.int32)
         ts.superind_rep[slots] = 1
         from instream.state.life_stage import LifeStage

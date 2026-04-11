@@ -113,6 +113,10 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
             else:
                 self.trout_state.fitness_memory[i] = f * old + (1.0 - f) * current
 
+        # Marine domain daily step (zone migration, environment update)
+        if self._marine_domain is not None:
+            self._marine_domain.daily_step(self.time_manager.current_date)
+
         # ----------------------------------------------------------------
         # B) DAY-BOUNDARY ONLY OPERATIONS
         # ----------------------------------------------------------------
@@ -168,7 +172,7 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                     self.trout_state,
                     reach_cells,
                     return_sea_winters=marine_domain.config.return_min_sea_winters,
-                    return_condition_min=0.5,
+                    return_condition_min=0.0,
                     current_date=current_date,
                     rng=self.rng,
                 )

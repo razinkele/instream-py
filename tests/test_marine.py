@@ -168,6 +168,7 @@ def _make_mock_trout_state(n: int = 10):
     ts.smolt_date = np.full(n, -1, dtype=np.int32)
     ts.natal_reach_idx = np.full(n, -1, dtype=np.int32)
     ts.smolt_readiness = np.zeros(n, dtype=np.float64)
+    ts.life_history = np.zeros(n, dtype=np.int32)
     ts.is_alive = np.ones(n, dtype=bool)
     return ts
 

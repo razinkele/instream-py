@@ -173,29 +173,43 @@ class MarineDomain:
         if current_date.month == 1 and current_date.day == 1:
             ts.sea_winters[marine_mask] += 1
 
-        # 3. Time-based zone migration
+        # 3. Time-based zone migration (respects adjacency graph)
         ordinal_today = current_date.toordinal()
-        smolt_dates = ts.smolt_date[marine_mask]
-        zone_idxs = ts.zone_idx[marine_mask]
-
-        days_since_smolt = ordinal_today - smolt_dates
-
-        # estuary -> coastal after 14 days
-        promote_to_coastal = (zone_idxs == _ESTUARY) & (days_since_smolt >= _ESTUARY_TO_COASTAL_DAYS)
-        # coastal -> baltic after 30 days
-        promote_to_baltic = (zone_idxs == _COASTAL) & (days_since_smolt >= _COASTAL_TO_BALTIC_DAYS)
-
-        # Apply promotions back to trout_state
         marine_indices = np.where(marine_mask)[0]
 
-        if np.any(promote_to_coastal):
-            ts.zone_idx[marine_indices[promote_to_coastal]] = _COASTAL
+        for idx in marine_indices:
+            current_zone = int(ts.zone_idx[idx])
+            neighbors = self._adjacency.get(current_zone, [])
+            if not neighbors:
+                continue  # no connected zones — fish stays
 
-        if np.any(promote_to_baltic):
-            ts.zone_idx[marine_indices[promote_to_baltic]] = _BALTIC
+            days_since = ordinal_today - int(ts.smolt_date[idx])
 
-        # 4. Growth placeholder — no-op
-        # 5. Survival placeholder — no-op
+            # Promote to next zone along the connectivity path
+            # after threshold days in current zone
+            if current_zone == _ESTUARY and days_since >= _ESTUARY_TO_COASTAL_DAYS:
+                next_zone = neighbors[0]  # first neighbor
+                ts.zone_idx[idx] = next_zone
+            elif current_zone == _COASTAL and days_since >= _COASTAL_TO_BALTIC_DAYS:
+                # Move to the next offshore zone (not back to estuary)
+                for nz in neighbors:
+                    if nz != _ESTUARY:
+                        ts.zone_idx[idx] = nz
+                        break
+
+        # 4. Life stage progression
+        #    SMOLT -> OCEAN_JUVENILE once past estuary (zone > 0)
+        #    OCEAN_JUVENILE -> OCEAN_ADULT after 1+ sea-winter
+        marine_indices = np.where(marine_mask)[0]  # refresh after zone changes
+        for idx in marine_indices:
+            lh = int(ts.life_history[idx])
+            if lh == int(LifeStage.SMOLT) and int(ts.zone_idx[idx]) > 0:
+                ts.life_history[idx] = int(LifeStage.OCEAN_JUVENILE)
+            elif lh == int(LifeStage.OCEAN_JUVENILE) and ts.sea_winters[idx] >= 1:
+                ts.life_history[idx] = int(LifeStage.OCEAN_ADULT)
+
+        # 5. Growth placeholder — no-op
+        # 6. Survival placeholder — no-op
 
 
 # ---------------------------------------------------------------------------
