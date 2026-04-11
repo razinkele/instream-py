@@ -220,7 +220,14 @@ class MarineDomain:
         from instream.marine.growth import apply_marine_growth
 
         marine_mask = alive & (ts.zone_idx >= 0)  # refresh after migration
-        apply_marine_growth(ts, self.zone_state, marine_mask, self.config)
+        apply_marine_growth(
+            ts,
+            self.zone_state,
+            marine_mask,
+            self.config,
+            species_weight_A=getattr(self, "species_weight_A", None),
+            species_weight_B=getattr(self, "species_weight_B", None),
+        )
 
         # 6. Natural survival — 5 sources (seal, cormorant, background,
         #    temperature stress, M74). Fishing is handled separately.
@@ -326,6 +333,14 @@ def check_adult_return(
     n_returned = 0
     n_repeat = 0
 
+    # Repeat-spawner threshold is config-aware: a first-time returner has
+    # exactly ``return_sea_winters`` sea winters. A fish that returned,
+    # became kelt, re-entered the ocean, accumulated at least one more
+    # sea winter, and returned again has ``>= return_sea_winters + 1``.
+    # Using a hard-coded ``>= 2`` would be tautological when the config
+    # sets ``return_min_sea_winters >= 2`` (v0.17.0 Phase 4 finding).
+    repeat_threshold = return_sea_winters + 1
+
     for i in alive:
         if int(trout_state.life_history[i]) != int(LifeStage.OCEAN_ADULT):
             continue
@@ -342,7 +357,7 @@ def check_adult_return(
             continue
 
         # Transition to returning adult
-        if trout_state.sea_winters[i] >= 2:
+        if trout_state.sea_winters[i] >= repeat_threshold:
             n_repeat += 1
         trout_state.life_history[i] = int(LifeStage.RETURNING_ADULT)
         trout_state.zone_idx[i] = -1

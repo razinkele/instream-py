@@ -109,14 +109,20 @@ def apply_marine_growth(
     zone_state,
     marine_mask: np.ndarray,
     config,
+    species_weight_A: np.ndarray | None = None,
+    species_weight_B: np.ndarray | None = None,
 ) -> None:
     """Apply :func:`marine_growth` in-place to *trout_state* for fish in
     *marine_mask*.
 
-    Updates ``weight`` and re-derives ``condition`` as
-    ``weight / length_cubed_factor``, clamped to [0, 1.5]. Length is not
-    updated here — length growth in the marine phase is handled by a
-    separate length-weight relationship in a later step.
+    Updates ``weight`` and re-derives ``condition``. If
+    ``species_weight_A``/``species_weight_B`` are provided (shape
+    (n_species,)), length is also grown whenever the new weight exceeds
+    the weight predicted by the species length-weight relationship at
+    the fish's current length (L never decreases). This is the v0.17.0
+    Phase 4 fix — without species L-W params, post-smolts stay at
+    smolt length forever and size-dependent hazards (seal predation)
+    never activate.
     """
     if not np.any(marine_mask):
         return
@@ -143,5 +149,29 @@ def apply_marine_growth(
     trout_state.weight[idx] = new_weight
 
     lengths = trout_state.length[idx]
-    healthy_weight = np.where(lengths > 0, 0.01 * np.power(lengths, 3.0), 1.0)
-    trout_state.condition[idx] = np.clip(new_weight / healthy_weight, 0.0, 1.5)
+
+    if species_weight_A is not None and species_weight_B is not None:
+        sp_idx = trout_state.species_idx[idx].astype(np.int64, copy=False)
+        wA = np.asarray(species_weight_A, dtype=np.float64)[sp_idx]
+        wB = np.asarray(species_weight_B, dtype=np.float64)[sp_idx]
+        safe_L = np.where(lengths > 0, lengths, 1.0)
+        healthy_weight = wA * np.power(safe_L, wB)
+        # Where new weight exceeds healthy weight, grow length and
+        # cap condition at 1.0. Where not, keep length and scale condition.
+        grew = new_weight > healthy_weight
+        # Invert L = (W / wA)^(1/wB) only for fish that grew.
+        safe_wA = np.where(wA > 0, wA, 1.0)
+        safe_wB = np.where(wB > 0, wB, 1.0)
+        new_length_if_grew = np.power(
+            np.maximum(new_weight, 0.0) / safe_wA, 1.0 / safe_wB
+        )
+        new_lengths = np.where(grew, new_length_if_grew, lengths)
+        new_lengths = np.maximum(new_lengths, lengths)  # monotonic
+        trout_state.length[idx] = new_lengths
+        # Condition = new_weight / healthy_weight_at_new_length
+        healthy_new = wA * np.power(np.where(new_lengths > 0, new_lengths, 1.0), wB)
+        cond = np.where(healthy_new > 0, new_weight / healthy_new, 0.0)
+        trout_state.condition[idx] = np.clip(cond, 0.0, 1.5)
+    else:
+        healthy_weight = np.where(lengths > 0, 0.01 * np.power(lengths, 3.0), 1.0)
+        trout_state.condition[idx] = np.clip(new_weight / healthy_weight, 0.0, 1.5)

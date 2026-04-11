@@ -335,6 +335,14 @@ class _ModelDayBoundaryMixin:
                 )
                 self.trout_state.weight[i] = new_w
                 self.trout_state.spawned_this_season[i] = True
+                # v0.17.0 Phase 4 fix — promote RETURNING_ADULT (freshwater
+                # natal-reach holders from the marine pipeline) to SPAWNER
+                # now that they have actually deposited a redd. Without
+                # this, apply_post_spawn_kelt_survival and the post-spawn
+                # death block both filter on SPAWNER and skip these fish
+                # entirely, so marine-cohort returners produce zero kelts.
+                if int(self.trout_state.life_history[i]) == int(LifeStage.RETURNING_ADULT):
+                    self.trout_state.life_history[i] = int(LifeStage.SPAWNER)
                 healthy_wt = (
                     sp_cfg.weight_A
                     * float(self.trout_state.length[i]) ** sp_cfg.weight_B

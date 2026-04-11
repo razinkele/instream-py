@@ -1,0 +1,205 @@
+simulation:
+  start_date: "2011-04-01"
+  end_date: "2016-03-31"
+  output_frequency: 1
+  output_units: "days"
+  seed: 0
+  census_days:
+    - "06-15"
+    - "09-30"
+  census_years_to_skip: 0
+  population_file: "Example-Project-A_1Reach-1Species/ExampleA-InitialPopulations.csv"
+  adult_arrival_file: "Example-Project-A_1Reach-1Species/ExampleA-AdultArrivals.csv"
+
+performance:
+  backend: "numpy"
+  device: "cpu"
+  trout_capacity: 6000
+  redd_capacity: 1500
+  jit_warmup: false
+
+spatial:
+  backend: "shapefile"
+  mesh_file: "Example-Project-A_1Reach-1Species/Shapefile/ExampleA.shp"
+  gis_properties:
+    cell_id: "ID_TEXT"
+    reach_name: "REACH_NAME"
+    area: "AREA"
+    dist_escape: "M_TO_ESC"
+    num_hiding_places: "NUM_HIDING"
+    frac_vel_shelter: "FRACVSHL"
+    frac_spawn: "FRACSPWN"
+
+light:
+  latitude: 41
+  light_correction: 0.7
+  light_at_night: 0.9
+  twilight_angle: 6.0
+
+species:
+  Chinook-Spring:
+    is_anadromous: true
+    display_color: "brown"
+    capture_R1: 1.3
+    capture_R9: 0.4
+    cmax_A: 0.628
+    cmax_B: 0.7
+    emerge_length_min: 3.5
+    emerge_length_mode: 3.8
+    emerge_length_max: 4.1
+    react_dist_A: 4.0
+    react_dist_B: 2.0
+    turbid_threshold: 5.0
+    turbid_min: 0.1
+    turbid_exp: -0.116
+    light_threshold: 20.0
+    light_min: 0.5
+    light_exp: -0.2
+    energy_density: 5900
+    fitness_horizon: 60
+    fitness_length: 15
+    max_speed_A: 2.8
+    max_speed_B: 21.0
+    max_speed_C: -0.0029
+    max_speed_D: 0.084
+    max_speed_E: 0.37
+    migrate_fitness_L1: 4.0
+    migrate_fitness_L9: 10.0
+    move_radius_max: 20000
+    move_radius_L1: 7
+    move_radius_L9: 20
+    pisciv_length: 20
+    resp_A: 36
+    resp_B: 0.783
+    resp_C: 0.0020
+    resp_D: 1.4
+    search_area: 20000
+    spawn_defense_area: 0
+    spawn_egg_viability: 0.8
+    spawn_fecund_mult: 690
+    spawn_fecund_exp: 0.552
+    spawn_suitability_tol: 0.1
+    spawn_start_day: "09-01"
+    spawn_end_day: "10-31"
+    spawn_max_flow_change: 0.2
+    spawn_max_temp: 14
+    spawn_min_age: -9
+    spawn_min_length: -9
+    spawn_min_cond: -9
+    spawn_min_temp: 5
+    spawn_prob: 0.1
+    spawn_wt_loss_fraction: 0.4
+    weight_A: 0.0041
+    weight_B: 3.49
+    mort_high_temp_T1: 28.0
+    mort_high_temp_T9: 24.0
+    mort_strand_survival_when_dry: 0.5
+    mort_condition_S_at_K8: 0.992
+    mort_condition_S_at_K5: 0.8
+    mort_terr_pred_L1: 6.0
+    mort_terr_pred_L9: 3.0
+    mort_terr_pred_D1: 0.0
+    mort_terr_pred_D9: 200
+    mort_terr_pred_V1: 20
+    mort_terr_pred_V9: 300
+    mort_terr_pred_I1: 50
+    mort_terr_pred_I9: -10
+    mort_terr_pred_H1: 200
+    mort_terr_pred_H9: -50
+    mort_terr_pred_hiding_factor: 0.8
+    mort_fish_pred_L1: 3.0
+    mort_fish_pred_L9: 6.0
+    mort_fish_pred_D1: 35
+    mort_fish_pred_D9: 5
+    mort_fish_pred_I1: 50
+    mort_fish_pred_I9: -50
+    mort_fish_pred_hiding_factor: 0.5
+    mort_fish_pred_P1: 5.0e-06
+    mort_fish_pred_P9: -5.0
+    mort_fish_pred_T1: 6.0
+    mort_fish_pred_T9: 2.0
+    mort_redd_dewater_surv: 0.9
+    mort_redd_hi_temp_T1: 23
+    mort_redd_hi_temp_T9: 17.5
+    mort_redd_lo_temp_T1: 1.7
+    mort_redd_lo_temp_T9: 4.0
+    mort_redd_scour_depth: 20
+    redd_devel_A: 0.00190
+    redd_devel_B: 0.000500
+    redd_devel_C: 0.0000360
+    redd_area: 56000
+    superind_max_rep: 10
+    superind_max_length: 5
+    cmax_temp_table:
+      0.0: 0.05
+      2.0: 0.05
+      10.0: 0.5
+      22.0: 1.0
+      23.0: 0.8
+      25.0: 0.5
+      30.0: 0.0
+    spawn_depth_table:
+      0: 0.0
+      12: 0.0
+      27: 0.95
+      33.5: 1.0
+      204: 0.0
+    spawn_vel_table:
+      0: 0.0
+      2.3: 0.0
+      3: 0.06
+      54: 1.0
+      61: 1.0
+      192: 0.0
+
+reaches:
+  ExampleA:
+    drift_conc: 3.2e-10
+    search_prod: 8.00e-07
+    shelter_speed_frac: 0.3
+    prey_energy_density: 2500
+    drift_regen_distance: 1000
+    shading: 0.9
+    fish_pred_min: 0.97
+    terr_pred_min: 0.94
+    light_turbid_coef: 0.0017
+    light_turbid_const: 0.0
+    max_spawn_flow: 20
+    shear_A: 0.013
+    shear_B: 0.40
+    upstream_junction: 1
+    downstream_junction: 2
+    time_series_input_file: "Example-Project-A_1Reach-1Species/ExampleA-TimeSeriesInputs.csv"
+    depth_file: "Example-Project-A_1Reach-1Species/ExampleA-Depths.csv"
+    velocity_file: "Example-Project-A_1Reach-1Species/ExampleA-Vels.csv"
+
+marine:
+  zones:
+    - name: "Estuary"
+      area_km2: 50
+    - name: "Coastal"
+      area_km2: 500
+    - name: "Baltic Proper"
+      area_km2: 5000
+  zone_connectivity:
+    Estuary: ["Coastal"]
+    Coastal: ["Baltic Proper", "Estuary"]
+    Baltic Proper: ["Coastal"]
+  smolt_min_length: 12.0
+  return_min_sea_winters: 2
+  static_driver:
+    Estuary:
+      temperature: [2, 4, 8, 12, 15, 16, 15, 12, 8, 5, 3, 2]
+      salinity: [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+      prey_index: [0.2, 0.3, 0.5, 0.7, 0.8, 0.8, 0.7, 0.5, 0.3, 0.2, 0.1, 0.1]
+      predation_risk: [0.1, 0.1, 0.3, 0.5, 0.3, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    Coastal:
+      temperature: [3, 3, 5, 8, 12, 15, 16, 14, 10, 7, 4, 3]
+      salinity: [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+      prey_index: [0.3, 0.3, 0.4, 0.6, 0.7, 0.8, 0.8, 0.7, 0.5, 0.3, 0.2, 0.2]
+      predation_risk: [0.05, 0.05, 0.1, 0.2, 0.1, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+    Baltic Proper:
+      temperature: [3, 2, 3, 5, 9, 13, 16, 15, 12, 8, 5, 3]
+      salinity: [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+      prey_index: [0.2, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9, 0.8, 0.6, 0.4, 0.2, 0.2]
+      predation_risk: [0.02, 0.02, 0.02, 0.05, 0.05, 0.05, 0.05, 0.05, 0.02, 0.02, 0.02, 0.02]

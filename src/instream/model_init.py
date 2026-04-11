@@ -394,6 +394,23 @@ class _ModelInitMixin:
             zs.name[:] = zone_names
             zs.area_km2[:] = zone_areas
             self._marine_domain = MarineDomain(self.trout_state, zs, mc)
+            # v0.17.0 Phase 4 fix — pass species weight_A/weight_B arrays
+            # so apply_marine_growth can update length from weight (without
+            # this, smolts stay at 12-15 cm their entire ocean phase and
+            # seal predation — with L1=40 cm — never activates).
+            try:
+                sp_weight_A = np.array(
+                    [self.config.species[n].weight_A for n in self.species_order],
+                    dtype=np.float64,
+                )
+                sp_weight_B = np.array(
+                    [self.config.species[n].weight_B for n in self.species_order],
+                    dtype=np.float64,
+                )
+                self._marine_domain.species_weight_A = sp_weight_A
+                self._marine_domain.species_weight_B = sp_weight_B
+            except Exception:
+                pass
 
         # Mesa agent dict (for sync_trout_agents)
         from instream.sync import sync_trout_agents

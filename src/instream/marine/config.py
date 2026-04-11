@@ -95,7 +95,7 @@ class MarineConfig(BaseModel):
     # band for Baltic salmon.
     marine_mort_seal_L1: float = 40.0
     marine_mort_seal_L9: float = 80.0
-    marine_mort_seal_max_daily: float = 0.003
+    marine_mort_seal_max_daily: float = 0.010
 
     # Cormorant predation (post-smolt, nearshore only)
     # See note on seal max_daily above.

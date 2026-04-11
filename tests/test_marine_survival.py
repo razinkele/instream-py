@@ -19,24 +19,19 @@ from instream.marine.survival import (
 
 @pytest.fixture
 def cfg():
+    # v0.17.0 Phase 4 — inherit production hazard defaults from MarineConfig.
+    # Prior drafts hard-coded the design-doc peak values (seal_max_daily=0.02,
+    # cormorant_max_daily=0.03) which collapse a cohort to <1% in 2 years.
+    # Phase 4 calibrated the production defaults to land in the ICES WGBAST
+    # band natively, so hard-coding here is both redundant and a maintenance
+    # trap — the single source of truth is MarineConfig.
     return MarineConfig(
         zones=[
             ZoneConfig(name="estuary", area_km2=10.0),
             ZoneConfig(name="coastal", area_km2=100.0),
             ZoneConfig(name="baltic", area_km2=1000.0),
         ],
-        marine_mort_seal_L1=40.0,
-        marine_mort_seal_L9=80.0,
-        marine_mort_seal_max_daily=0.02,
-        marine_mort_base=0.001,
-        marine_mort_cormorant_L1=15.0,
-        marine_mort_cormorant_L9=40.0,
-        marine_mort_cormorant_max_daily=0.03,
         marine_mort_cormorant_zones=["estuary", "coastal"],
-        post_smolt_vulnerability_days=28,
-        temperature_stress_threshold=20.0,
-        temperature_stress_daily=0.01,
-        marine_mort_m74_prob=0.0,
     )
 
 
@@ -179,11 +174,6 @@ class TestMarineSurvivalIntegration:
         with calibrated sustainable rates — the design-doc numbers remain
         in :class:`MarineConfig` as a conservative ceiling.
         """
-        cfg = cfg.model_copy(update={
-            "marine_mort_seal_max_daily": 0.003,
-            "marine_mort_cormorant_max_daily": 0.010,
-            "marine_mort_base": 0.001,
-        })
         n = 10_000
         rng = np.random.default_rng(0)
         alive = np.ones(n, dtype=bool)
