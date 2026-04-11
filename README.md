@@ -75,9 +75,10 @@ Key design decisions:
 
 | Metric          | Value                                          |
 |-----------------|------------------------------------------------|
-| Version         | **v0.14.0**                                    |
-| Tests           | 766+                                           |
+| Version         | **v0.15.0**                                    |
+| Tests           | 841+                                           |
 | Validation      | 17/17 (11 original + 6 NetLogo cross-val)      |
+| Marine ecology  | Hanson bioenergetics, 5-source survival, fishing |
 | Marine domain   | Baltic Sea zones, smolt exit, adult return     |
 | model.py        | 108 lines (decomposed into 3 mixin classes)    |
 | Step time       | 48 ms (Example A, Numba JIT)                   |

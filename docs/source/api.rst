@@ -130,6 +130,30 @@ Marine Config
    :undoc-members:
    :show-inheritance:
 
+Marine Growth (bioenergetics)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: instream.marine.growth
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Marine Survival (5 mortality sources)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: instream.marine.survival
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Marine Fishing (gear selectivity, harvest, bycatch)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: instream.marine.fishing
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 I/O
 ---
 
