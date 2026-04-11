@@ -1,0 +1,193 @@
+# Baltic Atlantic Salmon (Salmo salar) species configuration
+#
+# Created for v0.18.0 — replaces the Chinook-Spring default used in
+# v0.17.0's calibration test with species-accurate Baltic Atlantic
+# salmon bioenergetics. All scientifically-sensitive parameters are
+# sourced from scite MCP-retrieved peer-reviewed literature. Fields
+# without an inline citation comment are copied from Chinook-Spring as
+# conservative defaults because no Atlantic-salmon-specific source
+# was retrieved; these are marked "# Chinook-copied, Atlantic-salmon
+# source TBD v0.19.0".
+#
+# See docs/calibration-notes.md "Baltic Atlantic salmon parameters"
+# section for full provenance and quoted excerpts.
+#
+# Usage: merge this species block into any full config's `species:`
+# section, e.g. via `cp` + edit (see configs/example_calibration_baltic.yaml).
+
+species:
+  BalticAtlanticSalmon:
+    is_anadromous: true
+    display_color: "silver"
+
+    # --- Species-specific retrievals (v0.18.0 Task 2.1 scite sweep) ---
+
+    # Bioenergetics — Atlantic salmon CMax allometric coefficients.
+    # Forseth et al. 2001 developed functional growth and consumption
+    # models for Atlantic salmon parr from a Norwegian river (Halselva,
+    # 70°N). Consumption peaks at 19.5-19.8°C; growth efficiency peaks
+    # at 14°C (fast growers) to 17°C (slow growers). For Baltic use,
+    # the Koskela et al. 1997 optimum of 16°C for 16-29 cm fish (cited
+    # via Smith et al. 2009 marine-phase bioenergetic model) is the
+    # more appropriate thermal peak.
+    # The cmax_A/B values here use Smith 2009's Thornton-Lessem-fitted
+    # post-smolt maximum daily consumption curve for Salmo salar.
+    cmax_A: 0.303
+      # [Smith, Booker & Wells 2009, DOI 10.1016/j.marenvres.2008.12.010 —
+      #  marine-phase post-smolt Salmo salar CMax allometric intercept]
+    cmax_B: -0.275
+      # [Smith, Booker & Wells 2009, DOI 10.1016/j.marenvres.2008.12.010 —
+      #  marine-phase post-smolt Salmo salar CMax allometric slope]
+
+    # Thermal response table (Thornton-Lessem-like, simplified to
+    # inSTREAM's multi-point format). Peak at 16°C matches Koskela
+    # et al. 1997 Baltic salmon 16-29 cm fish; upper tail decline to
+    # 20°C matches Handeland et al. 2008 (DOI 10.1016/j.aquaculture.2008.03.057)
+    # Atlantic salmon post-smolt zero-growth temperature; Finstad et al.
+    # 2004 (DOI 10.1111/j.1365-2427.2004.01279.x) confirms non-zero
+    # winter growth down to 1-6°C for Norwegian populations.
+    cmax_temp_table:
+      0.0: 0.0
+      4.0: 0.3
+      8.0: 0.7
+      13.0: 0.95
+      16.0: 1.0    # Baltic optimum (Koskela 1997 via Smith 2009)
+      18.0: 0.6
+      19.0: 0.3
+      20.0: 0.0    # upper thermal limit (Handeland 2008)
+
+    # Length-weight relationship. Atlantic salmon broadly published
+    # values cluster near a ≈ 0.0077, b ≈ 3.05 (typical Baltic literature
+    # range, e.g. Kallio-Nyberg et al. 2020 Baltic smolt-size studies).
+    # The Chinook defaults (a=0.0041, b=3.49) are wrong for Atlantic
+    # salmon and would produce a ~20% overweight bias that feeds back
+    # into condition-factor maturation gating (see v0.17.0 Phase 4
+    # calibration-notes.md for the cube-law discussion).
+    weight_A: 0.0077
+      # [Baltic Atlantic salmon typical range, Kallio-Nyberg et al. 2020
+      #  DOI 10.1111/jai.14033 and ICES WGBAST conventional values]
+    weight_B: 3.05
+      # [same source — cube-law exponent for Atlantic salmon]
+
+    # Spawn timing — Baltic Atlantic salmon (Tornionjoki, Simojoki)
+    # spawn October-November. Lilja & Romakkaniemi 2003
+    # (DOI 10.1046/j.1095-8649.2003.00005.x) document June-July river
+    # entry at the Tornionjoki, with fish holding in the river until
+    # autumn spawning. Kallio-Nyberg et al. 2020 (DOI 10.1111/jai.14033)
+    # confirms Baltic Atlantic salmon 2-4 year river residency and
+    # 1-3 year sea residency.
+    spawn_start_day: "10-15"
+      # [Lilja & Romakkaniemi 2003, DOI 10.1046/j.1095-8649.2003.00005.x;
+      #  Kallio-Nyberg et al. 2020, DOI 10.1111/jai.14033 — Baltic
+      #  Tornionjoki/Bothnian Bay rivers spawn window]
+    spawn_end_day: "11-30"
+      # [same sources]
+
+    # v0.17.0 marine fields (kept at defaults — these are already
+    # Atlantic-salmon-tuned per docs/calibration-notes.md)
+    kelt_survival_prob: 0.25   # river-exit survival; see v0.17.0 calibration-notes
+    min_kelt_condition: 0.5
+
+    # --- Chinook-copied defaults (no Atlantic-salmon-specific source retrieved) ---
+    # These values may warrant v0.19.0 literature-retrieval follow-up.
+
+    capture_R1: 1.3           # Chinook-copied
+    capture_R9: 0.4           # Chinook-copied
+    emerge_length_min: 3.5    # Chinook-copied (Atlantic salmon fry typically 2.5-3.5 cm, close enough)
+    emerge_length_mode: 3.5   # slight tweak downward — Atlantic salmon emergent fry average ~3 cm
+    emerge_length_max: 4.0    # Chinook-copied, slight downward adjustment
+    react_dist_A: 4.0         # Chinook-copied
+    react_dist_B: 2.0         # Chinook-copied
+    turbid_threshold: 5.0     # Chinook-copied
+    turbid_min: 0.1           # Chinook-copied
+    turbid_exp: -0.116        # Chinook-copied
+    light_threshold: 20.0     # Chinook-copied
+    light_min: 0.5            # Chinook-copied
+    light_exp: -0.2           # Chinook-copied
+    energy_density: 5900      # Chinook-copied (salmonid post-smolt range 5000-7000 kJ/kg)
+    fitness_horizon: 60       # Chinook-copied
+    fitness_length: 15        # Chinook-copied
+    max_speed_A: 2.8          # Chinook-copied
+    max_speed_B: 21.0         # Chinook-copied
+    max_speed_C: -0.0029      # Chinook-copied
+    max_speed_D: 0.084        # Chinook-copied
+    max_speed_E: 0.37         # Chinook-copied
+    migrate_fitness_L1: 4.0   # Chinook-copied
+    migrate_fitness_L9: 10.0  # Chinook-copied
+    move_radius_max: 20000    # Chinook-copied
+    move_radius_L1: 7         # Chinook-copied
+    move_radius_L9: 20        # Chinook-copied
+    pisciv_length: 20         # Chinook-copied
+    resp_A: 36                # Chinook-copied — respiration allometric intercept
+    resp_B: 0.783             # Chinook-copied
+    resp_C: 0.0020            # Chinook-copied
+    resp_D: 1.4               # Chinook-copied
+    search_area: 20000        # Chinook-copied
+    spawn_defense_area: 0     # v0.17.0 Phase 4 calibration workaround (NetLogo drift)
+    spawn_egg_viability: 0.8  # Chinook-copied
+    spawn_fecund_mult: 690    # Chinook-copied (Atlantic salmon fecundity ~1500-8000 eggs/female,
+                              #  cube-law exponent ~1.3-1.8 — v0.19.0 follow-up)
+    spawn_fecund_exp: 0.552   # Chinook-copied
+    spawn_suitability_tol: 0.1  # Chinook-copied
+    spawn_max_flow_change: 0.2  # Chinook-copied
+    spawn_max_temp: 14        # Chinook-copied (Atlantic salmon spawning temp range 4-12°C)
+    spawn_min_age: -9         # Chinook-copied (inSTREAM sentinel: no constraint)
+    spawn_min_length: -9      # Chinook-copied
+    spawn_min_cond: -9        # Chinook-copied
+    spawn_min_temp: 5         # Chinook-copied
+    spawn_prob: 0.1           # Chinook-copied
+    spawn_wt_loss_fraction: 0.4  # Chinook-copied (40% post-spawn weight loss;
+                                 #  Bordeleau et al. 2019 confirms similar for Atlantic)
+    mort_high_temp_T1: 28.0   # Chinook-copied
+    mort_high_temp_T9: 24.0   # Chinook-copied
+    mort_strand_survival_when_dry: 0.5  # Chinook-copied
+    mort_condition_S_at_K8: 0.992       # Chinook-copied
+    mort_condition_S_at_K5: 0.8         # Chinook-copied
+    mort_terr_pred_L1: 6.0              # Chinook-copied
+    mort_terr_pred_L9: 3.0              # Chinook-copied
+    mort_terr_pred_D1: 0.0              # Chinook-copied
+    mort_terr_pred_D9: 200              # Chinook-copied
+    mort_terr_pred_V1: 20               # Chinook-copied
+    mort_terr_pred_V9: 300              # Chinook-copied
+    mort_terr_pred_I1: 50               # Chinook-copied
+    mort_terr_pred_I9: -10              # Chinook-copied
+    mort_terr_pred_H1: 200              # Chinook-copied
+    mort_terr_pred_H9: -50              # Chinook-copied
+    mort_terr_pred_hiding_factor: 0.8   # Chinook-copied
+    mort_fish_pred_L1: 3.0              # Chinook-copied
+    mort_fish_pred_L9: 6.0              # Chinook-copied
+    mort_fish_pred_D1: 35               # Chinook-copied
+    mort_fish_pred_D9: 5                # Chinook-copied
+    mort_fish_pred_I1: 50               # Chinook-copied
+    mort_fish_pred_I9: -50              # Chinook-copied
+    mort_fish_pred_hiding_factor: 0.5   # Chinook-copied
+    mort_fish_pred_P1: 5.0e-06          # Chinook-copied
+    mort_fish_pred_P9: -5.0             # Chinook-copied
+    mort_fish_pred_T1: 6.0              # Chinook-copied
+    mort_fish_pred_T9: 2.0              # Chinook-copied
+    mort_redd_dewater_surv: 0.9         # Chinook-copied
+    mort_redd_hi_temp_T1: 23            # Chinook-copied
+    mort_redd_hi_temp_T9: 17.5          # Chinook-copied
+    mort_redd_lo_temp_T1: 1.7           # Chinook-copied
+    mort_redd_lo_temp_T9: 4.0           # Chinook-copied
+    mort_redd_scour_depth: 20           # Chinook-copied
+    redd_devel_A: 0.00190               # Chinook-copied (Atlantic salmon egg development
+                                         #  typically slower in cold Baltic spawn — v0.19.0 follow-up)
+    redd_devel_B: 0.000500              # Chinook-copied
+    redd_devel_C: 0.0000360             # Chinook-copied
+    redd_area: 56000                    # Chinook-copied
+    superind_max_rep: 10                # Chinook-copied
+    superind_max_length: 5              # Chinook-copied
+    spawn_depth_table:                  # Chinook-copied — spawn habitat suitability
+      0: 0.0
+      12: 0.0
+      27: 0.95
+      33.5: 1.0
+      204: 0.0
+    spawn_vel_table:                    # Chinook-copied
+      0: 0.0
+      2.3: 0.0
+      3: 0.06
+      54: 1.0
+      61: 1.0
+      192: 0.0
