@@ -4,6 +4,7 @@ import numpy as np
 
 from instream.modules.reach import update_reach_state
 from instream.modules.survival import apply_mortality
+from instream.state.life_stage import LifeStage
 
 
 class _ModelEnvironmentMixin:
@@ -243,6 +244,19 @@ class _ModelEnvironmentMixin:
             surv = np.where(valid_mask, surv, 1.0)
 
             survival_probs[alive] = surv**step_length
+
+        # v0.20.0: protect RETURNING_ADULT from juvenile-stack mortality.
+        # Returning adults fast on marine fat reserves between river entry
+        # (Mar-Jun) and spawn (Oct-Nov) — a 4-7 month freshwater hold. They
+        # are not subject to drift-based predation models or
+        # condition-factor mortality designed for actively foraging
+        # juveniles. Without this filter, ~93% of returners die before
+        # reaching the spawn window (see docs/diagnostics/2026-04-12-
+        # kelt-chain-diagnosis.md). High-temperature and stranding
+        # survival components are also nullified here, but at fall Baltic
+        # freshwater temperatures (6-12 °C) they are inactive in practice.
+        ra_mask = self.trout_state.life_history == int(LifeStage.RETURNING_ADULT)
+        survival_probs[ra_mask] = 1.0
 
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)

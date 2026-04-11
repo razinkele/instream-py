@@ -65,21 +65,14 @@ class TestMarineLifecycleE2E:
         if len(fw) > 0:
             assert np.all(ts.cell_idx[fw] >= 0), "Returned fish have invalid cell_idx"
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "v0.19.0: confirmed deterministic even in isolation — not a "
-            "test-order flake as v0.18.0 assumed. The class fixture manually "
-            "promotes ~200 fish to SMOLT-ready PARR and runs 3 years; the "
-            "manipulated cohort smoltifies, goes to sea, returns, spawns, "
-            "and dies, while the natal FRY cohort ages out, leaving zero "
-            "alive at t=1095d. Extinction is the natural endpoint of this "
-            "constructed scenario — the assertion is wrong, not the model. "
-            "v0.20.0 should either shorten the horizon, broaden the cohort, "
-            "or rewrite the assertion to check mid-run population."
-        ),
-    )
     def test_freshwater_still_works(self, model):
+        # v0.20.0: passes again after the RETURNING_ADULT mortality
+        # protection in model_environment.py. Returning adults now survive
+        # the freshwater hold between river entry and spawn, so the
+        # manipulated cohort no longer wholesale dies before t=1095d.
+        # Pre-v0.20.0 this was xfailed with the wrong v0.18.0 hypothesis
+        # (test-order flake) and re-diagnosed in v0.19.0 as cohort
+        # extinction. The Option A survival filter resolves both.
         assert model.trout_state.alive.sum() > 0, "Population went extinct"
 
     def test_marine_fish_grew_or_lost_weight(self, model):

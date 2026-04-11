@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-04-12
+
+### Fixed — Kelt-chain freshwater hold attrition (Phase 1, Option A)
+
+- **`src/instream/model_environment.py`**: protect `RETURNING_ADULT` fish from juvenile-stack mortality. Returning adults fast on marine fat reserves between river entry (March-June) and spawn (October-November) — a 4-7 month freshwater hold during which they don't actively forage. Pre-fix, the 5 survival sources (condition, fish-pred, terr-pred, stranding, high-temp) applied uniformly to all life stages, so ~93% of returners died before reaching the spawn window. Post-fix, returners survive to spawn.
+
+  ```python
+  ra_mask = self.trout_state.life_history == int(LifeStage.RETURNING_ADULT)
+  survival_probs[ra_mask] = 1.0
+  ```
+
+  This is the **Option A** interim fix from `docs/diagnostics/2026-04-12-kelt-chain-diagnosis.md`. Diagnostic instrumentation shows:
+
+  - Cumulative SPAWNER sightings: **8 → 118** (~15× increase)
+  - Last `RETURNING_ADULT` date: 2013-09-30 → 2013-11-29 (now reaches Oct 15-Nov 30 spawn window)
+  - 2013 RA-days: 184 → 244
+
+  **Residual gap**: of 118 SPAWNER sightings only 5 had `condition >= min_kelt_condition (0.5)` — most returners arrive at spawn with low condition because respiration consumes weight without compensating food intake. The full **Option B** fix (fasting energy pool with marine fat reserves and Baltic-specific metabolic parameters) is deferred to v0.21.0+. Total kelts in this stochastic run is still 0 (binomial(5, 0.25)=0 has 24% probability), but the structural improvement is real and will compound with Option B.
+
+### Fixed — `test_freshwater_still_works` xfail removed (xpass → pass)
+
+- **Bonus side-effect** of the Option A fix: `test_marine_e2e.py::test_freshwater_still_works` now passes consistently. Pre-v0.20.0 this test was marked `@pytest.mark.xfail(strict=False)`:
+  - v0.18.0 hypothesis: deterministic test-order interaction with some upstream test (wrong)
+  - v0.19.0 re-diagnosis: cohort extinction in the constructed 3-year fixture (correct, but the assertion was deemed wrong rather than the model)
+
+  The Option A protection means the manipulated cohort survives the freshwater hold long enough that the natal FRY pool isn't wiped out by t=1095d. The xfail marker is **removed**; the test now passes as designed.
+
+### Diagnostic infrastructure
+
+- **`scripts/diagnose_kelt.py`** — reproducible kelt-chain diagnostic (committed in `f768af8`). Runs the Baltic 7-year fixture with monkey-patched `apply_post_spawn_kelt_survival` call logging and a daily `RETURNING_ADULT` census. Used to validate Option A and will be re-used for Option B development.
+- **`docs/diagnostics/2026-04-12-kelt-chain-diagnosis.md`** — full quantitative diagnosis (committed in `f768af8`). Documents the four candidate fixes and the trade-offs between them.
+
+### Tests
+
+- **880 passed, 9 skipped, 0 xfailed, 0 failed** in 19:08. v0.19.0 was 879+9+1, so v0.20.0 is 880+9+0 (the xfail flipped to a clean pass; net +1 green).
+
+### Known gaps carried into v0.21.0
+
+- **Option B fasting energy pool** — the v0.20.0 fix protects from mortality but does not model marine-fat-reserve consumption. Implementing a `fasting_reserve_J` field on `TroutState` populated from `weight × energy_density × fasting_fraction` and consumed at a daily metabolic rate would correctly degrade returner condition over the hold. Requires scite-retrieved Baltic fasting metabolism parameters.
+- **Fecundity corrective** — still pending from v0.19.0. Swap `spawn_fecund_mult/exp` from Chinook allometric (`690, 0.552`) to near-linear Atlantic (`~2.0, ~1.0`).
+- **Brännäs 1988 redd_devel re-fit** — still pending from v0.19.0.
+- **Kelt assertion tightening** — once Option B is in place, the 24%-probability binomial(5, 0.25)=0 outcome will go away because the eligible pool will be ~50-100 instead of 5. At that point, `test_kelt_counter_wired` can re-tighten to `total_kelts > 0`.
+
 ## [0.19.0] - 2026-04-11
 
 ### Changed — Baltic iteroparity horizon extended 5 → 7 years (Phase 2)

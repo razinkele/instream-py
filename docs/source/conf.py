@@ -1,6 +1,6 @@
 project = "inSTREAM-py"
-version = "0.19.0"
-release = "0.19.0"
+version = "0.20.0"
+release = "0.20.0"
 author = "inSTREAM Team"
 
 extensions = [
