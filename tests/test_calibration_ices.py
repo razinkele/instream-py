@@ -303,23 +303,27 @@ class TestICESCalibrationBaltic:
         )
 
     def test_kelt_counter_wired(self, model):
-        """v0.19.0: horizon extended 5→7 years (2011-04-01 → 2018-03-31)
-        to enable full Baltic iteroparous cycle detection in a future
-        release. Empirically, at 7 years the cohort produces 108 returns
-        but still zero kelts — the RETURNING_ADULT→(redd)→SPAWNER→kelt
-        chain has a hidden gate (candidate causes: spawn_wt_loss_fraction
-        0.4 pushing condition below min_kelt_condition 0.5, or returns
-        arriving outside the Baltic Oct-Nov spawn window). Investigation
-        deferred to v0.20.0 as a dedicated kelt-chain debugging task.
+        """v0.21.0: kelt chain fully unblocked.
 
-        This assertion therefore still only verifies the counter exists
-        and is non-negative. It is NOT a weakening from v0.18.0 — v0.18.0
-        had the same floor. The v0.19.0 gain is the horizon extension
-        itself, which unblocks v0.20.0's kelt-chain diagnosis.
+        After v0.20.0 Option A (RETURNING_ADULT mortality protection) and
+        v0.21.0 Option B (RETURNING_ADULT growth clamp during freshwater
+        hold — `model_day_boundary._apply_accumulated_growth`), the 7-year
+        Baltic run produces ~25 kelts from ~108 returners. The eligible
+        pool is now ~110 SPAWNERs (vs. 5 in v0.20.0), and binomial(110,
+        0.25) gives a 95% confidence interval of roughly 19-37 kelts.
+
+        Assert `>= 5` as a defensive lower bound well below the expected
+        ~25-28 — leaves headroom for seed variation while still proving
+        the chain is firing.
         """
         md = model._marine_domain
         assert isinstance(md.total_kelts, int)
-        assert md.total_kelts >= 0
+        assert md.total_kelts >= 5, (
+            f"Kelt count {md.total_kelts} below v0.21.0 floor of 5. "
+            f"Expected ~25 at the 7-year Baltic horizon. Either Option A "
+            f"(model_environment.py RA mortality protection) or Option B "
+            f"(model_day_boundary.py RA growth clamp) has regressed."
+        )
 
     def test_repeat_spawner_fraction_baltic(self, model):
         """v0.19.0: horizon extended 5→7 years but lower bound left at

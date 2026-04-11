@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-04-12
+
+### Fixed — Kelt-chain fully unblocked (Option B, fasting growth clamp)
+
+- **`src/instream/model_day_boundary.py::_apply_accumulated_growth`**: clamp net negative growth to zero for `RETURNING_ADULT` fish. Real Atlantic salmon survive the 4-7 month freshwater hold on **marine fat reserves**; the v0.20.0 Option A fix protected them from juvenile-stack mortality but did not stop respiration from progressively draining their weight. Without compensating food intake, condition factor degraded from ~1.0 to <0.5 by spawn time, gating most spawners out of the kelt roll's `condition >= min_kelt_condition` filter.
+
+  ```python
+  if (life_history[i] == RETURNING_ADULT and growth_j < 0.0):
+      growth_j = 0.0
+  ```
+
+  This is the simplest possible fasting model — "marine reserves are infinite for the hold duration." A proper depletion model with a finite reserve consumed at a Baltic-specific metabolic rate is deferred to v0.22.0+.
+
+### Quantitative impact (Baltic 7-year diagnostic, `scripts/diagnose_kelt.py`)
+
+| metric | v0.19.0 | v0.20.0 | **v0.21.0** |
+|---|---|---|---|
+| Cumulative SPAWNER sightings | 8 | 118 | 114 |
+| Cumulative eligible (cond>=0.5) | 5 | 5 | **112** |
+| Cumulative kelts promoted | 0 | 0 | **25** |
+
+The eligible pool jumped from 5 → 112 (~22×). Binomial(112, 0.25) gives an expected ~28 kelts and a 95% confidence interval of 19-37; the realised 25 kelts is right in the middle. The kelt chain is now structurally complete and stochastically reliable.
+
+### Tightened — `test_kelt_counter_wired` from `>= 0` to `>= 5`
+
+- **`tests/test_calibration_ices.py::TestICESCalibrationBaltic::test_kelt_counter_wired`**: defensive lower bound of 5, well below the expected ~25-28 and well above the binomial floor. Catches future regressions in either Option A (mortality protection) or Option B (growth clamp) without flaking on seed variation.
+
+### Known gaps carried into v0.22.0
+
+- **`total_repeat_spawners` still 0**: kelts now exist (25 produced) but the kelt → ocean recondition → return → spawn cycle isn't completing within the 7-year horizon. Candidate causes: kelts don't out-migrate to ocean; ocean recondition takes longer than 1-2 years; sea_winters threshold for second return not satisfied. Needs dedicated diagnosis.
+- **Finite fasting reserve**: the v0.21.0 clamp is "infinite reserve for the hold duration." A proper depletion model with `fasting_reserve_J = weight × energy_density × fasting_fraction` consumed at a Baltic-specific metabolic rate (Bordeleau et al., Jonsson et al. — to be scite-retrieved) would correctly degrade returners that hold for >9 months.
+- **Fecundity corrective** — still pending from v0.19.0/v0.20.0.
+- **Brännäs 1988 redd_devel re-fit** — still pending from v0.19.0/v0.20.0.
+
+### Tests
+**880 passed, 9 skipped, 0 failed** in 17:59. v0.20.0 was 880+9+0; v0.21.0 is 880+9+0 (test count unchanged; tightened a single assertion from `>= 0` to `>= 5`).
+
 ## [0.20.0] - 2026-04-12
 
 ### Fixed — Kelt-chain freshwater hold attrition (Phase 1, Option A)

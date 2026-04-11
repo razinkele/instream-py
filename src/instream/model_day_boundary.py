@@ -184,11 +184,28 @@ class _ModelDayBoundaryMixin:
 
         for j in range(len(valid_alive)):
             i = valid_alive[j]
+            growth_j = float(valid_growth[j])
+            # v0.21.0 — Option B (fasting energy pool, minimal form).
+            # Returning adults don't actively forage in freshwater between
+            # river entry (Mar-Jun) and spawn (Oct-Nov). Net negative
+            # bioenergetics (respiration without consumption) would
+            # progressively drain weight and drop condition below the
+            # min_kelt_condition gate, even though real Atlantic salmon
+            # survive the hold on marine fat reserves. Clamp negative
+            # growth to zero for RA fish: this is the simplest possible
+            # fasting model — "marine reserves are infinite for the hold
+            # duration." A proper depletion model with a finite reserve
+            # depleted at a Baltic-specific metabolic rate is v0.22.0+.
+            if (
+                int(self.trout_state.life_history[i]) == int(LifeStage.RETURNING_ADULT)
+                and growth_j < 0.0
+            ):
+                growth_j = 0.0
             new_w, new_l, new_k = apply_growth(
                 float(self.trout_state.weight[i]),
                 float(self.trout_state.length[i]),
                 float(self.trout_state.condition[i]),
-                float(valid_growth[j]),
+                growth_j,
                 float(wA[j]),
                 float(wB[j]),
             )

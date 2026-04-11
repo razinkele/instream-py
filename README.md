@@ -76,7 +76,7 @@ Key design decisions:
 
 | Metric          | Value                                          |
 |-----------------|------------------------------------------------|
-| Version         | **v0.20.0**                                    |
+| Version         | **v0.21.0**                                    |
 | Tests           | 880+                                           |
 | Validation      | 17/17 (11 original + 6 NetLogo cross-val)      |
 | Marine ecology  | Hanson bioenergetics, 5-source survival, fishing |
