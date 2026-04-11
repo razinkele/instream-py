@@ -393,7 +393,7 @@ class _ModelInitMixin:
             zs = ZoneState.zeros(len(mc.zones))
             zs.name[:] = zone_names
             zs.area_km2[:] = zone_areas
-            self._marine_domain = MarineDomain(self.trout_state, zs, mc)
+            self._marine_domain = MarineDomain(self.trout_state, zs, mc, rng=self.rng)
             # v0.17.0 Phase 4 fix — pass species weight_A/weight_B arrays
             # so apply_marine_growth can update length from weight (without
             # this, smolts stay at 12-15 cm their entire ocean phase and
