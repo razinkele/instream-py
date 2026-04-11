@@ -170,6 +170,10 @@ def _make_mock_trout_state(n: int = 10):
     ts.smolt_readiness = np.zeros(n, dtype=np.float64)
     ts.life_history = np.zeros(n, dtype=np.int32)
     ts.is_alive = np.ones(n, dtype=bool)
+    # Fields required by marine growth (v0.15.0)
+    ts.weight = np.full(n, 500.0, dtype=np.float64)
+    ts.length = np.full(n, 36.84, dtype=np.float64)  # 0.01 * L^3 = 500 g
+    ts.condition = np.ones(n, dtype=np.float64)
     return ts
 
 

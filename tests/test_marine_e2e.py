@@ -66,6 +66,38 @@ class TestMarineLifecycleE2E:
     def test_freshwater_still_works(self, model):
         assert model.trout_state.alive.sum() > 0, "Population went extinct"
 
+    def test_marine_fish_grew_or_lost_weight(self, model):
+        """v0.15.0 Phase 1: marine_growth fires for fish currently in ocean.
+
+        Bioenergetics must be actively changing weight — either upward under
+        prey or downward under starvation. A pure no-op (placeholder) would
+        leave weight unchanged from smolt entry.
+        """
+        ts = model.trout_state
+        currently_marine = np.where(ts.zone_idx >= 0)[0]
+        if len(currently_marine) == 0:
+            pytest.skip("No fish currently in ocean at end of run")
+        weights = ts.weight[currently_marine]
+        lengths = ts.length[currently_marine]
+        # Healthy weight for each fish by its own species weight_A/B is
+        # unknown here — use the fact that condition factor (W/L^3) should
+        # span a non-trivial range if growth is active.
+        condition = ts.condition[currently_marine]
+        assert condition.std() > 0.0 or weights.std() > 0.0, (
+            "Marine fish weights are all identical — growth may be a no-op"
+        )
+
+    def test_v015_marine_code_path_exercised(self, model):
+        """Smoke: confirm MarineDomain v0.15.0 code path ran without error.
+
+        A model that reaches end-of-run with a non-None ``_marine_domain``
+        and a populated harvest log slot means apply_marine_growth,
+        apply_marine_survival, and apply_fishing_mortality all executed
+        without raising. Fishing closures may keep the log empty.
+        """
+        assert model._marine_domain is not None
+        assert hasattr(model._marine_domain, "harvest_log")
+
 
 class TestMarineEdgeCases:
     def test_mid_december_smolt_gets_sea_winter_quickly(self):

@@ -129,11 +129,14 @@ class MarineDomain:
         trout_state: "TroutState",
         zone_state: ZoneState,
         marine_config: "MarineConfig",
+        rng: Optional[np.random.Generator] = None,
     ) -> None:
         self.trout_state = trout_state
         self.zone_state = zone_state
         self.config = marine_config
         self.driver = StaticDriver(marine_config)
+        self._rng = rng if rng is not None else np.random.default_rng()
+        self.harvest_log: list = []
 
         # Build zone-name-to-index map
         self._zone_name_to_idx: Dict[str, int] = {
@@ -208,8 +211,29 @@ class MarineDomain:
             elif lh == int(LifeStage.OCEAN_JUVENILE) and ts.sea_winters[idx] >= 1:
                 ts.life_history[idx] = int(LifeStage.OCEAN_ADULT)
 
-        # 5. Growth placeholder — no-op
-        # 6. Survival placeholder — no-op
+        # 5. Growth — Hanson bioenergetics
+        from instream.marine.growth import apply_marine_growth
+
+        marine_mask = alive & (ts.zone_idx >= 0)  # refresh after migration
+        apply_marine_growth(ts, self.zone_state, marine_mask, self.config)
+
+        # 6. Natural survival — 5 sources (seal, cormorant, background,
+        #    temperature stress, M74). Fishing is handled separately.
+        from instream.marine.survival import apply_marine_survival
+
+        apply_marine_survival(
+            ts, self.zone_state, marine_mask, self.config, current_date, self._rng
+        )
+
+        # 7. Fishing mortality — gear selectivity + bycatch (sources 6,7).
+        from instream.marine.fishing import apply_fishing_mortality
+
+        marine_mask_post = alive & (ts.zone_idx >= 0)
+        records = apply_fishing_mortality(
+            ts, self.zone_state, marine_mask_post, self.config, current_date, self._rng
+        )
+        if records:
+            self.harvest_log.extend(records)
 
 
 # ---------------------------------------------------------------------------

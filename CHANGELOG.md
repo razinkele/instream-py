@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-04-11
+
+### Added — Marine ecology (inSALMON Sub-project B)
+
+- **Marine growth bioenergetics** (`instream/marine/growth.py`): simplified Hanson et al. 1997 Fish Bioenergetics 3.0 model. Pure-function `marine_growth()` computes daily weight delta from CMax temperature response, allometric scaling, prey index, condition, and K2 growth efficiency. Starvation (negative growth) supported.
+- **Marine survival — 5 natural mortality sources** (`instream/marine/survival.py`):
+  1. Seal predation — size-dependent logistic (L1/L9 bounds)
+  2. Cormorant predation — size-dependent logistic, restricted to nearshore zones, with post-smolt vulnerability decay over configurable window (default 28 d)
+  3. Background mortality — constant daily rate
+  4. Temperature stress — threshold-triggered daily hazard (>20 °C default)
+  5. M74 syndrome — per-cohort daily probability
+  Hazards combine multiplicatively: `survival = ∏(1 − h_i)`.
+- **Fishing module** (`instream/marine/fishing.py`): `GearConfig` with logistic/normal selectivity curves, seasonal `open_months`, zone restrictions, `daily_effort`, and `bycatch_mortality`. `fishing_mortality()` implements the per-encounter harvest/bycatch logic from the design document. `HarvestRecord` dataclass for daily accumulation.
+- **MarineBackend Protocol** (`instream/backends/_interface.py`) with `NumpyMarineBackend` delegating adapter (`instream/backends/numpy_backend/marine.py`). Runtime-checkable, mirroring the existing `ComputeBackend` pattern for future JAX/Numba ports.
+- **MarineConfig v0.15.0 parameters**: CMax coefficients (`marine_cmax_A/B/topt/tmax`), respiration (`marine_resp_A/B/Q10`), `marine_growth_efficiency`, seal/cormorant/background/temperature/M74 hazards, post-smolt vulnerability days, conditional maturation probabilities per sea-winter, and `MarineFishingConfig` with `gear_types` dict. All fields optional with design-document defaults — v0.14.0 configs remain valid unchanged.
+- **`MarineDomain.daily_step()` orchestration**: growth, natural survival, and fishing mortality wired in after zone migration and life-stage progression. RNG threaded through constructor.
+- **`HarvestRecord` log**: `MarineDomain.harvest_log` accumulates gear-level catches per step.
+- **75 new tests** (`tests/test_marine_growth.py`, `tests/test_marine_survival.py`, `tests/test_marine_fishing.py`, `tests/test_marine_backend.py`, plus 2 new E2E assertions in `tests/test_marine_e2e.py`). Includes a cohort-attrition integration test calibrated against the ICES WGBAST 2-year survivorship band.
+
+### Changed
+
+- **Cormorant zone matching** (`marine/survival.py`): now case-and-whitespace-insensitive. Previous exact-match silently disabled cormorant predation in configs where zone names differed in case (e.g. `Estuary` vs `estuary`).
+- **Hazard ceiling defaults lowered** to sustainable values:
+  `marine_mort_seal_max_daily` 0.02 → 0.003,
+  `marine_mort_cormorant_max_daily` 0.03 → 0.010.
+  The design-document values were peak-event ceilings; applied literally they collapse a 2-year cohort to <1% survival (~50× observed). New defaults land inside the ICES WGBAST 5–15% survivorship band.
+- `MarineDomain.__init__` now accepts an optional `rng` parameter (defaults to a fresh `numpy.random.default_rng()` for backward compat).
+
+### Infrastructure
+
+- **841 tests** (was 766 in v0.14.0), all passing. Full suite runtime ~12.8 min.
+- Backward compatible: no v0.14.0 test modified except to add fields required by the new growth/survival code paths to the legacy `_MockTroutState` helper.
+
+### Known gaps (carried into v0.16.0)
+
+- Ghost-smoltified fry: ~170 fry per run receive `smolt_date >= 0` while still at 3–4 cm length. Pre-existing v0.14.0 behaviour, exposed but not fixed here.
+- `TroutState.alive` vs `is_alive` naming inconsistency still papered over via `hasattr` fallback.
+- Sphinx `docs/source/` still not created (tracked since v0.13.0).
+- FRY→PARR automatic transition still missing.
+
+---
+
 ## [0.14.0] - 2026-04-09
 
 ### Added
