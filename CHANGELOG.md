@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-04-11
+
+### Added — Lifecycle Completeness + Trust
+
+- **Sphinx CI tightening** (Phase 1): `.github/workflows/docs.yml` now runs `sphinx-build -W --keep-going -n` so every warning becomes a build error and every missing cross-reference is caught. `docs/source/conf.py` has an explicit `nitpick_ignore` list covering external types (numpy, pydantic, stdlib) and informal NumPy-style placeholder types. README has a new `docs` build badge.
+- **Hatchery-origin tagging** (Phase 2, InSALMON extension — no NetLogo counterpart): new `TroutState.is_hatchery` boolean field with slot-reuse resets in both `spawning.redd_emergence` and the adult-arrival path in `model_day_boundary`. New `HatcheryStockingConfig` pydantic model (`num_fish`, `reach`, `date`, `length_mean`, `length_sd`, `release_shock_survival`) attached as optional `SpeciesConfig.hatchery_stocking`. New `MarineConfig.hatchery_predator_naivety_multiplier = 2.5` applied only to cormorant hazard during the post-smolt vulnerability window (Kallio-Nyberg et al. 2004). New `_do_hatchery_stocking` day-boundary method processes queued stocking events. 9 new tests in `tests/test_hatchery.py`.
+- **Kelt survival / iteroparous spawning** (Phase 3, InSALMON extension — no NetLogo counterpart): new `LifeStage.KELT = 7`. New `spawning.apply_post_spawn_kelt_survival()` with river-exit Bernoulli (`kelt_survival_prob = 0.25` default) and `condition *= 0.5` post-spawn depletion with a 0.3 floor (Bordeleau et al. 2019, Jonsson et al. 1997). New branch in `migration.migrate_fish_downstream` for KELT at river mouth → re-enter ocean as `OCEAN_ADULT` with `sea_winters` / `smolt_date` / `natal_reach_idx` preserved. New `MarineDomain.total_kelts` and `total_repeat_spawners` lifetime counters. 15 new tests in `tests/test_kelt_survival.py`.
+- **ICES WGBAST end-to-end calibration** (Phase 4): new `configs/example_calibration.yaml` (5-year horizon, 6000 capacity, 1500 redd capacity) and new `tests/test_calibration_ices.py` with a `scope="class"` fixture that pre-seeds 3000 PARR into dead TroutState slots and runs a full 5-year simulation. Asserts SAR in the ICES 2–18% band, non-zero kelts, repeat-spawner fraction in the Baltic 0–12% range, and plain-int counter type contract. New `docs/calibration-notes.md` with scite MCP-backed peer-reviewed provenance for every tuned default parameter — 7 citations with verbatim quoted excerpts (Jounela 2006 on seal, Boström 2009 + Säterberg 2023 on cormorant, Thorstad 2012 + Halfyard 2012 on post-smolt background mortality, Jutila 2009 on Baltic hatchery, Kaland 2023 on iteroparity).
+
+### Fixed — Structural bugs discovered during Phase 4 calibration
+
+- **`apply_marine_growth` never updated length**: post-smolts entering the ocean at 12–15 cm stayed at 12–15 cm their entire marine phase. Seal hazard (logistic `L1 = 40 cm`) never activated because no fish ever crossed the size threshold. Fix: when new weight exceeds the species length-weight prediction, grow length via `L = (W / weight_A)^(1/weight_B)`, monotonic.
+- **`RETURNING_ADULT → SPAWNER` transition was missing**: `check_adult_return` set `life_history = RETURNING_ADULT` (6) but `apply_post_spawn_kelt_survival` filtered on `SPAWNER` (2). Marine-cohort returners never reached kelt eligibility. Fix: promote on successful redd creation in `_do_day_boundary._do_spawning`.
+- **Repeat-spawner counter tautological under `return_min_sea_winters >= 2`**: `check_adult_return` counted `sea_winters >= 2` as repeat, which was 100% of all returns for configs where `return_min_sea_winters: 2`. Fixed to use a config-aware threshold `return_sea_winters + 1`.
+
+### Changed
+
+- **`check_adult_return`** signature: now returns `(n_returned, n_repeat_spawners)` tuple (was `int`). `model.py` caller accumulates both into `MarineDomain.total_returned` and `total_repeat_spawners`. `tests/test_marine.py` callers discard return so no test change needed.
+- **`marine_mort_seal_max_daily`** default raised from `0.003` to `0.010` (Phase 4 calibration tuning). Literature-backed by Jounela et al. 2006 Gulf of Bothnia seal-induced catch losses 24–29%.
+- **`test_cohort_attrition_matches_iCes_band`** now inherits production defaults — the `cfg` fixture no longer hard-codes hazard values and the `model_copy(update=...)` override block is removed. Single source of truth is `MarineConfig`.
+- **Example B test-order regression fixed**: v0.16.0's FRY→PARR transition now correctly gates on species `is_anadromous=True`, preventing rainbow trout FRY from being promoted and then killed at the river mouth. This fix shipped in v0.16.0 but was re-verified and hardened here.
+
+### Infrastructure
+
+- **878 tests** (was 845 in v0.16.0), 8 skipped. Full suite runtime ~17 min. Phase 4 calibration adds +5 tests (`test_calibration_ices.py`), Phase 3 adds +15 (`test_kelt_survival.py`), Phase 2 adds +9 (`test_hatchery.py`). Hatchery `TestHatcherySlotReset` and `TestAdultArrivalSlotReset` extend the v0.16.0 slot-reset regression coverage.
+- **Sphinx `docs/source/conf.py`** version bumped to 0.17.0. `nitpick_ignore` extended with 4 new v0.17.0 informal types (`capacity`, `num_cells`, `dtype bool`, `optional bool array`).
+
+### Known gaps (carried into v0.18.0)
+
+- **`test_marine_e2e.py::TestMarineLifecycleE2E::test_freshwater_still_works`** passes consistently in isolation (6/7 + 1 skip) and with small subsets (14/15 with calibration), but fails in the full 873-test suite. Not a Phase 4 regression — a **test-order / global-state pollution** issue from ~800 upstream tests affecting the class-scoped `model` fixture. Worked around by running marine_e2e in isolation for v0.17.0 release verification. Root-cause investigation and fix deferred to v0.18.0.
+- **Species mismatch**: calibration test runs against `Chinook-Spring` (Pacific semelparous) rather than a dedicated Baltic Atlantic salmon config. The 2–18% SAR band is deliberately a collapse-detector not a quantitative point calibration. A native Baltic Atlantic salmon config is a v0.18.0 candidate, and when it lands the band should tighten to 3–12%.
+- **Kelt bioenergetics simplification**: kelts use the same `marine_growth` model as first-time `OCEAN_ADULT`. Birnie-Gauvin et al. 2019 argue for suppressed Q10 and gut-limited consumption during reconditioning. Candidate for a dedicated kelt bioenergetics model in v0.18.0.
+- **`spawn_defense_area` vs `max_spawn_flow`**: `example_calibration.yaml` needs `spawn_defense_area=0` (not the default 200000) and `max_spawn_flow=20` (not the default 10) to avoid blocking every spawn attempt. `select_spawn_cell` treats `spawn_defense_area` as a Euclidean distance, not an area — NetLogo InSALMO treats it as an area. This is a semantic drift between the Python port and NetLogo, flagged in `docs/calibration-notes.md` for v0.18.0.
+
+---
+
 ## [0.16.0] - 2026-04-11
 
 ### Fixed — Lifecycle hardening

@@ -1,6 +1,6 @@
 project = "inSTREAM-py"
-version = "0.16.0"
-release = "0.16.0"
+version = "0.17.0"
+release = "0.17.0"
 author = "inSTREAM Team"
 
 extensions = [
@@ -43,4 +43,9 @@ nitpick_ignore = [
     ("py:class", "arrays"),
     ("py:class", "float64"),
     ("py:class", "mapping name -> GearConfig"),
+    # v0.17.0 additions
+    ("py:class", "capacity"),
+    ("py:class", "num_cells"),
+    ("py:class", "dtype bool"),
+    ("py:class", "optional bool array"),
 ]
