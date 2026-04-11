@@ -245,18 +245,24 @@ class _ModelEnvironmentMixin:
 
             survival_probs[alive] = surv**step_length
 
-        # v0.20.0: protect RETURNING_ADULT from juvenile-stack mortality.
-        # Returning adults fast on marine fat reserves between river entry
-        # (Mar-Jun) and spawn (Oct-Nov) — a 4-7 month freshwater hold. They
-        # are not subject to drift-based predation models or
-        # condition-factor mortality designed for actively foraging
-        # juveniles. Without this filter, ~93% of returners die before
-        # reaching the spawn window (see docs/diagnostics/2026-04-12-
-        # kelt-chain-diagnosis.md). High-temperature and stranding
-        # survival components are also nullified here, but at fall Baltic
-        # freshwater temperatures (6-12 °C) they are inactive in practice.
-        ra_mask = self.trout_state.life_history == int(LifeStage.RETURNING_ADULT)
-        survival_probs[ra_mask] = 1.0
+        # v0.20.0/v0.22.0: protect post-spawn-fasting life stages from
+        # juvenile-stack mortality. Both RETURNING_ADULT and KELT are
+        # fasting on marine fat reserves while in freshwater:
+        #   * RETURNING_ADULT: 4-7 month hold between river entry
+        #     (Mar-Jun) and spawn (Oct-Nov).
+        #   * KELT: short post-spawn out-migration from natal reach
+        #     down to the river mouth (days-weeks), during which the
+        #     fish doesn't feed and is heading to ocean recondition.
+        # Without these filters, ~93% of returners died pre-spawn
+        # (v0.20.0 fix) and 100% of kelts died before reaching the
+        # river mouth (v0.22.0 fix — see scripts/diagnose_kelt.py
+        # output showing zero OCEAN_ADULT presence after 2013).
+        # See docs/diagnostics/2026-04-12-kelt-chain-diagnosis.md.
+        fasting_mask = (
+            (self.trout_state.life_history == int(LifeStage.RETURNING_ADULT))
+            | (self.trout_state.life_history == int(LifeStage.KELT))
+        )
+        survival_probs[fasting_mask] = 1.0
 
         # Apply stochastic mortality
         apply_mortality(self.trout_state.alive, survival_probs, self.rng)

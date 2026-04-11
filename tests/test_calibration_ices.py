@@ -140,15 +140,25 @@ class TestICESCalibration:
 
         v0.18.0 candidate: dedicated Baltic Atlantic salmon config + 3-12%
         band for genuine point calibration.
+
+        v0.22.0: upper bound widened from 0.18 to 0.22 because the
+        full iteroparous lifecycle (kelt → ocean recondition → second
+        return) now adds repeat-spawn returners to ``total_returned``.
+        Pre-v0.22.0 the kelt-recondition chain was non-functional and
+        SAR ran at the first-return-only ceiling near 0.18; v0.22.0
+        adds ~3-5% second-return cohort, pushing the realistic
+        first-cohort + iteroparous SAR ceiling to ~0.20-0.22 in this
+        Chinook-with-Atlantic-hazards configuration. The collapse
+        detector role of the band is preserved.
         """
         md = model._marine_domain
         sar = md.total_returned / md.total_smoltified
-        assert 0.02 <= sar <= 0.18, (
-            f"Smolt-to-adult return {sar:.4f} outside 2-18% collapse "
+        assert 0.02 <= sar <= 0.22, (
+            f"Smolt-to-adult return {sar:.4f} outside 2-22% collapse "
             f"band (smoltified={md.total_smoltified}, "
             f"returned={md.total_returned}). "
             f"If SAR < 2%, cohort has collapsed — loosen hazards. "
-            f"If SAR > 18%, hazards are absent — check that "
+            f"If SAR > 22%, hazards are absent — check that "
             f"apply_marine_survival runs in MarineDomain.daily_step."
         )
 
@@ -326,20 +336,31 @@ class TestICESCalibrationBaltic:
         )
 
     def test_repeat_spawner_fraction_baltic(self, model):
-        """v0.19.0: horizon extended 5→7 years but lower bound left at
-        0.0. Empirically the 7-year run still produces 0 repeat spawners
-        (gated by the same kelt-chain issue tracked on
-        test_kelt_counter_wired). Observed Baltic targets: 5-8% Teno
-        (Niemelä et al.), ~0% Simojoki, 10-11% Atlantic average
-        (Fleming & Reynolds 2004). Lower bound tightening to 1% deferred
-        to v0.20.0 after the kelt-chain gate is identified and fixed.
+        """v0.22.0: full Baltic iteroparous lifecycle is now functional.
+
+        After v0.20.0 (RA mortality protection), v0.21.0 (RA growth
+        clamp), and v0.22.0 (KELT mortality protection + KELT growth
+        clamp + KELT unconditional downstream migration), the 7-year
+        Baltic run produces ~25 kelts that out-migrate to ocean,
+        recondition over 1-2 sea winters, and return for a second
+        spawning event. Empirical: 5/113 = 4.4% repeat fraction.
+
+        Observed Baltic targets:
+        - Teno (Niemelä et al.): 5-8%
+        - Simojoki: ~0%
+        - Atlantic average (Fleming & Reynolds 2004): 10-11%
+
+        Tightened lower bound to 1% — well below the 4.4% empirical
+        and the 5-11% observed targets, but well above the v0.21.0
+        zero-floor. Catches kelt-chain regressions without flaking on
+        seed variation at the small-cohort sample size.
         """
         md = model._marine_domain
         if md.total_returned == 0:
             pytest.skip("No returns in this run")
         repeat_frac = md.total_repeat_spawners / md.total_returned
-        assert 0.0 <= repeat_frac <= 0.12, (
+        assert 0.01 <= repeat_frac <= 0.12, (
             f"Baltic repeat-spawner fraction {repeat_frac:.4f} outside "
-            f"0-12% band (repeat={md.total_repeat_spawners}, "
+            f"1-12% band (repeat={md.total_repeat_spawners}, "
             f"total={md.total_returned})."
         )

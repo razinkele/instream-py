@@ -185,21 +185,22 @@ class _ModelDayBoundaryMixin:
         for j in range(len(valid_alive)):
             i = valid_alive[j]
             growth_j = float(valid_growth[j])
-            # v0.21.0 — Option B (fasting energy pool, minimal form).
-            # Returning adults don't actively forage in freshwater between
-            # river entry (Mar-Jun) and spawn (Oct-Nov). Net negative
-            # bioenergetics (respiration without consumption) would
-            # progressively drain weight and drop condition below the
-            # min_kelt_condition gate, even though real Atlantic salmon
-            # survive the hold on marine fat reserves. Clamp negative
-            # growth to zero for RA fish: this is the simplest possible
-            # fasting model — "marine reserves are infinite for the hold
-            # duration." A proper depletion model with a finite reserve
-            # depleted at a Baltic-specific metabolic rate is v0.22.0+.
+            # v0.21.0/v0.22.0 — Option B (fasting energy pool, minimal form).
+            # Both RETURNING_ADULT and KELT are fasting in freshwater:
+            #   * RETURNING_ADULT: 4-7 month hold pre-spawn.
+            #   * KELT: short post-spawn out-migration to river mouth.
+            # Neither feeds, so net negative bioenergetics (respiration
+            # without consumption) would drain weight and degrade condition
+            # below the min_kelt_condition gate. Clamp negative growth to
+            # zero for both — the simplest possible fasting model:
+            # "marine reserves are infinite for the freshwater duration."
+            # A finite-reserve depletion model with Baltic-specific
+            # metabolic parameters is deferred to v0.23.0+.
+            lh_i = int(self.trout_state.life_history[i])
             if (
-                int(self.trout_state.life_history[i]) == int(LifeStage.RETURNING_ADULT)
-                and growth_j < 0.0
-            ):
+                lh_i == int(LifeStage.RETURNING_ADULT)
+                or lh_i == int(LifeStage.KELT)
+            ) and growth_j < 0.0:
                 growth_j = 0.0
             new_w, new_l, new_k = apply_growth(
                 float(self.trout_state.weight[i]),
@@ -524,6 +525,24 @@ class _ModelDayBoundaryMixin:
             if self.trout_state.zone_idx[i] >= 0:
                 continue  # skip marine fish
             lh = int(self.trout_state.life_history[i])
+            # v0.22.0 — KELT unconditional downstream migration. Post-spawn
+            # kelts head straight for the river mouth without a fitness
+            # check; the migration cascade will eventually deliver them to
+            # a reach with no downstream, at which point
+            # migrate_fish_downstream promotes them to OCEAN_ADULT and
+            # places them back in zone 0. Without this, KELTs sit in
+            # their natal reach forever (see scripts/diagnose_kelt.py
+            # output: K-days=365 every year 2014-2018, OA-days=0).
+            if lh == int(LifeStage.KELT):
+                out, _ = migrate_fish_downstream(
+                    self.trout_state, i, self._reach_graph,
+                    marine_config=marine_cfg,
+                    smolt_readiness_threshold=smolt_readiness_threshold,
+                    smolt_min_length=smolt_min_length,
+                    current_date=current_date,
+                )
+                self._outmigrants.extend(out)
+                continue
             if lh != LifeStage.PARR:
                 continue
             sp_idx = int(self.trout_state.species_idx[i])

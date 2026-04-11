@@ -79,6 +79,8 @@ print(f"Seeded {n_parr} PARR. Running 7-year sim with per-day RETURNING_ADULT ce
 returning_census = []  # (date, n_returning_adults, n_spawners)
 _original_step = m.step
 
+kelt_census = []  # (date, n_kelt_freshwater, n_oa_marine, max_sea_winters_oa)
+
 def instrumented_step():
     _original_step()
     n_ra = int(
@@ -88,6 +90,13 @@ def instrumented_step():
     n_sp = int(((ts.life_history == int(LifeStage.SPAWNER)) & ts.alive).sum())
     if n_ra > 0 or n_sp > 0:
         returning_census.append((m.time_manager.current_date, n_ra, n_sp))
+
+    # v0.22.0 kelt-recondition diagnostic
+    n_kelt = int(((ts.life_history == int(LifeStage.KELT)) & ts.alive).sum())
+    n_oa = int(((ts.life_history == int(LifeStage.OCEAN_ADULT)) & ts.alive).sum())
+    sw_max = int(ts.sea_winters[ts.alive].max()) if ts.alive.any() else 0
+    if n_kelt > 0 or n_oa > 0:
+        kelt_census.append((m.time_manager.current_date, n_kelt, n_oa, sw_max))
 
 m.step = instrumented_step
 m.run()
@@ -139,6 +148,28 @@ if returning_census:
     ra_dates = [d for d, n_ra, _ in returning_census if n_ra > 0]
     if ra_dates:
         print(f"First RA date: {ra_dates[0]}, last: {ra_dates[-1]}")
+
+print()
+print(f"=== KELT/OCEAN_ADULT census: {len(kelt_census)} days with KELT or OA present ===")
+if kelt_census:
+    from collections import defaultdict
+    by_year_k = defaultdict(lambda: {"kelt_days": 0, "kelt_max": 0, "oa_days": 0, "oa_max": 0, "sw_max": 0})
+    for date, n_kelt, n_oa, sw_max in kelt_census:
+        r = by_year_k[date.year]
+        if n_kelt > 0:
+            r["kelt_days"] += 1
+            r["kelt_max"] = max(r["kelt_max"], n_kelt)
+        if n_oa > 0:
+            r["oa_days"] += 1
+            r["oa_max"] = max(r["oa_max"], n_oa)
+        r["sw_max"] = max(r["sw_max"], sw_max)
+    print(f"{'Year':<6}{'K-days':<10}{'K-max':<10}{'OA-days':<10}{'OA-max':<10}{'SW-max':<10}")
+    for year in sorted(by_year_k):
+        r = by_year_k[year]
+        print(f"{year:<6}{r['kelt_days']:<10}{r['kelt_max']:<10}{r['oa_days']:<10}{r['oa_max']:<10}{r['sw_max']:<10}")
+    kelt_dates = [d for d, n_k, _, _ in kelt_census if n_k > 0]
+    if kelt_dates:
+        print(f"First KELT date: {kelt_dates[0]}, last: {kelt_dates[-1]}")
 
 print()
 print("=== Redd state ===")
