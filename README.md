@@ -234,14 +234,15 @@ property-based tests, and performance regression tests.
 
 ## Project Status
 
-**v0.13.0** -- InSALMON foundation, deferred validation items, Sphinx docs, PyPI packaging (April 2026).
+**v0.14.0** -- Marine domain scaffolding: Baltic Sea zone transitions, smolt exit, adult return, full freshwater↔marine lifecycle (April 2026).
 
 ### Current Metrics
 
 | Metric          | Value                                          |
 |-----------------|------------------------------------------------|
-| Tests           | 729+                                           |
+| Tests           | 766+                                           |
 | Validation      | 17/17 (11 original + 6 NetLogo cross-val)      |
+| Marine domain   | Baltic Sea zones, smolt exit, adult return     |
 | model.py        | 108 lines (decomposed into 3 mixin classes)    |
 | Step time       | 48 ms (Example A, Numba JIT)                   |
 | Species         | Multi-species support                          |
@@ -283,6 +284,7 @@ property-based tests, and performance regression tests.
 - Fitness memory (EMA), drift regen distance, spawn defense area
 - Per-species migration params, superindividual split thresholds
 - Anadromous adult life history with post-spawn mortality
+- Marine domain scaffolding: `MarineDomain`, Baltic Sea zone transitions (Estuary→Coastal→Baltic), smolt exit at river mouth, adult return to natal reach, spring-window smolt readiness, E2E freshwater↔marine lifecycle
 - Daily-integral solar irradiance (replaces noon-elevation approximation)
 - YearShuffler for stochastic multi-year input remapping
 
@@ -290,7 +292,7 @@ property-based tests, and performance regression tests.
 
 - Scenario comparison (side-by-side simulation runs)
 - Full Numba JIT compilation of fitness_all inner loop
-- InSALMON ocean phase (SMOLT/OCEAN_JUVENILE/OCEAN_ADULT transitions and mortality)
+- InSALMON ocean phase mortality (marine survival rates, at-sea growth)
 - PyPI release (pending final review)
 
 ## License

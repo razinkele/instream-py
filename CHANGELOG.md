@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-04-09
+
+### Added
+- **Marine domain scaffolding**: `MarineDomain` class with `ZoneState`, `StaticDriver`, and `MarineConfig` (pydantic-validated)
+- **TroutState marine fields**: 5 new fields — `zone_idx`, `sea_winters`, `smolt_date`, `natal_reach_idx`, `smolt_readiness`
+- **Smolt exit**: PARR fish transition to SMOLT at river mouth when `marine` config section present
+- **Smolt readiness**: Spring-window photoperiod + temperature accumulation drives PARR→SMOLT transition
+- **Zone migration**: Time-based SMOLT→OCEAN_JUVENILE→OCEAN_ADULT transitions through Estuary→Coastal→Baltic zones
+- **Adult return**: OCEAN_ADULT fish return to natal freshwater reach with valid `cell_idx`
+- **Freshwater zone_idx guards**: 10 alive-fish loops guarded to exclude marine fish from freshwater calculations
+- **Example marine config**: `configs/example_marine.yaml` with 3 Baltic Sea zones
+- **E2E lifecycle test**: Full freshwater→marine→return cycle verified
+
+### Changed
+- Existing configs without a `marine` section are fully backward-compatible — no behaviour change
+
+### Infrastructure
+- 766 tests (was 729), all passing
+
+---
+
 ## [0.13.0] - 2026-04-09
 
 ### Added
