@@ -103,6 +103,33 @@ Harvest
    :undoc-members:
    :show-inheritance:
 
+Life Stage
+~~~~~~~~~~
+
+.. automodule:: instream.state.life_stage
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Marine
+------
+
+Marine Domain
+~~~~~~~~~~~~~
+
+.. automodule:: instream.marine.domain
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Marine Config
+~~~~~~~~~~~~~
+
+.. automodule:: instream.marine.config
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 I/O
 ---
 
