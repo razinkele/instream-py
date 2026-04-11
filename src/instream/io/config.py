@@ -64,6 +64,32 @@ class LightConfig(BaseModel):
     twilight_angle: float = 6.0
 
 
+class HatcheryStockingConfig(BaseModel):
+    """One hatchery stocking event for a species.
+
+    Added in v0.17.0 (InSALMON extension — no NetLogo counterpart).
+    Stocked fish get ``is_hatchery=True`` in TroutState.
+
+    ``release_shock_survival`` is the fraction of the stocked batch that
+    survives the immediate release (first ~48 hours): handling stress,
+    acclimation, and the initial predation spike. Literature range
+    0.3-0.8 depending on hatchery practice and release method
+    (soft release vs truck-and-dump); see Saloniemi et al. 2004.
+
+    Distinct from ``MarineConfig.hatchery_predator_naivety_multiplier``
+    which models the longer-term (first 2-4 weeks) cormorant-predation
+    vulnerability of hatchery-naive smolts. Both apply; they represent
+    different phases of the hatchery disadvantage.
+    """
+
+    num_fish: int
+    reach: str
+    date: str                          # ISO 8601 YYYY-MM-DD
+    length_mean: float = 15.0
+    length_sd: float = 1.5
+    release_shock_survival: float = 0.7
+
+
 class SpeciesConfig(BaseModel, extra="allow"):
     """Species parameters — all species-specific values from the NLS file.
 
@@ -74,6 +100,9 @@ class SpeciesConfig(BaseModel, extra="allow"):
 
     is_anadromous: bool = False
     display_color: str = "brown"
+
+    # v0.17.0 — optional hatchery stocking (InSALMON extension)
+    hatchery_stocking: Optional[HatcheryStockingConfig] = None
 
     # Consumption
     cmax_A: float = 0.0

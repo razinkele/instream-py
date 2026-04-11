@@ -109,8 +109,19 @@ def marine_survival(
     days_since_ocean_entry: np.ndarray,
     cormorant_zone_indices: np.ndarray,
     config,
+    is_hatchery: np.ndarray | None = None,
 ) -> np.ndarray:
     """Combined daily survival probability from sources 1..5.
+
+    Parameters
+    ----------
+    is_hatchery : optional bool array
+        If provided, hatchery-origin fish receive an amplified cormorant
+        hazard via ``config.hatchery_predator_naivety_multiplier`` during
+        the post-smolt vulnerability window. The multiplier applies only
+        to the cormorant term; it naturally decays with the
+        existing post-smolt decay in :func:`cormorant_hazard`, so no
+        separate time gate is needed.
 
     Returns
     -------
@@ -123,6 +134,12 @@ def marine_survival(
     h_corm = cormorant_hazard(
         length, zone_idx, days_since_ocean_entry, cormorant_zone_indices, config
     )
+    if is_hatchery is not None and np.any(is_hatchery):
+        h_corm = np.where(
+            is_hatchery,
+            h_corm * config.hatchery_predator_naivety_multiplier,
+            h_corm,
+        )
     h_back = background_hazard(n, config)
     h_temp = temperature_stress_hazard(temperature, config)
     h_m74 = m74_hazard(n, config)
@@ -178,6 +195,7 @@ def apply_marine_survival(
         days_since_ocean_entry=np.maximum(days_since, 0),
         cormorant_zone_indices=corm_zones,
         config=config,
+        is_hatchery=trout_state.is_hatchery[idx],
     )
 
     draws = rng.random(size=idx.shape[0])

@@ -50,6 +50,9 @@ class _ModelDayBoundaryMixin:
                 self.trout_state.alive[i] = False
 
         self._do_redd_step(step_length)
+        # v0.17.0 — hatchery stocking runs before migration so newly
+        # stocked fish are eligible for same-day smolt outmigration.
+        self._do_hatchery_stocking(self.time_manager.current_date)
         self._do_migration()
         self._increment_age_if_new_year()
         self._do_adult_arrivals()
@@ -561,6 +564,85 @@ class _ModelDayBoundaryMixin:
                 }
             )
 
+    def _do_hatchery_stocking(self, current_date):
+        """Inject hatchery-origin fish from any queued stocking events
+        whose ISO date matches *current_date*.
+
+        v0.17.0 InSALMON extension — no NetLogo counterpart. Fish are
+        placed as PARR in the stocking reach with ``is_hatchery=True``,
+        pre-seeded with ``smolt_readiness=0.9`` so they are eligible
+        for same-day smolt outmigration (hatchery releases target the
+        smolt window). The `release_shock_survival` fraction of the
+        stocked batch is immediately killed to represent the 48-hour
+        release-shock mortality documented by Saloniemi et al. 2004.
+        """
+        if not getattr(self, "_hatchery_stocking_queue", None):
+            return
+        today_iso = current_date.isoformat() if hasattr(current_date, "isoformat") else str(current_date)
+
+        remaining = []
+        for entry in self._hatchery_stocking_queue:
+            if entry["date"] != today_iso:
+                remaining.append(entry)
+                continue
+
+            ts = self.trout_state
+            dead = np.where(~ts.alive)[0]
+            n_add = min(int(entry["num_fish"]), len(dead))
+            if n_add <= 0:
+                continue
+            slots = dead[:n_add]
+
+            sp_idx = entry["species_idx"]
+            sp_name = self.species_order[sp_idx]
+            sp_cfg = self.config.species[sp_name]
+
+            # Reach index from name; fall back to 0 if name not found
+            try:
+                reach_idx = self.reach_order.index(entry["reach"])
+            except ValueError:
+                reach_idx = 0
+
+            lengths = self.rng.normal(
+                entry["length_mean"], entry["length_sd"], size=n_add
+            )
+            lengths = np.clip(lengths, 5.0, 40.0)
+            weights = sp_cfg.weight_A * lengths ** sp_cfg.weight_B
+
+            ts.alive[slots] = True
+            ts.species_idx[slots] = sp_idx
+            ts.length[slots] = lengths
+            ts.weight[slots] = weights
+            ts.condition[slots] = 1.0
+            ts.age[slots] = 1                  # stocked as yearlings
+            ts.reach_idx[slots] = reach_idx
+            ts.natal_reach_idx[slots] = reach_idx
+            ts.life_history[slots] = int(LifeStage.PARR)
+            ts.is_hatchery[slots] = True
+            ts.in_shelter[slots] = False
+            ts.spawned_this_season[slots] = False
+            ts.activity[slots] = 0
+            ts.growth_memory[slots, :] = 0.0
+            ts.consumption_memory[slots, :] = 0.0
+            ts.survival_memory[slots, :] = 0.0
+            ts.last_growth_rate[slots] = 0.0
+            ts.fitness_memory[slots] = 0.5
+            # Reset marine state (slot-reuse hygiene)
+            ts.zone_idx[slots] = -1
+            ts.sea_winters[slots] = 0
+            ts.smolt_date[slots] = -1
+            ts.smolt_readiness[slots] = 0.9    # ready to smoltify same day
+
+            # Apply release-shock mortality: kill (1 - release_shock_survival)
+            # fraction of the batch representing 48-hour post-release losses.
+            release_surv = float(entry.get("release_shock_survival", 0.7))
+            if release_surv < 1.0 and n_add > 0:
+                kill_draws = self.rng.random(n_add)
+                killed = slots[kill_draws >= release_surv]
+                ts.alive[killed] = False
+
+        self._hatchery_stocking_queue = remaining
+
     def _do_adult_arrivals(self):
         """Add arriving adults if adult arrival data is configured."""
         if not self._arrival_records:
@@ -654,6 +736,10 @@ class _ModelDayBoundaryMixin:
             ts.smolt_date[slots] = -1
             ts.smolt_readiness[slots] = 0.0
             ts.natal_reach_idx[slots] = r_idx
+            # v0.17.0 — hatchery origin resets on adult arrival. Returning
+            # wild adults must not inherit is_hatchery=True from a dead
+            # hatchery-origin slot.
+            ts.is_hatchery[slots] = False
 
             self._arrival_counts[key] = arrived_so_far + n_add
 

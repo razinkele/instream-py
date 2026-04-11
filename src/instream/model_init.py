@@ -342,6 +342,25 @@ class _ModelInitMixin:
         else:
             self._arrival_records = []
 
+        # v0.17.0 — hatchery stocking queue (InSALMON extension).
+        # Each entry fires on its ISO date during day-boundary processing
+        # and injects hatchery fish into dead TroutState slots.
+        self._hatchery_stocking_queue: list[dict] = []
+        for sp_idx, sp_name in enumerate(self.species_order):
+            sp_cfg = self.config.species[sp_name]
+            stocking = getattr(sp_cfg, "hatchery_stocking", None)
+            if stocking is None:
+                continue
+            self._hatchery_stocking_queue.append({
+                "species_idx": sp_idx,
+                "num_fish": int(stocking.num_fish),
+                "reach": stocking.reach,
+                "date": stocking.date,
+                "length_mean": float(stocking.length_mean),
+                "length_sd": float(stocking.length_sd),
+                "release_shock_survival": float(stocking.release_shock_survival),
+            })
+
         # Reach connectivity graph for migration
         from instream.modules.migration import build_reach_graph
 

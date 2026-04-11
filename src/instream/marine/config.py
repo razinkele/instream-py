@@ -114,6 +114,14 @@ class MarineConfig(BaseModel):
     # M74 thiamine-deficiency syndrome
     marine_mort_m74_prob: float = 0.0
 
+    # v0.17.0 — hatchery predator-naivety multiplier applied to cormorant
+    # hazard for fish with is_hatchery=True during the post-smolt
+    # vulnerability window. After the window, hatchery fish converge on
+    # wild survival rates. Reference: Kallio-Nyberg et al. 2004
+    # (Simojoki wild vs reared smolt recapture ratio ~2.0);
+    # DOI 10.1111/j.0022-1112.2004.00435.x
+    hatchery_predator_naivety_multiplier: float = 2.5
+
     # Maturation (conditional probabilities per sea-winter)
     maturation_min_sea_winters: int = 1
     maturation_prob_1SW: float = 0.15

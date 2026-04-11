@@ -174,6 +174,8 @@ def _make_mock_trout_state(n: int = 10):
     ts.weight = np.full(n, 500.0, dtype=np.float64)
     ts.length = np.full(n, 36.84, dtype=np.float64)  # 0.01 * L^3 = 500 g
     ts.condition = np.ones(n, dtype=np.float64)
+    # Field required by hatchery predator-naivety multiplier (v0.17.0)
+    ts.is_hatchery = np.zeros(n, dtype=bool)
     return ts
 
 

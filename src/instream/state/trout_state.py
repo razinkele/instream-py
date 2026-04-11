@@ -42,6 +42,9 @@ class TroutState:
     natal_reach_idx: np.ndarray  # int32, birth reach (-1=unset)
     smolt_readiness: np.ndarray  # float64, 0-1
 
+    # Hatchery origin (v0.17.0, InSALMON extension — no NetLogo counterpart)
+    is_hatchery: np.ndarray      # bool, True for stocked hatchery fish
+
     @classmethod
     def zeros(cls, capacity: int, max_steps_per_day: int = 4) -> "TroutState":
         return cls(
@@ -74,6 +77,7 @@ class TroutState:
             smolt_date=np.full(capacity, -1, dtype=np.int32),
             natal_reach_idx=np.full(capacity, -1, dtype=np.int32),
             smolt_readiness=np.zeros(capacity, dtype=np.float64),
+            is_hatchery=np.zeros(capacity, dtype=bool),
         )
 
     def num_alive(self) -> int:

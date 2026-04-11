@@ -413,6 +413,9 @@ def redd_emergence(
         ts.sea_winters[slots] = 0
         ts.smolt_date[slots] = -1
         ts.smolt_readiness[slots] = 0.0
+        # Hatchery origin is reset to False — new wild fry emerging from
+        # redds are never hatchery-origin (v0.17.0).
+        ts.is_hatchery[slots] = False
 
         rs.num_eggs[i] -= n_slots
         if rs.num_eggs[i] <= 0:
