@@ -3,6 +3,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-green)](LICENSE)
 [![CI](https://github.com/razinkele/instream-py/actions/workflows/ci.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
+[![docs](https://github.com/razinkele/instream-py/actions/workflows/docs.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/docs.yml)
 [![PyPI](https://img.shields.io/pypi/v/instream)](https://pypi.org/project/instream/)
 
 **Python conversion of the inSTREAM/inSALMO 7.4 individual-based salmonid model.**
