@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-04-11
+
+### Changed — Baltic iteroparity horizon extended 5 → 7 years (Phase 2)
+
+- **`configs/example_calibration_baltic.yaml`** — `simulation.end_date` extended from `2016-03-31` to `2018-03-31`, giving the Baltic Atlantic salmon cohort enough time to complete a full iteroparous cycle (spring return → Oct-Nov spawn → winter kelt out-migration → ≥1 year marine recondition → next return window).
+- **`tests/test_calibration_ices.py::TestICESCalibrationBaltic.model`** — fixture `end_date_override` bumped to `2018-03-31` and the hydraulics-coverage guard updated from `5 * 365` to `7 * 365` days. Hydraulics time series extends to 2022-10-01, well within the extended horizon.
+- **Empirical finding**: at 7 years, the cohort produces 108 returns and **still zero kelts**. The `RETURNING_ADULT → (redd creation) → SPAWNER → kelt roll` chain has a hidden gate (candidates: `spawn_wt_loss_fraction = 0.4` dropping condition below `min_kelt_condition = 0.5`; returns arriving outside the Baltic Oct–Nov window). Deep-dive diagnosis deferred to v0.20.0. `test_kelt_counter_wired` and `test_repeat_spawner_fraction_baltic` retain v0.18.0 floor bounds (`>= 0` / `[0, 0.12]`) with updated docstrings recording the diagnostic.
+
+### Fixed — `test_freshwater_still_works` root cause corrected (Phase 1)
+
+- **Rediagnosed v0.18.0's "deterministic test-order flake"**: `test_marine_e2e.py::TestMarineLifecycleE2E::test_freshwater_still_works` fails reliably **in full-suite isolation** (single-test run, 252s), so the v0.18.0 hypothesis of a sibling-state test-order interaction was wrong. The actual cause: the class-scoped fixture manually promotes ~200 natal FRY to SMOLT-ready PARR, runs for 3 years, and at t=1095d the manipulated cohort has completed smoltification → marine entry → return → spawn → death, while the natal FRY cohort has aged out, leaving zero alive. Extinction is the natural endpoint of this constructed scenario — the **assertion** is wrong, not the model.
+- **Action**: `@pytest.mark.xfail(strict=False)` retained; reason text rewritten to reflect the corrected root cause. v0.20.0 should shorten the horizon, broaden the seeded cohort, or rewrite the assertion to check mid-run population.
+
+### Added — `spawn_defense_area` NetLogo semantic reconciliation (Phase 3)
+
+- **New `spawn_defense_area_m2` species field** (`src/instream/io/config.py`): NetLogo InSALMO uses `spawn-defense-area` as an actual m² defended area around a redd; Python has shipped `spawn_defense_area` as a cm Euclidean distance radius since v0.12.0 (per `src/instream/modules/spawning.py::select_spawn_cell`). Users can now specify the NetLogo-semantic value via the explicit `spawn_defense_area_m2` field and a Pydantic `@model_validator(mode="after")` converts it to an equivalent circular-disk radius:
+  ```
+  r_cm = sqrt(area_m2 * 10_000 / pi)
+  ```
+- **Precedence**: `spawn_defense_area` (cm radius) wins when both fields are set, matching the "Python ships cm, NetLogo uses m²" backward-compat precedence.
+- **New tests in `tests/test_config.py::TestDefenseAreaSemanticReconciliation`**: m²→cm conversion correctness, cm-wins-when-both-set, both-zero passthrough (3 new tests).
+
+### Changed — scite sweep on 7 high-leverage Chinook-copied species fields (Phase 4)
+
+Seven high-leverage fields in `configs/baltic_salmon_species.yaml` were cross-checked against Atlantic salmon literature via the scite MCP server. Values retained for v0.18.0 calibration baseline stability; comments and citations added documenting discrepancies and deferred correctives.
+
+- **`spawn_fecund_mult` / `spawn_fecund_exp`** (fecundity allometric) — Baum & Meister 1971 (DOI 10.1139/f71-106) observed 3528–18,847 eggs in 164 Maine females (~1150–3050 eggs/kg); Prouzet 1990 (DOI 10.1051/alr:1990008) reported 1457–2358 oocytes/kg for French spring salmon. The Chinook allometric `690 × W^0.552` overpredicts fecundity ~5–10× for a 4 kg adult. Corrective to `fecund_mult ≈ 2.0`, `fecund_exp ≈ 1.0` deferred to v0.20.0.
+- **`spawn_max_temp` / `spawn_min_temp`** (spawn thermal window) — Heggberget 1988 (DOI 10.1139/f88-102) found thermal regime is the only significant predictor of spawning timing across 16 Norwegian streams, peak 4–6°C. Heggberget & Wallace 1984 (DOI 10.1139/f84-044) confirmed successful incubation at 0.5–2°C. The 5–14°C window brackets observed range.
+- **`redd_devel_A/B/C`** (egg development quadratic) — Brännäs 1988 (DOI 10.1111/j.1095-8649.1988.tb05502.x) studied Umeälven (63°N) Baltic salmon emergence at 6/10/12°C; optimum 10°C, highest mortality at 12°C. Chinook quadratic coefficients retained; re-fit to Brännäs three-point data deferred to v0.20.0.
+
+### Added — 5 new scite-retrieved citations
+
+New references in `docs/calibration-notes.md` bring the total to **17 scite-verified peer-reviewed citations**:
+
+1. Baum & Meister 1971 — Atlantic salmon fecundity
+2. Prouzet 1990 — French salmon stock review
+3. Heggberget 1988 — Norwegian Atlantic salmon spawn timing
+4. Heggberget & Wallace 1984 — low-temperature egg incubation
+5. Brännäs 1988 — Baltic salmon emergence vs temperature
+
+### Known gaps carried into v0.20.0
+
+- **Kelt-chain diagnosis** — 7-year Baltic run produces 108 returns but 0 kelts; needs dedicated diagnostic session.
+- **Fecundity corrective** — swap `spawn_fecund_mult/exp` from Chinook allometric to near-linear Atlantic salmon coefficients and re-run Baltic ICES calibration.
+- **`test_freshwater_still_works` redesign** — rewrite the assertion to check mid-run population, or shorten the fixture horizon, or broaden the seeded cohort.
+
 ## [0.18.0] - 2026-04-11
 
 ### Fixed — Calibration trustworthiness

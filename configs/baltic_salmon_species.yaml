@@ -125,16 +125,38 @@ species:
     search_area: 20000        # Chinook-copied
     spawn_defense_area: 0     # v0.17.0 Phase 4 calibration workaround (NetLogo drift)
     spawn_egg_viability: 0.8  # Chinook-copied
-    spawn_fecund_mult: 690    # Chinook-copied (Atlantic salmon fecundity ~1500-8000 eggs/female,
-                              #  cube-law exponent ~1.3-1.8 — v0.19.0 follow-up)
-    spawn_fecund_exp: 0.552   # Chinook-copied
+    # v0.19.0 Phase 4 scite sweep — fecundity.
+    # Observed Atlantic salmon fecundity (Baum & Meister 1971,
+    # DOI 10.1139/f71-106): 3528-18,847 eggs across 164 Maine females,
+    # ~523-1385 eggs per pound body weight (→ ~1150-3050 eggs/kg).
+    # Prouzet 1990 (DOI 10.1051/alr:1990008) reviews French stocks at
+    # 1457-2358 oocytes/kg for spring salmon and ~1719 oocytes/kg for
+    # grilse. These observed values imply a near-linear weight→fecundity
+    # relationship (exp ≈ 1.0, mult ≈ 1.5-2.5 eggs per gram body weight),
+    # NOT the allometric 690 × W^0.552 used here, which overpredicts
+    # fecundity by ~4-10× for a 4 kg adult. v0.19.0 retains the Chinook
+    # values for calibration-baseline stability; v0.20.0 should swap to
+    # fecund_mult ≈ 2.0, fecund_exp ≈ 1.0 and re-run the Baltic ICES
+    # calibration. See docs/calibration-notes.md "Phase 4 scite sweep".
+    spawn_fecund_mult: 690    # Chinook-copied; corrective deferred to v0.20.0
+    spawn_fecund_exp: 0.552   # Chinook-copied; corrective deferred to v0.20.0
     spawn_suitability_tol: 0.1  # Chinook-copied
     spawn_max_flow_change: 0.2  # Chinook-copied
-    spawn_max_temp: 14        # Chinook-copied (Atlantic salmon spawning temp range 4-12°C)
+    spawn_max_temp: 14        # v0.19.0 Phase 4: Heggberget 1988
+                              # (DOI 10.1139/f88-102) — Norwegian Atlantic
+                              # salmon spawning timing correlates with
+                              # stream temperature during incubation; upper
+                              # bound ~12°C at spawn onset, 14°C retained
+                              # as an inclusive ceiling above the observed
+                              # Baltic Tornionjoki range.
     spawn_min_age: -9         # Chinook-copied (inSTREAM sentinel: no constraint)
     spawn_min_length: -9      # Chinook-copied
     spawn_min_cond: -9        # Chinook-copied
-    spawn_min_temp: 5         # Chinook-copied
+    spawn_min_temp: 5         # v0.19.0 Phase 4: Heggberget & Wallace 1984
+                              # (DOI 10.1139/f84-044) — Alta (70°N) Atlantic
+                              # salmon eggs successfully incubate down to
+                              # 0.5-2°C; Heggberget 1988 confirms 4-6°C at
+                              # peak spawn for Norwegian streams.
     spawn_prob: 0.1           # Chinook-copied
     spawn_wt_loss_fraction: 0.4  # Chinook-copied (40% post-spawn weight loss;
                                  #  Bordeleau et al. 2019 confirms similar for Atlantic)
@@ -171,10 +193,20 @@ species:
     mort_redd_lo_temp_T1: 1.7           # Chinook-copied
     mort_redd_lo_temp_T9: 4.0           # Chinook-copied
     mort_redd_scour_depth: 20           # Chinook-copied
-    redd_devel_A: 0.00190               # Chinook-copied (Atlantic salmon egg development
-                                         #  typically slower in cold Baltic spawn — v0.19.0 follow-up)
-    redd_devel_B: 0.000500              # Chinook-copied
-    redd_devel_C: 0.0000360             # Chinook-copied
+    # v0.19.0 Phase 4 scite sweep — egg development thermal response.
+    # Brännäs 1988 (DOI 10.1111/j.1095-8649.1988.tb05502.x) — Baltic
+    # salmon Umeälven (~63°N) emergence at 6/10/12°C showed days to 50%
+    # emergence declined exponentially with temperature, with optimum at
+    # 10°C for largest fry and lowest mortality. 12°C produced highest
+    # death rate. Baltic salmon emergence was faster than southern
+    # Atlantic populations — the Chinook quadratic (A,B,C) coefficients
+    # produce a plausible first-order match but should be re-fit against
+    # Brännäs' 6/10/12°C lab data points in v0.20.0. Heggberget & Wallace
+    # 1984 (DOI 10.1139/f84-044) confirms successful incubation at low
+    # temperatures (0.5-2°C) relevant to mid-winter Baltic redds.
+    redd_devel_A: 0.00190               # Chinook-copied; re-fit to Brännäs 1988 in v0.20.0
+    redd_devel_B: 0.000500              # Chinook-copied; re-fit to Brännäs 1988 in v0.20.0
+    redd_devel_C: 0.0000360             # Chinook-copied; re-fit to Brännäs 1988 in v0.20.0
     redd_area: 56000                    # Chinook-copied
     superind_max_rep: 10                # Chinook-copied
     superind_max_length: 5              # Chinook-copied

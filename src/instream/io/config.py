@@ -11,7 +11,9 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import yaml
-from pydantic import BaseModel
+import math
+
+from pydantic import BaseModel, model_validator
 
 from instream.state.params import SpeciesParams
 
@@ -172,7 +174,27 @@ class SpeciesConfig(BaseModel, extra="allow"):
     search_area: float = 0.0
 
     # Spawning
+    #
+    # Redd-defense semantics (v0.19.0 reconciliation with NetLogo InSALMO):
+    #
+    # * ``spawn_defense_area`` — Python semantic (shipped since v0.12.0):
+    #   minimum *Euclidean distance* in cm from the centroid of any existing
+    #   live redd. Used directly by ``select_spawn_cell`` as a radius filter.
+    #
+    # * ``spawn_defense_area_m2`` — NetLogo InSALMO semantic: the actual
+    #   defended *area* in m² around a redd. When set (and
+    #   ``spawn_defense_area`` is 0), a Pydantic model_validator converts
+    #   it to an equivalent circular-disk radius in cm:
+    #
+    #       r_cm = sqrt(area_m2 * 10_000 / pi)
+    #
+    #   (area_m2 × 10_000 = area_cm²; sqrt(area_cm²/pi) = radius_cm.)
+    #
+    # Users should use **exactly one** of the two fields. Setting both is
+    # allowed but ``spawn_defense_area`` (cm) wins and the m² field is
+    # ignored, matching the "Python ships cm, NetLogo uses m²" precedence.
     spawn_defense_area: float = 0.0
+    spawn_defense_area_m2: float = 0.0
     spawn_egg_viability: float = 0.0
     spawn_fecund_mult: float = 0.0
     spawn_fecund_exp: float = 0.0
@@ -242,6 +264,18 @@ class SpeciesConfig(BaseModel, extra="allow"):
     # Spawning suitability tables
     spawn_depth_table: Dict[float, float] = {}
     spawn_vel_table: Dict[float, float] = {}
+
+    @model_validator(mode="after")
+    def _reconcile_defense_area_semantics(self) -> "SpeciesConfig":
+        """Convert NetLogo-semantic ``spawn_defense_area_m2`` (area in m²)
+        to the Python-semantic ``spawn_defense_area`` (radius in cm) when
+        only the NetLogo field is provided. See the class-level comment
+        on ``spawn_defense_area`` for precedence rules.
+        """
+        if self.spawn_defense_area_m2 > 0 and self.spawn_defense_area == 0:
+            area_cm2 = self.spawn_defense_area_m2 * 10_000.0
+            self.spawn_defense_area = math.sqrt(area_cm2 / math.pi)
+        return self
 
     # New InSALMON parameters
     mort_condition_K_crit: float = 0.8

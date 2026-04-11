@@ -416,6 +416,88 @@ Citations:
   https://doi.org/10.1046/j.1095-8649.2003.00005.x
 - Kallio-Nyberg et al. 2020 (as above).
 
+## Phase 4 scite sweep (v0.19.0)
+
+Seven high-leverage Chinook-copied species fields were cross-checked
+against Atlantic salmon literature via the scite MCP server. The
+findings and citations are summarized here; the corresponding comments
+with DOIs live in `configs/baltic_salmon_species.yaml`.
+
+### spawn_fecund_mult / spawn_fecund_exp (fecundity allometric)
+
+**Current values**: `fecund_mult = 690`, `fecund_exp = 0.552`
+(Chinook-Spring defaults). Python's fecundity formula in
+`src/instream/modules/spawning.py::create_redd` is
+`eggs = fecund_mult × weight_g ** fecund_exp`.
+
+**Observed Atlantic salmon fecundity**:
+
+- Baum & Meister 1971 (DOI `10.1139/f71-106`): 164 Maine Atlantic
+  salmon females, 3528–18,847 eggs total, 523–1385 eggs per pound body
+  weight (≈ 1150–3050 eggs per kg).
+- Prouzet 1990 (DOI `10.1051/alr:1990008`): French stock review,
+  1457–2358 oocytes/kg for spring salmon and ~1719 oocytes/kg for
+  grilse.
+
+**Discrepancy**: at the Chinook allometric coefficients, a 4 kg (4000 g)
+Atlantic salmon female would be predicted to contain
+`690 × 4000 ** 0.552 ≈ 66,800 eggs` — roughly 5–10× higher than the
+observed ~6,000–10,000 eggs for a fish that size. The observed values
+imply a near-linear mass→fecundity relationship
+(`exp ≈ 1.0`, `mult ≈ 1.5–2.5 eggs/g`) rather than the Chinook
+allometric.
+
+**v0.19.0 decision**: retain the Chinook coefficients to keep the
+v0.18.0 calibration baseline stable. A corrective to
+`fecund_mult ≈ 2.0, fecund_exp ≈ 1.0` plus a re-run of the Baltic ICES
+calibration is deferred to v0.20.0.
+
+### spawn_min_temp / spawn_max_temp (spawn thermal window)
+
+**Current values**: `spawn_min_temp = 5`, `spawn_max_temp = 14`.
+
+**Citations retrieved**:
+
+- Heggberget 1988 (DOI `10.1139/f88-102`): timing of spawning in
+  Norwegian Atlantic salmon — thermal regime (temperature during egg
+  incubation) is the only variable with a statistically significant
+  effect on commencement and peak of spawning across 16 Norwegian
+  streams. Peak spawning temperatures cluster at 4–6°C; upper window
+  ~8–10°C at spawn onset.
+- Heggberget & Wallace 1984 (DOI `10.1139/f84-044`): River Alta
+  (~70°N) Atlantic salmon eggs successfully incubate at 0.5–2°C;
+  hydroelectric regulation of low-temperature regimes shifts hatch
+  timing but does not prevent successful development.
+
+**Verdict**: the 5–14°C window brackets the observed Norwegian Atlantic
+salmon range. 14°C is an inclusive upper bound above the observed peak
+(no literature evidence for successful spawning above ~12°C), and 5°C
+matches the lower observed range. PASS-WITH-CAVEAT — widening the max
+downward to 12°C is a candidate tightening for v0.20.0.
+
+### redd_devel_A / redd_devel_B / redd_devel_C (egg development quadratic)
+
+**Current values**: Chinook-Spring defaults retained.
+
+**Citation retrieved**:
+
+- Brännäs 1988 (DOI `10.1111/j.1095-8649.1988.tb05502.x`): Baltic
+  salmon (Umeälven hatchery, 63°30'N) emergence at 6/10/12°C. Days
+  and degree-days from hatching to 50% emergence declined exponentially
+  with temperature. Optimum incubation temperature for yolk-sac alevins
+  was 10°C — largest fry and lowest mortality. 12°C produced the
+  highest death rate. Baltic salmon developed faster in the gravel
+  phase than southern Atlantic populations.
+
+**Discrepancy**: the Chinook quadratic coefficients encode a thermal
+response shaped for Pacific salmonid spawn temperatures, not the
+0.5–12°C Baltic window. Brännäs gives three explicit data points
+(6°C, 10°C, 12°C) that can re-fit the quadratic coefficients to Baltic
+parameters.
+
+**v0.19.0 decision**: retain the Chinook coefficients for baseline
+stability; record the Brännäs data points as the v0.20.0 re-fit target.
+
 ## References
 
 1. Boström, M., Lunneryd, S.-G., & Karlsson, L. (2009). Cormorant impact
@@ -471,3 +553,21 @@ Citations:
     modelling of the marine phase of Atlantic salmon (*Salmo salar* L.).
     *Marine Environmental Research*, 67(4–5), 246–258.
     https://doi.org/10.1016/j.marenvres.2008.12.010
+13. Baum, E., & Meister, A. L. (1971). Fecundity of Atlantic salmon
+    (*Salmo salar*) from two Maine rivers. *Journal of the Fisheries
+    Research Board of Canada*, 28(5), 764–767.
+    https://doi.org/10.1139/f71-106
+14. Prouzet, P. (1990). Stock characteristics of Atlantic salmon
+    (*Salmo salar*) in France: a review. *Aquatic Living Resources*,
+    3(2), 85–97. https://doi.org/10.1051/alr:1990008
+15. Heggberget, T. G. (1988). Timing of spawning in Norwegian Atlantic
+    salmon (*Salmo salar*). *Canadian Journal of Fisheries and Aquatic
+    Sciences*, 45(5), 845–849. https://doi.org/10.1139/f88-102
+16. Heggberget, T. G., & Wallace, J. C. (1984). Incubation of the eggs
+    of Atlantic salmon (*Salmo salar*) at low temperatures. *Canadian
+    Journal of Fisheries and Aquatic Sciences*, 41(2), 389–391.
+    https://doi.org/10.1139/f84-044
+17. Brännäs, E. (1988). Emergence of Baltic salmon (*Salmo salar* L.)
+    in relation to temperature: a laboratory study. *Journal of Fish
+    Biology*, 33(4), 589–600.
+    https://doi.org/10.1111/j.1095-8649.1988.tb05502.x

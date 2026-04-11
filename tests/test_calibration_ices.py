@@ -226,12 +226,12 @@ class TestICESCalibrationBaltic:
         m = InSTREAMModel(
             CONFIGS / "example_calibration_baltic.yaml",
             data_dir=FIXTURES / "example_a",
-            end_date_override="2016-03-31",
+            end_date_override="2018-03-31",
         )
 
         import pandas as pd
         start = datetime.date(2011, 4, 1)
-        required_end = start + datetime.timedelta(days=5 * 365)
+        required_end = start + datetime.timedelta(days=7 * 365)
         ts_csv = FIXTURES / "example_a" / "ExampleA-TimeSeriesInputs.csv"
         try:
             df = pd.read_csv(ts_csv, comment=";")
@@ -303,33 +303,33 @@ class TestICESCalibrationBaltic:
         )
 
     def test_kelt_counter_wired(self, model):
-        """Baltic-specific: kelt mechanism is wired but produces zero
-        kelts in a 5-year horizon due to Atlantic salmon iteroparous
-        timing. A spring returner at DOY 90-180 holds in freshwater for
-        ~6 months before the Oct 15-Nov 30 spawn window (vs Chinook's
-        Sep 1-Oct 31), then out-migrates as kelt in early winter, and
-        would next return in spring 2016 — which falls just after the
-        5-year horizon's Mar 31 2016 end date. The 5-year window is
-        structurally insufficient for Baltic iteroparous cycle detection.
+        """v0.19.0: horizon extended 5→7 years (2011-04-01 → 2018-03-31)
+        to enable full Baltic iteroparous cycle detection in a future
+        release. Empirically, at 7 years the cohort produces 108 returns
+        but still zero kelts — the RETURNING_ADULT→(redd)→SPAWNER→kelt
+        chain has a hidden gate (candidate causes: spawn_wt_loss_fraction
+        0.4 pushing condition below min_kelt_condition 0.5, or returns
+        arriving outside the Baltic Oct-Nov spawn window). Investigation
+        deferred to v0.20.0 as a dedicated kelt-chain debugging task.
 
-        This test therefore only verifies the counter attribute exists
-        and is a plain int. The strong cohort-level kelt assertion
-        requires extending the simulation to 6-7 years, deferred to
-        v0.19.0 (see docs/calibration-notes.md 'Baltic iteroparity
-        horizon limitation' section)."""
+        This assertion therefore still only verifies the counter exists
+        and is non-negative. It is NOT a weakening from v0.18.0 — v0.18.0
+        had the same floor. The v0.19.0 gain is the horizon extension
+        itself, which unblocks v0.20.0's kelt-chain diagnosis.
+        """
         md = model._marine_domain
         assert isinstance(md.total_kelts, int)
         assert md.total_kelts >= 0
 
     def test_repeat_spawner_fraction_baltic(self, model):
-        """Baltic observed rates: 5-8% (Niemelä et al. on Teno),
-        Simojoki near-zero, Atlantic-average 10-11% (Fleming & Reynolds
-        2004). Band kept at 0-12% (matching v0.17.0 Chinook) because the
-        5-year simulation horizon is insufficient for a full Baltic
-        iteroparous cycle — spring-returning adults don't have time to
-        spawn, kelt, recondition, and return a second time before the
-        simulation ends. v0.19.0 should extend the horizon to 7 years
-        and then tighten the lower bound to 2%."""
+        """v0.19.0: horizon extended 5→7 years but lower bound left at
+        0.0. Empirically the 7-year run still produces 0 repeat spawners
+        (gated by the same kelt-chain issue tracked on
+        test_kelt_counter_wired). Observed Baltic targets: 5-8% Teno
+        (Niemelä et al.), ~0% Simojoki, 10-11% Atlantic average
+        (Fleming & Reynolds 2004). Lower bound tightening to 1% deferred
+        to v0.20.0 after the kelt-chain gate is identified and fixed.
+        """
         md = model._marine_domain
         if md.total_returned == 0:
             pytest.skip("No returns in this run")
