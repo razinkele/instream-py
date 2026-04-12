@@ -496,6 +496,14 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     cs = fem_space.cell_state
     alive = trout_state.alive_indices()
 
+    # v0.26.0 — pre-filter to freshwater fish only. Marine fish (zone_idx
+    # >= 0) skip the inner loop anyway (line ~583), but without pre-filtering
+    # they still occupy ~60% of alive_sorted and waste iteration time.
+    _zone_idx = getattr(trout_state, 'zone_idx', None)
+    if _zone_idx is not None:
+        fw_mask = _zone_idx[alive] < 0
+        alive = alive[fw_mask]
+
     # Sort by length descending (large fish first, as in NetLogo)
     alive_sorted = alive[np.argsort(-trout_state.length[alive])]
 
@@ -576,13 +584,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     _c_ahiding = cs.available_hiding_places
     _c_dist_esc = cs.dist_escape
 
-    _zone_idx = getattr(trout_state, 'zone_idx', None)
-
     for i in alive_sorted:
-        # Skip marine fish (zone_idx >= 0) — they don't use freshwater cells
-        if _zone_idx is not None and _zone_idx[i] >= 0:
-            continue
-
         candidates = candidate_lists[i]
         if candidates is None or len(candidates) == 0:
             # No wet candidates — fish is stranded at current cell

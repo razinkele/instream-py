@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.0] - 2026-04-12
+
+### Performance — 34% speedup on Baltic calibration sim
+
+Profiling identified `select_habitat_and_activity` at 74.6% of runtime (131s of 176s in a 3-year Baltic benchmark). Two optimizations:
+
+1. **Pre-filter marine fish from habitat selection** (`src/instream/modules/behavior.py`): marine fish (zone_idx >= 0) were included in the `alive_sorted` array and iterated over in the inner loop despite being skipped per-fish. Pre-filtering to freshwater-only eliminates ~60% of loop iterations when most seeded PARR are in the ocean.
+
+2. **Vectorize growth_memory and fitness_memory updates** (`src/instream/model.py`): replaced per-fish Python loops with vectorized numpy array operations for the growth-rate memory store and the fitness-memory EMA update.
+
+### Benchmark results
+
+| metric | v0.25.0 | v0.26.0 | speedup |
+|---|---|---|---|
+| 3-year Baltic sim | 175.8s | 115.6s | **1.52×** |
+| Full test suite | 65:03 | 56:11 | **1.16×** |
+
+### Tests
+
+**882 passed, 9 skipped, 0 failed** in 56:11. Same count as v0.25.0.
+
 ## [0.25.0] - 2026-04-12
 
 ### Fixed — Natal recruitment: self-sustaining Baltic population (TDD)

@@ -81,37 +81,37 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
             freshwater_alive = alive[fw_mask]
         else:
             freshwater_alive = alive
-        for i in freshwater_alive:
-            self.trout_state.growth_memory[i, substep] = (
-                self.trout_state.last_growth_rate[i]
-            )
+        # v0.26.0 — vectorized growth_memory store (was per-fish Python loop)
+        self.trout_state.growth_memory[freshwater_alive, substep] = (
+            self.trout_state.last_growth_rate[freshwater_alive]
+        )
 
         # 9. Survival / mortality (vectorized via backend)
         survival_probs = self._do_survival(step_length)
 
-        # Update fitness memory (EMA) using both growth and survival projection
-        #   Skip marine fish (zone_idx >= 0)
-        frac = self._sp_arrays["fitness_memory_frac"]
-        alpha_arr = self._sp_arrays["fitness_growth_weight"]
+        # v0.26.0 — vectorized fitness memory EMA (was per-fish Python loop)
         alive_after = self.trout_state.alive_indices()
         if marine_domain is not None:
             fw_mask_after = self.trout_state.zone_idx[alive_after] == -1
             fw_alive_after = alive_after[fw_mask_after]
         else:
             fw_alive_after = alive_after
-        for i in fw_alive_after:
-            sp_idx = int(self.trout_state.species_idx[i])
-            f = float(frac[sp_idx])
-            alpha = float(alpha_arr[sp_idx])
-            growth_signal = float(self.trout_state.last_growth_rate[i])
-            surv_signal = float(survival_probs[i])
+        if len(fw_alive_after) > 0:
+            sp_idx = self.trout_state.species_idx[fw_alive_after]
+            frac = self._sp_arrays["fitness_memory_frac"]
+            alpha_arr = self._sp_arrays["fitness_growth_weight"]
+            f = frac[sp_idx]
+            alpha = alpha_arr[sp_idx]
+            growth_signal = self.trout_state.last_growth_rate[fw_alive_after]
+            surv_signal = survival_probs[fw_alive_after]
             current = alpha * growth_signal + (1.0 - alpha) * surv_signal
-            old = self.trout_state.fitness_memory[i]
-            if old == 0.0 and current != 0.0:
-                # First real update: seed with current value to avoid day-1 spurious migration
-                self.trout_state.fitness_memory[i] = current
-            else:
-                self.trout_state.fitness_memory[i] = f * old + (1.0 - f) * current
+            old = self.trout_state.fitness_memory[fw_alive_after]
+            new_mem = np.where(
+                (old == 0.0) & (current != 0.0),
+                current,
+                f * old + (1.0 - f) * current,
+            )
+            self.trout_state.fitness_memory[fw_alive_after] = new_mem
 
         # Marine domain daily step (zone migration, environment update)
         if self._marine_domain is not None:
