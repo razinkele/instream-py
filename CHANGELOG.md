@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-04-12
+
+### Fixed — Natal PARR survival at river mouth (natal recruitment unblocked)
+
+- **`src/instream/modules/migration.py::migrate_fish_downstream`**: when a `PARR` reaches the river mouth but can't smoltify (too small or insufficient readiness), keep it alive at the current reach instead of killing it. Pre-v0.24.0, the `else: trout_state.alive[fish_idx] = False` branch killed all non-smoltifiable PARR at the mouth unconditionally, wiping out natal-cohort PARR in single-reach river systems where every PARR that triggers migration is already at the terminal reach.
+
+  Additionally, outmigrant records are now only produced for actual transitions (SMOLT entry, KELT re-entry, or non-anadromous death at mouth), not for failed smoltification attempts. This eliminates a performance regression where ~125 surviving PARR × ~2500 days generated ~312k spurious outmigrant records.
+
+### Diagnostic results (Baltic 7-year, `scripts/diagnose_kelt.py`)
+
+| metric | v0.23.0 | v0.24.0 |
+|---|---|---|
+| PARR alive at end | 0 | **125** |
+| total_returned | 113 | **116** |
+| total_repeat_spawners | 5 | **8** |
+| PARR mean length | n/a | 4.7 cm |
+| PARR max length | n/a | 4.7 cm |
+| % PARR >= 12 cm | n/a | 0.0% |
+
+Natal PARR now survive but **don't grow** beyond ~4.7 cm (emergence + minimal growth). At ~1.2 cm/year growth rate, reaching the 12 cm `smolt_min_length` would take ~7 years — ecologically unrealistic for Atlantic salmon parr (observed 4-8 cm/year in temperate rivers). Root cause is likely food competition with the dense initial population. This is a v0.25.0 bioenergetics/food-availability investigation.
+
+### Changed — test updated for new semantics
+
+- **`tests/test_marine.py::TestSmoltTransitionAtRiverMouth::test_parr_below_min_length_survives_at_mouth`**: renamed from `test_parr_below_min_length_killed_not_smolt` and updated to assert the v0.24.0 behavior (fish stays alive, no outmigrant record).
+
+### Performance note
+
+Suite runtime increased from ~19 min to ~33 min due to more surviving fish per step. This is a real computational cost of natal recruitment; optimization (e.g. vectorizing the migration loop) is a future improvement.
+
+### Tests
+
+**880 passed, 9 skipped, 0 failed** in 33:08. Same count as v0.23.0.
+
+### Known gaps carried into v0.25.0
+
+- **Natal PARR growth rate**: ~1.2 cm/year vs observed 4-8 cm/year. Food competition with initial population likely starves small PARR. Needs bioenergetics investigation: check daily consumption vs respiration for 4-5 cm PARR in the Example A environment.
+- **Finite fasting reserve** (carried from v0.20.0).
+- **Brännäs 1988 redd_devel re-fit** (carried from v0.19.0).
+
 ## [0.23.0] - 2026-04-12
 
 ### Changed — Atlantic salmon fecundity corrective (v0.19.0 carry-over)

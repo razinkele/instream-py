@@ -330,8 +330,14 @@ class TestSmoltTransitionAtRiverMouth:
         assert len(out) == 1
         assert out[0]["reach_idx"] == 0
 
-    def test_parr_below_min_length_killed_not_smolt(self):
-        """PARR below min length is killed even with marine config."""
+    def test_parr_below_min_length_survives_at_mouth(self):
+        """v0.24.0: PARR below min length stays alive at the mouth.
+
+        Pre-v0.24.0 this fish was killed unconditionally, wiping out
+        all natal-cohort PARR in single-reach river systems. Post-v0.24.0
+        the fish is kept alive at the current reach so it can grow and
+        try again next spring. No outmigrant record is produced.
+        """
         ts = _make_trout_at_mouth(length=8.0, readiness=0.9)
         cfg = _make_marine_config()
         reach_graph = {0: []}
@@ -345,10 +351,10 @@ class TestSmoltTransitionAtRiverMouth:
             current_date=date,
         )
 
-        assert not ts.alive[0]
+        assert ts.alive[0]
         assert smoltified is False
-        assert ts.life_history[0] != LifeStage.SMOLT
-        assert len(out) == 1
+        assert ts.life_history[0] == LifeStage.PARR
+        assert len(out) == 0
 
     def test_no_marine_config_kills_as_before(self):
         """Without marine_config, fish at mouth is killed (legacy behavior)."""

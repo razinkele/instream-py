@@ -81,6 +81,12 @@ _original_step = m.step
 
 kelt_census = []  # (date, n_kelt_freshwater, n_oa_marine, max_sea_winters_oa)
 
+# v0.24.0 — natal recruitment: per-year life-stage snapshot + PARR length tracking
+from collections import defaultdict
+yearly_stage_census = defaultdict(lambda: {s.name: 0 for s in LifeStage})
+yearly_parr_lengths = defaultdict(list)  # year -> list of max-length snapshots
+_last_census_year = [None]
+
 def instrumented_step():
     _original_step()
     n_ra = int(
@@ -97,6 +103,26 @@ def instrumented_step():
     sw_max = int(ts.sea_winters[ts.alive].max()) if ts.alive.any() else 0
     if n_kelt > 0 or n_oa > 0:
         kelt_census.append((m.time_manager.current_date, n_kelt, n_oa, sw_max))
+
+    # v0.24.0 — yearly life-stage snapshot on Dec 31
+    cur = m.time_manager.current_date
+    if cur.month == 12 and cur.day == 31 and _last_census_year[0] != cur.year:
+        _last_census_year[0] = cur.year
+        alive_mask = ts.alive
+        for stage in LifeStage:
+            cnt = int(((ts.life_history == int(stage)) & alive_mask).sum())
+            yearly_stage_census[cur.year][stage.name] = cnt
+        # PARR length distribution
+        parr_mask = alive_mask & (ts.life_history == int(LifeStage.PARR))
+        parr_idx = np.where(parr_mask)[0]
+        if len(parr_idx) > 0:
+            lengths = ts.length[parr_idx]
+            yearly_parr_lengths[cur.year] = {
+                "n": len(parr_idx),
+                "mean_L": float(lengths.mean()),
+                "max_L": float(lengths.max()),
+                "pct_ge12": float((lengths >= 12.0).mean() * 100),
+            }
 
 m.step = instrumented_step
 m.run()
@@ -170,6 +196,27 @@ if kelt_census:
     kelt_dates = [d for d, n_k, _, _ in kelt_census if n_k > 0]
     if kelt_dates:
         print(f"First KELT date: {kelt_dates[0]}, last: {kelt_dates[-1]}")
+
+print()
+print("=== v0.24.0 Yearly life-stage census (Dec 31 snapshots) ===")
+if yearly_stage_census:
+    stages = [s.name for s in LifeStage]
+    header = f"{'Year':<6}" + "".join(f"{s:<10}" for s in stages)
+    print(header)
+    for year in sorted(yearly_stage_census):
+        row = yearly_stage_census[year]
+        line = f"{year:<6}" + "".join(f"{row.get(s, 0):<10}" for s in stages)
+        print(line)
+
+print()
+print("=== v0.24.0 PARR length distribution (Dec 31 snapshots) ===")
+if yearly_parr_lengths:
+    print(f"{'Year':<6}{'n_PARR':<10}{'mean_L':<10}{'max_L':<10}{'%>=12cm':<10}")
+    for year in sorted(yearly_parr_lengths):
+        d = yearly_parr_lengths[year]
+        print(f"{year:<6}{d['n']:<10}{d['mean_L']:<10.1f}{d['max_L']:<10.1f}{d['pct_ge12']:<10.1f}")
+else:
+    print("  No PARR observed at any Dec 31 snapshot.")
 
 print()
 print("=== Redd state ===")

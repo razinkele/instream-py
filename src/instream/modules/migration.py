@@ -50,37 +50,35 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
     if len(downstream) > 0:
         trout_state.reach_idx[fish_idx] = downstream[0]
     else:
-        # No downstream reach — record outmigrant
-        outmigrants.append({
-            "species_idx": int(trout_state.species_idx[fish_idx]),
-            "length": float(trout_state.length[fish_idx]),
-            "reach_idx": current_reach,
-        })
-
-        # Attempt smolt transition when marine domain is available
+        # No downstream reach — fish is at the river mouth.
         life_history = int(trout_state.life_history[fish_idx])
         fish_length = float(trout_state.length[fish_idx])
         readiness = float(trout_state.smolt_readiness[fish_idx])
 
         # v0.17.0 — KELT re-entering the ocean as OCEAN_ADULT.
-        # sea_winters, smolt_date, and natal_reach_idx are preserved
-        # intentionally so that a second-run spawner's total ocean tenure
-        # is cumulative, not reset. InSALMON extension — no NetLogo ref.
         if marine_config is not None and life_history == int(LifeStage.KELT):
+            outmigrants.append({
+                "species_idx": int(trout_state.species_idx[fish_idx]),
+                "length": fish_length,
+                "reach_idx": current_reach,
+            })
             trout_state.life_history[fish_idx] = int(LifeStage.OCEAN_ADULT)
             trout_state.zone_idx[fish_idx] = 0
             trout_state.cell_idx[fish_idx] = -1
             trout_state.reach_idx[fish_idx] = -1
-            # smolt_date, sea_winters, natal_reach_idx deliberately preserved
-            return outmigrants, False  # KELT re-entry is NOT a smoltification
+            return outmigrants, False
 
         if (
             marine_config is not None
-            and life_history == LifeStage.PARR
+            and life_history == int(LifeStage.PARR)
             and readiness >= smolt_readiness_threshold
             and fish_length >= smolt_min_length
         ):
-            # Transition to SMOLT and enter marine estuary (zone 0)
+            outmigrants.append({
+                "species_idx": int(trout_state.species_idx[fish_idx]),
+                "length": fish_length,
+                "reach_idx": current_reach,
+            })
             trout_state.life_history[fish_idx] = int(LifeStage.SMOLT)
             trout_state.zone_idx[fish_idx] = 0
             trout_state.natal_reach_idx[fish_idx] = current_reach
@@ -90,8 +88,18 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
             trout_state.cell_idx[fish_idx] = -1
             trout_state.reach_idx[fish_idx] = -1
             smoltified = True
+        elif life_history == int(LifeStage.PARR) and marine_config is not None:
+            # v0.24.0 — PARR at the mouth that can't smoltify yet (too
+            # small or insufficient readiness). Keep alive at the current
+            # reach so it can grow and try again next spring. No outmigrant
+            # record — this is a failed attempt, not a real outmigration.
+            pass
         else:
-            # Kill as before
+            outmigrants.append({
+                "species_idx": int(trout_state.species_idx[fish_idx]),
+                "length": fish_length,
+                "reach_idx": current_reach,
+            })
             trout_state.alive[fish_idx] = False
     return outmigrants, smoltified
 
