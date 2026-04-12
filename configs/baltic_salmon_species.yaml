@@ -125,21 +125,20 @@ species:
     search_area: 20000        # Chinook-copied
     spawn_defense_area: 0     # v0.17.0 Phase 4 calibration workaround (NetLogo drift)
     spawn_egg_viability: 0.8  # Chinook-copied
-    # v0.19.0 Phase 4 scite sweep — fecundity.
-    # Observed Atlantic salmon fecundity (Baum & Meister 1971,
-    # DOI 10.1139/f71-106): 3528-18,847 eggs across 164 Maine females,
-    # ~523-1385 eggs per pound body weight (→ ~1150-3050 eggs/kg).
-    # Prouzet 1990 (DOI 10.1051/alr:1990008) reviews French stocks at
-    # 1457-2358 oocytes/kg for spring salmon and ~1719 oocytes/kg for
-    # grilse. These observed values imply a near-linear weight→fecundity
-    # relationship (exp ≈ 1.0, mult ≈ 1.5-2.5 eggs per gram body weight),
-    # NOT the allometric 690 × W^0.552 used here, which overpredicts
-    # fecundity by ~4-10× for a 4 kg adult. v0.19.0 retains the Chinook
-    # values for calibration-baseline stability; v0.20.0 should swap to
-    # fecund_mult ≈ 2.0, fecund_exp ≈ 1.0 and re-run the Baltic ICES
-    # calibration. See docs/calibration-notes.md "Phase 4 scite sweep".
-    spawn_fecund_mult: 690    # Chinook-copied; corrective deferred to v0.20.0
-    spawn_fecund_exp: 0.552   # Chinook-copied; corrective deferred to v0.20.0
+    # v0.23.0 fecundity corrective — Atlantic salmon near-linear.
+    # Pre-v0.23.0 used Chinook-Spring allometric (mult=690, exp=0.552)
+    # which predicted ~67,000 eggs for a 4 kg female — about 5-10× the
+    # observed Atlantic salmon range. Observed:
+    #   - Baum & Meister 1971 (DOI 10.1139/f71-106): 164 Maine Atlantic
+    #     salmon, 3528-18,847 eggs total, 523-1385 eggs/lb body weight
+    #     (≈ 1150-3050 eggs/kg).
+    #   - Prouzet 1990 (DOI 10.1051/alr:1990008): French stocks
+    #     1457-2358 oocytes/kg (spring salmon), ~1719 oocytes/kg (grilse).
+    # Near-linear (exp ≈ 1.0): with mult = 2.0 eggs/g and exp = 1.0,
+    # a 4 kg fish produces 4000 × 2.0 = 8000 eggs (= 2000 eggs/kg),
+    # solidly inside the Baum & Prouzet observed bands.
+    spawn_fecund_mult: 2.0    # v0.23.0 — Baum 1971 + Prouzet 1990
+    spawn_fecund_exp: 1.0     # v0.23.0 — near-linear weight→fecundity
     spawn_suitability_tol: 0.1  # Chinook-copied
     spawn_max_flow_change: 0.2  # Chinook-copied
     spawn_max_temp: 14        # v0.19.0 Phase 4: Heggberget 1988

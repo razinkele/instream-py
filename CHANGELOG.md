@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-04-12
+
+### Changed — Atlantic salmon fecundity corrective (v0.19.0 carry-over)
+
+- **`configs/baltic_salmon_species.yaml`**: swap `spawn_fecund_mult` from `690` (Chinook allometric intercept) to `2.0` (eggs per gram body weight, Atlantic-salmon near-linear), and `spawn_fecund_exp` from `0.552` (Chinook power) to `1.0` (linear).
+
+  **Pre-v0.23.0**: a 4 kg pre-spawn female was predicted to produce
+  `690 × 4000 ** 0.552 × 0.8 = 53,480` eggs — about 5-10× the observed
+  Atlantic salmon range.
+
+  **Post-v0.23.0**: the same female produces
+  `2.0 × 4000 ** 1.0 × 0.8 = 6,400` eggs — solidly inside the observed
+  ranges:
+
+  - Baum & Meister 1971 (DOI 10.1139/f71-106): 164 Maine Atlantic
+    salmon, 3528-18,847 eggs total, 523-1385 eggs/lb body weight
+    (≈ 1150-3050 eggs/kg).
+  - Prouzet 1990 (DOI 10.1051/alr:1990008): French stocks,
+    1457-2358 oocytes/kg (spring salmon), ~1719 oocytes/kg (grilse).
+
+  Both citations were retrieved via scite MCP in v0.19.0 Phase 4 and
+  documented in `docs/calibration-notes.md`. v0.23.0 finally applies
+  the corrective they pointed at.
+
+### Tests
+
+**880 passed, 9 skipped, 0 failed** in 19:01. Same count as v0.22.0; calibration tests unchanged because the marine cohort SAR/kelt/repeat-spawner counters depend on the manually seeded 3000-PARR fixture, not on natal recruitment from spawn → redd → FRY. The fecundity change therefore doesn't disturb the Baltic ICES calibration assertions but it correctly reduces redd egg counts to physiologically realistic values.
+
+### Known gaps carried into v0.24.0+
+
+- **Finite fasting reserve depletion model** (carried from v0.20.0/v0.21.0/v0.22.0).
+- **Brännäs 1988 redd_devel re-fit** (carried from v0.19.0).
+- **2-cohort reproduction sample size**: 5 second-spawners is small. Larger seeded cohort (3000 → 6000+) or extended horizon would tighten the repeat-fraction lower bound further.
+
 ## [0.22.0] - 2026-04-12
 
 ### Fixed — Full Baltic iteroparous lifecycle (kelt → recondition → second return → second spawn)
