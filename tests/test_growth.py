@@ -883,3 +883,138 @@ class TestSplitSuperindividualPerSpecies:
         split_superindividuals(ts, max_lengths)
         assert ts.superind_rep[0] == 1, "species 0 fish should have been split"
         assert ts.superind_rep[1] == 2, "species 1 fish should NOT have been split"
+
+
+class TestNatalParrGrowthRate:
+    """v0.25.0 TDD: natal PARR should grow meaningfully in a realistic
+    environment. Atlantic salmon parr grow 4-8 cm/year in temperate
+    rivers (Forseth et al. 2001, Metcalfe & Thorpe 1990). A 4.5 cm
+    natal PARR should reach at least 8 cm after 1 year of growth
+    in an adequate food environment at 10°C.
+
+    This test calls growth_rate_for directly with representative
+    cell conditions (moderate depth, velocity, drift, light) to
+    verify the bioenergetics produce positive net energy for a
+    small PARR. If the per-day growth rate is too low, the issue
+    is in the allometric parameters, food geometry, or competition
+    mechanics — NOT in the simulation loop.
+    """
+
+    def test_small_parr_has_positive_daily_growth(self):
+        """A 4.5 cm PARR should have positive net growth at 10°C
+        with moderate drift food availability."""
+        from instream.modules.growth import growth_rate_for
+
+        growth = growth_rate_for(
+            activity=0,  # drift feeding
+            length=4.5,
+            weight=0.7,  # ~0.0077 * 4.5^3.05
+            depth=30.0,
+            velocity=15.0,  # cm/s
+            light=50.0,
+            turbidity=3.0,
+            temperature=10.0,
+            drift_conc=5e-10,  # g/cm³ — typical drift concentration
+            search_prod=0.0,
+            search_area=20000.0,
+            available_drift=1.0,  # 1 g available (unrestricted)
+            available_search=0.0,
+            available_shelter=0.0,
+            shelter_speed_frac=0.0,
+            superind_rep=1,
+            prev_consumption=0.0,
+            step_length=1.0,
+            cmax_A=0.303,
+            cmax_B=-0.275,
+            cmax_temp_table_x=np.array([0., 4., 8., 13., 16., 18., 19., 20.]),
+            cmax_temp_table_y=np.array([0., 0.3, 0.7, 0.95, 1.0, 0.6, 0.3, 0.]),
+            react_dist_A=4.0,
+            react_dist_B=2.0,
+            turbid_threshold=5.0,
+            turbid_min=0.1,
+            turbid_exp=-0.116,
+            light_threshold=20.0,
+            light_min=0.5,
+            light_exp=-0.2,
+            capture_R1=1.3,
+            capture_R9=0.4,
+            max_speed_A=2.8,
+            max_speed_B=21.0,
+            max_swim_temp_term=1.0,  # pre-computed temperature term
+            resp_A=36.0,
+            resp_B=0.783,
+            resp_D=1.4,
+            resp_temp_term=1.0,  # pre-computed temperature term
+            prey_energy_density=4500.0,
+            fish_energy_density=5900.0,
+        )
+        assert growth > 0.0, (
+            f"Natal PARR (4.5 cm) has non-positive daily growth = {growth:.6f} g/d "
+            f"at 10°C with available drift. Bioenergetics consumption < respiration."
+        )
+
+    def test_small_parr_annual_growth_reaches_8cm(self):
+        """Cumulative: 365 days of positive growth at 10°C should bring
+        a 4.5 cm PARR to at least 8 cm. Real Atlantic salmon parr grow
+        4-8 cm/year in temperate rivers.
+        """
+        from instream.modules.growth import growth_rate_for, apply_growth
+
+        length = 4.5
+        weight_A, weight_B = 0.0077, 3.05
+        weight = weight_A * length ** weight_B
+        condition = 1.0
+
+        for day in range(365):
+            g = growth_rate_for(
+                activity=0,
+                length=length,
+                weight=weight,
+                depth=30.0,
+                velocity=15.0,
+                light=50.0,
+                turbidity=3.0,
+                temperature=10.0,
+                drift_conc=5e-10,
+                search_prod=0.0,
+                search_area=20000.0,
+                available_drift=1.0,
+                available_search=0.0,
+                available_shelter=0.0,
+                shelter_speed_frac=0.0,
+                superind_rep=1,
+                prev_consumption=0.0,
+                step_length=1.0,
+                cmax_A=0.303,
+                cmax_B=-0.275,
+                cmax_temp_table_x=np.array([0., 4., 8., 13., 16., 18., 19., 20.]),
+                cmax_temp_table_y=np.array([0., 0.3, 0.7, 0.95, 1.0, 0.6, 0.3, 0.]),
+                react_dist_A=4.0,
+                react_dist_B=2.0,
+                turbid_threshold=5.0,
+                turbid_min=0.1,
+                turbid_exp=-0.116,
+                light_threshold=20.0,
+                light_min=0.5,
+                light_exp=-0.2,
+                capture_R1=1.3,
+                capture_R9=0.4,
+                max_speed_A=2.8,
+                max_speed_B=21.0,
+                max_swim_temp_term=1.0,
+                resp_A=36.0,
+                resp_B=0.783,
+                resp_D=1.4,
+                resp_temp_term=1.0,
+                prey_energy_density=4500.0,
+                fish_energy_density=5900.0,
+            )
+            weight, length, condition = apply_growth(
+                weight, length, condition, g, weight_A, weight_B,
+            )
+
+        assert length >= 8.0, (
+            f"Natal PARR grew from 4.5 to only {length:.1f} cm in 365 days "
+            f"(final weight={weight:.2f}g). Expected >= 8.0 cm. "
+            f"Real Atlantic salmon parr grow 4-8 cm/year at 10°C."
+        )

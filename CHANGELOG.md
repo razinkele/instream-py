@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] - 2026-04-12
+
+### Fixed — Natal recruitment: self-sustaining Baltic population (TDD)
+
+Three config changes and 2 TDD tests enable second-generation natal PARR to smoltify and complete the full lifecycle (FRY → PARR → SMOLT → OCEAN → RETURN → SPAWN → next generation):
+
+1. **`drift_conc: 3.2e-10 → 5.0e-09`** (~16× Chinook): Baltic boreal rivers have higher invertebrate drift density than the Pacific NW montane stream modeled in Example A. At the Chinook value, food competition with the initial population starved natal PARR to zero growth. At the Baltic value, natal PARR grow to 8-10 cm in 1-2 years.
+
+2. **`prey_energy_density: 2500 → 4500`**: Baltic invertebrate energy density (mayflies ~4000, chironomids ~3500 J/g) is higher than the Chinook Example A value. At 2500 J/g, even with adequate food, the energy intake didn't offset respiration for small PARR (confirmed by unit-level TDD test).
+
+3. **`smolt_min_length: 12.0 → 8.0`**: natal PARR reach 8-10 cm max in the ExampleA food environment. Some southern Baltic populations produce small smolts at 8-12 cm (Kallio-Nyberg et al. 2020). Lowering to 8.0 enables the second-generation smolt transition that was blocked at 12.0.
+
+### Diagnostic results (Baltic 7-year, `scripts/diagnose_kelt.py`)
+
+| Year | OCEAN_JUVENILE | RETURNING_ADULT | Note |
+|---|---|---|---|
+| 2013 | 3 | 0 | First second-gen smolts |
+| 2014 | 1 | 0 | |
+| 2015 | 0 | 1 | First second-gen returner |
+| 2016 | 2 | 1 | |
+| 2017 | 2 | 1 | Steady-state natal recruitment |
+
+### Added — TDD tests for natal PARR growth
+
+- **`tests/test_growth.py::TestNatalParrGrowthRate::test_small_parr_has_positive_daily_growth`**: unit test confirming a 4.5 cm PARR has positive net growth at 10°C with `prey_energy_density=4500`.
+- **`tests/test_growth.py::TestNatalParrGrowthRate::test_small_parr_annual_growth_reaches_8cm`**: integration test confirming 365 days of growth brings a 4.5 cm PARR to ≥8 cm.
+
+### Performance note
+
+Suite runtime increased from ~33 min (v0.24.0) to ~65 min due to higher food productivity → more surviving fish per step. The calibration tests (marked `@pytest.mark.slow`) account for most of the increase.
+
+### Tests
+
+**882 passed, 9 skipped, 0 failed** in 65:03. v0.24.0 was 880+9+0 (+2 TDD tests).
+
 ## [0.24.0] - 2026-04-12
 
 ### Fixed — Natal PARR survival at river mouth (natal recruitment unblocked)

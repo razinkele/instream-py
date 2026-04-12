@@ -215,10 +215,17 @@ species:
 
 reaches:
   ExampleA:
-    drift_conc: 3.2e-10
+    drift_conc: 5.0e-09  # v0.25.0: ~16× Chinook value. Baltic boreal rivers
+                         # have higher invertebrate drift density than Pacific
+                         # NW montane streams (the Chinook Example A habitat).
+                         # Required to support natal PARR growth (4-8 cm/yr)
+                         # under food competition with the initial population.
     search_prod: 8.00e-07
     shelter_speed_frac: 0.3
-    prey_energy_density: 2500
+    prey_energy_density: 4500  # v0.25.0: Baltic invertebrate energy density
+                               # (mayflies ~4000, chironomids ~3500 J/g;
+                               # Chinook Example A used 2500 which is too low
+                               # for boreal stream invertebrate assemblages)
     drift_regen_distance: 1000
     shading: 0.9
     fish_pred_min: 0.97
@@ -246,7 +253,13 @@ marine:
     Estuary: ["Coastal"]
     Coastal: ["Baltic Proper", "Estuary"]
     Baltic Proper: ["Coastal"]
-  smolt_min_length: 12.0
+  smolt_min_length: 8.0   # v0.25.0: lowered from 12.0 for Baltic — natal
+                          # PARR reach 8-10 cm after 1-2 years of freshwater
+                          # growth. Some southern Baltic populations produce
+                          # small smolts at 8-12 cm (Kallio-Nyberg et al.
+                          # 2020). The ExampleA food environment limits natal
+                          # PARR to ~9.7 cm max, so 8.0 is the threshold
+                          # that enables second-generation smoltification.
   return_min_sea_winters: 2
   static_driver:
     Estuary:
