@@ -597,8 +597,12 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             trout_state.activity[i] = 2
             continue
 
-        # --- ADULT HOLDING: returning adults skip fitness-based selection ---
-        if int(trout_state.life_history[i]) == int(LifeStage.RETURNING_ADULT):
+        # --- FASTING HOLD: RA and KELT skip fitness-based selection ---
+        # v0.27.0: extended to KELT (they out-migrate via _do_migration,
+        # habitat optimization is wasted work). Saves ~25 fish × 10 cells
+        # × 3 activities × 1096 days ≈ 800k fitness evaluations.
+        _lh_i = int(trout_state.life_history[i])
+        if _lh_i == int(LifeStage.RETURNING_ADULT) or _lh_i == int(LifeStage.KELT):
             # Select the lowest-velocity wet cell within movement radius
             hold_cell = candidates[int(np.argmin(cs.velocity[candidates]))]
             best_cells[i] = hold_cell

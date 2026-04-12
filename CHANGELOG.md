@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.0] - 2026-04-13
+
+### Performance — additional ~30% speedup on Baltic calibration sim
+
+Two algorithmic optimizations targeting the `select_habitat_and_activity` hotspot (74.7% of runtime per profiling) and the `_do_spawning` loop:
+
+1. **KELT quick-exit in habitat selection** (`src/instream/modules/behavior.py`): extend the RETURNING_ADULT holding fast-path to also cover KELT fish. KELTs out-migrate unconditionally via `_do_migration`; evaluating candidate cells × 3 activities per day is wasted work. Saves ~800k fitness evaluations over 7 years.
+
+2. **Spawning early-exit outside spawn window** (`src/instream/model_day_boundary.py`): cache spawn DOY on first call; return immediately when no species is in spawn season. Baltic spawning is Oct 15–Nov 30 (46 days/year = 13% of days). Eliminates per-fish iteration on the other 87% of days.
+
+### Benchmark (2-run min, 3-year Baltic sim)
+
+| version | min (s) | mean (s) | speedup vs v0.26.0 |
+|---|---|---|---|
+| v0.26.0 baseline | 201.2 | 211.3 | — |
+| **v0.27.0** | **139.8** | **163.8** | **1.44× (min)** |
+
+### Tests
+
+**882 passed, 9 skipped, 0 failed** in 62:59 (system under load; relative speedup confirmed by controlled benchmark).
+
 ## [0.26.0] - 2026-04-12
 
 ### Performance — 34% speedup on Baltic calibration sim

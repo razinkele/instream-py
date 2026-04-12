@@ -218,28 +218,35 @@ class _ModelDayBoundaryMixin:
         """Check spawning readiness and create redds (per-fish species/reach)."""
         doy = self.time_manager.julian_date
 
-        spawn_doy_cache = {}
-        for sp_name, sp_cfg in self.config.species.items():
-            try:
-                start_parts = sp_cfg.spawn_start_day.split("-")
-                spawn_start_doy = int(
-                    pd.Timestamp(
-                        "2000-{}-{}".format(start_parts[0], start_parts[1])
-                    ).day_of_year
-                )
-                end_parts = sp_cfg.spawn_end_day.split("-")
-                spawn_end_doy = int(
-                    pd.Timestamp(
-                        "2000-{}-{}".format(end_parts[0], end_parts[1])
-                    ).day_of_year
-                )
-            except (ValueError, IndexError, AttributeError):
-                spawn_start_doy = 244
-                spawn_end_doy = 304
-            spawn_doy_cache[sp_name] = (spawn_start_doy, spawn_end_doy)
+        # v0.27.0 — cache spawn DOY once
+        if not hasattr(self, "_spawn_doy_cache"):
+            self._spawn_doy_cache = {}
+            for sp_name, sp_cfg in self.config.species.items():
+                try:
+                    start_parts = sp_cfg.spawn_start_day.split("-")
+                    s_doy = int(pd.Timestamp("2000-{}-{}".format(
+                        start_parts[0], start_parts[1])).day_of_year)
+                    end_parts = sp_cfg.spawn_end_day.split("-")
+                    e_doy = int(pd.Timestamp("2000-{}-{}".format(
+                        end_parts[0], end_parts[1])).day_of_year)
+                except (ValueError, IndexError, AttributeError):
+                    s_doy, e_doy = 244, 304
+                self._spawn_doy_cache[sp_name] = (s_doy, e_doy)
+            self._spawn_earliest = min(v[0] for v in self._spawn_doy_cache.values())
+        spawn_doy_cache = self._spawn_doy_cache
+        self._reset_spawn_season_if_needed(self._spawn_earliest)
 
-        earliest_start = min(v[0] for v in spawn_doy_cache.values())
-        self._reset_spawn_season_if_needed(earliest_start)
+        # v0.27.0 — early exit outside spawn window (saves ~87% of days)
+        in_season = False
+        for s_doy, e_doy in spawn_doy_cache.values():
+            if s_doy <= e_doy:
+                in_season = s_doy <= doy <= e_doy
+            else:
+                in_season = doy >= s_doy or doy <= e_doy
+            if in_season:
+                break
+        if not in_season:
+            return
 
         alive = self.trout_state.alive_indices()
         # Filter to freshwater fish only (zone_idx == -1)
