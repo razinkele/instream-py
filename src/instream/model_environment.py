@@ -295,16 +295,23 @@ class _ModelEnvironmentMixin:
             )
 
     def _compute_piscivore_density(self):
-        """Compute piscivore density (count / area) per cell (per-species threshold)."""
+        """Compute piscivore density (count / area) per cell (per-species threshold).
+
+        v0.28.0: vectorized with numpy (was per-fish Python loop).
+        """
         _pisciv_arr = self._sp_arrays["pisciv_length"]
         n_cells = self.fem_space.num_cells
-        pisciv_count = np.zeros(n_cells, dtype=np.float64)
         alive = self.trout_state.alive_indices()
-        for i in alive:
-            cell = self.trout_state.cell_idx[i]
-            sp_idx = int(self.trout_state.species_idx[i])
-            pisciv_length = float(_pisciv_arr[sp_idx])
-            if 0 <= cell < n_cells and self.trout_state.length[i] >= pisciv_length:
-                pisciv_count[cell] += self.trout_state.superind_rep[i]
+        if len(alive) == 0:
+            cs = self.fem_space.cell_state
+            return np.zeros(n_cells, dtype=np.float64)
+        cells = self.trout_state.cell_idx[alive]
+        sp_idx = self.trout_state.species_idx[alive]
+        lengths = self.trout_state.length[alive]
+        reps = self.trout_state.superind_rep[alive]
+        thresholds = _pisciv_arr[sp_idx]
+        valid = (cells >= 0) & (cells < n_cells) & (lengths >= thresholds)
+        pisciv_count = np.zeros(n_cells, dtype=np.float64)
+        np.add.at(pisciv_count, cells[valid], reps[valid])
         cs = self.fem_space.cell_state
         return np.where(cs.area > 0, pisciv_count / cs.area, 0.0)

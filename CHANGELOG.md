@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.0] - 2026-04-13
+
+### Performance — vectorized piscivore density + spawn suitability
+
+1. **Vectorized `_compute_piscivore_density`** (`src/instream/model_environment.py`): replaced per-fish Python accumulation loop with `np.add.at` — eliminates ~2000 per-step scalar iterations.
+
+2. **Vectorized spawn suitability scoring** (`src/instream/model_day_boundary.py`): replaced per-cell `spawn_suitability()` calls (547k total) with batch `np.interp` over candidate arrays. Eliminates scalar-level numpy.interp overhead during spawn season.
+
+### Tests
+
+**882 passed, 9 skipped, 0 failed** in 53:09 (v0.27.0: 62:59).
+
 ## [0.27.0] - 2026-04-13
 
 ### Performance — additional ~30% speedup on Baltic calibration sim

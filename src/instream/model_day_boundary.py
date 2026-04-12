@@ -301,20 +301,14 @@ class _ModelDayBoundaryMixin:
             if len(candidates) == 0:
                 candidates = np.array([cell])
 
-            scores = np.array(
-                [
-                    spawn_suitability(
-                        float(cs.depth[c]),
-                        float(cs.velocity[c]),
-                        float(cs.frac_spawn[c]),
-                        float(cs.area[c]),
-                        depth_xs,
-                        depth_ys,
-                        vel_xs,
-                        vel_ys,
-                    )
-                    for c in candidates
-                ]
+            # v0.28.0: vectorized spawn suitability (was per-cell loop)
+            _s_depths = cs.depth[candidates]
+            _s_vels = cs.velocity[candidates]
+            scores = (
+                np.interp(_s_depths, depth_xs, depth_ys)
+                * np.interp(_s_vels, vel_xs, vel_ys)
+                * cs.frac_spawn[candidates]
+                * cs.area[candidates]
             )
 
             if np.max(scores) <= sp_cfg.spawn_suitability_tol:
