@@ -254,39 +254,6 @@ app_ui = ui.page_fluid(
     _custom_sidebar,
     ui.div(
         {"class": "sp-main-offset"},
-        # Top bar
-        ui.tags.nav(
-            {"class": "navbar navbar-light bg-light px-3", "style": "border-bottom:1px solid #e2e8f0; margin-left:0;"},
-            ui.tags.span("SalmoPy", class_="navbar-brand mb-0", style="font-weight:700;"),
-            ui.popover(
-                ui.span(
-                    ui.tags.i(class_="bi bi-info-circle", style="font-size:1.1rem;"),
-                    " About",
-                    style="cursor:pointer; opacity:0.7; font-size:.85rem;",
-                ),
-                ui.h4("SalmoPy"),
-                ui.p(
-                    "Individual-based salmonid population model. "
-                    "Python port of ",
-                    ui.a("inSTREAM 7", href="https://www.fs.usda.gov/treesearch/pubs/65856", target="_blank"),
-                    " / inSALMO, extended with marine lifecycle, "
-                    "Baltic Atlantic salmon calibration, and Numba-accelerated habitat selection."
-                ),
-                ui.tags.hr(),
-                ui.p(
-                    ui.strong("Version: "), "0.29.0",
-                    ui.br(),
-                    ui.strong("Engine: "), "instream-py",
-                    ui.br(),
-                    ui.strong("Source: "),
-                    ui.a("github.com/razinkele/instream-py", href="https://github.com/razinkele/instream-py", target="_blank"),
-                    ui.br(),
-                    ui.strong("Funding: "), "Horizon Europe",
-                ),
-                placement="bottom",
-            ),
-        ),
-        # Tab content (tabs hidden via CSS — navigation is in sidebar)
         ui.navset_hidden(
             ui.nav_panel("Dashboard", dashboard_ui("dash")),
             ui.nav_panel("Movement", movement_ui("movement")),
