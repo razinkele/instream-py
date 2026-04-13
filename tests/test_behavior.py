@@ -1170,3 +1170,119 @@ class TestLogisticDegenerateCase:
         assert _logistic(15.0, 10.0, 10.0) == pytest.approx(0.9)
         assert _logistic(5.0, 10.0, 10.0) == pytest.approx(0.1)
         assert _logistic(10.0, 10.0, 10.0) == pytest.approx(0.9)
+
+
+class TestBatchVsScalarHabitatSelection:
+    """Verify batch Numba path matches the per-fish scalar path exactly."""
+
+    def test_batch_matches_scalar(self):
+        """Run habitat selection with batch disabled vs enabled, compare outputs."""
+        try:
+            import instream.modules.behavior as bmod
+        except ImportError:
+            pytest.skip("behavior module not available")
+
+        if not bmod._HAS_NUMBA_BATCH:
+            pytest.skip("Numba batch not available")
+
+        from instream.state.cell_state import CellState
+        from instream.state.trout_state import TroutState
+        from instream.space.fem_space import FEMSpace
+        import copy
+
+        cs = CellState.zeros(5, num_flows=2)
+        cs.centroid_x[:] = np.array([0, 50, 100, 150, 200], dtype=np.float64)
+        cs.centroid_y[:] = np.zeros(5)
+        cs.depth[:] = np.array([40, 30, 50, 20, 35], dtype=np.float64)
+        cs.velocity[:] = np.array([15, 25, 10, 30, 20], dtype=np.float64)
+        cs.light[:] = 50.0
+        cs.area[:] = 10000.0
+        cs.available_drift[:] = 500.0
+        cs.available_search[:] = 500.0
+        cs.available_vel_shelter[:] = 5000.0
+        cs.available_hiding_places[:] = 3
+        cs.dist_escape[:] = 10.0
+        ni = np.full((5, 4), -1, dtype=np.int32)
+        ni[0, 0] = 1
+        ni[1, 0] = 0; ni[1, 1] = 2
+        ni[2, 0] = 1; ni[2, 1] = 3
+        ni[3, 0] = 2; ni[3, 1] = 4
+        ni[4, 0] = 3
+        space = FEMSpace(cs, ni)
+
+        # 4 fish of varying sizes
+        ts = TroutState.zeros(4)
+        for idx in range(4):
+            ts.alive[idx] = True
+            ts.cell_idx[idx] = idx
+            ts.condition[idx] = 0.9
+            ts.superind_rep[idx] = 1
+        ts.length[:4] = [12.0, 8.0, 15.0, 6.0]
+        ts.weight[:4] = [15.0, 5.0, 30.0, 3.0]
+
+        params = dict(
+            move_radius_max=20000,
+            move_radius_L1=7,
+            move_radius_L9=20,
+            cmax_A=0.628,
+            cmax_B=0.7,
+            cmax_temp_table_x=np.array([0.0, 10.0, 22.0, 30.0]),
+            cmax_temp_table_y=np.array([0.05, 0.5, 1.0, 0.0]),
+            react_dist_A=4.0,
+            react_dist_B=2.0,
+            turbid_threshold=5.0,
+            turbid_min=0.1,
+            turbid_exp=-0.116,
+            light_threshold=20.0,
+            light_min=0.5,
+            light_exp=-0.2,
+            capture_R1=1.3,
+            capture_R9=0.4,
+            max_speed_A=2.8,
+            max_speed_B=21.0,
+            resp_A=36.0,
+            resp_B=0.783,
+            resp_D=1.4,
+            prey_energy_density=2500.0,
+            fish_energy_density=5900.0,
+            shelter_speed_frac=0.3,
+            search_prod=8e-7,
+            search_area=20000.0,
+            drift_conc=3.2e-10,
+            temperature=15.0,
+            turbidity=2.0,
+            max_swim_temp_term=0.98,
+            resp_temp_term=np.exp(0.002 * 225),
+            step_length=1.0,
+        )
+
+        # Run with batch path (default when Numba available)
+        ts_batch = copy.deepcopy(ts)
+        cs_batch = copy.deepcopy(cs)
+        space_batch = FEMSpace(cs_batch, ni)
+        bmod.select_habitat_and_activity(ts_batch, space_batch, **params)
+
+        # Run with scalar fallback (disable batch temporarily)
+        ts_scalar = copy.deepcopy(ts)
+        cs_scalar = copy.deepcopy(cs)
+        space_scalar = FEMSpace(cs_scalar, ni)
+        saved = bmod._HAS_NUMBA_BATCH
+        bmod._HAS_NUMBA_BATCH = False
+        try:
+            bmod.select_habitat_and_activity(ts_scalar, space_scalar, **params)
+        finally:
+            bmod._HAS_NUMBA_BATCH = saved
+
+        # Compare results for all alive fish
+        for idx in range(4):
+            assert ts_batch.cell_idx[idx] == ts_scalar.cell_idx[idx], (
+                f"Fish {idx}: cell mismatch batch={ts_batch.cell_idx[idx]} scalar={ts_scalar.cell_idx[idx]}"
+            )
+            assert ts_batch.activity[idx] == ts_scalar.activity[idx], (
+                f"Fish {idx}: activity mismatch batch={ts_batch.activity[idx]} scalar={ts_scalar.activity[idx]}"
+            )
+            assert ts_batch.last_growth_rate[idx] == pytest.approx(
+                ts_scalar.last_growth_rate[idx], rel=1e-10
+            ), (
+                f"Fish {idx}: growth mismatch batch={ts_batch.last_growth_rate[idx]} scalar={ts_scalar.last_growth_rate[idx]}"
+            )

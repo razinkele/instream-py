@@ -8,11 +8,14 @@ from instream.state.life_stage import LifeStage
 try:
     from instream.backends.numba_backend.fitness import (
         _evaluate_all_cells as _numba_eval,
+        batch_select_habitat as _numba_batch,
     )
 
     _HAS_NUMBA_FITNESS = True
+    _HAS_NUMBA_BATCH = True
 except ImportError:
     _HAS_NUMBA_FITNESS = False
+    _HAS_NUMBA_BATCH = False
 
 try:
     from instream.backends.numba_backend.spatial import (
@@ -584,33 +587,32 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     _c_ahiding = cs.available_hiding_places
     _c_dist_esc = cs.dist_escape
 
+    # === PRE-PASS: handle stranded and RA/KELT fish ===
+    # These are small populations; keep them in Python.
+    _RA_VAL = int(LifeStage.RETURNING_ADULT)
+    _KELT_VAL = int(LifeStage.KELT)
+    normal_fish = []  # indices into alive_sorted for batch processing
+
     for i in alive_sorted:
         candidates = candidate_lists[i]
         if candidates is None or len(candidates) == 0:
-            # No wet candidates — fish is stranded at current cell
             cur = trout_state.cell_idx[i]
             if cur < 0 or cur >= fem_space.num_cells:
-                cur = 0  # safety fallback
+                cur = 0
             best_cells[i] = cur
-            best_activities[i] = 2  # hide
+            best_activities[i] = 2
             trout_state.cell_idx[i] = cur
             trout_state.activity[i] = 2
             continue
 
-        # --- FASTING HOLD: RA and KELT skip fitness-based selection ---
-        # v0.27.0: extended to KELT (they out-migrate via _do_migration,
-        # habitat optimization is wasted work). Saves ~25 fish × 10 cells
-        # × 3 activities × 1096 days ≈ 800k fitness evaluations.
         _lh_i = int(trout_state.life_history[i])
-        if _lh_i == int(LifeStage.RETURNING_ADULT) or _lh_i == int(LifeStage.KELT):
-            # Select the lowest-velocity wet cell within movement radius
+        if _lh_i == _RA_VAL or _lh_i == _KELT_VAL:
             hold_cell = candidates[int(np.argmin(cs.velocity[candidates]))]
             best_cells[i] = hold_cell
-            best_activities[i] = 4  # hold
+            best_activities[i] = 4
             trout_state.cell_idx[i] = hold_cell
             trout_state.activity[i] = 4
             trout_state.reach_idx[i] = cs.reach_idx[hold_cell]
-            # Holding = only respiration, no feeding → negative growth
             _fish_species_h = int(trout_state.species_idx[i])
             _fish_reach_h = int(trout_state.reach_idx[i])
             _fr_h = min(_fish_reach_h, len(_temperature_arr) - 1)
@@ -631,536 +633,782 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
                 _fed_h = params["fish_energy_density"]
             _fw_h = float(trout_state.weight[i])
             resp_std_h = _resp_A_h * _fw_h ** _resp_B_h
-            resp_h = resp_std_h * _resp_temp_term_h  # swim speed = 0, exp(0) = 1
+            resp_h = resp_std_h * _resp_temp_term_h
             trout_state.last_growth_rate[i] = -resp_h / _fed_h
             continue
 
-        best_fitness = -np.inf
-        best_c = candidates[0]
-        best_a = 2  # default hide
-        best_growth = 0.0  # track growth to avoid second growth_rate_for call
+        normal_fish.append(i)
 
-        prev_cons = float(np.sum(trout_state.consumption_memory[i]))
+    # === BATCH PATH: process normal fish in one Numba call ===
+    if len(normal_fish) > 0 and _HAS_NUMBA_BATCH:
+        normal_idx = np.array(normal_fish, dtype=np.int64)
+        n_batch = len(normal_idx)
 
-        # === PER-FISH species/reach lookup ===
-        _fish_reach = int(trout_state.reach_idx[i])
-        _fish_species = int(trout_state.species_idx[i])
+        # --- Build CSR candidate lists ---
+        cand_flat_parts = []
+        offsets = np.empty(n_batch + 1, dtype=np.int64)
+        offsets[0] = 0
+        for fi_local in range(n_batch):
+            i = normal_idx[fi_local]
+            cands = candidate_lists[i]
+            if cands.dtype != np.int32:
+                cands = cands.astype(np.int32)
+            cand_flat_parts.append(cands)
+            offsets[fi_local + 1] = offsets[fi_local] + len(cands)
+        cand_flat = np.concatenate(cand_flat_parts) if cand_flat_parts else np.empty(0, dtype=np.int32)
 
-        # Clamp indices to valid range for backward compat with scalar inputs
-        _fr = min(_fish_reach, len(_temperature_arr) - 1)
-        _fs = (
-            min(_fish_species, _max_swim_tt_arr.shape[1] - 1)
-            if _max_swim_tt_arr.ndim >= 2
-            else 0
+        # --- Pack per-fish arrays via fancy indexing ---
+        _f_lengths = trout_state.length[normal_idx].astype(np.float64)
+        _f_weights = trout_state.weight[normal_idx].astype(np.float64)
+        _f_conditions = trout_state.condition[normal_idx].astype(np.float64)
+        _f_reps = trout_state.superind_rep[normal_idx].astype(np.int64)
+        _f_prev_cons = np.array(
+            [float(np.sum(trout_state.consumption_memory[i])) for i in normal_idx],
+            dtype=np.float64,
         )
-        _fr_r = min(_fish_reach, _max_swim_tt_arr.shape[0] - 1)
 
-        _temperature = float(_temperature_arr[_fr])
-        _turbidity = float(_turbidity_arr[_fr])
-        _max_swim_temp_term = float(_max_swim_tt_arr[_fr_r, _fs])
-        _resp_temp_term = float(_resp_tt_arr[_fr_r, _fs])
+        _f_species = trout_state.species_idx[normal_idx].astype(np.int64)
+        _f_reach = trout_state.reach_idx[normal_idx].astype(np.int64)
 
+        # Clamp indices
+        _f_fr = np.minimum(_f_reach, len(_temperature_arr) - 1)
+        if _max_swim_tt_arr.ndim >= 2:
+            _f_fs = np.minimum(_f_species, _max_swim_tt_arr.shape[1] - 1)
+        else:
+            _f_fs = np.zeros(n_batch, dtype=np.int64)
+        _f_fr_r = np.minimum(_f_reach, _max_swim_tt_arr.shape[0] - 1)
+
+        # Per-fish reach-dependent scalars
+        _pf_temperature = _temperature_arr[_f_fr]
+        _pf_turbidity = _turbidity_arr[_f_fr]
+        _pf_max_swim_tt = _max_swim_tt_arr[_f_fr_r, _f_fs]
+        _pf_resp_tt = _resp_tt_arr[_f_fr_r, _f_fs]
+
+        # Per-fish species params
         if _sp is not None:
-            _cmax_A = float(_spa_cmax_A[_fish_species])
-            _cmax_B = float(_spa_cmax_B[_fish_species])
-            _react_dist_A = float(_spa_react_dist_A[_fish_species])
-            _react_dist_B = float(_spa_react_dist_B[_fish_species])
-            _turbid_threshold = float(_spa_turbid_threshold[_fish_species])
-            _turbid_min = float(_spa_turbid_min[_fish_species])
-            _turbid_exp = float(_spa_turbid_exp[_fish_species])
-            _light_threshold = float(_spa_light_threshold[_fish_species])
-            _light_min = float(_spa_light_min[_fish_species])
-            _light_exp = float(_spa_light_exp[_fish_species])
-            _capture_R1 = float(_spa_capture_R1[_fish_species])
-            _capture_R9 = float(_spa_capture_R9[_fish_species])
-            _max_speed_A = float(_spa_max_speed_A[_fish_species])
-            _max_speed_B = float(_spa_max_speed_B[_fish_species])
-            _resp_A = float(_spa_resp_A[_fish_species])
-            _resp_B = float(_spa_resp_B[_fish_species])
-            _resp_D = float(_spa_resp_D[_fish_species])
-            _search_area = float(_spa_search_area[_fish_species])
-            _fish_energy_density = float(_spa_energy_density[_fish_species])
-            _mort_ht_T1 = float(_spa_mort_ht_T1[_fish_species])
-            _mort_ht_T9 = float(_spa_mort_ht_T9[_fish_species])
-            _mort_cond_S5 = float(_spa_mort_cond_S5[_fish_species])
-            _mort_cond_S8 = float(_spa_mort_cond_S8[_fish_species])
-            _mort_cond_Kcrit = float(_spa_mort_cond_Kcrit[_fish_species])
-            _mort_strand_dry = float(_spa_mort_strand_dry[_fish_species])
-            _fp_L1 = float(_spa_fp_L1[_fish_species])
-            _fp_L9 = float(_spa_fp_L9[_fish_species])
-            _fp_D1 = float(_spa_fp_D1[_fish_species])
-            _fp_D9 = float(_spa_fp_D9[_fish_species])
-            _fp_P1 = float(_spa_fp_P1[_fish_species])
-            _fp_P9 = float(_spa_fp_P9[_fish_species])
-            _fp_I1 = float(_spa_fp_I1[_fish_species])
-            _fp_I9 = float(_spa_fp_I9[_fish_species])
-            _fp_T1 = float(_spa_fp_T1[_fish_species])
-            _fp_T9 = float(_spa_fp_T9[_fish_species])
-            _fp_hiding_factor = float(_spa_fp_hiding_factor[_fish_species])
-            _tp_L1 = float(_spa_tp_L1[_fish_species])
-            _tp_L9 = float(_spa_tp_L9[_fish_species])
-            _tp_D1 = float(_spa_tp_D1[_fish_species])
-            _tp_D9 = float(_spa_tp_D9[_fish_species])
-            _tp_V1 = float(_spa_tp_V1[_fish_species])
-            _tp_V9 = float(_spa_tp_V9[_fish_species])
-            _tp_I1 = float(_spa_tp_I1[_fish_species])
-            _tp_I9 = float(_spa_tp_I9[_fish_species])
-            _tp_H1 = float(_spa_tp_H1[_fish_species])
-            _tp_H9 = float(_spa_tp_H9[_fish_species])
-            _tp_hiding_factor = float(_spa_tp_hiding_factor[_fish_species])
-            _cmax_table_x = np.asarray(
-                _sp_cmax_table_x[_fish_species], dtype=np.float64
-            )
-            _cmax_table_y = np.asarray(
-                _sp_cmax_table_y[_fish_species], dtype=np.float64
+            _pf_cmax_A = _spa_cmax_A[_f_species]
+            _pf_cmax_B = _spa_cmax_B[_f_species]
+            _pf_react_dist_A = _spa_react_dist_A[_f_species]
+            _pf_react_dist_B = _spa_react_dist_B[_f_species]
+            _pf_turbid_threshold = _spa_turbid_threshold[_f_species]
+            _pf_turbid_min = _spa_turbid_min[_f_species]
+            _pf_turbid_exp = _spa_turbid_exp[_f_species]
+            _pf_light_threshold = _spa_light_threshold[_f_species]
+            _pf_light_min = _spa_light_min[_f_species]
+            _pf_light_exp = _spa_light_exp[_f_species]
+            _pf_capture_R1 = _spa_capture_R1[_f_species]
+            _pf_capture_R9 = _spa_capture_R9[_f_species]
+            _pf_max_speed_A = _spa_max_speed_A[_f_species]
+            _pf_max_speed_B = _spa_max_speed_B[_f_species]
+            _pf_resp_A = _spa_resp_A[_f_species]
+            _pf_resp_B = _spa_resp_B[_f_species]
+            _pf_resp_D = _spa_resp_D[_f_species]
+            _pf_search_area = _spa_search_area[_f_species]
+            _pf_fish_ED = _spa_energy_density[_f_species]
+            _pf_mort_ht_T1 = _spa_mort_ht_T1[_f_species]
+            _pf_mort_ht_T9 = _spa_mort_ht_T9[_f_species]
+            _pf_mort_cond_S5 = _spa_mort_cond_S5[_f_species]
+            _pf_mort_cond_S8 = _spa_mort_cond_S8[_f_species]
+            _pf_mort_cond_Kcrit = _spa_mort_cond_Kcrit[_f_species]
+            _pf_strand_surv = _spa_mort_strand_dry[_f_species]
+            _pf_fp_L1 = _spa_fp_L1[_f_species]
+            _pf_fp_L9 = _spa_fp_L9[_f_species]
+            _pf_fp_D1 = _spa_fp_D1[_f_species]
+            _pf_fp_D9 = _spa_fp_D9[_f_species]
+            _pf_fp_P1 = _spa_fp_P1[_f_species]
+            _pf_fp_P9 = _spa_fp_P9[_f_species]
+            _pf_fp_I1 = _spa_fp_I1[_f_species]
+            _pf_fp_I9 = _spa_fp_I9[_f_species]
+            _pf_fp_T1 = _spa_fp_T1[_f_species]
+            _pf_fp_T9 = _spa_fp_T9[_f_species]
+            _pf_fp_hf = _spa_fp_hiding_factor[_f_species]
+            _pf_tp_L1 = _spa_tp_L1[_f_species]
+            _pf_tp_L9 = _spa_tp_L9[_f_species]
+            _pf_tp_D1 = _spa_tp_D1[_f_species]
+            _pf_tp_D9 = _spa_tp_D9[_f_species]
+            _pf_tp_V1 = _spa_tp_V1[_f_species]
+            _pf_tp_V9 = _spa_tp_V9[_f_species]
+            _pf_tp_I1 = _spa_tp_I1[_f_species]
+            _pf_tp_I9 = _spa_tp_I9[_f_species]
+            _pf_tp_H1 = _spa_tp_H1[_f_species]
+            _pf_tp_H9 = _spa_tp_H9[_f_species]
+            _pf_tp_hf = _spa_tp_hiding_factor[_f_species]
+            # Pre-compute cmax_temp per fish (avoids variable-length tables in Numba)
+            _pf_cmax_temp = np.array(
+                [
+                    cmax_temp_function(
+                        _pf_temperature[fi],
+                        np.asarray(_sp_cmax_table_x[_f_species[fi]], dtype=np.float64),
+                        np.asarray(_sp_cmax_table_y[_f_species[fi]], dtype=np.float64),
+                    )
+                    for fi in range(n_batch)
+                ],
+                dtype=np.float64,
             )
         else:
-            # Backward compatibility: scalar params from dict
-            _cmax_A = params["cmax_A"]
-            _cmax_B = params["cmax_B"]
-            _react_dist_A = params["react_dist_A"]
-            _react_dist_B = params["react_dist_B"]
-            _turbid_threshold = params["turbid_threshold"]
-            _turbid_min = params["turbid_min"]
-            _turbid_exp = params["turbid_exp"]
-            _light_threshold = params["light_threshold"]
-            _light_min = params["light_min"]
-            _light_exp = params["light_exp"]
-            _capture_R1 = params["capture_R1"]
-            _capture_R9 = params["capture_R9"]
-            _max_speed_A = params["max_speed_A"]
-            _max_speed_B = params["max_speed_B"]
-            _resp_A = params["resp_A"]
-            _resp_B = params["resp_B"]
-            _resp_D = params["resp_D"]
-            _search_area = params["search_area"]
-            _fish_energy_density = params["fish_energy_density"]
-            _mort_ht_T1 = params.get("mort_high_temp_T1", 28.0)
-            _mort_ht_T9 = params.get("mort_high_temp_T9", 24.0)
-            _mort_cond_S5 = params.get("mort_condition_S_at_K5", 0.8)
-            _mort_cond_S8 = params.get("mort_condition_S_at_K8", 0.992)
-            _mort_cond_Kcrit = params.get("mort_condition_K_crit", 0.8)
-            _mort_strand_dry = params.get("mort_strand_survival_when_dry", 0.5)
-            _fp_L1 = params.get("fish_pred_L1", 10.0)
-            _fp_L9 = params.get("fish_pred_L9", 3.0)
-            _fp_D1 = params.get("fish_pred_D1", 50.0)
-            _fp_D9 = params.get("fish_pred_D9", 10.0)
-            _fp_P1 = params.get("fish_pred_P1", 0.5)
-            _fp_P9 = params.get("fish_pred_P9", 0.1)
-            _fp_I1 = params.get("fish_pred_I1", 200.0)
-            _fp_I9 = params.get("fish_pred_I9", 50.0)
-            _fp_T1 = params.get("fish_pred_T1", 25.0)
-            _fp_T9 = params.get("fish_pred_T9", 15.0)
-            _fp_hiding_factor = params.get("fish_pred_hiding_factor", 0.5)
-            _tp_L1 = params.get("terr_pred_L1", 15.0)
-            _tp_L9 = params.get("terr_pred_L9", 5.0)
-            _tp_D1 = params.get("terr_pred_D1", 50.0)
-            _tp_D9 = params.get("terr_pred_D9", 10.0)
-            _tp_V1 = params.get("terr_pred_V1", 50.0)
-            _tp_V9 = params.get("terr_pred_V9", 10.0)
-            _tp_I1 = params.get("terr_pred_I1", 200.0)
-            _tp_I9 = params.get("terr_pred_I9", 50.0)
-            _tp_H1 = params.get("terr_pred_H1", 50.0)
-            _tp_H9 = params.get("terr_pred_H9", 10.0)
-            _tp_hiding_factor = params.get("terr_pred_hiding_factor", 0.5)
-            _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
-            _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
+            # Backward compat: broadcast scalar params to per-fish arrays
+            _pf_cmax_A = np.full(n_batch, params["cmax_A"])
+            _pf_cmax_B = np.full(n_batch, params["cmax_B"])
+            _pf_react_dist_A = np.full(n_batch, params["react_dist_A"])
+            _pf_react_dist_B = np.full(n_batch, params["react_dist_B"])
+            _pf_turbid_threshold = np.full(n_batch, params["turbid_threshold"])
+            _pf_turbid_min = np.full(n_batch, params["turbid_min"])
+            _pf_turbid_exp = np.full(n_batch, params["turbid_exp"])
+            _pf_light_threshold = np.full(n_batch, params["light_threshold"])
+            _pf_light_min = np.full(n_batch, params["light_min"])
+            _pf_light_exp = np.full(n_batch, params["light_exp"])
+            _pf_capture_R1 = np.full(n_batch, params["capture_R1"])
+            _pf_capture_R9 = np.full(n_batch, params["capture_R9"])
+            _pf_max_speed_A = np.full(n_batch, params["max_speed_A"])
+            _pf_max_speed_B = np.full(n_batch, params["max_speed_B"])
+            _pf_resp_A = np.full(n_batch, params["resp_A"])
+            _pf_resp_B = np.full(n_batch, params["resp_B"])
+            _pf_resp_D = np.full(n_batch, params["resp_D"])
+            _pf_search_area = np.full(n_batch, params["search_area"])
+            _pf_fish_ED = np.full(n_batch, params["fish_energy_density"])
+            _pf_mort_ht_T1 = np.full(n_batch, params.get("mort_high_temp_T1", 28.0))
+            _pf_mort_ht_T9 = np.full(n_batch, params.get("mort_high_temp_T9", 24.0))
+            _pf_mort_cond_S5 = np.full(n_batch, params.get("mort_condition_S_at_K5", 0.8))
+            _pf_mort_cond_S8 = np.full(n_batch, params.get("mort_condition_S_at_K8", 0.992))
+            _pf_mort_cond_Kcrit = np.full(n_batch, params.get("mort_condition_K_crit", 0.8))
+            _pf_strand_surv = np.full(n_batch, params.get("mort_strand_survival_when_dry", 0.5))
+            _pf_fp_L1 = np.full(n_batch, params.get("fish_pred_L1", 10.0))
+            _pf_fp_L9 = np.full(n_batch, params.get("fish_pred_L9", 3.0))
+            _pf_fp_D1 = np.full(n_batch, params.get("fish_pred_D1", 50.0))
+            _pf_fp_D9 = np.full(n_batch, params.get("fish_pred_D9", 10.0))
+            _pf_fp_P1 = np.full(n_batch, params.get("fish_pred_P1", 0.5))
+            _pf_fp_P9 = np.full(n_batch, params.get("fish_pred_P9", 0.1))
+            _pf_fp_I1 = np.full(n_batch, params.get("fish_pred_I1", 200.0))
+            _pf_fp_I9 = np.full(n_batch, params.get("fish_pred_I9", 50.0))
+            _pf_fp_T1 = np.full(n_batch, params.get("fish_pred_T1", 25.0))
+            _pf_fp_T9 = np.full(n_batch, params.get("fish_pred_T9", 15.0))
+            _pf_fp_hf = np.full(n_batch, params.get("fish_pred_hiding_factor", 0.5))
+            _pf_tp_L1 = np.full(n_batch, params.get("terr_pred_L1", 15.0))
+            _pf_tp_L9 = np.full(n_batch, params.get("terr_pred_L9", 5.0))
+            _pf_tp_D1 = np.full(n_batch, params.get("terr_pred_D1", 50.0))
+            _pf_tp_D9 = np.full(n_batch, params.get("terr_pred_D9", 10.0))
+            _pf_tp_V1 = np.full(n_batch, params.get("terr_pred_V1", 50.0))
+            _pf_tp_V9 = np.full(n_batch, params.get("terr_pred_V9", 10.0))
+            _pf_tp_I1 = np.full(n_batch, params.get("terr_pred_I1", 200.0))
+            _pf_tp_I9 = np.full(n_batch, params.get("terr_pred_I9", 50.0))
+            _pf_tp_H1 = np.full(n_batch, params.get("terr_pred_H1", 50.0))
+            _pf_tp_H9 = np.full(n_batch, params.get("terr_pred_H9", 10.0))
+            _pf_tp_hf = np.full(n_batch, params.get("terr_pred_hiding_factor", 0.5))
+            _ct_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
+            _ct_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
+            _pf_cmax_temp = np.array(
+                [cmax_temp_function(_pf_temperature[fi], _ct_x, _ct_y) for fi in range(n_batch)],
+                dtype=np.float64,
+            )
 
+        # Per-fish reach params
         if _rp is not None:
-            _drift_conc = float(
-                _rpa_drift_conc[min(_fish_reach, len(_rpa_drift_conc) - 1)]
-            )
-            _search_prod = float(
-                _rpa_search_prod[min(_fish_reach, len(_rpa_search_prod) - 1)]
-            )
-            _shelter_speed_frac = float(
-                _rpa_shelter_speed_frac[
-                    min(_fish_reach, len(_rpa_shelter_speed_frac) - 1)
-                ]
-            )
-            _prey_energy_density = float(
-                _rpa_prey_energy_density[
-                    min(_fish_reach, len(_rpa_prey_energy_density) - 1)
-                ]
-            )
-            _fp_min = float(
-                _rpa_fish_pred_min[min(_fish_reach, len(_rpa_fish_pred_min) - 1)]
-            )
-            _tp_min = float(
-                _rpa_terr_pred_min[min(_fish_reach, len(_rpa_terr_pred_min) - 1)]
-            )
+            _pf_drift_conc = np.array([float(_rpa_drift_conc[min(int(_f_reach[fi]), len(_rpa_drift_conc) - 1)]) for fi in range(n_batch)], dtype=np.float64)
+            _pf_search_prod = np.array([float(_rpa_search_prod[min(int(_f_reach[fi]), len(_rpa_search_prod) - 1)]) for fi in range(n_batch)], dtype=np.float64)
+            _pf_shelter_speed_frac = np.array([float(_rpa_shelter_speed_frac[min(int(_f_reach[fi]), len(_rpa_shelter_speed_frac) - 1)]) for fi in range(n_batch)], dtype=np.float64)
+            _pf_prey_ED = np.array([float(_rpa_prey_energy_density[min(int(_f_reach[fi]), len(_rpa_prey_energy_density) - 1)]) for fi in range(n_batch)], dtype=np.float64)
+            _pf_fp_min = np.array([float(_rpa_fish_pred_min[min(int(_f_reach[fi]), len(_rpa_fish_pred_min) - 1)]) for fi in range(n_batch)], dtype=np.float64)
+            _pf_tp_min = np.array([float(_rpa_terr_pred_min[min(int(_f_reach[fi]), len(_rpa_terr_pred_min) - 1)]) for fi in range(n_batch)], dtype=np.float64)
         else:
-            # Backward compatibility: scalar reach params from dict
-            _drift_conc = params["drift_conc"]
-            _search_prod = params["search_prod"]
-            _shelter_speed_frac = params["shelter_speed_frac"]
-            _prey_energy_density = params["prey_energy_density"]
-            _fp_min = params.get("fish_pred_min", 0.99)
-            _tp_min = params.get("terr_pred_min", 0.99)
+            _pf_drift_conc = np.full(n_batch, params["drift_conc"])
+            _pf_search_prod = np.full(n_batch, params["search_prod"])
+            _pf_shelter_speed_frac = np.full(n_batch, params["shelter_speed_frac"])
+            _pf_prey_ED = np.full(n_batch, params["prey_energy_density"])
+            _pf_fp_min = np.full(n_batch, params.get("fish_pred_min", 0.99))
+            _pf_tp_min = np.full(n_batch, params.get("terr_pred_min", 0.99))
 
-        # === PER-FISH INVARIANTS (computed ONCE, not 3579x) ===
-        _fl = float(trout_state.length[i])
-        _fw = float(trout_state.weight[i])
-        _fc = float(trout_state.condition[i])
-        _frep = int(trout_state.superind_rep[i])
+        # Cell arrays — ensure correct dtype for Numba
+        _hiding_arr = _c_ahiding.astype(np.float64) if _c_ahiding.dtype != np.float64 else _c_ahiding
+        _pisciv_safe = _pisciv_densities if _pisciv_densities is not None else np.zeros_like(_c_depth)
 
-        # Step-level invariants that now vary per fish (species/reach dependent)
-        _cmax_temp = cmax_temp_function(_temperature, _cmax_table_x, _cmax_table_y)
-        _s_high_temp = _surv_ht(_temperature, _mort_ht_T1, _mort_ht_T9)
-        _fp_temp_logistic = evaluate_logistic(_temperature, _fp_T1, _fp_T9)
-        if _turbidity <= _turbid_threshold:
-            _turbid_func = 1.0
-        else:
-            _turbid_func = _turbid_min + (1.0 - _turbid_min) * math.exp(
-                _turbid_exp * (_turbidity - _turbid_threshold)
-            )
-        _cap_mid = (_capture_R1 + _capture_R9) * 0.5
-        _cap_slope = (
-            _LN81 / (_capture_R9 - _capture_R1) if _capture_R9 != _capture_R1 else 0.0
+        # --- Call batch Numba function ---
+        b_cells, b_acts, b_growths, b_shelter = _numba_batch(
+            _f_lengths,
+            _f_weights,
+            _f_conditions,
+            _f_prev_cons,
+            _f_reps,
+            offsets,
+            cand_flat,
+            _c_depth,
+            _c_vel,
+            _c_light,
+            _c_dist_esc,
+            _c_adrift,
+            _c_asearch,
+            _c_ashelter,
+            _hiding_arr,
+            _pisciv_safe,
+            _pf_turbidity,
+            _pf_temperature,
+            _pf_drift_conc,
+            _pf_search_prod,
+            _pf_search_area,
+            _pf_shelter_speed_frac,
+            _pf_cmax_A,
+            _pf_cmax_B,
+            _pf_cmax_temp,
+            _pf_react_dist_A,
+            _pf_react_dist_B,
+            _pf_turbid_threshold,
+            _pf_turbid_min,
+            _pf_turbid_exp,
+            _pf_light_threshold,
+            _pf_light_min,
+            _pf_light_exp,
+            _pf_capture_R1,
+            _pf_capture_R9,
+            _pf_max_speed_A,
+            _pf_max_speed_B,
+            _pf_max_swim_tt,
+            _pf_resp_A,
+            _pf_resp_B,
+            _pf_resp_D,
+            _pf_resp_tt,
+            _pf_prey_ED,
+            _pf_fish_ED,
+            _pf_mort_ht_T1,
+            _pf_mort_ht_T9,
+            _pf_mort_cond_S5,
+            _pf_mort_cond_S8,
+            _pf_mort_cond_Kcrit,
+            _pf_fp_min,
+            _pf_fp_L1,
+            _pf_fp_L9,
+            _pf_fp_D1,
+            _pf_fp_D9,
+            _pf_fp_P1,
+            _pf_fp_P9,
+            _pf_fp_I1,
+            _pf_fp_I9,
+            _pf_fp_T1,
+            _pf_fp_T9,
+            _pf_fp_hf,
+            _pf_tp_min,
+            _pf_tp_L1,
+            _pf_tp_L9,
+            _pf_tp_D1,
+            _pf_tp_D9,
+            _pf_tp_V1,
+            _pf_tp_V9,
+            _pf_tp_I1,
+            _pf_tp_I9,
+            _pf_tp_H1,
+            _pf_tp_H9,
+            _pf_tp_hf,
+            _pf_strand_surv,
+            float(_step_length),
         )
 
-        _cmax_wt = _cmax_A * _fw**_cmax_B
-        _cstepmax = c_stepmax(_cmax_wt, _cmax_temp, prev_cons, _step_length)
-        _max_spd = (_max_speed_A * _fl + _max_speed_B) * _max_swim_temp_term
-        _resp_std = _resp_A * _fw**_resp_B
-        _detect_base = _react_dist_A + _react_dist_B * _fl
-        _s_cond = _surv_cond(_fc, _mort_cond_S5, _mort_cond_S8, _mort_cond_Kcrit)
-        _fp_L_term = evaluate_logistic(_fl, _fp_L1, _fp_L9)
-        _tp_L_term = evaluate_logistic(_fl, _tp_L1, _tp_L9)
+        # --- Unpack batch results back to trout_state ---
+        for fi_local in range(n_batch):
+            i = normal_idx[fi_local]
+            bc = int(b_cells[fi_local])
+            ba = int(b_acts[fi_local])
+            best_cells[i] = bc
+            best_activities[i] = ba
+            trout_state.cell_idx[i] = bc
+            trout_state.activity[i] = ba
+            trout_state.reach_idx[i] = cs.reach_idx[bc]
+            trout_state.last_growth_rate[i] = b_growths[fi_local]
+            if b_shelter[fi_local]:
+                trout_state.in_shelter[i] = True
 
-        # Evaluate fitness for all candidate cells x activities
-        # Fish sees CURRENT resource levels (depleted by larger fish above)
-        if _HAS_NUMBA_FITNESS:
-            # --- Numba fast path: compiled inner loop ---
-            candidates_i32 = (
-                candidates
-                if candidates.dtype == np.int32
-                else candidates.astype(np.int32)
+    elif len(normal_fish) > 0:
+        # === FALLBACK: per-fish Python/Numba scalar path ===
+        for i in normal_fish:
+            candidates = candidate_lists[i]
+
+            best_fitness = -np.inf
+            best_c = candidates[0]
+            best_a = 2
+            best_growth = 0.0
+
+            prev_cons = float(np.sum(trout_state.consumption_memory[i]))
+
+            _fish_reach = int(trout_state.reach_idx[i])
+            _fish_species = int(trout_state.species_idx[i])
+
+            _fr = min(_fish_reach, len(_temperature_arr) - 1)
+            _fs = (
+                min(_fish_species, _max_swim_tt_arr.shape[1] - 1)
+                if _max_swim_tt_arr.ndim >= 2
+                else 0
             )
-            _hiding_arr = (
-                _c_ahiding.astype(np.float64)
-                if _c_ahiding.dtype != np.float64
-                else _c_ahiding
-            )
-            _pisciv_safe = (
-                _pisciv_densities
-                if _pisciv_densities is not None
-                else np.zeros_like(_c_depth)
-            )
-            best_c, best_a, _, best_growth = _numba_eval(
-                _fl,
-                _fw,
-                _fc,
-                prev_cons,
-                _frep,
-                _c_depth,
-                _c_vel,
-                _c_light,
-                _c_dist_esc,
-                _c_adrift,
-                _c_asearch,
-                _c_ashelter,
-                _hiding_arr,
-                _pisciv_safe,
-                candidates_i32,
-                _turbidity,
-                _temperature,
-                _drift_conc,
-                _search_prod,
-                _search_area,
-                _shelter_speed_frac,
-                _step_length,
-                _cmax_A,
-                _cmax_B,
-                _cmax_table_x,
-                _cmax_table_y,
-                _react_dist_A,
-                _react_dist_B,
-                _turbid_threshold,
-                _turbid_min,
-                _turbid_exp,
-                _light_threshold,
-                _light_min,
-                _light_exp,
-                _capture_R1,
-                _capture_R9,
-                _max_speed_A,
-                _max_speed_B,
-                _max_swim_temp_term,
-                _resp_A,
-                _resp_B,
-                _resp_D,
-                _resp_temp_term,
-                _prey_energy_density,
-                _fish_energy_density,
-                _mort_ht_T1,
-                _mort_ht_T9,
-                _mort_cond_S5,
-                _mort_cond_S8,
-                _mort_cond_Kcrit,
-                _fp_min,
-                _fp_L1,
-                _fp_L9,
-                _fp_D1,
-                _fp_D9,
-                _fp_P1,
-                _fp_P9,
-                _fp_I1,
-                _fp_I9,
-                _fp_T1,
-                _fp_T9,
-                _fp_hiding_factor,
-                _tp_min,
-                _tp_L1,
-                _tp_L9,
-                _tp_D1,
-                _tp_D9,
-                _tp_V1,
-                _tp_V9,
-                _tp_I1,
-                _tp_I9,
-                _tp_H1,
-                _tp_H9,
-                _tp_hiding_factor,
-                _mort_strand_dry,
-            )
-        else:
-            # --- Python fallback: inline inner loop ---
-            for c_idx in candidates:
-                # --- Read cell values ONCE per cell ---
-                cd = float(_c_depth[c_idx])
-                cv = float(_c_vel[c_idx])
-                cl = float(_c_light[c_idx])
-                c_adrift_val = float(_c_adrift[c_idx])
-                c_asearch_val = float(_c_asearch[c_idx])
-                c_ashelter_val = float(_c_ashelter[c_idx])
-                c_ahiding_val = int(_c_ahiding[c_idx])
-                c_dist_esc_val = float(_c_dist_esc[c_idx])
-                _pisciv_d = (
-                    float(_pisciv_densities[c_idx])
-                    if _pisciv_densities is not None
-                    else 0.0
+            _fr_r = min(_fish_reach, _max_swim_tt_arr.shape[0] - 1)
+
+            _temperature = float(_temperature_arr[_fr])
+            _turbidity = float(_turbidity_arr[_fr])
+            _max_swim_temp_term = float(_max_swim_tt_arr[_fr_r, _fs])
+            _resp_temp_term = float(_resp_tt_arr[_fr_r, _fs])
+
+            if _sp is not None:
+                _cmax_A = float(_spa_cmax_A[_fish_species])
+                _cmax_B = float(_spa_cmax_B[_fish_species])
+                _react_dist_A = float(_spa_react_dist_A[_fish_species])
+                _react_dist_B = float(_spa_react_dist_B[_fish_species])
+                _turbid_threshold = float(_spa_turbid_threshold[_fish_species])
+                _turbid_min = float(_spa_turbid_min[_fish_species])
+                _turbid_exp = float(_spa_turbid_exp[_fish_species])
+                _light_threshold = float(_spa_light_threshold[_fish_species])
+                _light_min = float(_spa_light_min[_fish_species])
+                _light_exp = float(_spa_light_exp[_fish_species])
+                _capture_R1 = float(_spa_capture_R1[_fish_species])
+                _capture_R9 = float(_spa_capture_R9[_fish_species])
+                _max_speed_A = float(_spa_max_speed_A[_fish_species])
+                _max_speed_B = float(_spa_max_speed_B[_fish_species])
+                _resp_A = float(_spa_resp_A[_fish_species])
+                _resp_B = float(_spa_resp_B[_fish_species])
+                _resp_D = float(_spa_resp_D[_fish_species])
+                _search_area = float(_spa_search_area[_fish_species])
+                _fish_energy_density = float(_spa_energy_density[_fish_species])
+                _mort_ht_T1 = float(_spa_mort_ht_T1[_fish_species])
+                _mort_ht_T9 = float(_spa_mort_ht_T9[_fish_species])
+                _mort_cond_S5 = float(_spa_mort_cond_S5[_fish_species])
+                _mort_cond_S8 = float(_spa_mort_cond_S8[_fish_species])
+                _mort_cond_Kcrit = float(_spa_mort_cond_Kcrit[_fish_species])
+                _mort_strand_dry = float(_spa_mort_strand_dry[_fish_species])
+                _fp_L1 = float(_spa_fp_L1[_fish_species])
+                _fp_L9 = float(_spa_fp_L9[_fish_species])
+                _fp_D1 = float(_spa_fp_D1[_fish_species])
+                _fp_D9 = float(_spa_fp_D9[_fish_species])
+                _fp_P1 = float(_spa_fp_P1[_fish_species])
+                _fp_P9 = float(_spa_fp_P9[_fish_species])
+                _fp_I1 = float(_spa_fp_I1[_fish_species])
+                _fp_I9 = float(_spa_fp_I9[_fish_species])
+                _fp_T1 = float(_spa_fp_T1[_fish_species])
+                _fp_T9 = float(_spa_fp_T9[_fish_species])
+                _fp_hiding_factor = float(_spa_fp_hiding_factor[_fish_species])
+                _tp_L1 = float(_spa_tp_L1[_fish_species])
+                _tp_L9 = float(_spa_tp_L9[_fish_species])
+                _tp_D1 = float(_spa_tp_D1[_fish_species])
+                _tp_D9 = float(_spa_tp_D9[_fish_species])
+                _tp_V1 = float(_spa_tp_V1[_fish_species])
+                _tp_V9 = float(_spa_tp_V9[_fish_species])
+                _tp_I1 = float(_spa_tp_I1[_fish_species])
+                _tp_I9 = float(_spa_tp_I9[_fish_species])
+                _tp_H1 = float(_spa_tp_H1[_fish_species])
+                _tp_H9 = float(_spa_tp_H9[_fish_species])
+                _tp_hiding_factor = float(_spa_tp_hiding_factor[_fish_species])
+                _cmax_table_x = np.asarray(
+                    _sp_cmax_table_x[_fish_species], dtype=np.float64
                 )
+                _cmax_table_y = np.asarray(
+                    _sp_cmax_table_y[_fish_species], dtype=np.float64
+                )
+            else:
+                _cmax_A = params["cmax_A"]
+                _cmax_B = params["cmax_B"]
+                _react_dist_A = params["react_dist_A"]
+                _react_dist_B = params["react_dist_B"]
+                _turbid_threshold = params["turbid_threshold"]
+                _turbid_min = params["turbid_min"]
+                _turbid_exp = params["turbid_exp"]
+                _light_threshold = params["light_threshold"]
+                _light_min = params["light_min"]
+                _light_exp = params["light_exp"]
+                _capture_R1 = params["capture_R1"]
+                _capture_R9 = params["capture_R9"]
+                _max_speed_A = params["max_speed_A"]
+                _max_speed_B = params["max_speed_B"]
+                _resp_A = params["resp_A"]
+                _resp_B = params["resp_B"]
+                _resp_D = params["resp_D"]
+                _search_area = params["search_area"]
+                _fish_energy_density = params["fish_energy_density"]
+                _mort_ht_T1 = params.get("mort_high_temp_T1", 28.0)
+                _mort_ht_T9 = params.get("mort_high_temp_T9", 24.0)
+                _mort_cond_S5 = params.get("mort_condition_S_at_K5", 0.8)
+                _mort_cond_S8 = params.get("mort_condition_S_at_K8", 0.992)
+                _mort_cond_Kcrit = params.get("mort_condition_K_crit", 0.8)
+                _mort_strand_dry = params.get("mort_strand_survival_when_dry", 0.5)
+                _fp_L1 = params.get("fish_pred_L1", 10.0)
+                _fp_L9 = params.get("fish_pred_L9", 3.0)
+                _fp_D1 = params.get("fish_pred_D1", 50.0)
+                _fp_D9 = params.get("fish_pred_D9", 10.0)
+                _fp_P1 = params.get("fish_pred_P1", 0.5)
+                _fp_P9 = params.get("fish_pred_P9", 0.1)
+                _fp_I1 = params.get("fish_pred_I1", 200.0)
+                _fp_I9 = params.get("fish_pred_I9", 50.0)
+                _fp_T1 = params.get("fish_pred_T1", 25.0)
+                _fp_T9 = params.get("fish_pred_T9", 15.0)
+                _fp_hiding_factor = params.get("fish_pred_hiding_factor", 0.5)
+                _tp_L1 = params.get("terr_pred_L1", 15.0)
+                _tp_L9 = params.get("terr_pred_L9", 5.0)
+                _tp_D1 = params.get("terr_pred_D1", 50.0)
+                _tp_D9 = params.get("terr_pred_D9", 10.0)
+                _tp_V1 = params.get("terr_pred_V1", 50.0)
+                _tp_V9 = params.get("terr_pred_V9", 10.0)
+                _tp_I1 = params.get("terr_pred_I1", 200.0)
+                _tp_I9 = params.get("terr_pred_I9", 50.0)
+                _tp_H1 = params.get("terr_pred_H1", 50.0)
+                _tp_H9 = params.get("terr_pred_H9", 10.0)
+                _tp_hiding_factor = params.get("terr_pred_hiding_factor", 0.5)
+                _cmax_table_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
+                _cmax_table_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
 
-                # Stranding survival (same for all activities at this cell)
-                s_str = _surv_str(cd, _mort_strand_dry)
+            if _rp is not None:
+                _drift_conc = float(
+                    _rpa_drift_conc[min(_fish_reach, len(_rpa_drift_conc) - 1)]
+                )
+                _search_prod = float(
+                    _rpa_search_prod[min(_fish_reach, len(_rpa_search_prod) - 1)]
+                )
+                _shelter_speed_frac = float(
+                    _rpa_shelter_speed_frac[
+                        min(_fish_reach, len(_rpa_shelter_speed_frac) - 1)
+                    ]
+                )
+                _prey_energy_density = float(
+                    _rpa_prey_energy_density[
+                        min(_fish_reach, len(_rpa_prey_energy_density) - 1)
+                    ]
+                )
+                _fp_min = float(
+                    _rpa_fish_pred_min[min(_fish_reach, len(_rpa_fish_pred_min) - 1)]
+                )
+                _tp_min = float(
+                    _rpa_terr_pred_min[min(_fish_reach, len(_rpa_terr_pred_min) - 1)]
+                )
+            else:
+                _drift_conc = params["drift_conc"]
+                _search_prod = params["search_prod"]
+                _shelter_speed_frac = params["shelter_speed_frac"]
+                _prey_energy_density = params["prey_energy_density"]
+                _fp_min = params.get("fish_pred_min", 0.99)
+                _tp_min = params.get("terr_pred_min", 0.99)
 
-                # Light function for drift intake (per-cell, same for all activities)
-                if cl >= _light_threshold:
-                    _light_func = 1.0
-                else:
-                    _light_func = _light_min + (1.0 - _light_min) * math.exp(
-                        _light_exp * (_light_threshold - cl)
+            _fl = float(trout_state.length[i])
+            _fw = float(trout_state.weight[i])
+            _fc = float(trout_state.condition[i])
+            _frep = int(trout_state.superind_rep[i])
+
+            _cmax_temp = cmax_temp_function(_temperature, _cmax_table_x, _cmax_table_y)
+            _s_high_temp = _surv_ht(_temperature, _mort_ht_T1, _mort_ht_T9)
+            _fp_temp_logistic = evaluate_logistic(_temperature, _fp_T1, _fp_T9)
+            if _turbidity <= _turbid_threshold:
+                _turbid_func = 1.0
+            else:
+                _turbid_func = _turbid_min + (1.0 - _turbid_min) * math.exp(
+                    _turbid_exp * (_turbidity - _turbid_threshold)
+                )
+            _cap_mid = (_capture_R1 + _capture_R9) * 0.5
+            _cap_slope = (
+                _LN81 / (_capture_R9 - _capture_R1) if _capture_R9 != _capture_R1 else 0.0
+            )
+
+            _cmax_wt = _cmax_A * _fw**_cmax_B
+            _cstepmax = c_stepmax(_cmax_wt, _cmax_temp, prev_cons, _step_length)
+            _max_spd = (_max_speed_A * _fl + _max_speed_B) * _max_swim_temp_term
+            _resp_std = _resp_A * _fw**_resp_B
+            _detect_base = _react_dist_A + _react_dist_B * _fl
+            _s_cond = _surv_cond(_fc, _mort_cond_S5, _mort_cond_S8, _mort_cond_Kcrit)
+            _fp_L_term = evaluate_logistic(_fl, _fp_L1, _fp_L9)
+            _tp_L_term = evaluate_logistic(_fl, _tp_L1, _tp_L9)
+
+            if _HAS_NUMBA_FITNESS:
+                candidates_i32 = (
+                    candidates
+                    if candidates.dtype == np.int32
+                    else candidates.astype(np.int32)
+                )
+                _hiding_arr = (
+                    _c_ahiding.astype(np.float64)
+                    if _c_ahiding.dtype != np.float64
+                    else _c_ahiding
+                )
+                _pisciv_safe = (
+                    _pisciv_densities
+                    if _pisciv_densities is not None
+                    else np.zeros_like(_c_depth)
+                )
+                best_c, best_a, _, best_growth = _numba_eval(
+                    _fl,
+                    _fw,
+                    _fc,
+                    prev_cons,
+                    _frep,
+                    _c_depth,
+                    _c_vel,
+                    _c_light,
+                    _c_dist_esc,
+                    _c_adrift,
+                    _c_asearch,
+                    _c_ashelter,
+                    _hiding_arr,
+                    _pisciv_safe,
+                    candidates_i32,
+                    _turbidity,
+                    _temperature,
+                    _drift_conc,
+                    _search_prod,
+                    _search_area,
+                    _shelter_speed_frac,
+                    _step_length,
+                    _cmax_A,
+                    _cmax_B,
+                    _cmax_table_x,
+                    _cmax_table_y,
+                    _react_dist_A,
+                    _react_dist_B,
+                    _turbid_threshold,
+                    _turbid_min,
+                    _turbid_exp,
+                    _light_threshold,
+                    _light_min,
+                    _light_exp,
+                    _capture_R1,
+                    _capture_R9,
+                    _max_speed_A,
+                    _max_speed_B,
+                    _max_swim_temp_term,
+                    _resp_A,
+                    _resp_B,
+                    _resp_D,
+                    _resp_temp_term,
+                    _prey_energy_density,
+                    _fish_energy_density,
+                    _mort_ht_T1,
+                    _mort_ht_T9,
+                    _mort_cond_S5,
+                    _mort_cond_S8,
+                    _mort_cond_Kcrit,
+                    _fp_min,
+                    _fp_L1,
+                    _fp_L9,
+                    _fp_D1,
+                    _fp_D9,
+                    _fp_P1,
+                    _fp_P9,
+                    _fp_I1,
+                    _fp_I9,
+                    _fp_T1,
+                    _fp_T9,
+                    _fp_hiding_factor,
+                    _tp_min,
+                    _tp_L1,
+                    _tp_L9,
+                    _tp_D1,
+                    _tp_D9,
+                    _tp_V1,
+                    _tp_V9,
+                    _tp_I1,
+                    _tp_I9,
+                    _tp_H1,
+                    _tp_H9,
+                    _tp_hiding_factor,
+                    _mort_strand_dry,
+                )
+            else:
+                for c_idx in candidates:
+                    cd = float(_c_depth[c_idx])
+                    cv = float(_c_vel[c_idx])
+                    cl = float(_c_light[c_idx])
+                    c_adrift_val = float(_c_adrift[c_idx])
+                    c_asearch_val = float(_c_asearch[c_idx])
+                    c_ashelter_val = float(_c_ashelter[c_idx])
+                    c_ahiding_val = int(_c_ahiding[c_idx])
+                    c_dist_esc_val = float(_c_dist_esc[c_idx])
+                    _pisciv_d = (
+                        float(_pisciv_densities[c_idx])
+                        if _pisciv_densities is not None
+                        else 0.0
                     )
 
-                # Adjusted detection distance for this cell
-                _detect_adj = _detect_base * _turbid_func * _light_func
+                    s_str = _surv_str(cd, _mort_strand_dry)
 
-                # Fish predation survival terms that vary by cell (not activity)
-                _fp_D_term = evaluate_logistic(cd, _fp_D1, _fp_D9)
-                _fp_P_term = evaluate_logistic(_pisciv_d, _fp_P1, _fp_P9)
-                _fp_I_term = evaluate_logistic(cl, _fp_I1, _fp_I9)
+                    if cl >= _light_threshold:
+                        _light_func = 1.0
+                    else:
+                        _light_func = _light_min + (1.0 - _light_min) * math.exp(
+                            _light_exp * (_light_threshold - cl)
+                        )
 
-                # Terrestrial predation terms that vary by cell (not activity)
-                _tp_D_term = evaluate_logistic(cd, _tp_D1, _tp_D9)
-                _tp_V_term = evaluate_logistic(cv, _tp_V1, _tp_V9)
-                _tp_I_term = evaluate_logistic(cl, _tp_I1, _tp_I9)
-                _tp_H_term = evaluate_logistic(c_dist_esc_val, _tp_H1, _tp_H9)
+                    _detect_adj = _detect_base * _turbid_func * _light_func
 
-                for a_idx in range(3):
-                    # --- Activity 0: drift, 1: search, 2: hide ---
+                    _fp_D_term = evaluate_logistic(cd, _fp_D1, _fp_D9)
+                    _fp_P_term = evaluate_logistic(_pisciv_d, _fp_P1, _fp_P9)
+                    _fp_I_term = evaluate_logistic(cl, _fp_I1, _fp_I9)
 
-                    # Speed check
-                    if a_idx == 1:  # search
-                        if cv > _max_spd:
-                            continue
-                    elif a_idx == 0:  # drift
-                        if c_ashelter_val > _fl**2:
-                            d_speed = cv * _shelter_speed_frac
-                        else:
-                            d_speed = cv
-                        if d_speed > _max_spd:
-                            continue
+                    _tp_D_term = evaluate_logistic(cd, _tp_D1, _tp_D9)
+                    _tp_V_term = evaluate_logistic(cv, _tp_V1, _tp_V9)
+                    _tp_I_term = evaluate_logistic(cl, _tp_I1, _tp_I9)
+                    _tp_H_term = evaluate_logistic(c_dist_esc_val, _tp_H1, _tp_H9)
 
-                    # --- Compute growth rate inline ---
-                    if a_idx == 0:  # drift
-                        if cd <= 0 or cv <= 0:
-                            intake = 0.0
-                        else:
-                            capture_height = min(cd, _detect_adj)
-                            capture_area = 2.0 * _detect_adj * capture_height
-                            vel_ratio = cv / _max_spd if _max_spd > 0 else 999.0
-                            if _capture_R9 == _capture_R1:
-                                capture_success = 0.5
+                    for a_idx in range(3):
+                        if a_idx == 1:
+                            if cv > _max_spd:
+                                continue
+                        elif a_idx == 0:
+                            if c_ashelter_val > _fl**2:
+                                d_speed = cv * _shelter_speed_frac
                             else:
-                                cap_arg = -_cap_slope * (vel_ratio - _cap_mid)
-                                if cap_arg > 500.0:
-                                    cap_arg = 500.0
-                                elif cap_arg < -500.0:
-                                    cap_arg = -500.0
-                                capture_success = 1.0 / (1.0 + math.exp(cap_arg))
-                            gross = (
-                                capture_area
-                                * _drift_conc
-                                * cv
-                                * 86400.0
-                                * capture_success
-                            )
-                            gross = min(gross, _cstepmax)
-                            intake = min(gross, c_adrift_val / max(_frep, 1))
-                        # Swim speed for respiration
-                        if c_ashelter_val > _fl**2:
-                            swim_spd = cv * _shelter_speed_frac
-                        else:
-                            swim_spd = cv
-                        # Respiration
-                        if _max_spd <= 0:
-                            resp_val = 999999.0
-                        else:
-                            ratio = swim_spd / _max_spd
-                            if ratio > 20:
-                                resp_val = 999999.0
-                            else:
-                                resp_val = (
-                                    _resp_std
-                                    * _resp_temp_term
-                                    * math.exp(_resp_D * ratio**2)
-                                )
-                        net_energy = intake * _prey_energy_density - resp_val
+                                d_speed = cv
+                            if d_speed > _max_spd:
+                                continue
 
-                    elif a_idx == 1:  # search
-                        if _max_spd <= 0:
-                            intake = 0.0
-                        else:
-                            vel_ratio_s = (_max_spd - cv) / _max_spd
-                            if vel_ratio_s < 0:
+                        if a_idx == 0:
+                            if cd <= 0 or cv <= 0:
                                 intake = 0.0
                             else:
-                                gross = _search_prod * _search_area * vel_ratio_s
+                                capture_height = min(cd, _detect_adj)
+                                capture_area = 2.0 * _detect_adj * capture_height
+                                vel_ratio = cv / _max_spd if _max_spd > 0 else 999.0
+                                if _capture_R9 == _capture_R1:
+                                    capture_success = 0.5
+                                else:
+                                    cap_arg = -_cap_slope * (vel_ratio - _cap_mid)
+                                    if cap_arg > 500.0:
+                                        cap_arg = 500.0
+                                    elif cap_arg < -500.0:
+                                        cap_arg = -500.0
+                                    capture_success = 1.0 / (1.0 + math.exp(cap_arg))
+                                gross = (
+                                    capture_area
+                                    * _drift_conc
+                                    * cv
+                                    * 86400.0
+                                    * capture_success
+                                )
                                 gross = min(gross, _cstepmax)
-                                intake = min(gross, c_asearch_val / max(_frep, 1))
-                        # Respiration (swim speed = velocity for search)
-                        if _max_spd <= 0:
-                            resp_val = 999999.0
-                        else:
-                            ratio = cv / _max_spd
-                            if ratio > 20:
+                                intake = min(gross, c_adrift_val / max(_frep, 1))
+                            if c_ashelter_val > _fl**2:
+                                swim_spd = cv * _shelter_speed_frac
+                            else:
+                                swim_spd = cv
+                            if _max_spd <= 0:
                                 resp_val = 999999.0
                             else:
-                                resp_val = (
-                                    _resp_std
-                                    * _resp_temp_term
-                                    * math.exp(_resp_D * ratio**2)
-                                )
-                        net_energy = intake * _prey_energy_density - resp_val
+                                ratio = swim_spd / _max_spd
+                                if ratio > 20:
+                                    resp_val = 999999.0
+                                else:
+                                    resp_val = (
+                                        _resp_std
+                                        * _resp_temp_term
+                                        * math.exp(_resp_D * ratio**2)
+                                    )
+                            net_energy = intake * _prey_energy_density - resp_val
 
-                    else:  # hide (a_idx == 2)
-                        # Respiration at rest (swim_speed = 0)
-                        if _max_spd <= 0:
-                            resp_val = 999999.0
+                        elif a_idx == 1:
+                            if _max_spd <= 0:
+                                intake = 0.0
+                            else:
+                                vel_ratio_s = (_max_spd - cv) / _max_spd
+                                if vel_ratio_s < 0:
+                                    intake = 0.0
+                                else:
+                                    gross = _search_prod * _search_area * vel_ratio_s
+                                    gross = min(gross, _cstepmax)
+                                    intake = min(gross, c_asearch_val / max(_frep, 1))
+                            if _max_spd <= 0:
+                                resp_val = 999999.0
+                            else:
+                                ratio = cv / _max_spd
+                                if ratio > 20:
+                                    resp_val = 999999.0
+                                else:
+                                    resp_val = (
+                                        _resp_std
+                                        * _resp_temp_term
+                                        * math.exp(_resp_D * ratio**2)
+                                    )
+                            net_energy = intake * _prey_energy_density - resp_val
+
                         else:
-                            # ratio = 0, exp(0) = 1
-                            resp_val = _resp_std * _resp_temp_term
-                        net_energy = -resp_val
+                            if _max_spd <= 0:
+                                resp_val = 999999.0
+                            else:
+                                resp_val = _resp_std * _resp_temp_term
+                            net_energy = -resp_val
 
-                    growth = net_energy / _fish_energy_density
+                        growth = net_energy / _fish_energy_density
 
-                    # --- Compute survival inline ---
-                    # Fish predation: activity-dependent hiding factor
-                    if a_idx == 2:  # hide
-                        fp_hide = _fp_hiding_factor
-                    else:
-                        fp_hide = 0.0
-                    fp_rel_risk = (
-                        (1.0 - _fp_L_term)
-                        * (1.0 - _fp_D_term)
-                        * (1.0 - _fp_P_term)
-                        * (1.0 - _fp_I_term)
-                        * (1.0 - _fp_temp_logistic)
-                        * (1.0 - fp_hide)
-                    )
-                    s_fp = _fp_min + (1.0 - _fp_min) * (1.0 - fp_rel_risk)
+                        if a_idx == 2:
+                            fp_hide = _fp_hiding_factor
+                        else:
+                            fp_hide = 0.0
+                        fp_rel_risk = (
+                            (1.0 - _fp_L_term)
+                            * (1.0 - _fp_D_term)
+                            * (1.0 - _fp_P_term)
+                            * (1.0 - _fp_I_term)
+                            * (1.0 - _fp_temp_logistic)
+                            * (1.0 - fp_hide)
+                        )
+                        s_fp = _fp_min + (1.0 - _fp_min) * (1.0 - fp_rel_risk)
 
-                    # Terrestrial predation
-                    if (
-                        a_idx == 2 and c_ahiding_val >= _frep
-                    ):  # hide with available spots
-                        tp_hide = _tp_hiding_factor
-                    else:
-                        tp_hide = 0.0
-                    tp_rel_risk = (
-                        (1.0 - _tp_L_term)
-                        * (1.0 - _tp_D_term)
-                        * (1.0 - _tp_V_term)
-                        * (1.0 - _tp_I_term)
-                        * (1.0 - _tp_H_term)
-                        * (1.0 - tp_hide)
-                    )
-                    s_tp = _tp_min + (1.0 - _tp_min) * (1.0 - tp_rel_risk)
+                        if (
+                            a_idx == 2 and c_ahiding_val >= _frep
+                        ):
+                            tp_hide = _tp_hiding_factor
+                        else:
+                            tp_hide = 0.0
+                        tp_rel_risk = (
+                            (1.0 - _tp_L_term)
+                            * (1.0 - _tp_D_term)
+                            * (1.0 - _tp_V_term)
+                            * (1.0 - _tp_I_term)
+                            * (1.0 - _tp_H_term)
+                            * (1.0 - tp_hide)
+                        )
+                        s_tp = _tp_min + (1.0 - _tp_min) * (1.0 - tp_rel_risk)
 
-                    non_starve = _s_high_temp * s_str * s_fp * s_tp
-                    f = growth * _step_length * non_starve * _s_cond
+                        non_starve = _s_high_temp * s_str * s_fp * s_tp
+                        f = growth * _step_length * non_starve * _s_cond
 
-                    if f > best_fitness:
-                        best_fitness = f
-                        best_c = c_idx
-                        best_a = a_idx
-                        best_growth = growth
+                        if f > best_fitness:
+                            best_fitness = f
+                            best_c = c_idx
+                            best_a = a_idx
+                            best_growth = growth
 
-        # Assign fish to chosen cell + activity
-        best_cells[i] = best_c
-        best_activities[i] = best_a
-        trout_state.cell_idx[i] = best_c
-        trout_state.activity[i] = best_a
-        # Update reach_idx from the chosen cell's reach
-        trout_state.reach_idx[i] = cs.reach_idx[best_c]
+            best_cells[i] = best_c
+            best_activities[i] = best_a
+            trout_state.cell_idx[i] = best_c
+            trout_state.activity[i] = best_a
+            trout_state.reach_idx[i] = cs.reach_idx[best_c]
+            trout_state.last_growth_rate[i] = best_growth
 
-        # Store raw growth rate (tracked in inner loop, no second call needed)
-        trout_state.last_growth_rate[i] = best_growth
-
-        # --- DEPLETE IMMEDIATELY (before next fish evaluates) ---
-        # This matches NetLogo: large fish deplete first, small fish see reduced resources.
-        # Re-use pre-computed per-fish invariants (_fl, _fw, _frep, _cmax_wt, etc.)
-        if best_a == 0:  # drift
-            intake = drift_intake(
-                _fl,
-                _c_depth[best_c],
-                _c_vel[best_c],
-                _c_light[best_c],
-                _turbidity,
-                _drift_conc,
-                _max_spd,
-                _cstepmax,
-                _c_adrift[best_c],
-                _frep,
-                _react_dist_A,
-                _react_dist_B,
-                _turbid_threshold,
-                _turbid_min,
-                _turbid_exp,
-                _light_threshold,
-                _light_min,
-                _light_exp,
-                _capture_R1,
-                _capture_R9,
-            )
-            _c_adrift[best_c] -= min(intake * _frep, _c_adrift[best_c])
-            # Deplete velocity shelter
-            shelter_needed = _fl**2 * _frep
-            if _c_ashelter[best_c] >= shelter_needed:
-                _c_ashelter[best_c] -= shelter_needed
-                trout_state.in_shelter[i] = True
-        elif best_a == 1:  # search
-            intake = search_intake(
-                _c_vel[best_c],
-                _max_spd,
-                _search_prod,
-                _search_area,
-                _cstepmax,
-                _c_asearch[best_c],
-                _frep,
-            )
-            _c_asearch[best_c] -= min(intake * _frep, _c_asearch[best_c])
-        elif best_a == 2:  # hide
-            if _c_ahiding[best_c] >= _frep:
-                _c_ahiding[best_c] -= _frep
+            if best_a == 0:
+                intake = drift_intake(
+                    _fl,
+                    _c_depth[best_c],
+                    _c_vel[best_c],
+                    _c_light[best_c],
+                    _turbidity,
+                    _drift_conc,
+                    _max_spd,
+                    _cstepmax,
+                    _c_adrift[best_c],
+                    _frep,
+                    _react_dist_A,
+                    _react_dist_B,
+                    _turbid_threshold,
+                    _turbid_min,
+                    _turbid_exp,
+                    _light_threshold,
+                    _light_min,
+                    _light_exp,
+                    _capture_R1,
+                    _capture_R9,
+                )
+                _c_adrift[best_c] -= min(intake * _frep, _c_adrift[best_c])
+                shelter_needed = _fl**2 * _frep
+                if _c_ashelter[best_c] >= shelter_needed:
+                    _c_ashelter[best_c] -= shelter_needed
+                    trout_state.in_shelter[i] = True
+            elif best_a == 1:
+                intake = search_intake(
+                    _c_vel[best_c],
+                    _max_spd,
+                    _search_prod,
+                    _search_area,
+                    _cstepmax,
+                    _c_asearch[best_c],
+                    _frep,
+                )
+                _c_asearch[best_c] -= min(intake * _frep, _c_asearch[best_c])
+            elif best_a == 2:
+                if _c_ahiding[best_c] >= _frep:
+                    _c_ahiding[best_c] -= _frep

@@ -507,18 +507,12 @@ class TestNumbaParity:
         ts.length[:] = [4.0, 6.0, 8.0, 10.0, 12.0, 15.0, 9.0, 20.0]
         return ts, fs
 
-    @pytest.mark.skipif(
-        not hasattr(
-            sys.modules.get("instream.modules.behavior", None) or object,
-            "_HAS_NUMBA_SPATIAL",
-        )
-        or True,
-        reason="Parity test needs both backends",
-    )
     def test_numba_returns_same_candidates(self, setup):
         """When numba is available, candidates should match Python fallback."""
+        from instream.modules.behavior import _HAS_NUMBA_SPATIAL
+        if not _HAS_NUMBA_SPATIAL:
+            pytest.skip("Numba spatial backend not available")
         ts, fs = setup
-        # This test runs regardless — build_candidate_lists auto-selects backend
         result = build_candidate_lists(
             ts, fs, move_radius_max=40.0, move_radius_L1=3.0, move_radius_L9=15.0
         )
