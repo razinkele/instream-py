@@ -234,6 +234,11 @@ class _ModelInitMixin:
                 dtype=np.float64,
             )
 
+        # Pre-compute geometry candidate cache for fast habitat selection
+        _max_move = float(np.max(self._sp_arrays["move_radius_max"]))
+        if _max_move > 0:
+            self.fem_space.precompute_geometry_candidates(_max_move)
+
         # Per-species cmax temp tables (list of arrays, indexed by species_idx)
         self._sp_cmax_table_x = [
             self.species_params[s].cmax_temp_table_x for s in self.species_order

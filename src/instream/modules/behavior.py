@@ -20,6 +20,7 @@ except ImportError:
 try:
     from instream.backends.numba_backend.spatial import (
         build_all_candidates_numba as _numba_build_cands,
+        build_candidates_from_cache_numba as _numba_build_cands_cached,
     )
 
     _HAS_NUMBA_SPATIAL = True
@@ -164,7 +165,30 @@ def build_candidate_lists(
     n_fish = trout_state.alive.shape[0]
     wet_mask = fem_space.cell_state.depth > 0
 
-    if _HAS_NUMBA_SPATIAL:
+    if _HAS_NUMBA_SPATIAL and hasattr(fem_space, '_geo_offsets'):
+        assert move_radius_max <= fem_space._geo_radius_max, (
+            f"move_radius_max={move_radius_max} exceeds cache "
+            f"radius {fem_space._geo_radius_max}; rebuild cache."
+        )
+        offsets, flat = _numba_build_cands_cached(
+            trout_state.alive,
+            trout_state.cell_idx,
+            trout_state.length,
+            wet_mask,
+            fem_space._geo_offsets,
+            fem_space._geo_flat,
+            fem_space._geo_dist2,
+            fem_space.neighbor_indices,
+            move_radius_max,
+            move_radius_L1,
+            move_radius_L9,
+        )
+        candidate_lists = [None] * n_fish
+        for i in range(n_fish):
+            if offsets[i + 1] > offsets[i]:
+                candidate_lists[i] = flat[int(offsets[i]) : int(offsets[i + 1])]
+        return candidate_lists
+    elif _HAS_NUMBA_SPATIAL:
         offsets, flat = _numba_build_cands(
             trout_state.alive,
             trout_state.cell_idx,
@@ -181,7 +205,6 @@ def build_candidate_lists(
         for i in range(n_fish):
             if offsets[i + 1] > offsets[i]:
                 candidate_lists[i] = flat[int(offsets[i]) : int(offsets[i + 1])]
-        # Attach raw CSR for batch path to reuse (avoids repacking)
         return candidate_lists
 
     # Python fallback: KD-tree queries + vectorized wet filter

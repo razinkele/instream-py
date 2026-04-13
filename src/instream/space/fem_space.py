@@ -51,6 +51,42 @@ class FEMSpace:
         """Return neighbor indices for given cell (padded with -1)."""
         return self.neighbor_indices[cell_idx]
 
+    def precompute_geometry_candidates(self, move_radius_max: float) -> None:
+        """Pre-compute geometry-based candidate cells for each cell (CSR format).
+
+        For each cell, stores all cells within *move_radius_max* plus direct
+        neighbors.  Result is stored as CSR arrays (_geo_offsets, _geo_flat,
+        _geo_dist2) for O(1) lookup at runtime.
+        """
+        cs = self.cell_state
+        n = self.num_cells
+        parts = []
+        dist2_parts = []
+        offsets = np.zeros(n + 1, dtype=np.int64)
+
+        for c in range(n):
+            indices = self._tree.query_ball_point(
+                [cs.centroid_x[c], cs.centroid_y[c]], move_radius_max
+            )
+            ni = self.neighbor_indices[c]
+            neighbors = ni[ni >= 0]
+            all_cands = np.unique(np.concatenate([
+                np.array(indices, dtype=np.int32),
+                neighbors.astype(np.int32),
+                np.array([c], dtype=np.int32),
+            ]))
+            dx = cs.centroid_x[all_cands] - cs.centroid_x[c]
+            dy = cs.centroid_y[all_cands] - cs.centroid_y[c]
+            d2 = dx * dx + dy * dy
+            parts.append(all_cands)
+            dist2_parts.append(d2)
+            offsets[c + 1] = offsets[c] + len(all_cands)
+
+        self._geo_offsets = offsets
+        self._geo_flat = np.concatenate(parts).astype(np.int32)
+        self._geo_dist2 = np.concatenate(dist2_parts).astype(np.float64)
+        self._geo_radius_max = move_radius_max
+
     def update_hydraulics(self, flow: float, backend) -> None:
         """Update depth and velocity for all cells at given flow."""
         depths, velocities = backend.update_hydraulics(

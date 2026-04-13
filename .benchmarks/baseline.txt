@@ -8,53 +8,53 @@ Numba: 0.65.0
 JAX: not available
 
 === Hydraulic Interpolation ===
-    100 cells (numpy):      0.01 ms  (min=0.01, max=0.03)
-    500 cells (numpy):      0.01 ms  (min=0.01, max=0.03)
-   1373 cells (numpy):      0.02 ms  (min=0.02, max=0.14)
-    100 cells (numba):      0.11 ms  (min=0.05, max=1.17)
-    500 cells (numba):      0.16 ms  (min=0.11, max=0.40)
-   1373 cells (numba):      0.31 ms  (min=0.20, max=1.21)
+    100 cells (numpy):      0.01 ms  (min=0.01, max=0.09)
+    500 cells (numpy):      0.01 ms  (min=0.01, max=0.02)
+   1373 cells (numpy):      0.02 ms  (min=0.02, max=0.17)
+    100 cells (numba):      0.07 ms  (min=0.03, max=0.14)
+    500 cells (numba):      0.09 ms  (min=0.07, max=0.16)
+   1373 cells (numba):      0.15 ms  (min=0.13, max=0.31)
 
 === Light Computation ===
-  compute_light (1 call):       0.02 ms  (min=0.02, max=0.15)
-  cell_light   100 cells:      0.01 ms  (min=0.01, max=0.16)
-  cell_light   500 cells:      0.01 ms  (min=0.01, max=0.46)
-  cell_light  1373 cells:      0.02 ms  (min=0.02, max=0.43)
+  compute_light (1 call):       0.01 ms  (min=0.01, max=0.02)
+  cell_light   100 cells:      0.00 ms  (min=0.00, max=0.01)
+  cell_light   500 cells:      0.01 ms  (min=0.01, max=0.01)
+  cell_light  1373 cells:      0.01 ms  (min=0.01, max=0.02)
 
 === Logistic Function ===
-  scalar (1 call):              0.00 ms  (min=0.00, max=0.02)
-  array 1000 vals:              0.02 ms  (min=0.02, max=1.69)
-  backend 1000 vals:            0.03 ms  (min=0.03, max=0.31)
+  scalar (1 call):              0.00 ms  (min=0.00, max=0.01)
+  array 1000 vals:              0.01 ms  (min=0.01, max=0.20)
+  backend 1000 vals:            0.02 ms  (min=0.02, max=0.17)
 
 === Growth Functions (scalar) ===
-  cmax_temp_function:           0.00 ms  (min=0.00, max=0.02)
+  cmax_temp_function:           0.00 ms  (min=0.00, max=0.00)
   drift_intake:                 0.00 ms  (min=0.00, max=0.01)
-  search_intake:                0.00 ms  (min=0.00, max=0.01)
-  respiration:                  0.00 ms  (min=0.00, max=1.57)
-  growth_rate_for (full):       0.00 ms  (min=0.00, max=0.06)
+  search_intake:                0.00 ms  (min=0.00, max=0.00)
+  respiration:                  0.00 ms  (min=0.00, max=0.07)
+  growth_rate_for (full):       0.00 ms  (min=0.00, max=0.01)
 
 === Survival Functions (scalar) ===
-  high_temperature:             0.00 ms  (min=0.00, max=0.01)
-  condition:                    0.00 ms  (min=0.00, max=0.28)
-  fish_predation:               0.00 ms  (min=0.00, max=0.02)
-  terrestrial_predation:        0.00 ms  (min=0.00, max=0.01)
+  high_temperature:             0.00 ms  (min=0.00, max=0.10)
+  condition:                    0.00 ms  (min=0.00, max=0.01)
+  fish_predation:               0.00 ms  (min=0.00, max=0.04)
+  terrestrial_predation:        0.00 ms  (min=0.00, max=0.30)
 
 === Full Model (Example A) ===
-  Initialization:                692 ms
+  Initialization:                766 ms
   Fish alive:               360
   Cells:                    1373
-  Step 1 (cold):                 139 ms
+  Step 1 (cold):                 153 ms
   Step 2-10 median:               27 ms
-  Step 2-10 min:                  19 ms
-  Step 2-10 max:                  29 ms
+  Step 2-10 min:                  25 ms
+  Step 2-10 max:                  30 ms
   Fish alive after 10 days: 323
 
-  Steps 11-40 median:             27 ms
+  Steps 11-40 median:             28 ms
   Steps 11-40 min:                20 ms
-  Steps 11-40 max:                32 ms
+  Steps 11-40 max:                59 ms
   Fish alive after 40 days: 234
 
-  Estimated full run (912d):     24.6 s  (0.4 min)
+  Estimated full run (912d):     25.1 s  (0.4 min)
 
 ======================================================================
 === Python vs NetLogo Performance Comparison ===
@@ -92,32 +92,32 @@ Notes:
 
 
 === Step Profile (cProfile top-20) ===
-         3716 function calls (3686 primitive calls) in 0.028 seconds
+         3717 function calls (3687 primitive calls) in 0.024 seconds
 
    Ordered by: cumulative time
    List reduced from 315 to 20 due to restriction <20>
 
    ncalls  tottime  percall  cumtime  percall filename:lineno(function)
-        1    0.000    0.000    0.028    0.028 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\model.py:202(_wrapped_step)
-        1    0.000    0.000    0.028    0.028 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\model.py:206(_advance_time)
-        1    0.000    0.000    0.028    0.028 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\time\events.py:125(execute)
-        1    0.000    0.000    0.028    0.028 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\time\events.py:278(_execute_and_reschedule)
-        1    0.000    0.000    0.027    0.027 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\model.py:236(_do_step)
-        1    0.001    0.001    0.027    0.027 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model.py:33(step)
-        1    0.013    0.013    0.020    0.020 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\modules\behavior.py:442(select_habitat_and_activity)
-        1    0.007    0.007    0.007    0.007 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\modules\behavior.py:153(build_candidate_lists)
-        1    0.000    0.000    0.003    0.003 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_environment.py:13(_update_environment)
-        1    0.001    0.001    0.003    0.003 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_day_boundary.py:29(_do_day_boundary)
-        1    0.000    0.000    0.002    0.002 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\io\time_manager.py:183(get_conditions)
-      3/1    0.000    0.000    0.002    0.002 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\indexes\base.py:3827(get_indexer)
-        1    0.001    0.001    0.001    0.001 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_day_boundary.py:160(_apply_accumulated_growth)
+        1    0.000    0.000    0.024    0.024 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\model.py:202(_wrapped_step)
+        1    0.000    0.000    0.024    0.024 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\model.py:206(_advance_time)
+        1    0.000    0.000    0.024    0.024 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\time\events.py:125(execute)
+        1    0.000    0.000    0.024    0.024 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\time\events.py:278(_execute_and_reschedule)
+        1    0.000    0.000    0.024    0.024 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\mesa\model.py:236(_do_step)
+        1    0.001    0.001    0.024    0.024 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model.py:33(step)
+        1    0.011    0.011    0.015    0.015 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\modules\behavior.py:461(select_habitat_and_activity)
+        1    0.002    0.002    0.005    0.005 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_day_boundary.py:29(_do_day_boundary)
+        1    0.004    0.004    0.004    0.004 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\modules\behavior.py:154(build_candidate_lists)
+        1    0.002    0.002    0.002    0.002 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_day_boundary.py:160(_apply_accumulated_growth)
+        1    0.000    0.000    0.002    0.002 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_environment.py:13(_update_environment)
+        1    0.000    0.000    0.002    0.002 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_environment.py:155(_do_survival)
+        1    0.000    0.000    0.001    0.001 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\io\time_manager.py:183(get_conditions)
+      3/1    0.000    0.000    0.001    0.001 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\indexes\base.py:3827(get_indexer)
+        1    0.000    0.000    0.001    0.001 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\backends\numpy_backend\__init__.py:243(survival)
+       11    0.001    0.000    0.001    0.000 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\backends\numpy_backend\__init__.py:453(evaluate_logistic)
       3/1    0.000    0.000    0.001    0.001 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\indexes\base.py:3962(_get_indexer)
         1    0.000    0.000    0.001    0.001 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\indexes\base.py:4134(_get_nearest_indexer)
-        1    0.000    0.000    0.001    0.001 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_environment.py:155(_do_survival)
-        3    0.000    0.000    0.001    0.000 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\indexes\datetimelike.py:416(_maybe_cast_listlike_indexer)
-        4    0.000    0.000    0.001    0.000 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\arrays\datetimelike.py:675(_validate_listlike)
-        1    0.000    0.000    0.000    0.000 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\backends\numpy_backend\__init__.py:243(survival)
-        2    0.000    0.000    0.000    0.000 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\indexes\base.py:4177(_difference_compat)
+        3    0.000    0.000    0.000    0.000 C:\Users\arturas.baziukas\micromamba\envs\shiny\Lib\site-packages\pandas\core\indexes\datetimelike.py:416(_maybe_cast_listlike_indexer)
+        1    0.000    0.000    0.000    0.000 C:\Users\arturas.baziukas\OneDrive - ku.lt\HORIZON_EUROPE\inSTREAM\instream-py\src\instream\model_day_boundary.py:503(_do_migration)
 
 
 
