@@ -662,10 +662,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         _f_weights = trout_state.weight[normal_idx].astype(np.float64)
         _f_conditions = trout_state.condition[normal_idx].astype(np.float64)
         _f_reps = trout_state.superind_rep[normal_idx].astype(np.int64)
-        _f_prev_cons = np.array(
-            [float(np.sum(trout_state.consumption_memory[i])) for i in normal_idx],
-            dtype=np.float64,
-        )
+        _f_prev_cons = trout_state.consumption_memory[normal_idx].sum(axis=1).astype(np.float64)
 
         _f_species = trout_state.species_idx[normal_idx].astype(np.int64)
         _f_reach = trout_state.reach_idx[normal_idx].astype(np.int64)
@@ -733,18 +730,15 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             _pf_tp_H1 = _spa_tp_H1[_f_species]
             _pf_tp_H9 = _spa_tp_H9[_f_species]
             _pf_tp_hf = _spa_tp_hiding_factor[_f_species]
-            # Pre-compute cmax_temp per fish (avoids variable-length tables in Numba)
-            _pf_cmax_temp = np.array(
-                [
-                    cmax_temp_function(
-                        _pf_temperature[fi],
-                        np.asarray(_sp_cmax_table_x[_f_species[fi]], dtype=np.float64),
-                        np.asarray(_sp_cmax_table_y[_f_species[fi]], dtype=np.float64),
-                    )
-                    for fi in range(n_batch)
-                ],
-                dtype=np.float64,
-            )
+            # Pre-compute cmax_temp per fish — vectorized per species group
+            _pf_cmax_temp = np.empty(n_batch, dtype=np.float64)
+            for si in range(len(_sp_cmax_table_x)):
+                mask = _f_species == si
+                if not np.any(mask):
+                    continue
+                tx = np.asarray(_sp_cmax_table_x[si], dtype=np.float64)
+                ty = np.asarray(_sp_cmax_table_y[si], dtype=np.float64)
+                _pf_cmax_temp[mask] = np.interp(_pf_temperature[mask], tx, ty)
         else:
             # Backward compat: broadcast scalar params to per-fish arrays
             _pf_cmax_A = np.full(n_batch, params["cmax_A"])
@@ -796,19 +790,17 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             _pf_tp_hf = np.full(n_batch, params.get("terr_pred_hiding_factor", 0.5))
             _ct_x = np.asarray(params["cmax_temp_table_x"], dtype=np.float64)
             _ct_y = np.asarray(params["cmax_temp_table_y"], dtype=np.float64)
-            _pf_cmax_temp = np.array(
-                [cmax_temp_function(_pf_temperature[fi], _ct_x, _ct_y) for fi in range(n_batch)],
-                dtype=np.float64,
-            )
+            _pf_cmax_temp = np.interp(_pf_temperature, _ct_x, _ct_y)
 
         # Per-fish reach params
         if _rp is not None:
-            _pf_drift_conc = np.array([float(_rpa_drift_conc[min(int(_f_reach[fi]), len(_rpa_drift_conc) - 1)]) for fi in range(n_batch)], dtype=np.float64)
-            _pf_search_prod = np.array([float(_rpa_search_prod[min(int(_f_reach[fi]), len(_rpa_search_prod) - 1)]) for fi in range(n_batch)], dtype=np.float64)
-            _pf_shelter_speed_frac = np.array([float(_rpa_shelter_speed_frac[min(int(_f_reach[fi]), len(_rpa_shelter_speed_frac) - 1)]) for fi in range(n_batch)], dtype=np.float64)
-            _pf_prey_ED = np.array([float(_rpa_prey_energy_density[min(int(_f_reach[fi]), len(_rpa_prey_energy_density) - 1)]) for fi in range(n_batch)], dtype=np.float64)
-            _pf_fp_min = np.array([float(_rpa_fish_pred_min[min(int(_f_reach[fi]), len(_rpa_fish_pred_min) - 1)]) for fi in range(n_batch)], dtype=np.float64)
-            _pf_tp_min = np.array([float(_rpa_terr_pred_min[min(int(_f_reach[fi]), len(_rpa_terr_pred_min) - 1)]) for fi in range(n_batch)], dtype=np.float64)
+            _f_reach_clamped = np.minimum(_f_reach, np.int64(len(_rpa_drift_conc) - 1))
+            _pf_drift_conc = _rpa_drift_conc[_f_reach_clamped].astype(np.float64)
+            _pf_search_prod = _rpa_search_prod[_f_reach_clamped].astype(np.float64)
+            _pf_shelter_speed_frac = _rpa_shelter_speed_frac[_f_reach_clamped].astype(np.float64)
+            _pf_prey_ED = _rpa_prey_energy_density[_f_reach_clamped].astype(np.float64)
+            _pf_fp_min = _rpa_fish_pred_min[_f_reach_clamped].astype(np.float64)
+            _pf_tp_min = _rpa_terr_pred_min[_f_reach_clamped].astype(np.float64)
         else:
             _pf_drift_conc = np.full(n_batch, params["drift_conc"])
             _pf_search_prod = np.full(n_batch, params["search_prod"])
