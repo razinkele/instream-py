@@ -1018,3 +1018,33 @@ class TestNatalParrGrowthRate:
             f"(final weight={weight:.2f}g). Expected >= 8.0 cm. "
             f"Real Atlantic salmon parr grow 4-8 cm/year at 10°C."
         )
+
+
+def test_apply_growth_vectorized_matches_scalar():
+    """Vectorized apply_growth must match scalar version exactly."""
+    from instream.modules.growth import apply_growth, apply_growth_vectorized
+
+    rng = np.random.default_rng(42)
+    n = 100
+    weights = rng.uniform(5, 50, n)
+    lengths = rng.uniform(5, 30, n)
+    conditions = rng.uniform(0.5, 1.2, n)
+    growths = rng.uniform(-2, 5, n)
+    wA = np.full(n, 0.000247)
+    wB = np.full(n, 2.9)
+
+    # Scalar reference
+    ref_w, ref_l, ref_k = np.empty(n), np.empty(n), np.empty(n)
+    for i in range(n):
+        ref_w[i], ref_l[i], ref_k[i] = apply_growth(
+            weights[i], lengths[i], conditions[i], growths[i], wA[i], wB[i]
+        )
+
+    # Vectorized
+    vec_w, vec_l, vec_k = apply_growth_vectorized(
+        weights, lengths, conditions, growths, wA, wB
+    )
+
+    np.testing.assert_allclose(vec_w, ref_w, rtol=1e-12)
+    np.testing.assert_allclose(vec_l, ref_l, rtol=1e-12)
+    np.testing.assert_allclose(vec_k, ref_k, rtol=1e-12)

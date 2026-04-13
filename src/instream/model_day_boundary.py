@@ -108,7 +108,7 @@ class _ModelDayBoundaryMixin:
                     continue
                 cells_spec = event.get("cells", "all")
                 if cells_spec == "all":
-                    cells = np.where(cs.reach_idx == r_idx)[0]
+                    cells = self._reach_cells[r_idx]
                 else:
                     cells = np.array(cells_spec, dtype=np.int32)
 
@@ -182,37 +182,25 @@ class _ModelDayBoundaryMixin:
         wA = _wA[sp_idx]
         wB = _wB[sp_idx]
 
-        for j in range(len(valid_alive)):
-            i = valid_alive[j]
-            growth_j = float(valid_growth[j])
-            # v0.21.0/v0.22.0 — Option B (fasting energy pool, minimal form).
-            # Both RETURNING_ADULT and KELT are fasting in freshwater:
-            #   * RETURNING_ADULT: 4-7 month hold pre-spawn.
-            #   * KELT: short post-spawn out-migration to river mouth.
-            # Neither feeds, so net negative bioenergetics (respiration
-            # without consumption) would drain weight and degrade condition
-            # below the min_kelt_condition gate. Clamp negative growth to
-            # zero for both — the simplest possible fasting model:
-            # "marine reserves are infinite for the freshwater duration."
-            # A finite-reserve depletion model with Baltic-specific
-            # metabolic parameters is deferred to v0.23.0+.
-            lh_i = int(self.trout_state.life_history[i])
-            if (
-                lh_i == int(LifeStage.RETURNING_ADULT)
-                or lh_i == int(LifeStage.KELT)
-            ) and growth_j < 0.0:
-                growth_j = 0.0
-            new_w, new_l, new_k = apply_growth(
-                float(self.trout_state.weight[i]),
-                float(self.trout_state.length[i]),
-                float(self.trout_state.condition[i]),
-                growth_j,
-                float(wA[j]),
-                float(wB[j]),
-            )
-            self.trout_state.weight[i] = new_w
-            self.trout_state.length[i] = new_l
-            self.trout_state.condition[i] = new_k
+        # Fasting clamp for RETURNING_ADULT and KELT
+        lh = self.trout_state.life_history[valid_alive]
+        _RA = int(LifeStage.RETURNING_ADULT)
+        _KELT = int(LifeStage.KELT)
+        fasting_mask = ((lh == _RA) | (lh == _KELT)) & (valid_growth < 0.0)
+        valid_growth = np.where(fasting_mask, 0.0, valid_growth)
+
+        from instream.modules.growth import apply_growth_vectorized
+        new_w, new_l, new_k = apply_growth_vectorized(
+            self.trout_state.weight[valid_alive].astype(np.float64),
+            self.trout_state.length[valid_alive].astype(np.float64),
+            self.trout_state.condition[valid_alive].astype(np.float64),
+            valid_growth.astype(np.float64),
+            wA.astype(np.float64),
+            wB.astype(np.float64),
+        )
+        self.trout_state.weight[valid_alive] = new_w
+        self.trout_state.length[valid_alive] = new_l
+        self.trout_state.condition[valid_alive] = new_k
 
     def _do_spawning(self, step_length):
         """Check spawning readiness and create redds (per-fish species/reach)."""
@@ -761,7 +749,7 @@ class _ModelDayBoundaryMixin:
             frac_female = rec["frac_female"]
             sex = (self.rng.random(n_add) < frac_female).astype(np.int32)
 
-            reach_cells = np.where(self.fem_space.cell_state.reach_idx == r_idx)[0]
+            reach_cells = self._reach_cells.get(r_idx, np.arange(n_cells))
             if len(reach_cells) == 0:
                 reach_cells = np.arange(n_cells)
             cell_choices = self.rng.choice(reach_cells, size=n_add)

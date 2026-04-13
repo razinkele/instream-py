@@ -122,6 +122,13 @@ class _ModelInitMixin:
 
         self.fem_space = FEMSpace(cell_state, self.mesh.neighbor_indices)
 
+        # Pre-compute per-reach cell indices (reach_idx never changes)
+        self._reach_cells = {}
+        for r_idx in range(len(self.reach_order)):
+            self._reach_cells[r_idx] = np.where(
+                self.fem_space.cell_state.reach_idx == r_idx
+            )[0]
+
         # Load time-series data per reach
         time_series = {}
         for rname, rcfg in self.config.reaches.items():

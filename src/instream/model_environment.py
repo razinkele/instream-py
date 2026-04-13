@@ -48,7 +48,7 @@ class _ModelEnvironmentMixin:
         for r_idx, rname in enumerate(self.reach_order):
             flow = float(self.reach_state.flow[r_idx])
             hdata = self._reach_hydraulic_data[rname]
-            cells = np.where(cs.reach_idx == r_idx)[0]
+            cells = self._reach_cells[r_idx]
             if len(cells) == 0:
                 continue
             n_rows = len(hdata["depth_values"])
@@ -90,7 +90,7 @@ class _ModelEnvironmentMixin:
         # Cell light: ALWAYS recompute (depth changes with flow)
         for r_idx, rname in enumerate(self.reach_order):
             reach_cfg = self.config.reaches[rname]
-            cells = np.where(cs.reach_idx == r_idx)[0]
+            cells = self._reach_cells[r_idx]
             if len(cells) == 0:
                 continue
             cell_light = self.backend.compute_cell_light(
@@ -107,7 +107,7 @@ class _ModelEnvironmentMixin:
         if substep == 0:
             for r_idx, rname in enumerate(self.reach_order):
                 rp = self.reach_params[rname]
-                cells = np.where(cs.reach_idx == r_idx)[0]
+                cells = self._reach_cells[r_idx]
                 cs.available_drift[cells] = (
                     rp.drift_conc * cs.area[cells] * cs.depth[cells]
                 )
@@ -122,7 +122,7 @@ class _ModelEnvironmentMixin:
                 rp = self.reach_params[rname]
                 if rp.drift_regen_distance <= 0:
                     continue
-                cells = np.where(cs.reach_idx == r_idx)[0]
+                cells = self._reach_cells[r_idx]
                 if len(cells) == 0:
                     continue
                 alive = self.trout_state.alive_indices()
@@ -146,7 +146,7 @@ class _ModelEnvironmentMixin:
             self._replenish_resources_partial(step_length)
             # Vel shelter and hiding places reset fully each sub-step
             for r_idx, rname in enumerate(self.reach_order):
-                cells = np.where(cs.reach_idx == r_idx)[0]
+                cells = self._reach_cells[r_idx]
                 cs.available_vel_shelter[cells] = (
                     cs.frac_vel_shelter[cells] * cs.area[cells]
                 )
@@ -278,7 +278,7 @@ class _ModelEnvironmentMixin:
         cs = self.fem_space.cell_state
         for r_idx, rname in enumerate(self.reach_order):
             rp = self.reach_params[rname]
-            cells = np.where(cs.reach_idx == r_idx)[0]
+            cells = self._reach_cells[r_idx]
             if len(cells) == 0:
                 continue
             # Partial replenishment

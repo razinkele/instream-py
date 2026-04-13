@@ -4,6 +4,8 @@ import bisect
 import dataclasses as _dc
 import math
 
+import numpy as np
+
 
 _LN81 = math.log(81.0)
 
@@ -323,6 +325,23 @@ def apply_growth(weight, length, condition, growth, weight_A, weight_B):
         new_length = length  # length never decreases
         new_condition = new_weight / healthy_weight if healthy_weight > 0 else 0.0
     return new_weight, new_length, new_condition
+
+
+def apply_growth_vectorized(weights, lengths, conditions, growths, weight_A, weight_B):
+    """Vectorized version of apply_growth over arrays of fish.
+
+    Returns (new_weights, new_lengths, new_conditions) as numpy arrays.
+    """
+    new_weights = np.maximum(weights + growths, 0.0)
+    healthy_weights = weight_A * lengths ** weight_B
+    grew = new_weights > healthy_weights
+    new_lengths = np.where(grew, (new_weights / weight_A) ** (1.0 / weight_B), lengths)
+    new_conditions = np.where(
+        grew,
+        1.0,
+        np.where(healthy_weights > 0, new_weights / healthy_weights, 0.0),
+    )
+    return new_weights, new_lengths, new_conditions
 
 
 _TROUT_FIELDS = None

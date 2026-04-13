@@ -1,5 +1,14 @@
 """Numba compute backend — JIT-compiled, CPU multi-threaded."""
 
+import os
+from pathlib import Path
+
+# Avoid Numba cache corruption from OneDrive sync conflicts
+if "NUMBA_CACHE_DIR" not in os.environ:
+    _cache = Path.home() / ".instream_numba_cache"
+    _cache.mkdir(exist_ok=True)
+    os.environ["NUMBA_CACHE_DIR"] = str(_cache)
+
 import math
 import numpy as np
 import numba
