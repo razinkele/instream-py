@@ -1,0 +1,367 @@
+# Baltic Atlantic Salmon — Tributaries → Meandering Delta → Lagoon → Coastal Sea
+#
+# Large mock example: ~800 cells, ~5000 initial fish, 465 adults/year
+#   MainStem      (120 cells) — main river channel
+#   WestTrib      (60 cells)  — cold headwater, best spawning
+#   EastTrib      (75 cells)  — warmer lowland, good rearing
+#   CentralDelta  (54 cells)  — main delta outflow, gentle meander
+#   WestDelta     (45 cells)  — reed-choked western channel, strong meander
+#   EastDelta     (48 cells)  — warm shallow eastern channel
+#   Lagoon        (96 cells)  — brackish Curonian-lagoon-like
+#   CoastalSea    (300 cells, 400m×400m) — 48 km² nearshore Baltic marine
+#
+# Marine domain: Estuary → Coastal → Baltic Proper (abstract zones)
+# Full lifecycle: egg → fry → parr → smolt → ocean → return → spawn
+#
+# Synthetic data — NOT REAL. Run scripts/generate_baltic_example.py to regenerate.
+
+simulation:
+  start_date: "2011-04-01"
+  end_date: "2036-03-31"
+  output_frequency: 1
+  output_units: "days"
+  seed: 42
+  census_days:
+    - "06-15"
+    - "09-30"
+  census_years_to_skip: 0
+  population_file: "BalticExample-InitialPopulations.csv"
+  adult_arrival_file: "BalticExample-AdultArrivals.csv"
+
+performance:
+  backend: "numpy"
+  device: "cpu"
+  trout_capacity: 12000
+  redd_capacity: 3000
+  jit_warmup: false
+
+spatial:
+  backend: "shapefile"
+  mesh_file: "Shapefile/BalticExample.shp"
+  gis_properties:
+    cell_id: "ID_TEXT"
+    reach_name: "REACH_NAME"
+    area: "AREA"
+    dist_escape: "M_TO_ESC"
+    num_hiding_places: "NUM_HIDING"
+    frac_vel_shelter: "FRACVSHL"
+    frac_spawn: "FRACSPWN"
+
+light:
+  latitude: 55.7
+  light_correction: 0.65
+  light_at_night: 0.5
+  twilight_angle: 6.0
+
+species:
+  BalticAtlanticSalmon:
+    is_anadromous: true
+    display_color: "silver"
+    cmax_A: 0.303
+    cmax_B: -0.275
+    cmax_temp_table:
+      0.0: 0.0
+      4.0: 0.3
+      8.0: 0.7
+      13.0: 0.95
+      16.0: 1.0
+      18.0: 0.6
+      19.0: 0.3
+      20.0: 0.0
+    weight_A: 0.0077
+    weight_B: 3.05
+    spawn_start_day: "10-15"
+    spawn_end_day: "11-30"
+    kelt_survival_prob: 0.25
+    min_kelt_condition: 0.5
+    capture_R1: 1.3
+    capture_R9: 0.4
+    emerge_length_min: 3.0
+    emerge_length_mode: 3.5
+    emerge_length_max: 4.0
+    react_dist_A: 4.0
+    react_dist_B: 2.0
+    turbid_threshold: 5.0
+    turbid_min: 0.1
+    turbid_exp: -0.116
+    light_threshold: 20.0
+    light_min: 0.5
+    light_exp: -0.2
+    energy_density: 5900
+    fitness_horizon: 60
+    fitness_length: 15
+    max_speed_A: 2.8
+    max_speed_B: 21.0
+    max_speed_C: -0.0029
+    max_speed_D: 0.084
+    max_speed_E: 0.37
+    migrate_fitness_L1: 4.0
+    migrate_fitness_L9: 10.0
+    move_radius_max: 20000
+    move_radius_L1: 7
+    move_radius_L9: 20
+    pisciv_length: 20
+    resp_A: 36
+    resp_B: 0.783
+    resp_C: 0.0020
+    resp_D: 1.4
+    search_area: 20000
+    spawn_defense_area: 0
+    spawn_egg_viability: 0.8
+    spawn_fecund_mult: 690
+    spawn_fecund_exp: 0.552
+    spawn_suitability_tol: 0.1
+    spawn_max_flow_change: 0.2
+    spawn_max_temp: 14
+    spawn_min_age: -9
+    spawn_min_length: -9
+    spawn_min_cond: -9
+    spawn_min_temp: 5
+    spawn_prob: 0.1
+    spawn_wt_loss_fraction: 0.4
+    mort_high_temp_T1: 28.0
+    mort_high_temp_T9: 24.0
+    mort_strand_survival_when_dry: 0.5
+    mort_condition_S_at_K8: 0.998     # forgiving condition mortality
+    mort_condition_S_at_K5: 0.90      # low-condition fish survive better
+    mort_terr_pred_L1: 6.0
+    mort_terr_pred_L9: 3.0
+    mort_terr_pred_D1: 0.0
+    mort_terr_pred_D9: 200
+    mort_terr_pred_V1: 20
+    mort_terr_pred_V9: 300
+    mort_terr_pred_I1: 50
+    mort_terr_pred_I9: -10
+    mort_terr_pred_H1: 200
+    mort_terr_pred_H9: -50
+    mort_terr_pred_hiding_factor: 0.8
+    mort_fish_pred_L1: 3.0
+    mort_fish_pred_L9: 6.0
+    mort_fish_pred_D1: 35
+    mort_fish_pred_D9: 5
+    mort_fish_pred_I1: 50
+    mort_fish_pred_I9: -50
+    mort_fish_pred_hiding_factor: 0.5
+    mort_fish_pred_P1: 5.0e-06
+    mort_fish_pred_P9: -5.0
+    mort_fish_pred_T1: 6.0
+    mort_fish_pred_T9: 2.0
+    mort_redd_dewater_surv: 0.98
+    mort_redd_hi_temp_T1: 23
+    mort_redd_hi_temp_T9: 17.5
+    mort_redd_lo_temp_T1: -1.0          # Baltic eggs tolerate near-freezing
+    mort_redd_lo_temp_T9: 1.0           # mortality only below ~0°C
+    mort_redd_scour_depth: 5              # Baltic gravels are deep — harder to scour
+    redd_devel_A: 0.00190
+    redd_devel_B: 0.000500
+    redd_devel_C: 0.0000360
+    redd_area: 56000
+    superind_max_rep: 10
+    superind_max_length: 5
+    spawn_depth_table:
+      0: 0.0
+      12: 0.0
+      27: 0.95
+      33.5: 1.0
+      204: 0.0
+    spawn_vel_table:
+      0: 0.0
+      2.3: 0.0
+      3: 0.06
+      54: 1.0
+      61: 1.0
+      192: 0.0
+
+reaches:
+  MainStem:
+    drift_conc: 2.0e-08       # very high invertebrate drift in boreal river
+    search_prod: 2.00e-06
+    shelter_speed_frac: 0.3
+    prey_energy_density: 4500
+    drift_regen_distance: 600
+    shading: 0.80
+    fish_pred_min: 0.985
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0020
+    light_turbid_const: 0.0
+    max_spawn_flow: 20
+    shear_A: 0.013
+    shear_B: 0.40
+    upstream_junction: 1
+    downstream_junction: 2
+    time_series_input_file: "MainStem-TimeSeriesInputs.csv"
+    depth_file: "MainStem-Depths.csv"
+    velocity_file: "MainStem-Vels.csv"
+
+  WestTrib:
+    drift_conc: 2.5e-08       # cold headwater = richest drift
+    search_prod: 2.50e-06
+    shelter_speed_frac: 0.40
+    prey_energy_density: 5000
+    drift_regen_distance: 350
+    shading: 0.92
+    fish_pred_min: 0.990       # few piscivores in headwater
+    terr_pred_min: 0.965
+    light_turbid_coef: 0.0010
+    light_turbid_const: 0.0
+    max_spawn_flow: 8
+    shear_A: 0.020
+    shear_B: 0.48
+    upstream_junction: 3
+    downstream_junction: 1
+    time_series_input_file: "WestTrib-TimeSeriesInputs.csv"
+    depth_file: "WestTrib-Depths.csv"
+    velocity_file: "WestTrib-Vels.csv"
+
+  EastTrib:
+    drift_conc: 1.5e-08
+    search_prod: 1.80e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.72
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 14
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 4
+    downstream_junction: 1
+    time_series_input_file: "EastTrib-TimeSeriesInputs.csv"
+    depth_file: "EastTrib-Depths.csv"
+    velocity_file: "EastTrib-Vels.csv"
+
+  # ── Delta channels (meandering, between rivers and lagoon) ──
+
+  CentralDelta:
+    drift_conc: 8.0e-09        # moderate food — transition zone
+    search_prod: 1.00e-06
+    shelter_speed_frac: 0.15
+    prey_energy_density: 3500
+    drift_regen_distance: 1000
+    shading: 0.55              # partial riparian + reed fringe
+    fish_pred_min: 0.960       # pike and perch in delta
+    terr_pred_min: 0.960
+    light_turbid_coef: 0.0030
+    light_turbid_const: 0.001
+    max_spawn_flow: 15
+    shear_A: 0.008
+    shear_B: 0.30
+    upstream_junction: 2
+    downstream_junction: 5
+    time_series_input_file: "CentralDelta-TimeSeriesInputs.csv"
+    depth_file: "CentralDelta-Depths.csv"
+    velocity_file: "CentralDelta-Vels.csv"
+
+  WestDelta:
+    drift_conc: 3.0e-09
+    search_prod: 5.00e-07
+    shelter_speed_frac: 0.25   # reed beds provide shelter
+    prey_energy_density: 3200
+    drift_regen_distance: 800
+    shading: 0.65              # dense reeds
+    fish_pred_min: 0.950       # pike ambush in reeds
+    terr_pred_min: 0.955       # heron, cormorant
+    light_turbid_coef: 0.0040
+    light_turbid_const: 0.002
+    max_spawn_flow: 8
+    shear_A: 0.005
+    shear_B: 0.25
+    upstream_junction: 1
+    downstream_junction: 5
+    time_series_input_file: "WestDelta-TimeSeriesInputs.csv"
+    depth_file: "WestDelta-Depths.csv"
+    velocity_file: "WestDelta-Vels.csv"
+
+  EastDelta:
+    drift_conc: 3.5e-09
+    search_prod: 5.50e-07
+    shelter_speed_frac: 0.12
+    prey_energy_density: 3000
+    drift_regen_distance: 1200
+    shading: 0.45
+    fish_pred_min: 0.955
+    terr_pred_min: 0.960
+    light_turbid_coef: 0.0035
+    light_turbid_const: 0.0015
+    max_spawn_flow: 10
+    shear_A: 0.006
+    shear_B: 0.28
+    upstream_junction: 1
+    downstream_junction: 5
+    time_series_input_file: "EastDelta-TimeSeriesInputs.csv"
+    depth_file: "EastDelta-Depths.csv"
+    velocity_file: "EastDelta-Vels.csv"
+
+  Lagoon:
+    drift_conc: 1.0e-09        # very low food in open lagoon
+    search_prod: 3.00e-07
+    shelter_speed_frac: 0.03
+    prey_energy_density: 2500
+    drift_regen_distance: 5000
+    shading: 0.10
+    fish_pred_min: 0.800       # severe predation: pike, perch, cormorants
+    terr_pred_min: 0.940
+    light_turbid_coef: 0.005
+    light_turbid_const: 0.003
+    max_spawn_flow: 999
+    shear_A: 0.002
+    shear_B: 0.20
+    upstream_junction: 2
+    downstream_junction: 5
+    time_series_input_file: "Lagoon-TimeSeriesInputs.csv"
+    depth_file: "Lagoon-Depths.csv"
+    velocity_file: "Lagoon-Vels.csv"
+
+  CoastalSea:
+    drift_conc: 0.2e-09       # almost no invertebrate drift at sea
+    search_prod: 1.00e-07
+    shelter_speed_frac: 0.0
+    prey_energy_density: 1500
+    drift_regen_distance: 20000
+    shading: 0.02
+    fish_pred_min: 0.650       # seals, cod, large fish — lethal for juveniles
+    terr_pred_min: 0.995
+    light_turbid_coef: 0.007
+    light_turbid_const: 0.004
+    max_spawn_flow: 999
+    shear_A: 0.001
+    shear_B: 0.15
+    upstream_junction: 5
+    downstream_junction: 6
+    time_series_input_file: "CoastalSea-TimeSeriesInputs.csv"
+    depth_file: "CoastalSea-Depths.csv"
+    velocity_file: "CoastalSea-Vels.csv"
+
+marine:
+  zones:
+    - name: "Estuary"
+      area_km2: 80
+    - name: "Coastal"
+      area_km2: 800
+    - name: "Baltic Proper"
+      area_km2: 8000
+  zone_connectivity:
+    Estuary: ["Coastal"]
+    Coastal: ["Baltic Proper", "Estuary"]
+    Baltic Proper: ["Coastal"]
+  smolt_min_length: 8.0
+  return_min_sea_winters: 2
+  static_driver:
+    Estuary:
+      temperature: [1, 2, 5, 9, 13, 16, 18, 17, 13, 8, 4, 2]
+      salinity: [4, 4, 3, 3, 4, 5, 6, 6, 5, 4, 4, 4]
+      prey_index: [0.1, 0.2, 0.4, 0.6, 0.8, 0.9, 0.8, 0.7, 0.5, 0.3, 0.1, 0.1]
+      predation_risk: [0.1, 0.1, 0.2, 0.4, 0.3, 0.2, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1]
+    Coastal:
+      temperature: [2, 2, 3, 6, 10, 14, 17, 16, 12, 8, 4, 2]
+      salinity: [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+      prey_index: [0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.8, 0.7, 0.5, 0.3, 0.2, 0.2]
+      predation_risk: [0.05, 0.05, 0.1, 0.15, 0.1, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+    Baltic Proper:
+      temperature: [3, 2, 2, 4, 8, 12, 15, 15, 12, 8, 5, 3]
+      salinity: [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+      prey_index: [0.2, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9, 0.8, 0.6, 0.4, 0.2, 0.2]
+      predation_risk: [0.02, 0.02, 0.02, 0.05, 0.05, 0.05, 0.05, 0.05, 0.02, 0.02, 0.02, 0.02]

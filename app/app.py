@@ -50,11 +50,18 @@ _SERVER_DATA = (
 def _resolve_data_dir(config_path):
     """Resolve the data directory for a given config file.
 
-    Local dev: returns inSTREAM/ parent directory (Example-Project-A_1Reach-1Species/ etc.)
-    Server:    returns data/fixtures/example_a/ (matched by config stem)
-    Fallback:  returns config file's parent directory
+    Local dev: tests/fixtures/{config_stem}/ or inSTREAM/ parent directory
+    Server:    data/fixtures/{config_stem}/
+    Fallback:  config file's parent directory
     """
-    # Local: parent inSTREAM/ directory has Example-Project-* folders
+    config_stem = Path(config_path).stem  # e.g. "example_baltic"
+
+    # Local dev: check tests/fixtures/{config_stem}/ first (Baltic, etc.)
+    _local_fixtures = _APP_DIR.parent / "tests" / "fixtures" / config_stem
+    if _local_fixtures.exists():
+        return str(_local_fixtures)
+
+    # Local dev: parent inSTREAM/ directory has Example-Project-* folders
     if (
         _LOCAL_DATA.exists()
         and (_LOCAL_DATA / "Example-Project-A_1Reach-1Species").exists()
@@ -63,7 +70,6 @@ def _resolve_data_dir(config_path):
 
     # Server: map config name to fixtures subdirectory
     if _SERVER_DATA.exists():
-        config_stem = Path(config_path).stem  # e.g. "example_a"
         fixture_dir = _SERVER_DATA / config_stem
         if fixture_dir.exists():
             return str(fixture_dir)
@@ -451,13 +457,19 @@ def server(input, output, session):
                 },
                 "performance": {"backend": input.backend()},
             }
-            # Build reach overrides
+            # Build reach overrides (sliders may not be rendered yet)
+            def _safe(getter, default):
+                try:
+                    return getter()
+                except BaseException:
+                    return default
+
             reach_overrides = {
-                "drift_conc": 10 ** input.drift_conc(),
-                "search_prod": 10 ** input.search_prod(),
-                "shading": input.shading(),
-                "fish_pred_min": input.fish_pred_min(),
-                "terr_pred_min": input.terr_pred_min(),
+                "drift_conc": 10 ** _safe(input.drift_conc, -9),
+                "search_prod": 10 ** _safe(input.search_prod, -6),
+                "shading": _safe(input.shading, 0.8),
+                "fish_pred_min": _safe(input.fish_pred_min, 0.97),
+                "terr_pred_min": _safe(input.terr_pred_min, 0.94),
             }
             # Load config to get reach names
             import yaml
