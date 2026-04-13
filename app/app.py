@@ -72,49 +72,170 @@ def _resolve_data_dir(config_path):
     return str(Path(config_path).parent)
 
 
-app_ui = ui.page_sidebar(
-    ui.sidebar(
-        ui.h4("SalmoPy"),
-        ui.input_select("config_file", "Configuration", choices=CONFIG_CHOICES),
-        ui.input_date("start_date", "Start Date", value="2011-04-01"),
-        ui.input_date("end_date", "End Date", value="2013-09-30"),
-        ui.hr(),
-        ui.h5("Reach Parameters"),
-        ui.input_slider(
-            "drift_conc",
-            "Drift Concentration",
-            min=-12,
-            max=-6,
-            value=-9.5,
-            step=0.5,
-            post=" (10^x)",
+_SIDEBAR_CSS = """
+/* ── SalmoPy sidebar (AQUABC-aligned) ─────────────────────── */
+:root {
+    --sp-sidebar-w: 220px;
+    --sp-sidebar-bg: #1e293b;
+    --sp-accent: #2bb89d;
+    --sp-text: rgba(255,255,255,.7);
+    --sp-text-bright: #fff;
+}
+.sp-sidebar {
+    width: var(--sp-sidebar-w); min-width: var(--sp-sidebar-w);
+    background: var(--sp-sidebar-bg);
+    display: flex; flex-direction: column;
+    overflow-y: auto; height: 100vh; position: fixed; top: 0; left: 0; z-index: 1040;
+    transition: width .25s ease, min-width .25s ease;
+}
+.sp-sidebar.collapsed { width: 56px; min-width: 56px; }
+.sp-sidebar.collapsed .sp-label,
+.sp-sidebar.collapsed .sp-section-title,
+.sp-sidebar.collapsed .sp-config { display: none; }
+.sp-sidebar.collapsed .sp-nav-link { justify-content: center; padding: .7rem 0; }
+.sp-sidebar.collapsed .sp-nav-link i { margin-right: 0; }
+.sp-sidebar.collapsed .sp-header { justify-content: center; padding: .6rem .4rem; }
+
+.sp-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .75rem 1rem; background: rgba(0,0,0,.25);
+    border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.sp-header-title { color: var(--sp-accent); font-weight: 700; font-size: 1.05rem; letter-spacing: .5px; }
+.sp-toggle { background: none; border: none; color: var(--sp-text); font-size: 1.1rem; cursor: pointer; padding: .2rem; }
+.sp-toggle:hover { color: var(--sp-text-bright); }
+
+.sp-section-title {
+    font-size: .65rem; text-transform: uppercase; letter-spacing: 1.5px;
+    color: rgba(255,255,255,.35); padding: .7rem 1rem .3rem; margin: 0;
+}
+.sp-nav { padding: .25rem 0; flex: 1; }
+.sp-nav-link {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .55rem 1rem; color: var(--sp-text);
+    text-decoration: none; border-left: 3px solid transparent;
+    font-size: .85rem; cursor: pointer; transition: all .15s;
+}
+.sp-nav-link:hover { background: rgba(43,184,157,.08); border-left-color: var(--sp-accent); color: var(--sp-text-bright); }
+.sp-nav-link:hover i { color: var(--sp-accent); }
+.sp-nav-link.active {
+    background: rgba(43,184,157,.12); border-left-color: var(--sp-accent);
+    color: var(--sp-text-bright); font-weight: 600;
+}
+.sp-nav-link.active i { color: var(--sp-accent); }
+.sp-nav-link i { font-size: .95rem; width: 1.2rem; text-align: center; }
+
+.sp-config {
+    border-top: 1px solid rgba(255,255,255,.08);
+    padding: .6rem .85rem; font-size: .78rem;
+}
+.sp-config label { color: var(--sp-text); font-size: .72rem; margin-bottom: .15rem; }
+.sp-config select, .sp-config input[type="date"] {
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12);
+    color: var(--sp-text-bright); border-radius: 4px; padding: .25rem .4rem;
+    font-size: .78rem; width: 100%;
+}
+.sp-config select:focus, .sp-config input:focus { border-color: var(--sp-accent); outline: none; }
+.sp-config .btn-run {
+    background: var(--sp-accent); color: #fff; border: none; border-radius: 4px;
+    padding: .4rem; width: 100%; font-size: .8rem; font-weight: 600;
+    cursor: pointer; margin-top: .4rem;
+}
+.sp-config .btn-run:hover { filter: brightness(1.1); }
+.sp-config .sp-progress { color: rgba(255,255,255,.5); font-size: .72rem; margin-top: .3rem; }
+
+.sp-main-offset { margin-left: var(--sp-sidebar-w); transition: margin-left .25s ease; padding: 0; }
+.sp-sidebar.collapsed ~ .sp-main-offset { margin-left: 56px; }
+
+/* Navbar adjustments */
+.navbar { margin-left: var(--sp-sidebar-w); transition: margin-left .25s ease; }
+.sp-sidebar.collapsed ~ div .navbar { margin-left: 56px; }
+"""
+
+_SIDEBAR_JS = """
+document.addEventListener('DOMContentLoaded', function() {
+    const sidebar = document.getElementById('sp-sidebar');
+    const toggle = document.getElementById('sp-toggle');
+    if (toggle && sidebar) {
+        toggle.onclick = function() { sidebar.classList.toggle('collapsed'); };
+    }
+    document.querySelectorAll('.sp-nav-link').forEach(function(link) {
+        link.onclick = function(e) {
+            e.preventDefault();
+            document.querySelectorAll('.sp-nav-link').forEach(function(l) { l.classList.remove('active'); });
+            link.classList.add('active');
+            var tab = link.getAttribute('data-tab');
+            // Update Shiny navset_hidden via its input binding
+            Shiny.setInputValue('main_tabs', tab);
+            // Also click the hidden nav links as fallback
+            var hiddenLinks = document.querySelectorAll('[data-value]');
+            hiddenLinks.forEach(function(hl) {
+                if (hl.getAttribute('data-value') === tab) hl.click();
+            });
+        };
+    });
+});
+"""
+
+_NAV_ITEMS = [
+    ("bi-speedometer2", "Dashboard"),
+    ("bi-arrow-left-right", "Movement"),
+    ("bi-bar-chart-line", "Population"),
+    ("bi-geo-alt", "Spatial"),
+    ("bi-thermometer-half", "Environment"),
+    ("bi-rulers", "Size Distribution"),
+    ("bi-egg", "Redds"),
+    ("bi-question-circle", "Help & Tests"),
+]
+
+_sidebar_nav_links = [
+    ui.tags.a(
+        {"class": f"sp-nav-link {'active' if i == 0 else ''}", "href": "#", "data-tab": label},
+        ui.tags.i(class_=f"bi {icon}"),
+        ui.tags.span(label, class_="sp-label"),
+    )
+    for i, (icon, label) in enumerate(_NAV_ITEMS)
+]
+
+_custom_sidebar = ui.tags.div(
+    {"class": "sp-sidebar", "id": "sp-sidebar"},
+    # Header
+    ui.tags.div(
+        {"class": "sp-header"},
+        ui.tags.span("SalmoPy", class_="sp-header-title"),
+        ui.tags.button(
+            ui.tags.i(class_="bi bi-list"),
+            id="sp-toggle", class_="sp-toggle", type="button",
         ),
-        ui.input_slider(
-            "search_prod",
-            "Search Productivity",
-            min=-8,
-            max=-4,
-            value=-6,
-            step=0.5,
-            post=" (10^x)",
-        ),
-        ui.input_slider("shading", "Shading", min=0, max=1, value=0.85, step=0.05),
-        ui.input_slider(
-            "fish_pred_min", "Fish Pred. Min", min=0.8, max=1, value=0.95, step=0.01
-        ),
-        ui.input_slider(
-            "terr_pred_min", "Terr. Pred. Min", min=0.8, max=1, value=0.92, step=0.01
-        ),
-        ui.hr(),
-        ui.input_select(
-            "backend", "Backend", choices=["numpy", "numba"], selected="numpy"
-        ),
-        ui.input_action_button("run_btn", "Run Simulation", class_="btn-primary w-100"),
-        ui.output_text("progress_text"),
-        width=320,
     ),
-    head_includes(),
+    # Nav section
+    ui.tags.div(
+        {"class": "sp-section-title"}, "Views",
+    ),
+    ui.tags.div({"class": "sp-nav"}, *_sidebar_nav_links),
+    # Config section
+    ui.tags.div(
+        {"class": "sp-section-title"}, "Simulation",
+    ),
+    ui.tags.div(
+        {"class": "sp-config"},
+        ui.tags.label("Configuration"),
+        ui.input_select("config_file", None, choices=CONFIG_CHOICES, width="100%"),
+        ui.tags.label("Start Date"),
+        ui.input_date("start_date", None, value="2011-04-01", width="100%"),
+        ui.tags.label("End Date"),
+        ui.input_date("end_date", None, value="2013-09-30", width="100%"),
+        ui.tags.label("Backend"),
+        ui.input_select("backend", None, choices=["numpy", "numba"], selected="numpy", width="100%"),
+        ui.input_action_button("run_btn", "Run Simulation", class_="btn-run"),
+        ui.tags.div(ui.output_text("progress_text"), class_="sp-progress"),
+    ),
+)
+
+app_ui = ui.page_fluid(
     ui.tags.head(
+        ui.tags.style(_SIDEBAR_CSS),
+        ui.tags.script(_SIDEBAR_JS),
         ui.tags.link(
             rel="stylesheet",
             href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
@@ -125,46 +246,54 @@ app_ui = ui.page_sidebar(
         ),
         ui.tags.script(DASHBOARD_JS),
     ),
-    ui.navset_tab(
-        ui.nav_panel("Dashboard", dashboard_ui("dash")),
-        ui.nav_panel("Movement", movement_ui("movement")),
-        ui.nav_panel("Population", population_ui("pop")),
-        ui.nav_panel("Spatial", spatial_ui("spatial")),
-        ui.nav_panel("Environment", environment_ui("env")),
-        ui.nav_panel("Size Distribution", distribution_ui("dist")),
-        ui.nav_panel("Redds", redd_ui("redds")),
-        ui.nav_panel("Help & Tests", help_ui("help")),
-    ),
-    title=ui.div(
-        ui.span("SalmoPy", style="flex:1;"),
-        ui.popover(
-            ui.span(
-                ui.tags.i(class_="bi bi-info-circle", style="font-size:1.2rem;"),
-                " About",
-                style="cursor:pointer; opacity:0.85;",
+    head_includes(),
+    _custom_sidebar,
+    ui.div(
+        {"class": "sp-main-offset"},
+        # Top bar
+        ui.tags.nav(
+            {"class": "navbar navbar-light bg-light px-3", "style": "border-bottom:1px solid #e2e8f0; margin-left:0;"},
+            ui.tags.span("SalmoPy", class_="navbar-brand mb-0", style="font-weight:700;"),
+            ui.popover(
+                ui.span(
+                    ui.tags.i(class_="bi bi-info-circle", style="font-size:1.1rem;"),
+                    " About",
+                    style="cursor:pointer; opacity:0.7; font-size:.85rem;",
+                ),
+                ui.h4("SalmoPy"),
+                ui.p(
+                    "Individual-based salmonid population model. "
+                    "Python port of ",
+                    ui.a("inSTREAM 7", href="https://www.fs.usda.gov/treesearch/pubs/65856", target="_blank"),
+                    " / inSALMO, extended with marine lifecycle, "
+                    "Baltic Atlantic salmon calibration, and Numba-accelerated habitat selection."
+                ),
+                ui.tags.hr(),
+                ui.p(
+                    ui.strong("Version: "), "0.29.0",
+                    ui.br(),
+                    ui.strong("Engine: "), "instream-py",
+                    ui.br(),
+                    ui.strong("Source: "),
+                    ui.a("github.com/razinkele/instream-py", href="https://github.com/razinkele/instream-py", target="_blank"),
+                    ui.br(),
+                    ui.strong("Funding: "), "Horizon Europe",
+                ),
+                placement="bottom",
             ),
-            ui.h4("SalmoPy"),
-            ui.p(
-                "Individual-based salmonid population model. "
-                "Python port of ",
-                ui.a("inSTREAM 7", href="https://www.fs.usda.gov/treesearch/pubs/65856", target="_blank"),
-                " / inSALMO, extended with marine lifecycle, "
-                "Baltic Atlantic salmon calibration, and Numba-accelerated habitat selection."
-            ),
-            ui.tags.hr(),
-            ui.p(
-                ui.strong("Version: "), "0.29.0",
-                ui.br(),
-                ui.strong("Engine: "), "instream-py",
-                ui.br(),
-                ui.strong("Source: "),
-                ui.a("github.com/razinkele/instream-py", href="https://github.com/razinkele/instream-py", target="_blank"),
-                ui.br(),
-                ui.strong("Funding: "), "Horizon Europe",
-            ),
-            placement="bottom",
         ),
-        style="display:flex; align-items:center; gap:1rem; width:100%;",
+        # Tab content (tabs hidden via CSS — navigation is in sidebar)
+        ui.navset_hidden(
+            ui.nav_panel("Dashboard", dashboard_ui("dash")),
+            ui.nav_panel("Movement", movement_ui("movement")),
+            ui.nav_panel("Population", population_ui("pop")),
+            ui.nav_panel("Spatial", spatial_ui("spatial")),
+            ui.nav_panel("Environment", environment_ui("env")),
+            ui.nav_panel("Size Distribution", distribution_ui("dist")),
+            ui.nav_panel("Redds", redd_ui("redds")),
+            ui.nav_panel("Help & Tests", help_ui("help")),
+            id="main_tabs",
+        ),
     ),
     theme=shinyswatch.theme.flatly,
 )
