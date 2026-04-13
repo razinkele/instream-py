@@ -151,6 +151,16 @@ _SIDEBAR_CSS = """
 
 .sp-main-offset { margin-left: var(--sp-sidebar-w); transition: margin-left .25s ease; padding: 0; }
 body.sp-collapsed .sp-main-offset { margin-left: 56px; }
+
+.sp-gpu-badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    color: #155724; border: 1px solid #b1dfbb; border-radius: 10px;
+    padding: .15rem .55rem; font-size: .7rem; font-weight: 600;
+    letter-spacing: .3px; margin-left: .6rem; vertical-align: middle;
+    white-space: nowrap; cursor: help;
+}
+.sp-gpu-badge i { font-size: .75rem; }
 """
 
 _SIDEBAR_JS = """
@@ -270,24 +280,52 @@ _WEBGL_FALLBACK_JS = """
         '<small style="opacity:.8;">Check the browser console for details. Reloading the page may help.</small>' +
         '</div>';
 
-    // Probe WebGL — test actual rendering, not just context creation
+    // Probe WebGL
     var canvas = document.createElement('canvas');
     canvas.width = 1; canvas.height = 1;
     var gl = null;
+    var renderer = '';
     try {
-        gl = canvas.getContext('webgl2', {failIfMajorPerformanceCaveat: false}) ||
-             canvas.getContext('webgl', {failIfMajorPerformanceCaveat: false});
+        gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
         if (gl) {
             var dbg = gl.getExtension('WEBGL_debug_renderer_info');
-            var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
-            if (/Disabled|SwiftShader|llvmpipe/i.test(renderer)) {
-                window._salmopyGpuReason = 'software';
-                gl = null;
-            }
+            renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
         }
     } catch(e) { gl = null; }
-    window._salmopyWebGL = !!gl;
-    if (!gl && !window._salmopyGpuReason) window._salmopyGpuReason = 'none';
+
+    // Determine reason for failure (if any)
+    if (gl && /SwiftShader|llvmpipe/i.test(renderer)) {
+        window._salmopyGpuReason = 'software';
+        window._salmopyWebGL = false;  // software renderers too slow for maps
+    } else if (gl) {
+        window._salmopyGpuReason = null;
+        window._salmopyWebGL = true;
+    } else {
+        window._salmopyGpuReason = 'none';
+        window._salmopyWebGL = false;
+    }
+    console.info('[SalmoPy] WebGL probe:', window._salmopyWebGL, 'renderer:', renderer || 'n/a', 'reason:', window._salmopyGpuReason || 'ok');
+
+    // Inject GPU badge into map-tab card headers
+    if (window._salmopyWebGL) {
+        var gpuLabel = renderer.replace('ANGLE (', '').split(',')[0].replace(')', '').trim() || 'GPU';
+        var badgeHtml = '<span class="sp-gpu-badge" title="Hardware-accelerated rendering via ' + gpuLabel + '. The map uses WebGL to render layers on the GPU for smooth pan, zoom and animation."><i class="bi bi-gpu-card"></i>WebGL \u2014 ' + gpuLabel + '</span>';
+        function injectGpuBadges() {
+            document.querySelectorAll('.card-header').forEach(function(hdr) {
+                var txt = hdr.textContent || '';
+                if ((/Spatial View|Live Movement/i).test(txt) && !hdr.querySelector('.sp-gpu-badge')) {
+                    hdr.insertAdjacentHTML('beforeend', badgeHtml);
+                }
+            });
+        }
+        // Poll briefly after page load — covers Shiny's async rendering
+        var _badgeTimer = setInterval(function() {
+            injectGpuBadges();
+            if (document.querySelectorAll('.sp-gpu-badge').length >= 2) clearInterval(_badgeTimer);
+        }, 400);
+        // Stop polling after 15s regardless
+        setTimeout(function() { clearInterval(_badgeTimer); }, 15000);
+    }
 
     function patchWith(msg) {
         document.querySelectorAll('.deckgl-map').forEach(function(el) {
@@ -347,10 +385,8 @@ app_ui = ui.page_fluid(
         ui.tags.style(_SIDEBAR_CSS),
         ui.tags.script(_SIDEBAR_JS),
         ui.tags.script(_WEBGL_FALLBACK_JS),
-        ui.tags.link(
-            rel="stylesheet",
-            href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
-        ),
+        ui.include_css(Path(__file__).parent / "www" / "bootstrap-icons.min.css"),
+        ui.tags.link(rel="icon", href="data:,"),
         ui.tags.script(
             src="https://cdn.plot.ly/plotly-2.35.2.min.js",
             charset="utf-8",
