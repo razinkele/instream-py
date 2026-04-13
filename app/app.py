@@ -236,10 +236,89 @@ _custom_sidebar = ui.tags.div(
     ),
 )
 
+_WEBGL_FALLBACK_JS = """
+(function() {
+    var MSG = '<div style="padding:2rem; text-align:center; color:#888; font:14px/1.6 sans-serif;">' +
+        '<i class="bi bi-gpu-card" style="font-size:2.5rem; display:block; margin-bottom:.5rem; opacity:.4;"></i>' +
+        '<strong>WebGL not available</strong><br>' +
+        'The interactive map requires WebGL (GPU acceleration).<br>' +
+        'Enable hardware acceleration in your browser settings,<br>or try Chrome/Edge with GPU support.' +
+        '</div>';
+
+    // Probe WebGL — test actual rendering, not just context creation
+    var canvas = document.createElement('canvas');
+    canvas.width = 1; canvas.height = 1;
+    var gl = null;
+    try {
+        gl = canvas.getContext('webgl2', {failIfMajorPerformanceCaveat: false}) ||
+             canvas.getContext('webgl', {failIfMajorPerformanceCaveat: false});
+        if (gl) {
+            // Verify the GPU isn't blocked by checking RENDERER string
+            var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
+            if (/Disabled|SwiftShader|llvmpipe/i.test(renderer)) {
+                gl = null; // software renderer — maps will be too slow
+            }
+        }
+    } catch(e) { gl = null; }
+    window._salmopyWebGL = !!gl;
+
+    function patchAll() {
+        document.querySelectorAll('.deckgl-map').forEach(function(el) {
+            if (!el._spPatched) { el._spPatched = true; el.innerHTML = MSG; }
+        });
+    }
+
+    if (!gl) {
+        // No WebGL at all — patch eagerly via MutationObserver
+        var obs = new MutationObserver(patchAll);
+        document.addEventListener('DOMContentLoaded', function() {
+            obs.observe(document.body, {childList: true, subtree: true});
+        });
+        document.addEventListener('shiny:connected', function() {
+            patchAll(); setTimeout(patchAll, 1000); setTimeout(patchAll, 3000);
+        });
+    }
+
+    // Also catch runtime WebGL failures (GPU sandbox, driver blocklist, etc.)
+    // maplibre fires webglcontextcreationerror on the canvas, which bubbles.
+    // shiny_deckgl's safeInitMap also sets innerHTML with an error div — we
+    // override that with our friendlier message.
+    document.addEventListener('webglcontextcreationerror', function(e) {
+        window._salmopyWebGL = false;
+        patchAll();
+    }, true);
+
+    // Poll for shiny_deckgl error divs OR uninitialised empty maps and replace them
+    document.addEventListener('shiny:connected', function() {
+        function replaceErrors() {
+            document.querySelectorAll('.deckgl-map').forEach(function(el) {
+                if (el._spPatched) return;
+                var hasError = el.textContent.indexOf('Map failed to initialise') >= 0 ||
+                               el.textContent.indexOf('Map libraries failed') >= 0;
+                // Also detect maps that failed silently (empty after enough time)
+                var isEmpty = el.children.length === 0 && el.innerHTML.trim() === '';
+                if (hasError) {
+                    el._spPatched = true;
+                    el.innerHTML = MSG;
+                } else if (isEmpty && !window._salmopyWebGL) {
+                    el._spPatched = true;
+                    el.innerHTML = MSG;
+                }
+            });
+        }
+        setTimeout(replaceErrors, 2000);
+        setTimeout(replaceErrors, 5000);
+        setTimeout(replaceErrors, 10000);
+    });
+})();
+"""
+
 app_ui = ui.page_fluid(
     ui.tags.head(
         ui.tags.style(_SIDEBAR_CSS),
         ui.tags.script(_SIDEBAR_JS),
+        ui.tags.script(_WEBGL_FALLBACK_JS),
         ui.tags.link(
             rel="stylesheet",
             href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
