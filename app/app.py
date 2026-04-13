@@ -1,4 +1,4 @@
-"""inSTREAM-py Shiny Frontend — main application."""
+"""SalmoPy — individual-based salmonid simulation explorer."""
 
 import asyncio
 import queue
@@ -74,7 +74,7 @@ def _resolve_data_dir(config_path):
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
-        ui.h4("inSTREAM-py"),
+        ui.h4("SalmoPy"),
         ui.input_select("config_file", "Configuration", choices=CONFIG_CHOICES),
         ui.input_date("start_date", "Start Date", value="2011-04-01"),
         ui.input_date("end_date", "End Date", value="2013-09-30"),
@@ -115,6 +115,10 @@ app_ui = ui.page_sidebar(
     ),
     head_includes(),
     ui.tags.head(
+        ui.tags.link(
+            rel="stylesheet",
+            href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
+        ),
         ui.tags.script(
             src="https://cdn.plot.ly/plotly-2.35.2.min.js",
             charset="utf-8",
@@ -131,7 +135,37 @@ app_ui = ui.page_sidebar(
         ui.nav_panel("Redds", redd_ui("redds")),
         ui.nav_panel("Help & Tests", help_ui("help")),
     ),
-    title="inSTREAM-py Simulation Explorer",
+    title=ui.div(
+        ui.span("SalmoPy", style="flex:1;"),
+        ui.popover(
+            ui.span(
+                ui.tags.i(class_="bi bi-info-circle", style="font-size:1.2rem;"),
+                " About",
+                style="cursor:pointer; opacity:0.85;",
+            ),
+            ui.h4("SalmoPy"),
+            ui.p(
+                "Individual-based salmonid population model. "
+                "Python port of ",
+                ui.a("inSTREAM 7", href="https://www.fs.usda.gov/treesearch/pubs/65856", target="_blank"),
+                " / inSALMO, extended with marine lifecycle, "
+                "Baltic Atlantic salmon calibration, and Numba-accelerated habitat selection."
+            ),
+            ui.tags.hr(),
+            ui.p(
+                ui.strong("Version: "), "0.29.0",
+                ui.br(),
+                ui.strong("Engine: "), "instream-py",
+                ui.br(),
+                ui.strong("Source: "),
+                ui.a("github.com/razinkele/instream-py", href="https://github.com/razinkele/instream-py", target="_blank"),
+                ui.br(),
+                ui.strong("Funding: "), "Horizon Europe",
+            ),
+            placement="bottom",
+        ),
+        style="display:flex; align-items:center; gap:1rem; width:100%;",
+    ),
     theme=shinyswatch.theme.flatly,
 )
 
