@@ -238,11 +238,36 @@ _custom_sidebar = ui.tags.div(
 
 _WEBGL_FALLBACK_JS = """
 (function() {
-    var MSG = '<div style="padding:2rem; text-align:center; color:#888; font:14px/1.6 sans-serif;">' +
-        '<i class="bi bi-gpu-card" style="font-size:2.5rem; display:block; margin-bottom:.5rem; opacity:.4;"></i>' +
-        '<strong>WebGL not available</strong><br>' +
-        'The interactive map requires WebGL (GPU acceleration).<br>' +
-        'Enable hardware acceleration in your browser settings,<br>or try Chrome/Edge with GPU support.' +
+    var _msgStyle = 'padding:1.5rem 2rem; text-align:center; font:14px/1.6 sans-serif; border-radius:8px; margin:1rem;';
+
+    var MSG_NO_WEBGL = '<div style="' + _msgStyle + 'background:#fff3cd; color:#856404; border:1px solid #ffeeba;">' +
+        '<i class="bi bi-exclamation-triangle-fill" style="font-size:1.8rem; display:block; margin-bottom:.5rem;"></i>' +
+        '<strong>WebGL Not Available</strong><br>' +
+        'Your browser does not support WebGL, which is required for the interactive map.<br>' +
+        '<small style="opacity:.8;">Try Chrome, Edge, or Firefox with hardware acceleration enabled.</small>' +
+        '</div>';
+
+    var MSG_GPU_BLOCKED = '<div style="' + _msgStyle + 'background:#f8d7da; color:#721c24; border:1px solid #f5c6cb;">' +
+        '<i class="bi bi-shield-exclamation" style="font-size:1.8rem; display:block; margin-bottom:.5rem;"></i>' +
+        '<strong>GPU Access Blocked</strong><br>' +
+        'WebGL context creation failed &mdash; the GPU may be sandboxed or disabled by your browser.<br>' +
+        '<small style="opacity:.8;">Check <code>chrome://gpu</code> or disable browser sandboxing. ' +
+        'Headless browsers typically lack GPU support.</small>' +
+        '</div>';
+
+    var MSG_SOFTWARE = '<div style="' + _msgStyle + 'background:#cce5ff; color:#004085; border:1px solid #b8daff;">' +
+        '<i class="bi bi-cpu" style="font-size:1.8rem; display:block; margin-bottom:.5rem;"></i>' +
+        '<strong>Software Rendering Detected</strong><br>' +
+        'Your browser is using a software renderer (no GPU acceleration).<br>' +
+        'Maps are disabled to avoid poor performance.<br>' +
+        '<small style="opacity:.8;">Enable hardware acceleration in browser settings for full map support.</small>' +
+        '</div>';
+
+    var MSG_INIT_FAILED = '<div style="' + _msgStyle + 'background:#f8d7da; color:#721c24; border:1px solid #f5c6cb;">' +
+        '<i class="bi bi-x-circle" style="font-size:1.8rem; display:block; margin-bottom:.5rem;"></i>' +
+        '<strong>Map Initialisation Failed</strong><br>' +
+        'The map library encountered an error during setup.<br>' +
+        '<small style="opacity:.8;">Check the browser console for details. Reloading the page may help.</small>' +
         '</div>';
 
     // Probe WebGL — test actual rendering, not just context creation
@@ -253,57 +278,60 @@ _WEBGL_FALLBACK_JS = """
         gl = canvas.getContext('webgl2', {failIfMajorPerformanceCaveat: false}) ||
              canvas.getContext('webgl', {failIfMajorPerformanceCaveat: false});
         if (gl) {
-            // Verify the GPU isn't blocked by checking RENDERER string
             var dbg = gl.getExtension('WEBGL_debug_renderer_info');
             var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '';
             if (/Disabled|SwiftShader|llvmpipe/i.test(renderer)) {
-                gl = null; // software renderer — maps will be too slow
+                window._salmopyGpuReason = 'software';
+                gl = null;
             }
         }
     } catch(e) { gl = null; }
     window._salmopyWebGL = !!gl;
+    if (!gl && !window._salmopyGpuReason) window._salmopyGpuReason = 'none';
 
-    function patchAll() {
+    function patchWith(msg) {
         document.querySelectorAll('.deckgl-map').forEach(function(el) {
-            if (!el._spPatched) { el._spPatched = true; el.innerHTML = MSG; }
+            if (!el._spPatched) { el._spPatched = true; el.innerHTML = msg; }
         });
     }
 
     if (!gl) {
-        // No WebGL at all — patch eagerly via MutationObserver
-        var obs = new MutationObserver(patchAll);
+        var earlyMsg = window._salmopyGpuReason === 'software' ? MSG_SOFTWARE : MSG_NO_WEBGL;
+        var obs = new MutationObserver(function() { patchWith(earlyMsg); });
         document.addEventListener('DOMContentLoaded', function() {
             obs.observe(document.body, {childList: true, subtree: true});
         });
         document.addEventListener('shiny:connected', function() {
-            patchAll(); setTimeout(patchAll, 1000); setTimeout(patchAll, 3000);
+            patchWith(earlyMsg);
+            setTimeout(function() { patchWith(earlyMsg); }, 1000);
+            setTimeout(function() { patchWith(earlyMsg); }, 3000);
         });
     }
 
-    // Also catch runtime WebGL failures (GPU sandbox, driver blocklist, etc.)
-    // maplibre fires webglcontextcreationerror on the canvas, which bubbles.
-    // shiny_deckgl's safeInitMap also sets innerHTML with an error div — we
-    // override that with our friendlier message.
+    // Catch runtime GPU sandbox / driver blocklist failures
     document.addEventListener('webglcontextcreationerror', function(e) {
         window._salmopyWebGL = false;
-        patchAll();
+        window._salmopyGpuReason = 'blocked';
+        patchWith(MSG_GPU_BLOCKED);
     }, true);
 
-    // Poll for shiny_deckgl error divs OR uninitialised empty maps and replace them
+    // Poll for shiny_deckgl error divs and replace with specific messages
     document.addEventListener('shiny:connected', function() {
         function replaceErrors() {
             document.querySelectorAll('.deckgl-map').forEach(function(el) {
                 if (el._spPatched) return;
-                var hasError = el.textContent.indexOf('Map failed to initialise') >= 0 ||
-                               el.textContent.indexOf('Map libraries failed') >= 0;
-                // Also detect maps that failed silently (empty after enough time)
-                var isEmpty = el.children.length === 0 && el.innerHTML.trim() === '';
-                if (hasError) {
+                var txt = el.textContent || '';
+                if (txt.indexOf('Map failed to initialise') >= 0) {
                     el._spPatched = true;
-                    el.innerHTML = MSG;
-                } else if (isEmpty && !window._salmopyWebGL) {
+                    el.innerHTML = MSG_INIT_FAILED;
+                } else if (txt.indexOf('Map libraries failed') >= 0) {
                     el._spPatched = true;
-                    el.innerHTML = MSG;
+                    el.innerHTML = MSG_INIT_FAILED;
+                } else if (el.children.length === 0 && el.innerHTML.trim() === '' && !window._salmopyWebGL) {
+                    el._spPatched = true;
+                    var reason = window._salmopyGpuReason;
+                    el.innerHTML = reason === 'software' ? MSG_SOFTWARE :
+                                   reason === 'blocked' ? MSG_GPU_BLOCKED : MSG_NO_WEBGL;
                 }
             });
         }
