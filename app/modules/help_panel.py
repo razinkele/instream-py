@@ -112,6 +112,21 @@ TEST_CASES = {
             ("Redds were created", lambda r: not r["redds"].empty),
         ],
     },
+    "outmigration": {
+        "name": "Juvenile Outmigration",
+        "description": "Run 1 year and check that some juveniles outmigrate downstream "
+        "when habitat fitness drops below migration threshold.",
+        "start_date": "2011-04-01",
+        "end_date": "2012-04-01",
+        "overrides": {},
+        "checks": [
+            ("Model completed 1 year", lambda r: r["summary"]["final_date"] != ""),
+            (
+                "Some outmigrants recorded",
+                lambda r: r["summary"]["total_outmigrants"] > 0,
+            ),
+        ],
+    },
 }
 
 
@@ -134,7 +149,6 @@ def _length_increased(results):
     df = results["daily"]
     if df.empty or "mean_length" not in df.columns:
         return False
-    # Group by date, compute population-weighted mean length
     daily = df[df["alive"] > 0]
     if len(daily) < 2:
         return False
@@ -164,7 +178,7 @@ def help_ui():
         ui.nav_panel(
             "Model Guide",
             ui.card(
-                ui.card_header("inSTREAM Model Overview"),
+                ui.card_header("SalmoPy Model Overview"),
                 ui.markdown(_MODEL_HELP),
             ),
         ),
@@ -307,16 +321,14 @@ def help_server(input, output, session, run_test_callback):
 # ============================================================================
 
 _MODEL_HELP = """\
-## What is inSTREAM?
+## What is SalmoPy?
 
-inSTREAM (**in**dividual-based **S**almonid **T**rout **R**esearch and
-**E**nvironmental **A**ssessment **M**odel) is an individual-based model (IBM)
-that simulates populations of stream-dwelling salmonids. It was originally
-developed by Steve Railsback and Bret Harvey at Lang Railsback & Associates
-and USDA Forest Service.
-
-This Python implementation (inSTREAM-py) reproduces the NetLogo 7.4 version
-with GPU-capable backends (NumPy, Numba, JAX).
+SalmoPy is an individual-based model (IBM) that simulates populations of
+stream-dwelling and anadromous salmonids. It is a Python port of
+[inSTREAM 7](https://www.fs.usda.gov/treesearch/pubs/65856) / inSALMO,
+originally developed by Steve Railsback and Bret Harvey, extended with
+marine lifecycle, Baltic Atlantic salmon calibration, and
+Numba-accelerated computation.
 
 ## Model Structure
 
@@ -327,17 +339,19 @@ with GPU-capable backends (NumPy, Numba, JAX).
   (flow, temperature, turbidity).
 - **Hydraulics**: Each cell has depth and velocity lookup tables indexed by
   flow — updated daily from time-series inputs.
+- **Marine domain**: Anadromous fish that outmigrate enter a simplified
+  ocean stage with size-dependent growth and survival.
 
-### Fish (Trout) Agents
-Each fish is an individual with:
+### Fish Agents
+Each fish is an individual (or super-individual) with:
 - **Physical state**: length (cm), weight (g), condition factor (K = W/L^3)
-- **Location**: current cell index in the spatial mesh
-- **Activity**: drift feeding, search feeding, hiding, guarding (spawners),
-  or holding
-- **Life history**: resident, anadromous juvenile, or anadromous adult
+- **Location**: current cell index in the spatial mesh (or marine zone)
+- **Activity**: drift feeding, search feeding, hiding, holding, or migrating
+- **Life stage**: FRY, PARR, SMOLT, OCEAN, RETURNING_ADULT, KELT, or
+  REPEAT_SPAWNER
 
 ### Daily Cycle
-Each simulation day, fish:
+Each simulation day, freshwater fish:
 1. **Evaluate habitat** — scan cells within a length-dependent movement radius
 2. **Select best cell** — choose the cell + activity maximising expected
    fitness (growth rate weighted by survival probability)
@@ -349,14 +363,23 @@ Each simulation day, fish:
    - Terrestrial predation (birds, mammals)
    - Aquatic predation (piscivorous fish)
    - Stranding (dewatered cells)
-6. **Spawn** (if in season) — create redds with eggs
-7. **Migrate** (anadromous juveniles) — move downstream when fitness is low
+6. **Spawn** (if in season and mature) — create redds with eggs
+7. **Migrate** (smolts) — move downstream when fitness is low
+
+Marine fish experience daily growth based on prey availability and
+face mortality from seals, cormorants, fishing, bycatch, M74 syndrome,
+background mortality, and thermal stress.
 
 ### Redds (Egg Nests)
 - Created by spawning adults in suitable cells (depth, velocity, substrate)
 - Develop based on accumulated temperature (degree-days)
 - Face mortality from: high temperature, low temperature, dewatering, scour
 - Emerge as fry when development fraction reaches 1.0
+
+### Life Cycle (Anadromous)
+FRY → PARR → SMOLT → OCEAN → RETURNING_ADULT → spawning → KELT →
+(optionally) REPEAT_SPAWNER. The full lifecycle is simulated for
+Baltic Atlantic salmon with ICES-calibrated parameters.
 
 ### Key Ecological Processes
 
@@ -368,58 +391,38 @@ Each simulation day, fish:
 | **Mortality** | Logistic survival functions for each risk factor |
 | **Spawning** | Conditional on season, size, condition, temperature |
 | **Migration** | Downstream movement when habitat fitness < migration fitness |
+| **Marine survival** | Size-dependent seal/cormorant predation, fishing, M74 |
 
 ## Visualisation Panels
 
 | Panel | Shows |
 |-------|-------|
+| **Dashboard** | Live metrics (alive, deaths, feeding activity, redds) updated during simulation |
+| **Movement** | Animated fish movement on the river map with daily step-through |
 | **Population** | Fish count over time by species |
-| **Spatial** | Map with cell polygons coloured by depth/velocity/food + animated fish trails |
+| **Spatial** | Map with cell polygons coloured by depth/velocity/food + fish trails |
 | **Environment** | Temperature, flow, and turbidity time series |
 | **Size Distribution** | Length and weight histograms at census dates |
-| **Redds** | Egg counts, development progress, mortality breakdown |
+| **Redds** | Active redd counts, total eggs, emergence tracking |
 | **Help & Tests** | This documentation + built-in test scenarios |
+
+## Performance
+
+Habitat selection (the dominant cost at ~90% of step time) is accelerated
+via a batch Numba JIT kernel that processes all fish in a single compiled
+call. A 912-day Example A simulation completes in ~50 seconds.
 """
 
 _PARAMETER_HELP = """\
-## Sidebar Parameters
-
-These parameters can be adjusted before running a simulation:
+## Sidebar Controls
 
 ### Simulation Settings
-| Parameter | Description | Default |
-|-----------|-------------|---------|
+| Control | Description | Default |
+|---------|-------------|---------|
 | **Configuration** | YAML config file defining species, reaches, and spatial setup | example_a |
 | **Start Date** | First day of simulation | 2011-04-01 |
 | **End Date** | Last day of simulation | 2013-09-30 |
 | **Backend** | Computation backend: numpy (portable) or numba (faster) | numpy |
-
-### Reach Parameters
-These override the reach-level settings in the config file for **all reaches**.
-
-| Parameter | Description | Units | Default |
-|-----------|-------------|-------|---------|
-| **Drift Concentration** | Density of drifting invertebrate prey in the water column. Higher = more food for drift-feeding fish. | 10^x g/cm³ | 10^-9.5 |
-| **Search Productivity** | Rate at which search-feeding fish find benthic prey. Higher = more food for search-feeding fish. | 10^x g/cm²/hr | 10^-6 |
-| **Shading** | Fraction of incoming light blocked by riparian canopy. 0 = no shade, 1 = full shade. Affects feeding (fish see prey better in light) and predation risk (predators see fish better in light). | fraction | 0.85 |
-| **Fish Pred. Min** | Minimum daily survival from aquatic (fish) predation. Lower = more predation risk. 1.0 = no fish predation. | probability | 0.95 |
-| **Terr. Pred. Min** | Minimum daily survival from terrestrial predation (birds, mammals). Lower = more risk. 1.0 = no terrestrial predation. | probability | 0.92 |
-
-### How Parameters Interact
-
-**Food supply** (drift_conc, search_prod):
-- Determines daily energy intake → growth rate → condition factor
-- Low food → poor condition → higher starvation mortality
-- Very high food → fish grow fast, reach piscivorous size sooner
-
-**Shading**:
-- Low shade → more light → higher feeding rates BUT higher predation risk
-- High shade → less light → lower feeding BUT safer from visual predators
-
-**Predation** (fish_pred_min, terr_pred_min):
-- These set the floor for daily survival probability
-- Actual survival depends on fish size, depth, velocity, hiding cover
-- Small fish in shallow water with no cover face the highest risk
 
 ## Species Parameters (from config YAML)
 
@@ -427,24 +430,25 @@ These override the reach-level settings in the config file for **all reaches**.
 | Parameter | Description |
 |-----------|-------------|
 | cmax_A, cmax_B | Maximum consumption allometry: Cmax = A * W^B |
+| cmax_temp_table | Temperature-dependent consumption multiplier |
 | react_dist_A, B | Reactive distance for prey detection (cm) |
 | turbid_threshold/min/exp | Turbidity effect on feeding efficiency |
 | light_threshold/min/exp | Light effect on feeding efficiency |
-| search_area | Area searched per time step (cm²) |
+| search_area | Area searched per time step (cm^2) |
 
 ### Growth & Metabolism
 | Parameter | Description |
 |-----------|-------------|
-| resp_A, B, C, D | Respiration parameters (standard metabolic rate) |
+| resp_A, B, D | Respiration parameters (standard metabolic rate) |
 | weight_A, B | Length-weight relationship: W = A * L^B |
 | energy_density | Energy content of fish tissue (J/g) |
+| prey_energy_density | Energy content of prey (J/g) |
 
 ### Movement
 | Parameter | Description |
 |-----------|-------------|
 | move_radius_max | Maximum habitat search radius (CRS units) |
 | move_radius_L1, L9 | Fish lengths where search radius = 10% / 90% of max |
-| fitness_horizon | Days into future for fitness evaluation |
 
 ### Mortality
 | Parameter | Description |
@@ -462,4 +466,27 @@ These override the reach-level settings in the config file for **all reaches**.
 | spawn_fecund_mult, exp | Fecundity: eggs = mult * length^exp |
 | spawn_wt_loss_fraction | Body weight lost to egg production |
 | redd_devel_A, B, C | Egg development rate = f(temperature) |
+
+## Reach Parameters (from config YAML)
+
+| Parameter | Description | Units |
+|-----------|-------------|-------|
+| drift_conc | Density of drifting invertebrate prey | g/cm^3 |
+| search_prod | Rate at which search-feeding fish find benthic prey | g/cm^2/hr |
+| shelter_speed_frac | Velocity reduction in sheltered microhabitats | fraction |
+| prey_energy_density | Energy content of invertebrate prey | J/g |
+| fish_pred_min | Minimum daily survival from aquatic predation | probability |
+| terr_pred_min | Minimum daily survival from terrestrial predation | probability |
+
+### How Parameters Interact
+
+**Food supply** (drift_conc, search_prod):
+- Determines daily energy intake -> growth rate -> condition factor
+- Low food -> poor condition -> higher starvation mortality
+- Very high food -> fish grow fast, reach larger sizes
+
+**Predation** (fish_pred_min, terr_pred_min):
+- These set the floor for daily survival probability
+- Actual survival depends on fish size, depth, velocity, hiding cover
+- Small fish in shallow water with no cover face the highest risk
 """
