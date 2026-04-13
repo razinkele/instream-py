@@ -150,6 +150,16 @@ def build_candidate_mask(
     return mask
 
 
+class _CandidateListWithCSR(list):
+    """List subclass that carries raw CSR arrays for batch reuse."""
+    __slots__ = ('_csr_offsets', '_csr_flat')
+
+    def __init__(self, items, offsets, flat):
+        super().__init__(items)
+        self._csr_offsets = offsets
+        self._csr_flat = flat
+
+
 def build_candidate_lists(
     trout_state, fem_space, move_radius_max, move_radius_L1, move_radius_L9
 ):
@@ -157,6 +167,9 @@ def build_candidate_lists(
 
     Returns list of length capacity. Dead fish get None. Alive fish get
     np.ndarray of wet candidate cell indices (int32).
+
+    When Numba spatial is available, also caches the raw CSR arrays as
+    attributes on the returned list: ``result._csr_offsets``, ``result._csr_flat``.
 
     Uses Numba brute-force distance search when available (faster than
     KD-tree for meshes under ~10k cells). Falls back to KD-tree + Python.
@@ -181,6 +194,8 @@ def build_candidate_lists(
         for i in range(n_fish):
             if offsets[i + 1] > offsets[i]:
                 candidate_lists[i] = flat[int(offsets[i]) : int(offsets[i + 1])]
+        # Attach raw CSR for batch path to reuse (avoids repacking)
+        candidate_lists = _CandidateListWithCSR(candidate_lists, offsets, flat)
         return candidate_lists
 
     # Python fallback: KD-tree queries + vectorized wet filter
@@ -645,17 +660,35 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         n_batch = len(normal_idx)
 
         # --- Build CSR candidate lists ---
-        cand_flat_parts = []
-        offsets = np.empty(n_batch + 1, dtype=np.int64)
-        offsets[0] = 0
-        for fi_local in range(n_batch):
-            i = normal_idx[fi_local]
-            cands = candidate_lists[i]
-            if cands.dtype != np.int32:
-                cands = cands.astype(np.int32)
-            cand_flat_parts.append(cands)
-            offsets[fi_local + 1] = offsets[fi_local] + len(cands)
-        cand_flat = np.concatenate(cand_flat_parts) if cand_flat_parts else np.empty(0, dtype=np.int32)
+        # Reuse raw CSR from build_candidate_lists when available (avoids repack)
+        _has_raw_csr = isinstance(candidate_lists, _CandidateListWithCSR)
+        if _has_raw_csr:
+            _src_off = candidate_lists._csr_offsets
+            _src_flat = candidate_lists._csr_flat
+            offsets = np.empty(n_batch + 1, dtype=np.int64)
+            offsets[0] = 0
+            for fi_local in range(n_batch):
+                i = normal_idx[fi_local]
+                offsets[fi_local + 1] = offsets[fi_local] + (_src_off[i + 1] - _src_off[i])
+            cand_flat = np.empty(int(offsets[n_batch]), dtype=np.int32)
+            for fi_local in range(n_batch):
+                i = normal_idx[fi_local]
+                src_start = int(_src_off[i])
+                src_end = int(_src_off[i + 1])
+                dst_start = int(offsets[fi_local])
+                cand_flat[dst_start:dst_start + (src_end - src_start)] = _src_flat[src_start:src_end]
+        else:
+            cand_flat_parts = []
+            offsets = np.empty(n_batch + 1, dtype=np.int64)
+            offsets[0] = 0
+            for fi_local in range(n_batch):
+                i = normal_idx[fi_local]
+                cands = candidate_lists[i]
+                if cands.dtype != np.int32:
+                    cands = cands.astype(np.int32)
+                cand_flat_parts.append(cands)
+                offsets[fi_local + 1] = offsets[fi_local] + len(cands)
+            cand_flat = np.concatenate(cand_flat_parts) if cand_flat_parts else np.empty(0, dtype=np.int32)
 
         # --- Pack per-fish arrays via fancy indexing ---
         _f_lengths = trout_state.length[normal_idx].astype(np.float64)
