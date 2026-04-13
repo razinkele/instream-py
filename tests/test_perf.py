@@ -62,3 +62,28 @@ class TestScalarFunctionOverhead:
 
         result = evaluate_logistic(15.0, 10.0, 20.0)
         assert type(result) is float
+
+
+@pytest.mark.slow
+def test_select_habitat_step_time():
+    """Step time must not regress beyond 40ms (example_a, ~350 fish)."""
+    from pathlib import Path
+    from instream.model import InSTREAMModel
+
+    PROJECT = Path(__file__).resolve().parent.parent
+    config = str(PROJECT / "configs" / "example_a.yaml")
+    data = str(PROJECT / "tests" / "fixtures" / "example_a")
+    model = InSTREAMModel(config, data_dir=data)
+
+    # Warm up (JIT compilation + first steps)
+    for _ in range(5):
+        model.step()
+
+    times = []
+    for _ in range(20):
+        t0 = time.perf_counter()
+        model.step()
+        times.append((time.perf_counter() - t0) * 1000)
+    times.sort()
+    median = times[len(times) // 2]
+    assert median < 40.0, f"Step median {median:.1f}ms exceeds 40ms threshold"

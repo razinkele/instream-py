@@ -649,18 +649,15 @@ def _evaluate_all_cells_v2(
     return best_cell, best_act, best_fitness, best_growth
 
 
-@numba.njit(cache=True)
-def batch_select_habitat(
-    # Fish arrays (n_fish, in dominance order)
+@numba.njit(parallel=True, cache=True)
+def _pass1_evaluate_parallel(
     fish_lengths,
     fish_weights,
     fish_conditions,
     fish_prev_cons,
     fish_superind_reps,
-    # Candidate CSR (offsets[n_fish+1], flat_indices[total])
     cand_offsets,
     cand_indices,
-    # Cell state arrays (n_cells) — MUTABLE for resource depletion
     cell_depths,
     cell_velocities,
     cell_lights,
@@ -670,7 +667,6 @@ def batch_select_habitat(
     cell_avail_shelter,
     cell_avail_hiding,
     cell_pisciv,
-    # Per-fish params (n_fish) — pre-indexed by species/reach in Python
     p_turbidity,
     p_temperature,
     p_drift_conc,
@@ -729,24 +725,20 @@ def batch_select_habitat(
     p_tp_H9,
     p_tp_hf,
     p_strand_surv,
-    # Scalar
     step_length,
 ):
-    """Batch habitat selection: process all fish in one Numba call.
+    """Pass 1: Evaluate fitness for ALL fish in parallel (no depletion).
 
-    Fish are in dominance order (large first). After each fish chooses,
-    resources are depleted before the next fish evaluates — matching
-    NetLogo's sequential dominance semantics.
-
-    Returns (best_cells, best_activities, best_growths, got_shelter) arrays of shape (n_fish,).
+    Uses numba.prange to parallelize the outer fish loop. Each fish
+    independently finds its best cell/activity/growth using pre-depletion
+    resource levels. Returns arrays of (best_cells, best_activities, best_growths).
     """
     n_fish = fish_lengths.shape[0]
     best_cells = np.empty(n_fish, dtype=np.int32)
     best_activities = np.empty(n_fish, dtype=np.int32)
     best_growths = np.empty(n_fish, dtype=np.float64)
-    got_shelter = np.zeros(n_fish, dtype=np.bool_)
 
-    for fi in range(n_fish):
+    for fi in numba.prange(n_fish):
         start = cand_offsets[fi]
         end = cand_offsets[fi + 1]
         candidates = cand_indices[start:end]
@@ -832,7 +824,191 @@ def batch_select_habitat(
         best_activities[fi] = ba
         best_growths[fi] = bg
 
-        # --- Resource depletion (sequential dominance) ---
+    return best_cells, best_activities, best_growths
+
+
+@numba.njit(cache=True)
+def batch_select_habitat(
+    # Fish arrays (n_fish, in dominance order)
+    fish_lengths,
+    fish_weights,
+    fish_conditions,
+    fish_prev_cons,
+    fish_superind_reps,
+    # Candidate CSR (offsets[n_fish+1], flat_indices[total])
+    cand_offsets,
+    cand_indices,
+    # Cell state arrays (n_cells) — MUTABLE for resource depletion
+    cell_depths,
+    cell_velocities,
+    cell_lights,
+    cell_dist_escape,
+    cell_avail_drift,
+    cell_avail_search,
+    cell_avail_shelter,
+    cell_avail_hiding,
+    cell_pisciv,
+    # Per-fish params (n_fish) — pre-indexed by species/reach in Python
+    p_turbidity,
+    p_temperature,
+    p_drift_conc,
+    p_search_prod,
+    p_search_area,
+    p_shelter_speed_frac,
+    p_cmax_A,
+    p_cmax_B,
+    p_cmax_temp,
+    p_react_dist_A,
+    p_react_dist_B,
+    p_turbid_threshold,
+    p_turbid_min,
+    p_turbid_exp,
+    p_light_threshold,
+    p_light_min,
+    p_light_exp,
+    p_capture_R1,
+    p_capture_R9,
+    p_max_speed_A,
+    p_max_speed_B,
+    p_max_swim_temp_term,
+    p_resp_A,
+    p_resp_B,
+    p_resp_D,
+    p_resp_temp_term,
+    p_prey_energy_density,
+    p_fish_energy_density,
+    p_mort_ht_T1,
+    p_mort_ht_T9,
+    p_mort_cond_S5,
+    p_mort_cond_S8,
+    p_mort_cond_Kcrit,
+    p_fp_min,
+    p_fp_L1,
+    p_fp_L9,
+    p_fp_D1,
+    p_fp_D9,
+    p_fp_P1,
+    p_fp_P9,
+    p_fp_I1,
+    p_fp_I9,
+    p_fp_T1,
+    p_fp_T9,
+    p_fp_hf,
+    p_tp_min,
+    p_tp_L1,
+    p_tp_L9,
+    p_tp_D1,
+    p_tp_D9,
+    p_tp_V1,
+    p_tp_V9,
+    p_tp_I1,
+    p_tp_I9,
+    p_tp_H1,
+    p_tp_H9,
+    p_tp_hf,
+    p_strand_surv,
+    # Scalar
+    step_length,
+):
+    """Batch habitat selection with two-pass parallelism.
+
+    Pass 1 (PARALLEL): Evaluate fitness for all fish x cells x activities
+    independently using numba.prange. No resource depletion — just find each
+    fish's best cell/activity/growth.
+
+    Pass 2 (SEQUENTIAL): Iterate fish in dominance order. Deplete resources
+    from each fish's chosen cell. Fish keep their Pass-1 choices regardless
+    of depletion (matching NetLogo inSTREAM which does not re-evaluate).
+
+    Returns (best_cells, best_activities, best_growths, got_shelter) arrays of shape (n_fish,).
+    """
+    n_fish = fish_lengths.shape[0]
+
+    # --- Pass 1: Parallel fitness evaluation (no depletion) ---
+    best_cells, best_activities, best_growths = _pass1_evaluate_parallel(
+        fish_lengths,
+        fish_weights,
+        fish_conditions,
+        fish_prev_cons,
+        fish_superind_reps,
+        cand_offsets,
+        cand_indices,
+        cell_depths,
+        cell_velocities,
+        cell_lights,
+        cell_dist_escape,
+        cell_avail_drift,
+        cell_avail_search,
+        cell_avail_shelter,
+        cell_avail_hiding,
+        cell_pisciv,
+        p_turbidity,
+        p_temperature,
+        p_drift_conc,
+        p_search_prod,
+        p_search_area,
+        p_shelter_speed_frac,
+        p_cmax_A,
+        p_cmax_B,
+        p_cmax_temp,
+        p_react_dist_A,
+        p_react_dist_B,
+        p_turbid_threshold,
+        p_turbid_min,
+        p_turbid_exp,
+        p_light_threshold,
+        p_light_min,
+        p_light_exp,
+        p_capture_R1,
+        p_capture_R9,
+        p_max_speed_A,
+        p_max_speed_B,
+        p_max_swim_temp_term,
+        p_resp_A,
+        p_resp_B,
+        p_resp_D,
+        p_resp_temp_term,
+        p_prey_energy_density,
+        p_fish_energy_density,
+        p_mort_ht_T1,
+        p_mort_ht_T9,
+        p_mort_cond_S5,
+        p_mort_cond_S8,
+        p_mort_cond_Kcrit,
+        p_fp_min,
+        p_fp_L1,
+        p_fp_L9,
+        p_fp_D1,
+        p_fp_D9,
+        p_fp_P1,
+        p_fp_P9,
+        p_fp_I1,
+        p_fp_I9,
+        p_fp_T1,
+        p_fp_T9,
+        p_fp_hf,
+        p_tp_min,
+        p_tp_L1,
+        p_tp_L9,
+        p_tp_D1,
+        p_tp_D9,
+        p_tp_V1,
+        p_tp_V9,
+        p_tp_I1,
+        p_tp_I9,
+        p_tp_H1,
+        p_tp_H9,
+        p_tp_hf,
+        p_strand_surv,
+        step_length,
+    )
+
+    # --- Pass 2: Sequential resource depletion in dominance order ---
+    got_shelter = np.zeros(n_fish, dtype=np.bool_)
+
+    for fi in range(n_fish):
+        bc = best_cells[fi]
+        ba = best_activities[fi]
         fl = fish_lengths[fi]
         rep = fish_superind_reps[fi]
         if rep < 1:
