@@ -95,6 +95,7 @@ _SIDEBAR_CSS = """
 .sp-sidebar.collapsed .sp-nav-link { justify-content: center; padding: .7rem 0; }
 .sp-sidebar.collapsed .sp-nav-link i { margin-right: 0; }
 .sp-sidebar.collapsed .sp-header { justify-content: center; padding: .6rem .4rem; }
+.sp-sidebar.collapsed .sp-header-title { display: none; }
 
 .sp-header {
     display: flex; align-items: center; justify-content: space-between;
@@ -102,8 +103,12 @@ _SIDEBAR_CSS = """
     border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .sp-header-title { color: var(--sp-accent); font-weight: 700; font-size: 1.05rem; letter-spacing: .5px; }
-.sp-toggle { background: none; border: none; color: var(--sp-text); font-size: 1.1rem; cursor: pointer; padding: .2rem; }
-.sp-toggle:hover { color: var(--sp-text-bright); }
+.sp-toggle {
+    background: none; border: none; color: var(--sp-text-bright); font-size: 1.3rem;
+    cursor: pointer; padding: .3rem .5rem; border-radius: 4px;
+    transition: background .15s;
+}
+.sp-toggle:hover { background: rgba(255,255,255,.1); color: var(--sp-accent); }
 
 .sp-section-title {
     font-size: .65rem; text-transform: uppercase; letter-spacing: 1.5px;
@@ -145,11 +150,7 @@ _SIDEBAR_CSS = """
 .sp-config .sp-progress { color: rgba(255,255,255,.5); font-size: .72rem; margin-top: .3rem; }
 
 .sp-main-offset { margin-left: var(--sp-sidebar-w); transition: margin-left .25s ease; padding: 0; }
-.sp-sidebar.collapsed ~ .sp-main-offset { margin-left: 56px; }
-
-/* Navbar adjustments */
-.navbar { margin-left: var(--sp-sidebar-w); transition: margin-left .25s ease; }
-.sp-sidebar.collapsed ~ div .navbar { margin-left: 56px; }
+body.sp-collapsed .sp-main-offset { margin-left: 56px; }
 """
 
 _SIDEBAR_JS = """
@@ -157,7 +158,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sp-sidebar');
     const toggle = document.getElementById('sp-toggle');
     if (toggle && sidebar) {
-        toggle.onclick = function() { sidebar.classList.toggle('collapsed'); };
+        toggle.onclick = function() {
+            sidebar.classList.toggle('collapsed');
+            document.body.classList.toggle('sp-collapsed');
+        };
     }
     document.querySelectorAll('.sp-nav-link').forEach(function(link) {
         link.onclick = function(e) {
