@@ -160,8 +160,9 @@ _SIDEBAR_CSS = """
 .sp-config .btn-run:hover { filter: brightness(1.1); }
 .sp-config .sp-progress { color: rgba(255,255,255,.5); font-size: .72rem; margin-top: .3rem; }
 
-.sp-main-offset { margin-left: var(--sp-sidebar-w); transition: margin-left .25s ease; padding: 0; }
+.sp-main-offset { margin-left: var(--sp-sidebar-w); transition: margin-left .25s ease; padding: 0; background: #f0f4f8; min-height: 100vh; }
 body.sp-collapsed .sp-main-offset { margin-left: 56px; }
+body { background: #f0f4f8; }
 
 .sp-gpu-badge {
     display: inline-flex; align-items: center; gap: .3rem;
