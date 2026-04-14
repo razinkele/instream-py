@@ -775,6 +775,10 @@ Formal tests for Tasks 1-4 modules.
 ```python
 # tests/test_create_model.py
 """Tests for Create Model core modules."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
+
 import numpy as np
 import pytest
 from shapely.geometry import LineString, Point
@@ -865,7 +869,7 @@ class TestExport:
 - [ ] **Step 2: Run tests**
 
 ```bash
-cd app && micromamba run -n shiny python -m pytest ../tests/test_create_model.py -v
+micromamba run -n shiny python -m pytest tests/test_create_model.py -v
 ```
 
 - [ ] **Step 3: Commit**
