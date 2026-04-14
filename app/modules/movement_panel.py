@@ -70,7 +70,12 @@ def movement_ui():
                 "Color by:",
                 choices={"species": "Species", "activity": "Activity"},
             ),
-            col_widths=(4,),
+            ui.input_slider(
+                "trail_length",
+                "Trail length (days):",
+                min=1, max=90, value=5, step=1,
+            ),
+            col_widths=(4, 4),
         ),
         ui.output_ui("map_container"),
         ui.output_ui("status_text"),
@@ -273,6 +278,12 @@ def movement_server(input, output, session, dashboard_data_rv):
             if trips_data:
                 from shiny_deckgl import trips_layer
 
+                trail_len = 5
+                try:
+                    trail_len = int(input.trail_length())
+                except Exception:
+                    pass
+
                 trail_lyr = trips_layer(
                     "fish_trails",
                     trips_data,
@@ -280,7 +291,7 @@ def movement_server(input, output, session, dashboard_data_rv):
                     getTimestamps="@@d.timestamps",
                     getColor="@@d.color",
                     currentTime=max_time,
-                    trailLength=30,  # show last 30 days of trail
+                    trailLength=trail_len,
                     widthMinPixels=2,
                     widthMaxPixels=5,
                     pickable=False,

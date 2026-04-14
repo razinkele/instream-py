@@ -109,13 +109,15 @@ def _build_layer(gdf, layer_var):
     else:
         colors = [[100, 100, 100, 120]] * len(gdf)
 
+    # Bake colors directly into each feature as a flat array
     geojson = gdf.__geo_interface__
     for i, feat in enumerate(geojson["features"]):
         c = colors[i]
         feat["properties"]["_fill"] = c if isinstance(c, list) else c.tolist()
 
+    # Use unique layer ID per variable so deck.gl creates a fresh layer
     return geojson_layer(
-        id="setup-cells",
+        id=f"setup-cells-{layer_var}",
         data=geojson,
         get_fill_color="@@=properties._fill",
         get_line_color=[60, 60, 60, 100],
