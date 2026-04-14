@@ -1,8 +1,8 @@
-# Create Model UI — Design Spec
+# Create Model UI — Design Spec (v2)
 
 ## Overview
 
-Interactive model creation workflow in the SalmoPy app. Users download EU-Hydro river network data, select reaches, generate hexagonal habitat cells, configure parameters, and export a ready-to-run simulation config.
+Interactive model creation workflow in the SalmoPy app. Users download EU-Hydro river network data, select reaches, generate habitat cells (hexagonal, rectangular, or triangular FEM), configure parameters, and export a ready-to-run simulation config.
 
 **Layout:** Hybrid — full-width map with compact action bar above. Configuration in a right slide-out panel. Status bar at bottom.
 
@@ -18,27 +18,30 @@ Interactive model creation workflow in the SalmoPy app. Users download EU-Hydro 
 
 - EU-Hydro buttons always enabled (fetch data for current view)
 - Model buttons enable progressively: Select Reaches after data loaded → Generate Cells after reaches defined → Configure after cells generated → Export after config set
-- Disabled buttons are greyed out with tooltip explaining what's needed
+- Disabled buttons greyed out with tooltip: "Load river data first"
+- Active step button highlighted with accent border
 
 ### Map (center, fills remaining space)
 
-- Full-width WebGL deck.gl map (same MapWidget as other panels)
+- Full-width WebGL deck.gl MapWidget (same as other panels)
 - Floating Strahler filter slider (top-left): range 1-9, default ≥3
 - Navigation + fullscreen + legend controls (top-right)
-- Click interaction: click river segments to select → highlight → assign to reach
+- Click interaction for reach selection (Step 2)
+- Loading spinner overlay during EU-Hydro queries
 
 ### Slide-out Panel (right, 300px, toggled by Configure button)
 
 - Reach selector dropdown
-- Per-reach parameters: drift_conc, fish_pred_min, terr_pred_min, shading, prey_energy_density
+- Per-reach parameters (all 20 ReachConfig fields with defaults)
 - Cell size slider (5-100m, default 20m)
-- Cell shape selector (Hexagonal / Rectangular)
-- Species config (simplified: select from presets or import)
+- Cell shape selector: Hexagonal (default) / Rectangular / Triangular (FEM)
+- Species preset dropdown
+- Simulation dates
 
 ### Status Bar (bottom, single row)
 
 ```
-Rivers: 142 | Water bodies: 3 | Selected reaches: 5 | Cells: 798 | [Ready to export]
+Rivers: 142 | Water bodies: 3 | Reaches: 5 (127 segments) | Cells: 798 | CRS: EPSG:32634
 ```
 
 ---
@@ -50,137 +53,219 @@ Rivers: 142 | Water bodies: 3 | Selected reaches: 5 | Cells: 798 | [Ready to exp
 **Trigger:** Click "Rivers", "Water Bodies", or "Coastal" button.
 
 **API:** EU-Hydro ArcGIS REST API
-- Rivers: layer 4 (River_Net_lines) — Strahler-classified polylines
+- Rivers: layer 4 (River_Net_lines) — polylines with Strahler, DFDD, NAME attributes
 - Water Bodies: layer 2 (InlandWater) — polygons
 - Coastal: layer 0 (Coastal_polygon) — polygons
 
 **Behavior:**
-- Query uses current map view bounding box (from widget view state)
-- Max 2000 features per query
-- Results displayed as deck.gl layers on the map
-- Rivers: blue lines, width scaled by Strahler order
-- Water bodies: semi-transparent blue fill
-- Coastal: light blue fill
-- Strahler filter slider hides rivers below threshold
+- Query uses current map view bbox (from `widget.view_state_input_id`)
+- Max 2000 features per query; for large areas, tile into 4 sub-queries
+- Show loading spinner on map during fetch
+- Rivers: blue lines, `lineWidthMinPixels` scaled by Strahler (1→1px, 5→3px, 9→6px)
+- Water bodies: `[135, 206, 235, 120]` semi-transparent fill
+- Strahler slider filters rivers client-side (rebuild layer with filtered GeoJSON)
+- On error: show notification "EU-Hydro query failed — try zooming in"
 
-**Data stored:** GeoDataFrame per layer type in reactive values.
+**Coordinate handling:**
+- EU-Hydro returns WGS84 (EPSG:4326) — store as-is for map display
+- Auto-detect UTM zone from map center for metric operations (buffering, area):
+  ```python
+  utm_zone = int((center_lon + 180) / 6) + 1
+  utm_epsg = 32600 + utm_zone  # Northern hemisphere
+  ```
+- Show detected CRS in status bar
+
+**Data stored:** `_rivers_gdf`, `_water_gdf`, `_coastal_gdf` as reactive values (WGS84).
 
 ### Step 2: Select Reaches
 
-**Trigger:** Click "Select Reaches" button (enabled after rivers loaded).
+**Trigger:** Click "Select Reaches" (enabled after rivers loaded).
 
 **Behavior:**
-- Enters selection mode — cursor changes, click handler activates
-- Click a river segment → highlights in orange → prompts for reach name
-- Shift+click to add more segments to the current reach
-- Right-click to finish current reach and name it
-- Selected reaches shown in distinct colors (Tab10 palette)
-- Auto-detect junctions: where reaches share endpoints, automatically assign upstream/downstream junction IDs
-- Junction connectivity displayed as arrows on the map
+- Enters selection mode — status bar shows "Click river segments to select"
+- Click a river segment → uses `widget.click_input_id` → deck.gl returns clicked feature properties
+- Feature identification: `pickable=True` on river layer, click returns feature index + properties
+- First click on unselected segment → dialog: enter reach name → segment assigned to reach, colored
+- Subsequent clicks → add to current reach (same color)
+- Click on already-selected segment → deselect (remove from reach)
+- "New Reach" mini-button in action bar to start a new reach
+- Selected reaches: distinct colors from Tab10 palette
+- Segments within a reach: all share the reach color
 
-**Data stored:** Dict mapping reach_name → list of river segment geometries + junction topology.
+**Junction auto-detection:**
+- After reach assignment, scan all reach segment endpoints
+- Two reaches share a junction if any endpoint pair is within 50m (UTM distance)
+- Assign junction IDs: start from 1, increment per unique junction point
+- For T-junctions (3+ reaches meeting): create a single junction node shared by all
+- upstream/downstream determined by Strahler order (lower Strahler = upstream) or flow direction attribute from EU-Hydro (if available)
+- Display junction nodes as circles on the map with junction ID labels
 
-### Step 3: Generate Hexagonal Cells
+**Data stored:** `_reaches` dict: `{reach_name: {"segments": [geom,...], "color": [...], "upstream_junction": int, "downstream_junction": int}}`
 
-**Trigger:** Click "Generate Cells" button (enabled after ≥1 reach defined).
+### Step 3: Generate Habitat Cells
 
-**Behavior:**
-- For each reach: buffer river segments by cell_size/2
-- Tessellate buffered area into hexagonal cells (using H3 or shapely)
-- Each cell gets: reach_name, area, centroid, frac_spawn (from reach config), dist_escape (from distance to nearest reach endpoint), num_hiding (default), frac_vel_shelter (default)
-- Live preview: cells shown on map as colored polygons
-- Cell size slider adjustable — regenerates grid in real-time
-- Cell shape toggle: hexagonal (default) or rectangular
+**Trigger:** Click "Generate Cells" (enabled after ≥1 reach defined).
 
-**Algorithm (hexagonal):**
-1. Buffer each reach's river segments by `cell_size * 0.6`
-2. Create hexagonal grid covering the buffered extent
-3. Clip hexagons to the buffered area
-4. Assign each cell to its nearest reach
-5. Compute cell attributes (area, centroid, adjacency)
+**Cell shape options:**
 
-**Data stored:** GeoDataFrame of cells with all attributes.
+#### A. Hexagonal (default)
+1. Reproject reach segments from WGS84 → UTM
+2. Buffer segments by `cell_size * 0.7` (meters) — 0.7 factor ensures hexagons slightly overlap the river corridor for full coverage
+3. Generate flat-top hexagonal grid covering the buffered extent:
+   ```
+   hex_width = cell_size
+   hex_height = cell_size * sqrt(3) / 2
+   ```
+4. Clip hexagons to buffered area (discard hexagons with <20% overlap)
+5. Assign each cell to nearest reach centroid
+6. Reproject cells back to WGS84 for map display + store UTM version for export
+
+#### B. Rectangular
+- Same as hexagonal but with rectangular grid (simpler, matches existing ExampleA)
+- Cells: `cell_size × cell_size` squares
+- Clip + assign same as hexagonal
+
+#### C. Triangular FEM (advanced)
+- Uses `meshio` (already available v5.3.5) to read externally generated meshes
+- "Import Mesh" button: load .msh (GMSH) or .2dm (River2D) file
+- FEMMesh backend already supports these formats
+- Not generated in-app (requires external tool) — future enhancement with `triangle` library
+
+**Cell attributes (computed for all shapes):**
+- `cell_id`: `CELL_0001`, `CELL_0002`, ...
+- `reach_name`: from nearest reach assignment
+- `area`: polygon area in m² (computed in UTM)
+- `centroid_x`, `centroid_y`: in UTM (for simulation) and WGS84 (for display)
+- `dist_escape`: distance from cell centroid to nearest reach endpoint (meters → cm)
+- `num_hiding_places`: default 2 (edge cells), 1 (interior)
+- `frac_vel_shelter`: default 0.15 (edge), 0.05 (interior)
+- `frac_spawn`: default from reach config (spawning reaches get 0.3, others 0.0)
+
+**Live preview:** Cells shown on map with reach colors. Cell size slider triggers re-generation (debounced 500ms).
+
+**Data stored:** `_cells_gdf` (WGS84) + `_cells_gdf_utm` (UTM, for export).
 
 ### Step 4: Configure Reach Parameters
 
-**Trigger:** Click "Configure" button (enabled after cells generated). Opens right slide-out panel.
+**Trigger:** Click "Configure" (enabled after cells generated). Opens slide-out panel.
 
-**Behavior:**
-- Dropdown to select reach
-- Per-reach parameters with sensible defaults:
-  - `drift_conc`: 5.0e-9 (slider: 1e-10 to 1e-7, log scale)
-  - `search_prod`: 8.0e-7
-  - `prey_energy_density`: 4500
-  - `shading`: 0.8 (slider: 0-1)
-  - `fish_pred_min`: 0.97 (slider: 0.8-1.0)
-  - `terr_pred_min`: 0.94 (slider: 0.8-1.0)
-- Species preset dropdown: "Baltic Atlantic Salmon", "Chinook Spring", "Custom"
-- Simulation dates: start/end date pickers
-- Marine config toggle: enable/disable marine zones
+**Per-reach parameters with defaults:**
+
+| Parameter | Default | UI | Range |
+|-----------|---------|-----|-------|
+| `drift_conc` | 5.0e-9 | Log slider | 1e-11 to 1e-7 |
+| `search_prod` | 8.0e-7 | Log slider | 1e-9 to 1e-5 |
+| `shelter_speed_frac` | 0.3 | Slider | 0-1 |
+| `prey_energy_density` | 4500 | Number | 1000-8000 |
+| `drift_regen_distance` | 1000 | Number | 0-10000 |
+| `shading` | 0.8 | Slider | 0-1 |
+| `fish_pred_min` | 0.97 | Slider | 0.5-1.0 |
+| `terr_pred_min` | 0.94 | Slider | 0.5-1.0 |
+| `light_turbid_coef` | 0.002 | Number | 0-0.01 |
+| `light_turbid_const` | 0.0 | Number | 0-0.01 |
+| `max_spawn_flow` | 20 | Number | 1-999 |
+| `shear_A` | 0.013 | Number | 0-0.1 |
+| `shear_B` | 0.40 | Number | 0-1 |
+| `frac_spawn` | 0.3 | Slider | 0-1 |
+
+Junction IDs: auto-assigned, displayed as read-only (editable via text input if user wants override).
+
+**Species presets:**
+- "Baltic Atlantic Salmon" → loads `configs/baltic_salmon_species.yaml`
+- "Chinook Spring" → loads species block from `configs/example_a.yaml`
+- "Custom" → expand all species parameters for manual editing
+- Preset files are read-only templates; user can modify after loading
+
+**Simulation config:**
+- Start date, end date (date pickers)
+- Backend: numpy / numba
+- Trout capacity: auto-calculated as `n_cells * 15`
+- Marine zones toggle: on/off (adds default Estuary/Coastal/Baltic zones)
 
 ### Step 5: Export
 
-**Trigger:** Click "Export" button (enabled after config set).
+**Trigger:** Click "Export" (enabled when ≥1 reach configured with cells).
 
-**Output:**
-- Shapefile (.shp + sidecar files) with cell polygons + attributes
-- YAML config file matching inSTREAM config schema
-- Per-reach CSV files: time series (template with date column), depths, velocities
-- ZIP download containing all files
-- Option: "Load into Setup" — directly loads the generated config into the Setup Review tab
+**Output ZIP contains:**
+
+```
+model_export/
+├── Shapefile/
+│   ├── Model.shp          # Cell polygons in UTM CRS
+│   ├── Model.shx
+│   ├── Model.dbf          # Attributes: ID_TEXT, REACH_NAME, AREA, M_TO_ESC,
+│   ├── Model.prj          #   NUM_HIDING, FRACVSHL, FRACSPWN
+│   └── Model.cpg
+├── model_config.yaml       # Full inSTREAM config
+├── {ReachName}-TimeSeriesInputs.csv  # Template per reach (dates + columns)
+├── {ReachName}-Depths.csv            # Template (10 flows × n_cells)
+└── {ReachName}-Vels.csv              # Template (10 flows × n_cells)
+```
+
+**Shapefile attributes (DBF):** `ID_TEXT`, `REACH_NAME`, `AREA` (m²), `M_TO_ESC` (cm), `NUM_HIDING`, `FRACVSHL`, `FRACSPWN`
+
+**Template CSVs:**
+- TimeSeriesInputs: header + 365 rows (1 year) with placeholder values (temp=10, flow=5, turbidity=2)
+- Depths: header + n_cells rows × 10 flow columns, default depths from cell_size-based estimate
+- Velocities: header + n_cells rows × 10 flow columns, default velocities
+
+**"Load into Setup"** button: writes files to `tests/fixtures/{model_name}/`, adds config to `configs/`, triggers Setup tab to reload.
+
+---
+
+## Mesh Generation Approaches
+
+### Comparison
+
+| Approach | Dependencies | Resolution | Boundary Fit | Speed | Best For |
+|----------|-------------|-----------|--------------|-------|----------|
+| **Hexagonal** | shapely (built-in) | Uniform | Moderate (clipped) | Fast (<1s) | General use, MVP |
+| **Rectangular** | shapely (built-in) | Uniform | Poor (staircase) | Fast (<1s) | Quick prototyping |
+| **Triangular FEM** | meshio (available) | Adaptive | Excellent | External tool | Complex geometries |
+| **H3 Hexagonal** | h3 (available) | Hierarchical | Good | Fast | Large-scale studies |
+
+### Implementation priority
+1. **Phase 1 (MVP):** Hexagonal + Rectangular (shapely only, in-app generation)
+2. **Phase 2:** Import FEM mesh (.msh, .2dm via meshio — FEMMesh backend already exists)
+3. **Phase 3:** H3 hierarchical hexagons (h3 library already installed)
+4. **Phase 4:** In-app adaptive triangular mesh (requires `triangle` library install)
+
+All mesh types render identically in deck.gl (GeoJSON polygons). CellState is shape-agnostic — only needs area, centroids, and neighbor topology.
 
 ---
 
 ## File Map
 
-| File | Action |
-|------|--------|
-| `app/modules/create_model_panel.py` | Extend existing panel with all 5 steps |
-| `app/modules/create_model_grid.py` | New: hexagonal cell generation logic |
-| `app/modules/create_model_export.py` | New: config YAML + shapefile export |
+| File | Lines (est.) | Responsibility |
+|------|-------------|----------------|
+| `app/modules/create_model_panel.py` | 400 | UI, action bar, state management, map interactions |
+| `app/modules/create_model_grid.py` | 300 | Hexagonal + rectangular cell generation, buffering, clipping |
+| `app/modules/create_model_export.py` | 250 | Shapefile + YAML + CSV export, ZIP packaging |
+| `app/modules/create_model_reaches.py` | 200 | Reach selection, junction detection, topology |
 
 ---
 
-## Technical Notes
+## Error Handling
 
-### Hexagonal Grid Generation
-
-Use `shapely` for hex tessellation (no H3 dependency needed):
-
-```python
-def hexagonal_grid(bounds, cell_size):
-    """Generate hexagonal cells covering a bounding box."""
-    w = cell_size
-    h = cell_size * math.sqrt(3) / 2
-    cols = int((bounds[2] - bounds[0]) / w) + 2
-    rows = int((bounds[3] - bounds[1]) / h) + 2
-    hexagons = []
-    for row in range(rows):
-        for col in range(cols):
-            x = bounds[0] + col * w + (row % 2) * w / 2
-            y = bounds[1] + row * h
-            hex_poly = _hexagon(x, y, cell_size / 2)
-            hexagons.append(hex_poly)
-    return hexagons
-```
-
-### EU-Hydro API Limits
-
-- Max 2000 features per query
-- For large areas, tile the bbox into sub-queries
-- Strahler filter reduces feature count significantly (Strahler ≥ 3 removes ~80% of tiny streams)
-
-### Click-to-Select on deck.gl
-
-Use the MapWidget's click input (`widget.click_input_id`) to get click coordinates. Find nearest river segment using spatial index. Highlight by changing the segment's color in the GeoJSON layer.
+| Scenario | Response |
+|----------|----------|
+| EU-Hydro timeout (>60s) | Notification: "Query timed out — try zooming in" |
+| No features in view | Notification: "No rivers found — pan to a river area" |
+| >2000 features | Auto-tile into 4 sub-queries, merge results |
+| Click on empty map area | Ignored (no selection change) |
+| Zero cells after clipping | Notification: "No cells generated — increase cell size or select more segments" |
+| Export with missing params | Validation: highlight missing fields, block export |
+| File write error | Notification with error message |
 
 ---
 
 ## Success Criteria
 
 1. User can fetch EU-Hydro data for any European river area
-2. Click-select river segments to define named reaches
-3. Generate hexagonal cells with adjustable resolution
-4. Configure reach parameters via slide-out panel
-5. Export ZIP with shapefile + YAML config
+2. Click-select river segments to define named reaches with auto-junctions
+3. Generate hexagonal or rectangular cells with adjustable resolution (5-100m)
+4. Configure all reach parameters via slide-out panel
+5. Export ZIP with shapefile + YAML + template CSVs
 6. Exported config loads and runs in SalmoPy without manual editing
+7. All cell shapes (hex, rect, triangle) render correctly on the deck.gl map
+8. CRS handled automatically (WGS84 for display, UTM for metric operations)
