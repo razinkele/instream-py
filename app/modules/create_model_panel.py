@@ -148,56 +148,64 @@ def create_model_ui():
             },
         },
     )
+    # Inline CSS matching sidebar theme
+    _toolbar_css = ui.tags.style("""
+    .cm-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:0.4rem; padding:0.5rem 0.6rem;
+                  background:#1e293b; border-radius:6px; margin-bottom:0.4rem; }
+    .cm-toolbar .btn-cm { background:rgba(43,184,157,.15); color:#2bb89d; border:1px solid rgba(43,184,157,.4);
+                          border-radius:4px; padding:0.25rem 0.6rem; font-size:0.78rem; font-weight:600;
+                          cursor:pointer; transition: background .15s; }
+    .cm-toolbar .btn-cm:hover { background:rgba(43,184,157,.3); }
+    .cm-toolbar .btn-cm-accent { background:#2bb89d; color:#fff; border:1px solid #2bb89d; }
+    .cm-toolbar .btn-cm-accent:hover { filter:brightness(1.1); }
+    .cm-toolbar .cm-label { color:rgba(255,255,255,.6); font-size:0.72rem; margin-right:0.2rem; }
+    .cm-toolbar .cm-sep { width:1px; height:1.2rem; background:rgba(255,255,255,.15); margin:0 0.2rem; }
+    .cm-toolbar select, .cm-toolbar input[type="number"] {
+        background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15);
+        color:#fff; border-radius:3px; padding:0.2rem 0.3rem; font-size:0.78rem; }
+    .cm-toolbar select option { background:#1e293b; color:#fff; }
+    """)
+
     return ui.card(
         ui.card_header("Create Model"),
-        # -- Compact toolbar: all controls in one row ---
+        _toolbar_css,
+        # -- Compact toolbar matching sidebar theme ---
         ui.div(
-            ui.tags.span(
-                ui.input_action_button("fetch_rivers", "🌊 Rivers",
-                                       class_="btn btn-primary btn-sm",
-                                       title="Fetch EU-Hydro river network for current map view"),
-                ui.input_action_button("fetch_water", "💧 Water",
-                                       class_="btn btn-info btn-sm",
-                                       title="Fetch EU-Hydro water bodies (lakes, lagoons)"),
-                style="display:inline-flex; gap:0.3rem; margin-right:0.6rem;",
+            {"class": "cm-toolbar"},
+            ui.input_action_button("fetch_rivers", "🌊 Rivers",
+                                   class_="btn btn-cm",
+                                   title="Fetch EU-Hydro river network for current map view"),
+            ui.input_action_button("fetch_water", "💧 Water",
+                                   class_="btn btn-cm",
+                                   title="Fetch EU-Hydro water bodies (lakes, lagoons)"),
+            ui.tags.div(class_="cm-sep"),
+            ui.tags.span("Strahler≥", class_="cm-label"),
+            ui.div(
+                ui.input_slider("strahler_min", None, min=1, max=9, value=3, step=1, width="90px"),
+                style="display:inline-block; vertical-align:middle; width:90px;",
             ),
-            ui.tags.span(
-                ui.tags.small("Strahler≥", style="color:#666; vertical-align:middle;"),
-                ui.div(
-                    ui.input_slider("strahler_min", None, min=1, max=9, value=3, step=1,
-                                    width="90px"),
-                    style="display:inline-block; vertical-align:middle; width:90px;",
-                ),
-                style="display:inline-flex; align-items:center; gap:0.2rem; margin-right:0.6rem;",
+            ui.tags.div(class_="cm-sep"),
+            ui.tags.span("Cell:", class_="cm-label"),
+            ui.div(
+                ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5, width="80px"),
+                style="display:inline-block; vertical-align:middle; width:80px;",
             ),
-            ui.tags.span(
-                ui.tags.small("Cell:", style="color:#666; vertical-align:middle;"),
-                ui.div(
-                    ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5,
-                                    width="80px"),
-                    style="display:inline-block; vertical-align:middle; width:80px;",
-                ),
-                ui.div(
-                    ui.input_select("cell_shape", None,
-                                    choices={"hexagonal": "Hexagonal", "rectangular": "Rectangular"},
-                                    selected="hexagonal", width="120px"),
-                    style="display:inline-block; vertical-align:middle;",
-                ),
-                style="display:inline-flex; align-items:center; gap:0.2rem; margin-right:0.6rem;",
+            ui.div(
+                ui.input_select("cell_shape", None,
+                                choices={"hexagonal": "Hexagonal", "rectangular": "Rectangular"},
+                                selected="hexagonal", width="120px"),
+                style="display:inline-block; vertical-align:middle;",
             ),
-            ui.tags.span(
-                ui.input_action_button("select_reaches_btn", "✏️ Select",
-                                       class_="btn btn-warning btn-sm",
-                                       title="Click river segments to assign to reaches"),
-                ui.input_action_button("generate_cells_btn", "⬡ Cells",
-                                       class_="btn btn-success btn-sm",
-                                       title="Generate habitat cells from selected reaches"),
-                ui.input_action_button("export_btn", "📦 Export",
-                                       class_="btn btn-dark btn-sm",
-                                       title="Export shapefile + YAML config as ZIP"),
-                style="display:inline-flex; gap:0.3rem;",
-            ),
-            style="display:flex; flex-wrap:wrap; align-items:center; gap:0.3rem; padding:0.4rem 0;",
+            ui.tags.div(class_="cm-sep"),
+            ui.input_action_button("select_reaches_btn", "✏️ Select",
+                                   class_="btn btn-cm",
+                                   title="Click river segments to assign to reaches"),
+            ui.input_action_button("generate_cells_btn", "⬡ Cells",
+                                   class_="btn btn-cm-accent",
+                                   title="Generate habitat cells from selected reaches"),
+            ui.input_action_button("export_btn", "📦 Export",
+                                   class_="btn btn-cm",
+                                   title="Export shapefile + YAML config as ZIP"),
         ),
         # -- Map (shown immediately, before any fetch) ---
         _widget.ui(height="550px"),
