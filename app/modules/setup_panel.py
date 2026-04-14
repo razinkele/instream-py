@@ -1,4 +1,4 @@
-"""Setup Review panel — inspect spatial grid and configuration layers without running a simulation.
+"""Setup Review panel — inspect spatial grid and configuration layers without simulation.
 
 Shows the mesh, reach boundaries, spawning habitat, hiding places, velocity shelter,
 and other static properties loaded directly from the config and shapefile.
@@ -30,15 +30,20 @@ LAYER_CHOICES = {
 }
 
 REACH_COLORS = [
-    [31, 119, 180, 180],   # blue
-    [255, 127, 14, 180],   # orange
-    [44, 160, 44, 180],    # green
-    [214, 39, 40, 180],    # red
-    [148, 103, 189, 180],  # purple
-    [140, 86, 75, 180],    # brown
-    [227, 119, 194, 180],  # pink
-    [127, 127, 127, 180],  # gray
+    [31, 119, 180, 180],
+    [255, 127, 14, 180],
+    [44, 160, 44, 180],
+    [214, 39, 40, 180],
+    [148, 103, 189, 180],
+    [140, 86, 75, 180],
+    [227, 119, 194, 180],
+    [127, 127, 127, 180],
 ]
+
+
+def _fit_bounds_zoom(bounds):
+    span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
+    return max(1, min(18, 14 - math.log2(max(span, 0.001))))
 
 
 # ---------------------------------------------------------------------------
@@ -55,8 +60,8 @@ def setup_ui():
                                        choices=LAYER_CHOICES, selected="reach",
                                        width="100%")),
             ui.column(8, ui.tags.div(
-                ui.tags.small("Select a configuration above, then inspect the "
-                              "spatial grid and habitat layers here. "
+                ui.tags.small("Select a configuration above to preview the "
+                              "spatial grid and habitat layers. "
                               "No simulation required."),
                 style="padding-top:0.5rem; color:#888;",
             )),
@@ -72,21 +77,14 @@ def setup_ui():
 
 @module.server
 def setup_server(input, output, session, config_file_rv):
-    """Server logic for setup review panel.
-
-    Parameters
-    ----------
-    config_file_rv : reactive callable
-        Returns the currently selected config file path (from input.config_file).
-    """
+    _widget = reactive.value(None)
+    _gdf_cache = reactive.value(None)
 
     @reactive.calc
-    def _load_setup_gdf():
-        """Load shapefile and config properties for the selected config."""
+    def _load_gdf():
         config_path = config_file_rv()
         if not config_path:
             return None
-
         try:
             with open(config_path) as f:
                 raw = yaml.safe_load(f)
@@ -98,7 +96,6 @@ def setup_server(input, output, session, config_file_rv):
         if not mesh_file:
             return None
 
-        # Resolve data directory (same logic as app.py)
         from app import _resolve_data_dir
         data_dir = Path(_resolve_data_dir(config_path))
         mesh_path = data_dir / mesh_file
@@ -109,7 +106,6 @@ def setup_server(input, output, session, config_file_rv):
 
         gdf = gpd.read_file(str(mesh_path))
 
-        # Case-insensitive column rename
         gis = spatial.get("gis_properties", {})
         canonical_map = {
             "cell_id": "cell_id",
@@ -130,29 +126,13 @@ def setup_server(input, output, session, config_file_rv):
                     break
         gdf = gdf.rename(columns=col_map)
 
-        # Reproject to WGS84 for deck.gl
         if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
 
-        # Attach reach config info
         gdf.attrs["raw_config"] = raw
         return gdf
 
-    @render.ui
-    def setup_map_container():
-        gdf = _load_setup_gdf()
-        if gdf is None:
-            return ui.p("Select a configuration to preview the spatial grid.",
-                        style="color:#888; padding:2rem;")
-
-        layer_var = input.layer_var()
-        bounds = gdf.total_bounds
-        center_lon = (bounds[0] + bounds[2]) / 2
-        center_lat = (bounds[1] + bounds[3]) / 2
-        span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
-        zoom = max(1, min(18, 14 - math.log2(max(span, 0.001))))
-
-        # Build fill colors
+    def _build_layer(gdf, layer_var):
         if layer_var == "reach" and "reach" in gdf.columns:
             unique_reaches = list(gdf["reach"].unique())
             colors = [REACH_COLORS[unique_reaches.index(r) % len(REACH_COLORS)]
@@ -165,9 +145,10 @@ def setup_server(input, output, session, config_file_rv):
 
         geojson = gdf.__geo_interface__
         for i, feat in enumerate(geojson["features"]):
-            feat["properties"]["_fill"] = colors[i] if isinstance(colors[i], list) else colors[i].tolist()
+            c = colors[i]
+            feat["properties"]["_fill"] = c if isinstance(c, list) else c.tolist()
 
-        layer = geojson_layer(
+        return geojson_layer(
             id="setup-cells",
             data=geojson,
             get_fill_color="@@=properties._fill",
@@ -179,23 +160,60 @@ def setup_server(input, output, session, config_file_rv):
             auto_highlight=True,
         )
 
+    @render.ui
+    def setup_map_container():
+        gdf = _load_gdf()
+        if gdf is None:
+            return ui.p("Select a configuration to preview the spatial grid.",
+                        style="color:#888; padding:2rem;")
+
+        bounds = gdf.total_bounds
+        center_lon = (bounds[0] + bounds[2]) / 2
+        center_lat = (bounds[1] + bounds[3]) / 2
+        zoom = _fit_bounds_zoom(bounds)
+
         widget = MapWidget(
-            layers=[layer],
-            map_style=BASEMAP_LIGHT,
-            initial_view_state={
+            "setup_map",
+            view_state={
                 "longitude": center_lon,
                 "latitude": center_lat,
                 "zoom": zoom,
                 "pitch": 0,
+                "bearing": 0,
             },
-            tooltip={"text": "{cell_id}\nReach: {reach}\nArea: {area} m²"},
-            height="500px",
+            style=BASEMAP_LIGHT,
+            tooltip={
+                "html": "<b>{cell_id}</b><br/>Reach: {reach}<br/>Area: {area} m²<br/>Spawn: {frac_spawn}",
+                "style": {
+                    "backgroundColor": "#fff",
+                    "color": "#333",
+                    "fontSize": "12px",
+                    "border": "1px solid #ccc",
+                },
+            },
         )
-        return widget
+        _widget.set(widget)
+        _gdf_cache.set(gdf)
+        return widget.ui(height="500px")
+
+    @reactive.effect
+    async def _send_layer():
+        widget = _widget()
+        gdf = _gdf_cache()
+        if widget is None or gdf is None:
+            return
+        try:
+            layer_var = input.layer_var()
+            layer = _build_layer(gdf, layer_var)
+            await widget.partial_update(session, [layer])
+        except Exception as e:
+            if "SilentException" in type(e).__name__:
+                return
+            logger.exception("Error sending setup layer")
 
     @render.ui
     def setup_summary():
-        gdf = _load_setup_gdf()
+        gdf = _load_gdf()
         if gdf is None:
             return ui.div()
 
