@@ -92,13 +92,16 @@ Rivers: 142 | Water bodies: 3 | Reaches: 5 (127 segments) | Cells: 798 | CRS: EP
 - Selected reaches: distinct colors from Tab10 palette
 - Segments within a reach: all share the reach color
 
-**Junction auto-detection:**
-- After reach assignment, scan all reach segment endpoints
+**Junction auto-detection (geometric flow analysis):**
+- After reach assignment, scan all reach segment endpoints (first/last vertex of each LineString)
 - Two reaches share a junction if any endpoint pair is within 50m (UTM distance)
 - Assign junction IDs: start from 1, increment per unique junction point
 - For T-junctions (3+ reaches meeting): create a single junction node shared by all
-- upstream/downstream determined by Strahler order (lower Strahler = upstream) or flow direction attribute from EU-Hydro (if available)
-- Display junction nodes as circles on the map with junction ID labels
+- **Upstream/downstream by geometry** (not Strahler — Strahler is unreliable for same-order reaches):
+  1. For each reach, the segment startpoint is upstream, endpoint is downstream (EU-Hydro digitization follows flow direction)
+  2. At a junction: the reach whose endpoint matches the junction is upstream; the reach whose startpoint matches is downstream
+  3. If ambiguous (both start or both end at junction): fall back to elevation if available, otherwise prompt user to click an arrow to set direction
+- Display junction nodes as circles on the map with junction ID labels and flow direction arrows
 
 **Data stored:** `_reaches` dict: `{reach_name: {"segments": [geom,...], "color": [...], "upstream_junction": int, "downstream_junction": int}}`
 
@@ -110,7 +113,7 @@ Rivers: 142 | Water bodies: 3 | Reaches: 5 (127 segments) | Cells: 798 | CRS: EP
 
 #### A. Hexagonal (default)
 1. Reproject reach segments from WGS84 → UTM
-2. Buffer segments by `cell_size * 0.7` (meters) — 0.7 factor ensures hexagons slightly overlap the river corridor for full coverage
+2. Buffer segments by `cell_size * 2.0` (meters) — produces corridor ~4× cell width, ensuring 3-5 hexagon columns across even narrow streams. For a 20m cell: 40m buffer → 80m corridor → 4 hex columns.
 3. Generate flat-top hexagonal grid covering the buffered extent:
    ```
    hex_width = cell_size
@@ -166,9 +169,12 @@ Rivers: 142 | Water bodies: 3 | Reaches: 5 (127 segments) | Cells: 798 | CRS: EP
 | `max_spawn_flow` | 20 | Number | 1-999 |
 | `shear_A` | 0.013 | Number | 0-0.1 |
 | `shear_B` | 0.40 | Number | 0-1 |
-| `frac_spawn` | 0.3 | Slider | 0-1 |
 
-Junction IDs: auto-assigned, displayed as read-only (editable via text input if user wants override).
+Note: `frac_spawn` is a **cell-level attribute** (stored in shapefile DBF), not a ReachConfig field. The slider in Step 4 sets the default `frac_spawn` for all cells in the selected reach. User can later fine-tune per-cell in the shapefile.
+
+Note: ReachConfig in `config.py` has all defaults as 0.0. The export must write the **spec defaults** above (not 0.0) so the simulation produces realistic results.
+
+Junction IDs: auto-assigned from geometric analysis, displayed as read-only (editable via number input if user wants override).
 
 **Species presets:**
 - "Baltic Atlantic Salmon" → loads `configs/baltic_salmon_species.yaml`
@@ -202,14 +208,24 @@ model_export/
 └── {ReachName}-Vels.csv              # Template (10 flows × n_cells)
 ```
 
-**Shapefile attributes (DBF):** `ID_TEXT`, `REACH_NAME`, `AREA` (m²), `M_TO_ESC` (cm), `NUM_HIDING`, `FRACVSHL`, `FRACSPWN`
+**Shapefile attributes (DBF):** `ID_TEXT`, `REACH_NAME`, `AREA` (m², converted to cm² by model at load time), `M_TO_ESC` (cm, distance to nearest reach endpoint × 100), `NUM_HIDING` (int), `FRACVSHL` (float 0-1), `FRACSPWN` (float 0-1)
+
+Note: Centroids are NOT stored in the DBF — they're computed from polygon geometry at model load time by `PolygonMesh._build_cell_state()`.
 
 **Template CSVs:**
-- TimeSeriesInputs: header + 365 rows (1 year) with placeholder values (temp=10, flow=5, turbidity=2)
-- Depths: header + n_cells rows × 10 flow columns, default depths from cell_size-based estimate
-- Velocities: header + n_cells rows × 10 flow columns, default velocities
+- TimeSeriesInputs: header + 365 rows (1 year) with placeholder values (temp=10, flow=5, turbidity=2). User must replace with real time-series data.
+- Depths: header + n_cells rows × 10 flow columns. Flow values are geometric sequence from 0.5 to 500 m³/s: `[0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]`. Default depth per cell: `0.3 + 0.7 * log(flow / 0.5) / log(1000) * cell_var` where `cell_var` is ±30% random per cell. User must replace with real hydraulic data (e.g., from River2D or HEC-RAS).
+- Velocities: same 10 flows, default velocity: `0.1 + 0.5 * flow / 50 * cell_var`. Placeholder only.
 
-**"Load into Setup"** button: writes files to `tests/fixtures/{model_name}/`, adds config to `configs/`, triggers Setup tab to reload.
+Note: Example A uses 26 flows. 10 is sufficient for a template — users add more flow breakpoints when they have real hydraulic data. The template serves as a runnable starting point, not a substitute for calibrated hydraulics.
+
+**"Load into Setup"** button:
+1. Creates directory `app/data/fixtures/{model_name}/`
+2. Writes shapefile + CSVs to that directory
+3. Writes config YAML to `configs/{model_name}.yaml` (config stem must start with "example" to appear in dropdown)
+4. Sets `input.config_file` to the new config path
+5. Triggers Setup tab's `load_config_btn` to reload the grid
+6. No writes to `tests/` — that's for test fixtures only
 
 ---
 
@@ -238,10 +254,11 @@ All mesh types render identically in deck.gl (GeoJSON polygons). CellState is sh
 
 | File | Lines (est.) | Responsibility |
 |------|-------------|----------------|
-| `app/modules/create_model_panel.py` | 400 | UI, action bar, state management, map interactions |
+| `app/modules/create_model_panel.py` | 400 | UI, action bar, state management, map interactions, Strahler filter |
 | `app/modules/create_model_grid.py` | 300 | Hexagonal + rectangular cell generation, buffering, clipping |
-| `app/modules/create_model_export.py` | 250 | Shapefile + YAML + CSV export, ZIP packaging |
-| `app/modules/create_model_reaches.py` | 200 | Reach selection, junction detection, topology |
+| `app/modules/create_model_export.py` | 300 | Shapefile + YAML + CSV export, ZIP packaging, validation |
+| `app/modules/create_model_reaches.py` | 250 | Reach selection, junction detection (geometric flow), topology |
+| `app/modules/create_model_utils.py` | 150 | CRS auto-detection, UTM reprojection, species preset loading |
 
 ---
 
