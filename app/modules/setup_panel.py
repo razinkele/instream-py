@@ -234,7 +234,9 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
                 })
                 _layer_sent.set(True)
             else:
-                await _widget.partial_update(session, [layer])
+                # Full update for recoloring — partial_update doesn't refresh
+                # deck.gl data when only fill colors change
+                await _widget.update(session, [layer])
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return
