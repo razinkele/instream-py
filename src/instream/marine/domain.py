@@ -271,20 +271,28 @@ def accumulate_smolt_readiness(
     """Accumulate smolt readiness for PARR fish during the spring window.
 
     Readiness increases based on photoperiod (day_length / max_day_length)
-    and temperature proximity to *optimal_temp*.  Only PARR fish above
-    *min_length* during DOY [window_start, window_end] are affected.
+    and temperature proximity to *optimal_temp*.  All PARR fish during
+    DOY [window_start, window_end] accumulate readiness regardless of body
+    length (physiological smoltification begins before migratory size).
+    Winter decay (DOY > 270) partially resets readiness each year, enabling
+    multi-year build-up over 2-3 springs.  *min_length* is retained in the
+    signature for backward compatibility but is no longer used.
     Modifies *readiness* in-place.
     """
-    if doy < window_start or doy > window_end:
+    n = len(readiness)
+
+    # Winter decay (DOY 270-365): partial readiness reset
+    if doy > 270:
+        for i in range(n):
+            if life_history[i] == int(LifeStage.PARR) and readiness[i] > 0:
+                readiness[i] *= 0.996  # ~30% decay over 90 days (0.996^90 ≈ 0.70)
         return
 
-    n = len(readiness)
+    if doy < window_start or doy > window_end:
+        return
     for i in range(n):
         if life_history[i] != int(LifeStage.PARR):
             continue
-        if lengths[i] < min_length:
-            continue
-
         # Photoperiod signal: fraction of maximum day length
         photo_signal = day_length / max(max_day_length, 1e-6)
         # Temperature signal: 1 when at optimal, declining away
@@ -292,7 +300,7 @@ def accumulate_smolt_readiness(
         temp_signal = max(0.0, 1.0 - temp_diff / optimal_temp) if optimal_temp > 0 else 0.0
 
         increment = photo_weight * photo_signal + temp_weight * temp_signal
-        readiness[i] = min(1.0, readiness[i] + increment * 0.05)  # daily tick
+        readiness[i] = min(1.0, readiness[i] + increment * 0.005)  # multi-year rate
 
 
 # ---------------------------------------------------------------------------

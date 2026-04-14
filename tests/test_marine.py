@@ -385,7 +385,7 @@ class TestSmoltReadiness:
         lengths = np.array([15.0, 15.0, 8.0, 15.0], dtype=np.float64)
         temperature = np.full(n, 10.0, dtype=np.float64)
 
-        # Fish 2 is below min_length, fish 3 is FRY
+        # Fish 2 is below min_length (but still accumulates since v0.30.0), fish 3 is FRY
         life_history[3] = int(LifeStage.FRY)
 
         accumulate_smolt_readiness(
@@ -399,8 +399,9 @@ class TestSmoltReadiness:
         # Fish 0 and 1 should have increased readiness
         assert readiness[0] > 0.0
         assert readiness[1] > 0.0
-        # Fish 2 (too short) and 3 (FRY) should remain zero
-        assert readiness[2] == 0.0
+        # Fish 2 (short PARR) now accumulates readiness (v0.30.0: length decoupled)
+        assert readiness[2] > 0.0
+        # Fish 3 (FRY) should remain zero
         assert readiness[3] == 0.0
 
     def test_readiness_zero_outside_window(self):
@@ -511,3 +512,84 @@ class TestAdultReturn:
 
         assert ts.life_history[0] == LifeStage.RETURNING_ADULT
         assert ts.cell_idx[0] in wet_cells
+
+
+# ===================================================================
+# Task 1 (v0.30.0) — Smolt readiness decoupled from length
+# ===================================================================
+
+
+def test_smolt_readiness_accumulates_regardless_of_length():
+    """Undersized parr must accumulate readiness (physiological smoltification
+    begins before migratory size is reached)."""
+    import numpy as np
+    from instream.marine.domain import accumulate_smolt_readiness
+    from instream.state.life_stage import LifeStage
+
+    n = 5
+    readiness = np.zeros(n, dtype=np.float64)
+    life_history = np.full(n, int(LifeStage.PARR), dtype=np.int8)
+    lengths = np.array([3.0, 5.0, 7.0, 8.0, 12.0])
+    temperature = np.full(n, 10.0)
+
+    for doy in range(90, 120):
+        accumulate_smolt_readiness(
+            readiness, life_history, lengths,
+            day_length=0.55, max_day_length=0.67,
+            temperature=temperature, optimal_temp=10.0,
+            doy=doy, min_length=8.0,
+        )
+
+    assert readiness[0] > 0, "3cm parr should accumulate readiness"
+    assert readiness[1] > 0, "5cm parr should accumulate readiness"
+    assert readiness[2] > 0, "7cm parr should accumulate readiness"
+    np.testing.assert_allclose(readiness[0], readiness[4], rtol=0.01)
+
+
+def test_smolt_readiness_builds_across_years():
+    """Readiness must build over 2-3 springs with winter decay."""
+    import numpy as np
+    from instream.marine.domain import accumulate_smolt_readiness
+    from instream.state.life_stage import LifeStage
+
+    readiness = np.zeros(1, dtype=np.float64)
+    life_history = np.array([int(LifeStage.PARR)], dtype=np.int8)
+    lengths = np.array([6.0])
+    temperature = np.array([10.0])
+
+    for doy in range(90, 181):
+        accumulate_smolt_readiness(
+            readiness, life_history, lengths,
+            day_length=0.55, max_day_length=0.67,
+            temperature=temperature, optimal_temp=10.0,
+            doy=doy, min_length=8.0,
+        )
+    year1 = float(readiness[0])
+    assert 0.2 < year1 < 0.6, f"Year 1 readiness should be 0.2-0.6, got {year1}"
+
+    for doy in range(270, 366):
+        accumulate_smolt_readiness(
+            readiness, life_history, lengths,
+            day_length=0.3, max_day_length=0.67,
+            temperature=temperature, optimal_temp=10.0,
+            doy=doy, min_length=8.0,
+        )
+    after_winter = float(readiness[0])
+    assert after_winter < year1, "Winter should decay readiness"
+
+    for doy in range(90, 181):
+        accumulate_smolt_readiness(
+            readiness, life_history, lengths,
+            day_length=0.55, max_day_length=0.67,
+            temperature=temperature, optimal_temp=10.0,
+            doy=doy, min_length=8.0,
+        )
+    year2 = float(readiness[0])
+    assert 0.4 < year2 < 0.9, f"After 2 springs, readiness should be 0.4-0.9, got {year2}"
+
+
+def test_smolt_emigration_requires_both_length_and_readiness():
+    """Smoltification at river mouth requires length >= min AND readiness >= 0.8."""
+    from instream.state.life_stage import LifeStage
+    assert int(LifeStage.PARR) == 1
+    assert int(LifeStage.SMOLT) == 3
