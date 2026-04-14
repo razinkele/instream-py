@@ -71,20 +71,17 @@ def setup_ui():
         },
     )
     return ui.div(
-        ui.h5("Setup Review"),
-        ui.row(
-            ui.column(4, ui.tags.label("Color by:"),
-                       ui.input_select("layer_var", None,
-                                       choices=LAYER_CHOICES, selected="reach",
-                                       width="100%")),
-            ui.column(8, ui.tags.div(
-                ui.tags.small("Select a configuration above to preview the "
-                              "spatial grid and habitat layers. "
-                              "No simulation required."),
-                style="padding-top:0.5rem; color:#888;",
-            )),
+        ui.div(
+            ui.tags.span("Color by:", style="font-weight:500; margin-right:0.5rem;"),
+            ui.div(
+                ui.input_select("layer_var", None,
+                                choices=LAYER_CHOICES, selected="reach",
+                                width="200px"),
+                style="display:inline-block; vertical-align:middle;",
+            ),
+            style="display:flex; align-items:center; margin-bottom:0.5rem;",
         ),
-        _widget.ui(height="500px"),
+        _widget.ui(height="550px"),
         ui.output_ui("setup_summary"),
     )
 
