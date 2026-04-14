@@ -237,6 +237,9 @@ def create_model_ui():
             ui.input_action_button("export_btn", "📦 Export",
                                    class_="btn btn-cm",
                                    title="Export shapefile + YAML config as ZIP"),
+            ui.input_action_button("help_btn", "? Help",
+                                   class_="btn btn-cm",
+                                   title="Show model creation guide"),
             ui.tags.div(style="flex:1;"),  # spacer
             ui.output_ui("toolbar_badges"),
         ),
@@ -888,6 +891,83 @@ def create_model_server(input, output, session):
             f"Configure: {n_reaches} reaches, {n_cells} cells. "
             "(Configuration dialog not yet implemented.)"
         )
+
+    # -----------------------------------------------------------------
+    # Help modal
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.help_btn)
+    def _on_help():
+        m = ui.modal(
+            ui.h4("Creating a Model in SalmoPy", style="margin-top:0;"),
+            ui.markdown("""
+**SalmoPy** builds individual-based salmon simulation models from
+EU-Hydro river network data. Follow these steps to create a new model:
+
+---
+
+### Step 1 — Load River Data
+
+1. **Pan and zoom** the map to your area of interest.
+2. Click **🌊 Rivers** to download EU-Hydro river segments for the current view.
+3. Click **💧 Water** to download water bodies (lagoons, lakes, coastal polygons).
+4. Use the **Strahler** slider to filter small tributaries (higher = larger rivers only).
+
+### Step 2 — Select Reaches
+
+1. Click **✏️ Select** to enter selection mode (badge turns red: SELECTING).
+2. **Click on a river line** to add that segment to the current reach.
+   Multiple clicks add more segments to the same reach.
+3. **Click inside a water body** (lagoon, lake) to add it as a water reach.
+4. Click **✏️ Select** again to finish the current reach.
+5. Click **✏️ Select** once more to start a **new reach** (auto-named reach_2, reach_3, ...).
+6. Each reach gets a distinct colour on the map.
+
+> **Tip:** A reach should represent a hydrologically connected section
+> (e.g., main stem, tributary, lagoon). Fish move between reaches via junctions.
+
+### Step 3 — Generate Habitat Cells
+
+1. Set the **River cell** size (5-100 m, default 20 m) — smaller = more detail.
+2. Set the **Water cell** size (50-1000 m, default 200 m) — for lagoons and lakes.
+3. Choose **Hexagonal** or **Rectangular** cell shape.
+4. Click **⬡ Cells** to generate the habitat grid.
+5. Cells appear on the map, coloured by reach.
+
+### Step 4 — Export
+
+1. Click **📦 Export** to download a ZIP file containing:
+   - **Shapefile** (Model.shp) — cell polygons with attributes
+   - **model_config.yaml** — full simulation configuration
+   - **TimeSeriesInputs.csv** — template for daily flow/temperature data
+   - **Depths.csv / Vels.csv** — template hydraulic tables (10 flows x N cells)
+
+2. The exported config is ready to load in the **Setup** tab.
+
+### Step 5 — Run Simulation
+
+1. Switch to the **Setup** tab.
+2. Select the exported config from the dropdown.
+3. Click **Load Config**, then **Run Simulation**.
+
+---
+
+### Tips
+
+- **🗑 Clear** resets all selected reaches and cells.
+- Reaches with **water bodies** use a larger cell size for efficiency.
+- The **Strahler** slider filters rivers in real-time — no need to re-fetch.
+- Template CSV files contain placeholder values — replace with real
+  hydrological data (HEC-RAS, River2D) for accurate simulations.
+- Cell attributes (hiding places, velocity shelter, spawning fraction)
+  can be fine-tuned in the exported shapefile's DBF table.
+"""),
+            title=None,
+            easy_close=True,
+            size="l",
+        )
+        ui.modal_show(m)
 
     # -----------------------------------------------------------------
     # Export
