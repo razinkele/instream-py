@@ -194,4 +194,6 @@ def generate_cells(
         )
 
     gdf = gpd.GeoDataFrame(records, crs=f"EPSG:{utm_epsg}")
+    # Reproject to WGS84 for map display (keep UTM area/distance values)
+    gdf = gdf.to_crs("EPSG:4326")
     return gdf
