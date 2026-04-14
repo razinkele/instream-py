@@ -180,6 +180,13 @@ def create_model_ui():
     .cm-toolbar .irs--shiny .irs-from,
     .cm-toolbar .irs--shiny .irs-to { background:#2bb89d; color:#fff; }
     .cm-toolbar .irs--shiny .irs-grid-text { color:rgba(255,255,255,.3); }
+    /* Toolbar badges */
+    .cm-badge { display:inline-block; padding:0.15rem 0.5rem; border-radius:3px;
+                font-size:0.72rem; font-weight:600; margin-left:0.3rem; vertical-align:middle; }
+    .cm-badge-select { background:#ef4444; color:#fff; animation: pulse-select 1.5s infinite; }
+    .cm-badge-reach { background:rgba(255,160,0,.85); color:#fff; }
+    .cm-badge-cells { background:rgba(34,197,94,.85); color:#fff; }
+    @keyframes pulse-select { 0%,100%{opacity:1;} 50%{opacity:.6;} }
     """)
 
     return ui.card(
@@ -197,14 +204,14 @@ def create_model_ui():
             ui.tags.div(class_="cm-sep"),
             ui.tags.span("Strahler≥", class_="cm-label"),
             ui.div(
-                ui.input_slider("strahler_min", None, min=1, max=9, value=3, step=1, width="90px"),
-                style="display:inline-block; vertical-align:middle; width:90px;",
+                ui.input_slider("strahler_min", None, min=1, max=9, value=3, step=1, width="140px"),
+                style="display:inline-block; vertical-align:middle; width:140px;",
             ),
             ui.tags.div(class_="cm-sep"),
             ui.tags.span("Cell:", class_="cm-label"),
             ui.div(
-                ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5, width="80px"),
-                style="display:inline-block; vertical-align:middle; width:80px;",
+                ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5, width="130px"),
+                style="display:inline-block; vertical-align:middle; width:130px;",
             ),
             ui.div(
                 ui.input_select("cell_shape", None,
@@ -225,6 +232,8 @@ def create_model_ui():
             ui.input_action_button("export_btn", "📦 Export",
                                    class_="btn btn-cm",
                                    title="Export shapefile + YAML config as ZIP"),
+            ui.tags.div(style="flex:1;"),  # spacer
+            ui.output_ui("toolbar_badges"),
         ),
         # -- Map (shown immediately, before any fetch) ---
         _widget.ui(height="550px"),
@@ -840,6 +849,32 @@ def create_model_server(input, output, session):
     # -----------------------------------------------------------------
 
     @render.ui
+    def toolbar_badges():
+        """Live badges in the toolbar: selecting indicator + counters."""
+        reaches = _reaches_dict()
+        cells = _cells_gdf()
+        sel_mode = _selection_mode()
+        badges = []
+        if sel_mode:
+            badges.append(ui.tags.span("SELECTING", class_="cm-badge cm-badge-select"))
+        if reaches:
+            total_segs = sum(
+                len(r["segments"]) if isinstance(r, dict) else len(r)
+                for r in reaches.values()
+            )
+            badges.append(ui.tags.span(
+                f"{len(reaches)} reaches · {total_segs} seg",
+                class_="cm-badge cm-badge-reach",
+            ))
+        if cells is not None and len(cells) > 0:
+            badges.append(ui.tags.span(
+                f"{len(cells)} cells", class_="cm-badge cm-badge-cells",
+            ))
+        if not badges:
+            return ui.div()
+        return ui.div(*badges, style="display:inline-flex; align-items:center; gap:0.2rem;")
+
+    @render.ui
     def fetch_status():
         msg = _fetch_msg()
         if not msg:
@@ -909,7 +944,10 @@ def create_model_server(input, output, session):
         # Summary badges
         badges = []
         if reaches:
-            total_segs = sum(len(v) for v in reaches.values())
+            total_segs = sum(
+                len(v["segments"]) if isinstance(v, dict) else len(v)
+                for v in reaches.values()
+            )
             badges.append(
                 ui.tags.span(
                     f"{len(reaches)} reaches ({total_segs} segments)",
