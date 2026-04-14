@@ -324,9 +324,10 @@ def _build_cells_gdf(model, raw_config):
     gdf["available_drift"] = cs.available_drift[:n]
     gdf["available_search"] = cs.available_search[:n]
 
-    # Fish count per cell at end of simulation
+    # Fish count per cell at end of simulation (exclude marine fish with cell_idx=-1)
     ts = model.trout_state
     alive_cells = ts.cell_idx[ts.alive]
+    alive_cells = alive_cells[alive_cells >= 0]
     fish_counts = np.bincount(alive_cells, minlength=n)[:n]
     gdf["fish_count"] = fish_counts
 
