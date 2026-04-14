@@ -1,7 +1,8 @@
-"""Setup Review panel — inspect spatial grid and configuration layers without simulation.
+"""Setup Review panel — inspect spatial grid and config layers without simulation.
 
-Shows the mesh, reach boundaries, spawning habitat, hiding places, velocity shelter,
-and other static properties loaded directly from the config and shapefile.
+The MapWidget is created statically in the UI (not dynamically via render.ui)
+so the deck.gl JavaScript initializes it on page load. Layers are pushed
+via widget.update() when the config changes.
 """
 
 import logging
@@ -41,17 +42,34 @@ REACH_COLORS = [
 ]
 
 
-def _fit_bounds_zoom(bounds):
-    span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
-    return max(1, min(18, 14 - math.log2(max(span, 0.001))))
-
-
 # ---------------------------------------------------------------------------
-# UI
+# UI — MapWidget created statically so JS initializes on page load
 # ---------------------------------------------------------------------------
 
 @module.ui
 def setup_ui():
+    # Create widget at UI build time (not in a render function)
+    _widget = MapWidget(
+        "setup_map",
+        view_state={
+            "longitude": 21.1,
+            "latitude": 55.7,
+            "zoom": 6,
+            "pitch": 0,
+            "bearing": 0,
+        },
+        style=BASEMAP_LIGHT,
+        tooltip={
+            "html": ("<b>{cell_id}</b><br/>Reach: {reach}<br/>"
+                     "Area: {area} m²<br/>Spawn: {frac_spawn}"),
+            "style": {
+                "backgroundColor": "#fff",
+                "color": "#333",
+                "fontSize": "12px",
+                "border": "1px solid #ccc",
+            },
+        },
+    )
     return ui.div(
         ui.h5("Setup Review"),
         ui.row(
@@ -66,7 +84,7 @@ def setup_ui():
                 style="padding-top:0.5rem; color:#888;",
             )),
         ),
-        ui.output_ui("setup_map_container"),
+        _widget.ui(height="500px"),
         ui.output_ui("setup_summary"),
     )
 
@@ -75,10 +93,43 @@ def setup_ui():
 # Server
 # ---------------------------------------------------------------------------
 
+def _build_layer(gdf, layer_var):
+    if layer_var == "reach" and "reach" in gdf.columns:
+        unique_reaches = list(gdf["reach"].unique())
+        colors = [REACH_COLORS[unique_reaches.index(r) % len(REACH_COLORS)]
+                  for r in gdf["reach"]]
+    elif layer_var in gdf.columns:
+        values = gdf[layer_var].fillna(0).values
+        colors = _value_to_rgba(values, cmap="YlGnBu", alpha=180)
+    else:
+        colors = [[100, 100, 100, 120]] * len(gdf)
+
+    geojson = gdf.__geo_interface__
+    for i, feat in enumerate(geojson["features"]):
+        c = colors[i]
+        feat["properties"]["_fill"] = c if isinstance(c, list) else c.tolist()
+
+    return geojson_layer(
+        id="setup-cells",
+        data=geojson,
+        get_fill_color="@@=properties._fill",
+        get_line_color=[60, 60, 60, 100],
+        get_line_width=1,
+        stroked=True,
+        filled=True,
+        pickable=True,
+        auto_highlight=True,
+    )
+
+
 @module.server
 def setup_server(input, output, session, config_file_rv):
-    _widget = reactive.value(None)
-    _gdf_cache = reactive.value(None)
+    # Re-create the widget handle in server context (same ID, resolved in module NS)
+    _widget = MapWidget(
+        "setup_map",
+        view_state={"longitude": 21.1, "latitude": 55.7, "zoom": 6},
+        style=BASEMAP_LIGHT,
+    )
     _layer_sent = reactive.value(False)
 
     @reactive.calc
@@ -133,126 +184,38 @@ def setup_server(input, output, session, config_file_rv):
         gdf.attrs["raw_config"] = raw
         return gdf
 
-    def _build_layer(gdf, layer_var):
-        if layer_var == "reach" and "reach" in gdf.columns:
-            unique_reaches = list(gdf["reach"].unique())
-            colors = [REACH_COLORS[unique_reaches.index(r) % len(REACH_COLORS)]
-                      for r in gdf["reach"]]
-        elif layer_var in gdf.columns:
-            values = gdf[layer_var].fillna(0).values
-            colors = _value_to_rgba(values, cmap="YlGnBu", alpha=180)
-        else:
-            colors = [[100, 100, 100, 120]] * len(gdf)
-
-        geojson = gdf.__geo_interface__
-        for i, feat in enumerate(geojson["features"]):
-            c = colors[i]
-            feat["properties"]["_fill"] = c if isinstance(c, list) else c.tolist()
-
-        return geojson_layer(
-            id="setup-cells",
-            data=geojson,
-            get_fill_color="@@=properties._fill",
-            get_line_color=[60, 60, 60, 100],
-            get_line_width=1,
-            stroked=True,
-            filled=True,
-            pickable=True,
-            auto_highlight=True,
-        )
-
-    @render.ui
-    def setup_map_container():
+    @reactive.effect
+    async def _update_layer():
+        """Push layers when config or color variable changes."""
         gdf = _load_gdf()
         if gdf is None:
-            return ui.p("Select a configuration to preview the spatial grid.",
-                        style="color:#888; padding:2rem;")
-
-        bounds = gdf.total_bounds
-        center_lon = (bounds[0] + bounds[2]) / 2
-        center_lat = (bounds[1] + bounds[3]) / 2
-        zoom = _fit_bounds_zoom(bounds)
-
-        widget = MapWidget(
-            "setup_map",
-            view_state={
-                "longitude": center_lon,
-                "latitude": center_lat,
-                "zoom": zoom,
-                "pitch": 0,
-                "bearing": 0,
-            },
-            style=BASEMAP_LIGHT,
-            tooltip={
-                "html": "<b>{cell_id}</b><br/>Reach: {reach}<br/>Area: {area} m²<br/>Spawn: {frac_spawn}",
-                "style": {
-                    "backgroundColor": "#fff",
-                    "color": "#333",
-                    "fontSize": "12px",
-                    "border": "1px solid #ccc",
-                },
-            },
-        )
-        _widget.set(widget)
-        _gdf_cache.set(gdf)
-        _layer_sent.set(False)
-        return widget.ui(height="500px")
-
-    _init_attempts = reactive.value(0)
-
-    @reactive.effect
-    async def _send_initial_layer():
-        """Send the cell layer once when the widget is first created.
-
-        Retries up to 5 times with 1-second delays to wait for the
-        deck.gl JavaScript to initialize the map element in the DOM.
-        """
-        widget = _widget()
-        gdf = _gdf_cache()
-        if widget is None or gdf is None:
-            return
-        if _layer_sent():
-            return
-
-        attempts = _init_attempts()
-        if attempts > 5:
-            return
-
-        # Wait for JS to initialize the map
-        import asyncio
-        await asyncio.sleep(1.0)
-
-        try:
-            with reactive.isolate():
-                layer_var = input.layer_var()
-            layer = _build_layer(gdf, layer_var)
-            await widget.update(session, [layer], animate=False)
-            _layer_sent.set(True)
-        except Exception as e:
-            if "SilentException" in type(e).__name__:
-                return
-            # Map not ready yet — retry
-            _init_attempts.set(attempts + 1)
-            reactive.invalidate_later(1)
-            logger.debug("Setup map not ready, retry %d", attempts + 1)
-
-    @reactive.effect
-    async def _recolor_layer():
-        """Re-color cells when the layer dropdown changes."""
-        widget = _widget()
-        gdf = _gdf_cache()
-        if widget is None or gdf is None:
-            return
-        if not _layer_sent():
             return
         try:
             layer_var = input.layer_var()
             layer = _build_layer(gdf, layer_var)
-            await widget.partial_update(session, [layer])
+
+            # Fly to the data bounds
+            bounds = gdf.total_bounds
+            center_lon = (bounds[0] + bounds[2]) / 2
+            center_lat = (bounds[1] + bounds[3]) / 2
+            span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
+            zoom = max(1, min(18, 14 - math.log2(max(span, 0.001))))
+
+            if not _layer_sent():
+                await _widget.update(session, [layer], animate=False)
+                await _widget.set_view_state(session, {
+                    "longitude": center_lon,
+                    "latitude": center_lat,
+                    "zoom": zoom,
+                    "transitionDuration": 1000,
+                })
+                _layer_sent.set(True)
+            else:
+                await _widget.partial_update(session, [layer])
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return
-            logger.exception("Error re-coloring setup layer")
+            logger.exception("Error updating setup layer")
 
     @render.ui
     def setup_summary():
