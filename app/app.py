@@ -152,6 +152,13 @@ _SIDEBAR_CSS = """
     font-size: .78rem; width: 100%;
 }
 .sp-config select:focus, .sp-config input:focus { border-color: var(--sp-accent); outline: none; }
+.sp-config select option { background: #1e293b; color: #fff; }
+.sp-config .btn-load-config {
+    background: rgba(43,184,157,.2); color: var(--sp-accent); border: 1px solid var(--sp-accent);
+    border-radius: 4px; padding: .3rem; width: 100%; font-size: .75rem; font-weight: 600;
+    cursor: pointer; margin-top: .3rem; margin-bottom: .5rem;
+}
+.sp-config .btn-load-config:hover { background: rgba(43,184,157,.35); }
 .sp-config .btn-run {
     background: var(--sp-accent); color: #fff; border: none; border-radius: 4px;
     padding: .4rem; width: 100%; font-size: .8rem; font-weight: 600;
@@ -248,6 +255,7 @@ _custom_sidebar = ui.tags.div(
         {"class": "sp-config"},
         ui.tags.label("Configuration"),
         ui.input_select("config_file", None, choices=CONFIG_CHOICES, width="100%"),
+        ui.input_action_button("load_config_btn", "Load Config", class_="btn-load-config"),
         ui.tags.label("Start Date"),
         ui.input_date("start_date", None, value="2011-04-01", width="100%"),
         ui.tags.label("End Date"),
@@ -607,7 +615,7 @@ def server(input, output, session):
         return "Ready"
 
     # Wire panel modules
-    setup_server("setup", config_file_rv=input.config_file)
+    setup_server("setup", config_file_rv=input.config_file, load_btn_rv=input.load_config_btn)
     population_server("pop", results_rv=results_rv)
     environment_server("env", results_rv=results_rv)
     distribution_server("dist", results_rv=results_rv)

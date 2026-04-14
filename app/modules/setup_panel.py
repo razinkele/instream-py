@@ -120,18 +120,36 @@ def _build_layer(gdf, layer_var):
 
 
 @module.server
-def setup_server(input, output, session, config_file_rv):
-    # Re-create the widget handle in server context (same ID, resolved in module NS)
+def setup_server(input, output, session, config_file_rv, load_btn_rv):
+    """Server logic for setup review panel.
+
+    Parameters
+    ----------
+    config_file_rv : reactive callable
+        Returns the currently selected config file path.
+    load_btn_rv : reactive callable
+        Returns the load button click count (triggers config loading).
+    """
     _widget = MapWidget(
         "setup_map",
         view_state={"longitude": 21.1, "latitude": 55.7, "zoom": 6},
         style=BASEMAP_LIGHT,
     )
     _layer_sent = reactive.value(False)
+    _loaded_config = reactive.value(None)
+
+    @reactive.effect
+    @reactive.event(load_btn_rv)
+    def _on_load_click():
+        """Store the config path when Load button is clicked."""
+        config_path = config_file_rv()
+        if config_path:
+            _loaded_config.set(config_path)
+            _layer_sent.set(False)
 
     @reactive.calc
     def _load_gdf():
-        config_path = config_file_rv()
+        config_path = _loaded_config()
         if not config_path:
             return None
         try:
