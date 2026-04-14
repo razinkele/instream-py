@@ -198,15 +198,30 @@ def setup_server(input, output, session, config_file_rv):
         _layer_sent.set(False)
         return widget.ui(height="500px")
 
+    _init_attempts = reactive.value(0)
+
     @reactive.effect
     async def _send_initial_layer():
-        """Send the cell layer once when the widget is first created."""
+        """Send the cell layer once when the widget is first created.
+
+        Retries up to 5 times with 1-second delays to wait for the
+        deck.gl JavaScript to initialize the map element in the DOM.
+        """
         widget = _widget()
         gdf = _gdf_cache()
         if widget is None or gdf is None:
             return
         if _layer_sent():
             return
+
+        attempts = _init_attempts()
+        if attempts > 5:
+            return
+
+        # Wait for JS to initialize the map
+        import asyncio
+        await asyncio.sleep(1.0)
+
         try:
             with reactive.isolate():
                 layer_var = input.layer_var()
@@ -216,7 +231,10 @@ def setup_server(input, output, session, config_file_rv):
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return
-            logger.exception("Error sending initial setup layer")
+            # Map not ready yet — retry
+            _init_attempts.set(attempts + 1)
+            reactive.invalidate_later(1)
+            logger.debug("Setup map not ready, retry %d", attempts + 1)
 
     @reactive.effect
     async def _recolor_layer():
