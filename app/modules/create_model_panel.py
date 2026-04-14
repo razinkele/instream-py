@@ -148,77 +148,58 @@ def create_model_ui():
     )
     return ui.card(
         ui.card_header("Create Model"),
-        # -- Row 1: Fetch buttons + Strahler filter ---
-        ui.layout_columns(
-            ui.div(
-                ui.input_action_button("fetch_rivers", "Fetch Rivers",
-                                       class_="btn btn-primary btn-sm"),
-                ui.input_action_button("fetch_water", "Fetch Water Bodies",
-                                       class_="btn btn-info btn-sm"),
-                style="display:flex; gap:0.5rem; margin-bottom:0.5rem;",
-            ),
-            ui.div(
-                ui.tags.small(
-                    "Pan/zoom the map, then click Fetch to download EU-Hydro data for the visible area.",
-                    style="color:#888;",
-                ),
-            ),
-            col_widths=(8, 4),
-        ),
-        # -- Row 2: Strahler slider ---
-        ui.layout_columns(
-            ui.input_slider(
-                "strahler_min",
-                "Min Strahler order",
-                min=1, max=9, value=3, step=1,
-            ),
-            ui.div(
-                ui.tags.small(
-                    "Filter river segments by Strahler stream order. "
-                    "Higher values keep only larger rivers.",
-                    style="color:#888;",
-                ),
-            ),
-            col_widths=(6, 6),
-        ),
-        # -- Row 3: Cell size + shape ---
-        ui.layout_columns(
-            ui.input_slider(
-                "cell_size",
-                "Cell size (m)",
-                min=5, max=100, value=20, step=5,
-            ),
-            ui.input_select(
-                "cell_shape",
-                "Cell shape",
-                choices={"hexagonal": "Hexagonal", "rectangular": "Rectangular"},
-                selected="hexagonal",
-            ),
-            col_widths=(6, 6),
-        ),
-        # -- Row 4: Workflow buttons ---
+        # -- Compact toolbar: all controls in one row ---
         ui.div(
-            ui.input_action_button(
-                "select_reaches_btn", "Select Reaches",
-                class_="btn btn-warning btn-sm",
+            ui.tags.span(
+                ui.input_action_button("fetch_rivers", "🌊 Rivers",
+                                       class_="btn btn-primary btn-sm",
+                                       title="Fetch EU-Hydro river network for current map view"),
+                ui.input_action_button("fetch_water", "💧 Water",
+                                       class_="btn btn-info btn-sm",
+                                       title="Fetch EU-Hydro water bodies (lakes, lagoons)"),
+                style="display:inline-flex; gap:0.3rem; margin-right:0.6rem;",
             ),
-            ui.input_action_button(
-                "generate_cells_btn", "Generate Cells",
-                class_="btn btn-success btn-sm",
+            ui.tags.span(
+                ui.tags.small("Strahler≥", style="color:#666; vertical-align:middle;"),
+                ui.div(
+                    ui.input_slider("strahler_min", None, min=1, max=9, value=3, step=1,
+                                    width="90px"),
+                    style="display:inline-block; vertical-align:middle; width:90px;",
+                ),
+                style="display:inline-flex; align-items:center; gap:0.2rem; margin-right:0.6rem;",
             ),
-            ui.input_action_button(
-                "configure_btn", "Configure",
-                class_="btn btn-secondary btn-sm",
+            ui.tags.span(
+                ui.tags.small("Cell:", style="color:#666; vertical-align:middle;"),
+                ui.div(
+                    ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5,
+                                    width="80px"),
+                    style="display:inline-block; vertical-align:middle; width:80px;",
+                ),
+                ui.div(
+                    ui.input_select("cell_shape", None,
+                                    choices={"hexagonal": "Hex", "rectangular": "Rect"},
+                                    selected="hexagonal", width="65px"),
+                    style="display:inline-block; vertical-align:middle;",
+                ),
+                style="display:inline-flex; align-items:center; gap:0.2rem; margin-right:0.6rem;",
             ),
-            ui.input_action_button(
-                "export_btn", "Export",
-                class_="btn btn-dark btn-sm",
+            ui.tags.span(
+                ui.input_action_button("select_reaches_btn", "✏️ Select",
+                                       class_="btn btn-warning btn-sm",
+                                       title="Click river segments to assign to reaches"),
+                ui.input_action_button("generate_cells_btn", "⬡ Cells",
+                                       class_="btn btn-success btn-sm",
+                                       title="Generate habitat cells from selected reaches"),
+                ui.input_action_button("export_btn", "📦 Export",
+                                       class_="btn btn-dark btn-sm",
+                                       title="Export shapefile + YAML config as ZIP"),
+                style="display:inline-flex; gap:0.3rem;",
             ),
-            style="display:flex; gap:0.5rem; margin-bottom:0.5rem;",
+            style="display:flex; flex-wrap:wrap; align-items:center; gap:0.3rem; padding:0.4rem 0;",
         ),
-        # -- Map ---
+        # -- Map (shown immediately, before any fetch) ---
         _widget.ui(height="550px"),
-        # -- Status + summary ---
+        # -- Status (compact) ---
         ui.output_ui("fetch_status"),
         ui.output_ui("data_summary"),
         ui.output_ui("workflow_status"),
