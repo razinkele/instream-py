@@ -93,7 +93,7 @@ def test_smolt_readiness_builds_across_years():
             doy=doy, min_length=8.0,
         )
     year1 = float(readiness[0])
-    assert 0.3 < year1 < 0.7, f"Year 1 readiness should be 0.3-0.7, got {year1}"
+    assert 0.2 < year1 < 0.6, f"Year 1 readiness should be 0.2-0.6, got {year1}"
 
     # Winter decay (DOY 270-365)
     for doy in range(270, 366):
@@ -116,8 +116,8 @@ def test_smolt_readiness_builds_across_years():
         )
     year2 = float(readiness[0])
 
-    # After 2 springs, readiness should be near or above 0.8
-    assert year2 > 0.7, f"After 2 springs, readiness should be >0.7, got {year2}"
+    # After 2 springs, readiness should be 0.5-0.8 (not yet at threshold)
+    assert 0.4 < year2 < 0.9, f"After 2 springs, readiness should be 0.4-0.9, got {year2}"
 ```
 
 - [ ] **Step 3: Write test for emigration requiring both length AND readiness**
@@ -165,14 +165,18 @@ The function should now only check for `life_history[i] != int(LifeStage.PARR)`.
 
 In `src/instream/marine/domain.py`, replace the early return at line 278-279 and the increment at line 295.
 
-Replace:
+Replace the early return and `n` definition (lines 278-281):
 ```python
     if doy < window_start or doy > window_end:
         return
+
+    n = len(readiness)
 ```
 
-With:
+With (note: `n` must be defined before the winter decay loop):
 ```python
+    n = len(readiness)
+
     # Winter decay (DOY 270-365): partial readiness reset
     if doy > 270:
         for i in range(n):
@@ -191,7 +195,7 @@ Replace the daily tick (line 295):
 
 With:
 ```python
-        readiness[i] = min(1.0, readiness[i] + increment * 0.015)  # multi-year rate
+        readiness[i] = min(1.0, readiness[i] + increment * 0.005)  # multi-year rate
 ```
 
 - [ ] **Step 7: Run tests to verify they pass**
@@ -457,21 +461,33 @@ def test_candidate_lists_respect_reach_connectivity():
     """Candidates must be restricted to current reach + connected reaches."""
     import numpy as np
     from instream.modules.behavior import build_candidate_lists
-    from tests.test_behavior import _make_space, _make_trout  # reuse existing helpers
+    from instream.state.cell_state import CellState
+    from instream.state.trout_state import TroutState
+    from instream.space.fem_space import FEMSpace
 
-    # Create a 2-reach space: reach 0 (cells 0-4), reach 1 (cells 5-9)
-    space = _make_space(10)
-    space.cell_state.reach_idx[:5] = 0
-    space.cell_state.reach_idx[5:] = 1
-    space.cell_state.depth[:] = 1.0  # all wet
+    # Create a 10-cell space: reach 0 (cells 0-4), reach 1 (cells 5-9)
+    cs = CellState.zeros(10, num_flows=2)
+    cs.centroid_x[:] = np.arange(10, dtype=np.float64) * 100
+    cs.centroid_y[:] = 0.0
+    cs.depth[:] = 50.0  # all wet
+    cs.area[:] = 10000.0
+    cs.reach_idx[:5] = 0
+    cs.reach_idx[5:] = 1
+    ni = np.full((10, 4), -1, dtype=np.int32)
+    for i in range(9):
+        ni[i, 0] = i + 1
+        ni[i + 1, 1] = i
+    space = FEMSpace(cs, ni)
 
-    ts = _make_trout(2)
-    ts.alive[:2] = True
+    ts = TroutState.zeros(3)
+    ts.alive[0] = True
     ts.cell_idx[0] = 2   # fish 0 in reach 0
-    ts.cell_idx[1] = 7   # fish 1 in reach 1
     ts.reach_idx[0] = 0
+    ts.length[0] = 10.0
+    ts.alive[1] = True
+    ts.cell_idx[1] = 7   # fish 1 in reach 1
     ts.reach_idx[1] = 1
-    ts.length[:2] = 10.0
+    ts.length[1] = 10.0
 
     # reach_allowed: reach 0 can see reach 0 only; reach 1 can see reach 1 only
     reach_allowed = {

@@ -52,7 +52,7 @@ Change: Reduce the daily increment and add a winter decay so readiness builds ov
 
 ```python
 # Spring accumulation (DOY 90-180): slower rate
-daily_increment = 0.015  # Was 0.05 — now takes ~55 days to reach 0.8
+daily_increment = 0.005  # Was 0.05 — now takes 2-3 springs to reach 0.8
                          # But parr must survive 2-3 springs to accumulate
 
 # Winter decay (DOY 270-365): partial reset
@@ -60,7 +60,7 @@ if doy > 270:
     smolt_readiness[i] *= 0.996  # ~30% decay over winter (0.996^90 ≈ 0.70)
 ```
 
-With this rate: Year 1 spring (90 days × 0.015 ≈ 0.5 signal × 0.015) → ~0.45 readiness. Winter decay (0.996^90 ≈ 0.70) → ~0.32. Year 2 spring → 0.32 + 0.45 = 0.77. Year 3 spring → exceeds 0.8 threshold. Fish that also exceed 8cm length will emigrate in their 2nd-3rd spring — matching Baltic 2-3 year parr residency (Kallio-Nyberg et al. 2020).
+With this rate: Year 1 spring (91 days × ~0.89 signal × 0.005) → ~0.40 readiness. Winter decay (0.996^90 ≈ 0.70) → ~0.28. Year 2 spring → 0.28 + 0.40 = 0.68. Winter → ~0.48. Year 3 spring → 0.48 + 0.40 = 0.88, exceeding 0.8 threshold. Fish that also exceed 8cm length will emigrate in their 3rd spring — matching Baltic 2-3 year parr residency (Kallio-Nyberg et al. 2020).
 
 #### A3. Baltic config — no changes needed
 
