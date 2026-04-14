@@ -23,6 +23,7 @@ from modules.help_panel import help_ui, help_server, TEST_CASES  # noqa: F401
 from modules.dashboard_panel import dashboard_ui, dashboard_server, DASHBOARD_JS  # noqa: F401
 from modules.movement_panel import movement_ui, movement_server  # noqa: E402
 from modules.setup_panel import setup_ui, setup_server
+from modules.create_model_panel import create_model_ui, create_model_server
 from simulation import run_simulation
 
 
@@ -211,6 +212,7 @@ document.addEventListener('DOMContentLoaded', function() {
 """
 
 _NAV_ITEMS = [
+    ("bi-plus-circle", "Create Model"),
     ("bi-map", "Setup"),
     ("bi-speedometer2", "Dashboard"),
     ("bi-arrow-left-right", "Movement"),
@@ -334,7 +336,7 @@ _WEBGL_FALLBACK_JS = """
         function injectGpuBadges() {
             document.querySelectorAll('.card-header').forEach(function(hdr) {
                 var txt = hdr.textContent || '';
-                if ((/Spatial View|Live Movement|Setup Review/i).test(txt) && !hdr.querySelector('.sp-gpu-badge')) {
+                if ((/Spatial View|Live Movement|Setup Review|Create Model/i).test(txt) && !hdr.querySelector('.sp-gpu-badge')) {
                     hdr.insertAdjacentHTML('beforeend', badgeHtml);
                 }
             });
@@ -342,7 +344,7 @@ _WEBGL_FALLBACK_JS = """
         // Poll briefly after page load — covers Shiny's async rendering
         var _badgeTimer = setInterval(function() {
             injectGpuBadges();
-            if (document.querySelectorAll('.sp-gpu-badge').length >= 3) clearInterval(_badgeTimer);
+            if (document.querySelectorAll('.sp-gpu-badge').length >= 4) clearInterval(_badgeTimer);
         }, 400);
         // Stop polling after 15s regardless
         setTimeout(function() { clearInterval(_badgeTimer); }, 15000);
@@ -419,6 +421,7 @@ app_ui = ui.page_fluid(
     ui.div(
         {"class": "sp-main-offset"},
         ui.navset_hidden(
+            ui.nav_panel("Create Model", create_model_ui("create")),
             ui.nav_panel("Setup", setup_ui("setup")),
             ui.nav_panel("Dashboard", dashboard_ui("dash")),
             ui.nav_panel("Movement", movement_ui("movement")),
@@ -615,6 +618,7 @@ def server(input, output, session):
         return "Ready"
 
     # Wire panel modules
+    create_model_server("create")
     setup_server("setup", config_file_rv=input.config_file, load_btn_rv=input.load_config_btn)
     population_server("pop", results_rv=results_rv)
     environment_server("env", results_rv=results_rv)
