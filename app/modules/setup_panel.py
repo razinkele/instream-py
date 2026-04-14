@@ -79,6 +79,7 @@ def setup_ui():
 def setup_server(input, output, session, config_file_rv):
     _widget = reactive.value(None)
     _gdf_cache = reactive.value(None)
+    _layer_sent = reactive.value(False)
 
     @reactive.calc
     def _load_gdf():
@@ -194,13 +195,37 @@ def setup_server(input, output, session, config_file_rv):
         )
         _widget.set(widget)
         _gdf_cache.set(gdf)
+        _layer_sent.set(False)
         return widget.ui(height="500px")
 
     @reactive.effect
-    async def _send_layer():
+    async def _send_initial_layer():
+        """Send the cell layer once when the widget is first created."""
         widget = _widget()
         gdf = _gdf_cache()
         if widget is None or gdf is None:
+            return
+        if _layer_sent():
+            return
+        try:
+            with reactive.isolate():
+                layer_var = input.layer_var()
+            layer = _build_layer(gdf, layer_var)
+            await widget.update(session, [layer], animate=False)
+            _layer_sent.set(True)
+        except Exception as e:
+            if "SilentException" in type(e).__name__:
+                return
+            logger.exception("Error sending initial setup layer")
+
+    @reactive.effect
+    async def _recolor_layer():
+        """Re-color cells when the layer dropdown changes."""
+        widget = _widget()
+        gdf = _gdf_cache()
+        if widget is None or gdf is None:
+            return
+        if not _layer_sent():
             return
         try:
             layer_var = input.layer_var()
@@ -209,7 +234,7 @@ def setup_server(input, output, session, config_file_rv):
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return
-            logger.exception("Error sending setup layer")
+            logger.exception("Error re-coloring setup layer")
 
     @render.ui
     def setup_summary():
