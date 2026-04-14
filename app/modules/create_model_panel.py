@@ -3,8 +3,8 @@
 Workflow:
 1. Pan/zoom the map to the area of interest
 2. Click "Fetch Rivers" to download EU-Hydro river network in the current view
-3. Select reaches and set properties
-4. Generate hexagonal habitat cells from the river network
+3. Filter by Strahler order, then click "Select Reaches" and click segments
+4. Generate hexagonal/rectangular habitat cells from selected reaches
 5. Export as shapefile + YAML config
 """
 
@@ -17,12 +17,39 @@ import numpy as np
 import requests
 from io import BytesIO
 from pathlib import Path
-from shapely.geometry import shape, box, Polygon, MultiPolygon
+from shapely.geometry import shape, box, Polygon, MultiPolygon, LineString
 from shapely.ops import unary_union
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
 from shiny_deckgl.controls import legend_control
+
+# Optional imports — modules may not exist yet during early development
+try:
+    from modules.create_model_grid import generate_cells
+except ImportError:
+    generate_cells = None
+
+try:
+    from modules.create_model_reaches import (
+        assign_segment_to_reach,
+        remove_segment_from_reach,
+        detect_junctions,
+    )
+except ImportError:
+    assign_segment_to_reach = None
+    remove_segment_from_reach = None
+    detect_junctions = None
+
+try:
+    from modules.create_model_export import export_zip
+except ImportError:
+    export_zip = None
+
+try:
+    from modules.create_model_utils import detect_utm_epsg
+except ImportError:
+    detect_utm_epsg = None
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +61,18 @@ EUHYDRO_BASE = "https://image.discomap.eea.europa.eu/arcgis/rest/services/EUHydr
 RIVER_LINES_LAYER = 4
 INLAND_WATER_LAYER = 2
 COASTAL_LAYER = 0
+
+# Reach colour palette (cycle for multiple reaches)
+REACH_COLORS = [
+    [255, 87, 34, 220],   # deep orange
+    [76, 175, 80, 220],   # green
+    [156, 39, 176, 220],  # purple
+    [255, 193, 7, 220],   # amber
+    [0, 188, 212, 220],   # cyan
+    [244, 67, 54, 220],   # red
+    [63, 81, 181, 220],   # indigo
+    [121, 85, 72, 220],   # brown
+]
 
 
 def _query_euhydro(layer_id, bbox_wgs84, max_features=2000):
@@ -107,6 +146,7 @@ def create_model_ui():
     )
     return ui.card(
         ui.card_header("Create Model"),
+        # -- Row 1: Fetch buttons + Strahler filter ---
         ui.layout_columns(
             ui.div(
                 ui.input_action_button("fetch_rivers", "Fetch Rivers",
@@ -123,9 +163,63 @@ def create_model_ui():
             ),
             col_widths=(8, 4),
         ),
+        # -- Row 2: Strahler slider ---
+        ui.layout_columns(
+            ui.input_slider(
+                "strahler_min",
+                "Min Strahler order",
+                min=1, max=9, value=3, step=1,
+            ),
+            ui.div(
+                ui.tags.small(
+                    "Filter river segments by Strahler stream order. "
+                    "Higher values keep only larger rivers.",
+                    style="color:#888;",
+                ),
+            ),
+            col_widths=(6, 6),
+        ),
+        # -- Row 3: Cell size + shape ---
+        ui.layout_columns(
+            ui.input_slider(
+                "cell_size",
+                "Cell size (m)",
+                min=5, max=100, value=20, step=5,
+            ),
+            ui.input_select(
+                "cell_shape",
+                "Cell shape",
+                choices={"hexagonal": "Hexagonal", "rectangular": "Rectangular"},
+                selected="hexagonal",
+            ),
+            col_widths=(6, 6),
+        ),
+        # -- Row 4: Workflow buttons ---
+        ui.div(
+            ui.input_action_button(
+                "select_reaches_btn", "Select Reaches",
+                class_="btn btn-warning btn-sm",
+            ),
+            ui.input_action_button(
+                "generate_cells_btn", "Generate Cells",
+                class_="btn btn-success btn-sm",
+            ),
+            ui.input_action_button(
+                "configure_btn", "Configure",
+                class_="btn btn-secondary btn-sm",
+            ),
+            ui.input_action_button(
+                "export_btn", "Export",
+                class_="btn btn-dark btn-sm",
+            ),
+            style="display:flex; gap:0.5rem; margin-bottom:0.5rem;",
+        ),
+        # -- Map ---
         _widget.ui(height="550px"),
+        # -- Status + summary ---
         ui.output_ui("fetch_status"),
         ui.output_ui("data_summary"),
+        ui.output_ui("workflow_status"),
         full_screen=True,
     )
 
@@ -141,9 +235,22 @@ def create_model_server(input, output, session):
         view_state={"longitude": 21.1, "latitude": 55.7, "zoom": 10},
         style=BASEMAP_LIGHT,
     )
+
+    # -- Existing reactive state --
     _rivers_gdf = reactive.value(None)
     _water_gdf = reactive.value(None)
     _fetch_msg = reactive.value("")
+
+    # -- New reactive state --
+    _reaches_dict = reactive.value({})       # {reach_name: [LineString, ...]}
+    _cells_gdf = reactive.value(None)        # GeoDataFrame of generated cells
+    _selection_mode = reactive.value(False)   # True when click-to-select active
+    _current_reach_name = reactive.value("")  # active reach being built
+    _workflow_msg = reactive.value("")
+
+    # -----------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------
 
     def _get_view_bbox():
         """Get the current map view bounding box from the widget's view state input."""
@@ -161,6 +268,119 @@ def create_model_server(input, output, session):
             pass
         # Default: Curonian Lagoon area
         return (20.9, 55.6, 21.3, 55.85)
+
+    def _filtered_rivers_gdf():
+        """Return the rivers GeoDataFrame filtered by the current Strahler threshold."""
+        gdf = _rivers_gdf()
+        if gdf is None:
+            return None
+        strahler_col = None
+        for c in gdf.columns:
+            if "strahler" in c.lower():
+                strahler_col = c
+                break
+        if strahler_col is None:
+            return gdf
+        threshold = input.strahler_min()
+        return gdf[gdf[strahler_col] >= threshold].copy()
+
+    def _build_river_layer(gdf):
+        """Build a deck.gl GeoJSON layer from a rivers GeoDataFrame."""
+        geoj = json.loads(gdf.to_json())
+        return geojson_layer(
+            id="euhydro-rivers",
+            data=geoj,
+            get_line_color=[30, 100, 200, 200],
+            get_line_width=2,
+            line_width_min_pixels=1,
+            line_width_max_pixels=6,
+            pickable=True,
+            stroked=True,
+            filled=False,
+        )
+
+    def _build_water_layer(gdf):
+        """Build a deck.gl GeoJSON layer from a water bodies GeoDataFrame."""
+        geoj = json.loads(gdf.to_json())
+        return geojson_layer(
+            id="euhydro-water",
+            data=geoj,
+            get_fill_color=[135, 206, 235, 120],
+            get_line_color=[70, 130, 180, 150],
+            get_line_width=1,
+            pickable=True,
+            stroked=True,
+            filled=True,
+        )
+
+    def _build_reach_layers():
+        """Build one GeoJSON layer per reach with distinct colours."""
+        layers = []
+        reaches = _reaches_dict()
+        for idx, (name, segments) in enumerate(reaches.items()):
+            if not segments:
+                continue
+            color = REACH_COLORS[idx % len(REACH_COLORS)]
+            features = []
+            for seg in segments:
+                features.append({
+                    "type": "Feature",
+                    "geometry": seg.__geo_interface__,
+                    "properties": {"reach": name},
+                })
+            geoj = {"type": "FeatureCollection", "features": features}
+            layers.append(geojson_layer(
+                id=f"reach-{name}",
+                data=geoj,
+                get_line_color=color,
+                get_line_width=5,
+                line_width_min_pixels=3,
+                line_width_max_pixels=10,
+                pickable=True,
+                stroked=True,
+                filled=False,
+            ))
+        return layers
+
+    def _build_cells_layer():
+        """Build a GeoJSON layer for generated cells."""
+        gdf = _cells_gdf()
+        if gdf is None:
+            return None
+        geoj = json.loads(gdf.to_json())
+        return geojson_layer(
+            id="habitat-cells",
+            data=geoj,
+            get_fill_color=[100, 200, 100, 80],
+            get_line_color=[50, 150, 50, 180],
+            get_line_width=1,
+            pickable=True,
+            stroked=True,
+            filled=True,
+        )
+
+    async def _refresh_map():
+        """Rebuild all map layers from current state and push to widget."""
+        layers = []
+        # Water bodies (bottom)
+        water = _water_gdf()
+        if water is not None:
+            layers.append(_build_water_layer(water))
+        # Filtered rivers
+        fgdf = _filtered_rivers_gdf()
+        if fgdf is not None and len(fgdf) > 0:
+            layers.append(_build_river_layer(fgdf))
+        # Cells
+        cells_lyr = _build_cells_layer()
+        if cells_lyr is not None:
+            layers.append(cells_lyr)
+        # Reach overlays (top)
+        layers.extend(_build_reach_layers())
+        await _widget.update(session, layers)
+
+    # -----------------------------------------------------------------
+    # Fetch handlers (existing, preserved)
+    # -----------------------------------------------------------------
 
     @reactive.effect
     @reactive.event(input.fetch_rivers)
@@ -184,19 +404,7 @@ def create_model_server(input, output, session):
         if n > 0:
             gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
             _rivers_gdf.set(gdf)
-
-            river_layer = geojson_layer(
-                id="euhydro-rivers",
-                data=geojson,
-                get_line_color=[30, 100, 200, 200],
-                get_line_width=2,
-                line_width_min_pixels=1,
-                line_width_max_pixels=6,
-                pickable=True,
-                stroked=True,
-                filled=False,
-            )
-            await _widget.update(session, [river_layer])
+            await _refresh_map()
             _fetch_msg.set(f"Loaded {n} river segments.")
         else:
             _fetch_msg.set("No river features found in this area.")
@@ -221,39 +429,214 @@ def create_model_server(input, output, session):
         if n > 0:
             gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
             _water_gdf.set(gdf)
-
-            water_layer = geojson_layer(
-                id="euhydro-water",
-                data=geojson,
-                get_fill_color=[135, 206, 235, 120],
-                get_line_color=[70, 130, 180, 150],
-                get_line_width=1,
-                pickable=True,
-                stroked=True,
-                filled=True,
-            )
-
-            # Also include rivers if loaded
-            layers = [water_layer]
-            rivers = _rivers_gdf()
-            if rivers is not None:
-                rj = rivers.__geo_interface__
-                river_lyr = geojson_layer(
-                    id="euhydro-rivers",
-                    data=rj,
-                    get_line_color=[30, 100, 200, 200],
-                    get_line_width=2,
-                    line_width_min_pixels=1,
-                    pickable=True,
-                    stroked=True,
-                    filled=False,
-                )
-                layers.append(river_lyr)
-
-            await _widget.update(session, layers)
+            await _refresh_map()
             _fetch_msg.set(f"Loaded {n} water bodies.")
         else:
             _fetch_msg.set("No water bodies found in this area.")
+
+    # -----------------------------------------------------------------
+    # Strahler filter — re-render map when slider changes
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.strahler_min)
+    async def _on_strahler_change():
+        if _rivers_gdf() is not None:
+            await _refresh_map()
+
+    # -----------------------------------------------------------------
+    # Select Reaches toggle
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.select_reaches_btn)
+    def _on_select_reaches():
+        active = _selection_mode()
+        if active:
+            # Deactivate
+            _selection_mode.set(False)
+            _current_reach_name.set("")
+            _workflow_msg.set("Selection mode OFF.")
+        else:
+            # Activate — auto-name next reach
+            reaches = _reaches_dict()
+            idx = len(reaches) + 1
+            name = f"reach_{idx}"
+            _current_reach_name.set(name)
+            _selection_mode.set(True)
+            _workflow_msg.set(
+                f"Selection mode ON. Click river segments to add them to '{name}'. "
+                "Click 'Select Reaches' again to finish."
+            )
+
+    # -----------------------------------------------------------------
+    # Click-to-select handler
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(getattr(input, _widget.click_input_id))
+    async def _on_map_click():
+        if not _selection_mode():
+            return
+        data = getattr(input, _widget.click_input_id)()
+        if data is None:
+            return
+        obj = data.get("object")
+        if obj is None:
+            return
+
+        # Extract geometry from the clicked GeoJSON feature
+        geom_dict = obj.get("geometry")
+        if geom_dict is None:
+            return
+
+        try:
+            geom = shape(geom_dict)
+        except Exception:
+            _workflow_msg.set("Could not parse clicked geometry.")
+            return
+
+        # Convert to LineString if needed
+        if geom.geom_type == "MultiLineString":
+            # Take the longest component
+            geom = max(geom.geoms, key=lambda g: g.length)
+        if geom.geom_type != "LineString":
+            _workflow_msg.set(f"Clicked geometry is {geom.geom_type}, expected LineString.")
+            return
+
+        reach_name = _current_reach_name()
+        if not reach_name:
+            return
+
+        # Use assign_segment_to_reach if available, otherwise do it inline
+        reaches = dict(_reaches_dict())  # shallow copy
+        if assign_segment_to_reach is not None:
+            reaches = assign_segment_to_reach(reaches, reach_name, geom)
+        else:
+            if reach_name not in reaches:
+                reaches[reach_name] = []
+            reaches[reach_name].append(geom)
+
+        _reaches_dict.set(reaches)
+
+        n_segs = len(reaches.get(reach_name, []))
+        _workflow_msg.set(f"Added segment to '{reach_name}' ({n_segs} segments total).")
+        await _refresh_map()
+
+    # -----------------------------------------------------------------
+    # Generate cells
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.generate_cells_btn)
+    async def _on_generate_cells():
+        reaches = _reaches_dict()
+        if not reaches:
+            _workflow_msg.set("No reaches defined. Click 'Select Reaches' first.")
+            return
+
+        if generate_cells is None:
+            _workflow_msg.set(
+                "Cell generation module not available (create_model_grid not implemented)."
+            )
+            return
+
+        _workflow_msg.set("Generating habitat cells...")
+
+        cell_size = input.cell_size()
+        cell_shape = input.cell_shape()
+
+        # Collect all reach geometries
+        all_lines = []
+        for segs in reaches.values():
+            all_lines.extend(segs)
+
+        if not all_lines:
+            _workflow_msg.set("Reaches are empty — no segments to generate cells from.")
+            return
+
+        import asyncio
+        loop = asyncio.get_running_loop()
+        try:
+            cells = await loop.run_in_executor(
+                None,
+                lambda: generate_cells(
+                    lines=all_lines,
+                    cell_size=cell_size,
+                    cell_shape=cell_shape,
+                ),
+            )
+        except Exception as exc:
+            _workflow_msg.set(f"Cell generation failed: {exc}")
+            logger.exception("generate_cells error")
+            return
+
+        if cells is not None and len(cells) > 0:
+            _cells_gdf.set(cells)
+            _workflow_msg.set(f"Generated {len(cells)} habitat cells.")
+            await _refresh_map()
+        else:
+            _workflow_msg.set("Cell generation returned no cells.")
+
+    # -----------------------------------------------------------------
+    # Configure (placeholder)
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.configure_btn)
+    def _on_configure():
+        reaches = _reaches_dict()
+        cells = _cells_gdf()
+        n_reaches = len(reaches)
+        n_cells = len(cells) if cells is not None else 0
+        _workflow_msg.set(
+            f"Configure: {n_reaches} reaches, {n_cells} cells. "
+            "(Configuration dialog not yet implemented.)"
+        )
+
+    # -----------------------------------------------------------------
+    # Export
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.export_btn)
+    async def _on_export():
+        cells = _cells_gdf()
+        reaches = _reaches_dict()
+        if cells is None or len(cells) == 0:
+            _workflow_msg.set("Nothing to export. Generate cells first.")
+            return
+
+        if export_zip is None:
+            _workflow_msg.set(
+                "Export module not available (create_model_export not implemented)."
+            )
+            return
+
+        _workflow_msg.set("Exporting model files...")
+
+        import asyncio
+        loop = asyncio.get_running_loop()
+        try:
+            zip_path = await loop.run_in_executor(
+                None,
+                lambda: export_zip(
+                    cells_gdf=cells,
+                    reaches_dict=reaches,
+                ),
+            )
+            _workflow_msg.set(f"Exported to: {zip_path}")
+            await session.send_custom_message(
+                "notification",
+                {"message": f"Model exported to {zip_path}", "type": "message"},
+            )
+        except Exception as exc:
+            _workflow_msg.set(f"Export failed: {exc}")
+            logger.exception("export_zip error")
+
+    # -----------------------------------------------------------------
+    # Outputs
+    # -----------------------------------------------------------------
 
     @render.ui
     def fetch_status():
@@ -272,6 +655,9 @@ def create_model_server(input, output, session):
         rows = []
         if rivers is not None:
             n_rivers = len(rivers)
+            # Also show filtered count
+            filtered = _filtered_rivers_gdf()
+            n_filtered = len(filtered) if filtered is not None else n_rivers
             strahler_col = None
             for c in rivers.columns:
                 if "strahler" in c.lower():
@@ -280,10 +666,10 @@ def create_model_server(input, output, session):
             if strahler_col:
                 strahler_range = f"{int(rivers[strahler_col].min())}-{int(rivers[strahler_col].max())}"
             else:
-                strahler_range = "—"
+                strahler_range = "---"
             rows.append(ui.tags.tr(
                 ui.tags.td("River segments"),
-                ui.tags.td(str(n_rivers)),
+                ui.tags.td(f"{n_filtered} / {n_rivers}"),
                 ui.tags.td(f"Strahler {strahler_range}"),
             ))
 
@@ -291,7 +677,7 @@ def create_model_server(input, output, session):
             rows.append(ui.tags.tr(
                 ui.tags.td("Water bodies"),
                 ui.tags.td(str(len(water))),
-                ui.tags.td("—"),
+                ui.tags.td("---"),
             ))
 
         return ui.div(
@@ -307,3 +693,49 @@ def create_model_server(input, output, session):
             ),
             style="margin-top:0.5rem;",
         )
+
+    @render.ui
+    def workflow_status():
+        msg = _workflow_msg()
+        reaches = _reaches_dict()
+        cells = _cells_gdf()
+        sel_mode = _selection_mode()
+
+        parts = []
+        if msg:
+            parts.append(ui.p(msg, style="color:#555; font-size:0.85rem;"))
+
+        # Summary badges
+        badges = []
+        if reaches:
+            total_segs = sum(len(v) for v in reaches.values())
+            badges.append(
+                ui.tags.span(
+                    f"{len(reaches)} reaches ({total_segs} segments)",
+                    class_="badge bg-warning text-dark",
+                    style="margin-right:0.3rem;",
+                )
+            )
+        if cells is not None:
+            badges.append(
+                ui.tags.span(
+                    f"{len(cells)} cells",
+                    class_="badge bg-success",
+                    style="margin-right:0.3rem;",
+                )
+            )
+        if sel_mode:
+            badges.append(
+                ui.tags.span(
+                    "SELECTION MODE",
+                    class_="badge bg-danger",
+                    style="margin-right:0.3rem;",
+                )
+            )
+
+        if badges:
+            parts.append(ui.div(*badges, style="margin-top:0.25rem;"))
+
+        if not parts:
+            return ui.div()
+        return ui.div(*parts, style="margin-top:0.5rem;")
