@@ -223,10 +223,11 @@ Note: Example A uses 26 flows. 10 is sufficient for a template — users add mor
 1. Creates directory `app/data/fixtures/example_{model_name}/`
 2. Writes shapefile + CSVs to that directory
 3. Writes config YAML to `configs/example_{model_name}.yaml` (prefixed with "example" so it appears in the config dropdown which filters `p.stem.startswith("example")`)
-4. Updates `CONFIG_CHOICES` dict at module level to include the new config (no app restart needed — Shiny reads the dict reactively)
-5. Uses `session.send_custom_message()` to programmatically update the `config_file` select input to the new config path, then triggers the Setup panel's `_on_load_click` by incrementing `input.load_config_btn` via `session.send_input_message()`
-6. Shows notification: "Model loaded into Setup tab — switch to Setup to review"
-7. No writes to `tests/` — that's for test fixtures only
+4. Updates the module-level `CONFIG_CHOICES` dict to include the new config path
+5. Uses `ui.update_select("config_file", choices=CONFIG_CHOICES, selected=new_config_path)` (Shiny for Python's standard input updater) to refresh the dropdown and select the new config
+6. Sets a shared `reactive.value` (`_created_model_config`) that the Setup panel's server watches. When this value changes, the Setup panel loads the new config automatically (no simulated button click needed — pure reactive chain).
+7. Shows notification: "Model loaded — switch to Setup tab to review"
+8. No writes to `tests/` — that's for test fixtures only
 
 ---
 
