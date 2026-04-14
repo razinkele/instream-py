@@ -300,7 +300,12 @@ def create_model_server(input, output, session):
 
     def _build_water_layer(gdf):
         """Build a deck.gl GeoJSON layer from a water bodies GeoDataFrame."""
-        geoj = json.loads(gdf.to_json())
+        # Simplify large polygons to reduce WebGL payload
+        simplified = gdf.copy()
+        simplified["geometry"] = simplified.geometry.simplify(0.001, preserve_topology=True)
+        simplified = simplified[~simplified.geometry.is_empty]
+        logger.info("Water layer: %d features (simplified from %d)", len(simplified), len(gdf))
+        geoj = json.loads(simplified.to_json())
         return geojson_layer(
             id="euhydro-water",
             data=geoj,
@@ -363,8 +368,11 @@ def create_model_server(input, output, session):
         layers = []
         # Water bodies (bottom)
         water = _water_gdf()
-        if water is not None:
+        if water is not None and len(water) > 0:
+            logger.info("Water layer: %d features", len(water))
             layers.append(_build_water_layer(water))
+        else:
+            logger.info("No water features to display")
         # Filtered rivers
         fgdf = _filtered_rivers_gdf()
         if fgdf is not None and len(fgdf) > 0:
@@ -422,11 +430,16 @@ def create_model_server(input, output, session):
         all_water_features = []
 
         for water_layer_id in [INLAND_WATER_LAYER, COASTAL_LAYER]:
+            _fetch_msg.set(f"Fetching water layer {water_layer_id}...")
             wj = await loop.run_in_executor(
                 None, lambda lid=water_layer_id: _query_euhydro(lid, bbox)
             )
             if wj and "features" in wj:
+                n_w = len(wj["features"])
+                logger.info("Water layer %d: %d features", water_layer_id, n_w)
                 all_water_features.extend(wj["features"])
+            else:
+                logger.warning("Water layer %d: no features or query failed", water_layer_id)
 
         water_gdf = None
         if all_water_features:
