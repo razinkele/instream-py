@@ -57,8 +57,10 @@ BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 # EU-Hydro ArcGIS REST endpoints
 EUHYDRO_BASE = "https://image.discomap.eea.europa.eu/arcgis/rest/services/EUHydro/EUHydro_RiverNetworkDatabase/MapServer"
-# Layer IDs: 0=Coastal, 2=InlandWater, 4=River_Net_lines, 19=River_Net_polygon
-RIVER_LINES_LAYER = 4
+# Layer IDs: 0=Coastal, 2=InlandWater
+# River lines: layer 4 is GROUP LAYER (not queryable!)
+# Actual feature layers: 5=Strahler1, 6=Strahler2, ..., 13=Strahler9
+RIVER_STRAHLER_LAYERS = {1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11, 8: 12, 9: 13}
 INLAND_WATER_LAYER = 2
 COASTAL_LAYER = 0
 
@@ -387,27 +389,39 @@ def create_model_server(input, output, session):
     async def _on_fetch_rivers():
         _fetch_msg.set("Fetching river network from EU-Hydro...")
         bbox = _get_view_bbox()
+        strahler_min = input.strahler_min()
 
         import asyncio
         loop = asyncio.get_running_loop()
-        geojson = await loop.run_in_executor(
-            None, lambda: _query_euhydro(RIVER_LINES_LAYER, bbox)
-        )
 
-        if geojson is None or "features" not in geojson:
-            _fetch_msg.set("Failed to fetch river data. Try a smaller area.")
-            return
+        # Query each Strahler sub-layer >= threshold, merge results
+        all_features = []
+        for strahler_order, layer_id in RIVER_STRAHLER_LAYERS.items():
+            if strahler_order < strahler_min:
+                continue
+            _fetch_msg.set(f"Fetching Strahler {strahler_order} rivers...")
+            geojson = await loop.run_in_executor(
+                None, lambda lid=layer_id: _query_euhydro(lid, bbox)
+            )
+            if geojson and "features" in geojson:
+                # Add STRAHLER attribute to each feature
+                for feat in geojson["features"]:
+                    if "properties" not in feat:
+                        feat["properties"] = {}
+                    feat["properties"]["STRAHLER"] = strahler_order
+                all_features.extend(geojson["features"])
 
-        n = len(geojson["features"])
+        n = len(all_features)
         _fetch_msg.set(f"Got {n} river segments. Sending to map...")
 
         if n > 0:
-            gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
+            combined = {"type": "FeatureCollection", "features": all_features}
+            gdf = gpd.GeoDataFrame.from_features(combined["features"], crs="EPSG:4326")
             _rivers_gdf.set(gdf)
             await _refresh_map()
-            _fetch_msg.set(f"Loaded {n} river segments.")
+            _fetch_msg.set(f"Loaded {n} river segments (Strahler >= {strahler_min}).")
         else:
-            _fetch_msg.set("No river features found in this area.")
+            _fetch_msg.set("No river features found. Try zooming in or lowering the Strahler filter.")
 
     @reactive.effect
     @reactive.event(input.fetch_water)
