@@ -562,7 +562,18 @@ def create_model_server(input, output, session):
             data = getattr(input, _widget.click_input_id)()
         except Exception:
             return
-        if data is None or not _selection_mode():
+        if data is None:
+            return
+
+        # Debug: always show what we got
+        sel = _selection_mode()
+        coord = data.get("coordinate", [])
+        obj_keys = list(data.get("object", {}).keys()) if data.get("object") else []
+        _workflow_msg.set(
+            f"Click: coord={coord[:2] if coord else '?'}, obj_keys={obj_keys}, sel_mode={sel}"
+        )
+
+        if not sel:
             return
 
         # First try: extract geometry from click object (full GeoJSON feature)
