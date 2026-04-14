@@ -62,6 +62,7 @@ def setup_ui():
         style=BASEMAP_LIGHT,
         controls=[
             {"type": "navigation", "position": "top-right"},
+            {"type": "fullscreen", "position": "top-right"},
             legend_control(position="bottom-left", show_default=True, show_checkbox=True),
         ],
         tooltip={
@@ -75,7 +76,8 @@ def setup_ui():
             },
         },
     )
-    return ui.div(
+    return ui.card(
+        ui.card_header("Setup Review"),
         ui.div(
             ui.tags.span("Color by:", style="font-weight:500; margin-right:0.5rem;"),
             ui.div(
@@ -88,6 +90,7 @@ def setup_ui():
         ),
         _widget.ui(height="550px"),
         ui.output_ui("setup_summary"),
+        full_screen=True,
     )
 
 

@@ -102,6 +102,7 @@ def movement_server(input, output, session, dashboard_data_rv):
         style=BASEMAP_VOYAGER,
         controls=[
             {"type": "navigation", "position": "top-right"},
+            {"type": "fullscreen", "position": "top-right"},
             legend_control(position="bottom-left", show_default=True, show_checkbox=True),
         ],
         tooltip={
