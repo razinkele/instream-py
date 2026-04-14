@@ -122,8 +122,8 @@ species:
     mort_high_temp_T1: 28.0
     mort_high_temp_T9: 24.0
     mort_strand_survival_when_dry: 0.5
-    mort_condition_S_at_K8: 0.998     # forgiving condition mortality
-    mort_condition_S_at_K5: 0.90      # low-condition fish survive better
+    mort_condition_S_at_K8: 0.999     # Atlantic salmon parr overwinter at low K
+    mort_condition_S_at_K5: 0.99      # daily survival ~0.996 at K=0.7
     mort_terr_pred_L1: 6.0
     mort_terr_pred_L9: 3.0
     mort_terr_pred_D1: 0.0
