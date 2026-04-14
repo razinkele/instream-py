@@ -334,7 +334,7 @@ _WEBGL_FALLBACK_JS = """
         function injectGpuBadges() {
             document.querySelectorAll('.card-header').forEach(function(hdr) {
                 var txt = hdr.textContent || '';
-                if ((/Spatial View|Live Movement/i).test(txt) && !hdr.querySelector('.sp-gpu-badge')) {
+                if ((/Spatial View|Live Movement|Setup Review/i).test(txt) && !hdr.querySelector('.sp-gpu-badge')) {
                     hdr.insertAdjacentHTML('beforeend', badgeHtml);
                 }
             });
@@ -342,7 +342,7 @@ _WEBGL_FALLBACK_JS = """
         // Poll briefly after page load — covers Shiny's async rendering
         var _badgeTimer = setInterval(function() {
             injectGpuBadges();
-            if (document.querySelectorAll('.sp-gpu-badge').length >= 2) clearInterval(_badgeTimer);
+            if (document.querySelectorAll('.sp-gpu-badge').length >= 3) clearInterval(_badgeTimer);
         }, 400);
         // Stop polling after 15s regardless
         setTimeout(function() { clearInterval(_badgeTimer); }, 15000);

@@ -19,6 +19,7 @@ from shiny_deckgl import (
     geojson_layer,
     trips_layer,
 )
+from shiny_deckgl.controls import legend_control
 
 # Light basemap with labels for readability
 BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
@@ -128,6 +129,10 @@ def spatial_server(input, output, session, results_rv):
             },
             style=BASEMAP_LIGHT,
             animate=True,
+            controls=[
+                {"type": "navigation", "position": "top-right"},
+                legend_control(position="bottom-left", show_default=True, show_checkbox=True),
+            ],
             tooltip={
                 "html": "<b>{cell_id}</b><br/>{_tooltip_var}: {_tooltip_val}",
                 "style": {

@@ -16,6 +16,7 @@ import numpy as np  # noqa: E402
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
+from shiny_deckgl.controls import legend_control
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,10 @@ def movement_server(input, output, session, dashboard_data_rv):
         "movement_map",
         view_state={"longitude": 0.0, "latitude": 30.0, "zoom": 2},
         style=BASEMAP_VOYAGER,
+        controls=[
+            {"type": "navigation", "position": "top-right"},
+            legend_control(position="bottom-left", show_default=True, show_checkbox=True),
+        ],
         tooltip={
             "html": "<b>{cell_id}</b>",
             "style": {
@@ -279,7 +284,19 @@ def movement_server(input, output, session, dashboard_data_rv):
                     widthMaxPixels=5,
                     pickable=False,
                 )
-                await widget.partial_update(session, [trail_lyr])
+                # Rebuild cells layer to send together with trails
+                layers = [trail_lyr]
+                if _cells_gdf[0] is not None:
+                    cells_lyr = geojson_layer(
+                        "movement_cells",
+                        _cells_gdf[0],
+                        getFillColor=[200, 200, 200, 80],
+                        getLineColor=[120, 120, 120, 150],
+                        lineWidthMinPixels=1,
+                        pickable=True,
+                    )
+                    layers.insert(0, cells_lyr)
+                await widget.update(session, layers)
 
         except Exception as e:
             if "SilentException" in type(e).__name__:

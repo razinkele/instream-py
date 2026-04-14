@@ -15,6 +15,7 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
+from shiny_deckgl.controls import legend_control
 from simulation import _value_to_rgba
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,10 @@ def setup_ui():
             "bearing": 0,
         },
         style=BASEMAP_LIGHT,
+        controls=[
+            {"type": "navigation", "position": "top-right"},
+            legend_control(position="bottom-left", show_default=True, show_checkbox=True),
+        ],
         tooltip={
             "html": ("<b>{cell_id}</b><br/>Reach: {reach}<br/>"
                      "Area: {area} m²<br/>Spawn: {frac_spawn}"),
