@@ -22,6 +22,7 @@ from modules.spatial_panel import spatial_ui, spatial_server
 from modules.help_panel import help_ui, help_server, TEST_CASES  # noqa: F401
 from modules.dashboard_panel import dashboard_ui, dashboard_server, DASHBOARD_JS  # noqa: F401
 from modules.movement_panel import movement_ui, movement_server  # noqa: E402
+from modules.setup_panel import setup_ui, setup_server
 from simulation import run_simulation
 
 
@@ -202,6 +203,7 @@ document.addEventListener('DOMContentLoaded', function() {
 """
 
 _NAV_ITEMS = [
+    ("bi-map", "Setup"),
     ("bi-speedometer2", "Dashboard"),
     ("bi-arrow-left-right", "Movement"),
     ("bi-bar-chart-line", "Population"),
@@ -408,6 +410,7 @@ app_ui = ui.page_fluid(
     ui.div(
         {"class": "sp-main-offset"},
         ui.navset_hidden(
+            ui.nav_panel("Setup", setup_ui("setup")),
             ui.nav_panel("Dashboard", dashboard_ui("dash")),
             ui.nav_panel("Movement", movement_ui("movement")),
             ui.nav_panel("Population", population_ui("pop")),
@@ -603,6 +606,7 @@ def server(input, output, session):
         return "Ready"
 
     # Wire panel modules
+    setup_server("setup", config_file_rv=input.config_file)
     population_server("pop", results_rv=results_rv)
     environment_server("env", results_rv=results_rv)
     distribution_server("dist", results_rv=results_rv)
