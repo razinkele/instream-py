@@ -544,12 +544,13 @@ def create_model_server(input, output, session):
     # -----------------------------------------------------------------
 
     @reactive.effect
-    @reactive.event(getattr(input, _widget.click_input_id))
     async def _on_map_click():
-        if not _selection_mode():
+        """Handle click on map — reads click input reactively."""
+        try:
+            data = getattr(input, _widget.click_input_id)()
+        except Exception:
             return
-        data = getattr(input, _widget.click_input_id)()
-        if data is None:
+        if data is None or not _selection_mode():
             return
         obj = data.get("object")
         if obj is None:
