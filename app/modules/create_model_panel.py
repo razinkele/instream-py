@@ -154,16 +154,20 @@ def create_model_ui():
                   background:#1e293b; border-radius:6px; margin-bottom:0.4rem; }
     .cm-toolbar .btn-cm { background:rgba(43,184,157,.15); color:#2bb89d; border:1px solid rgba(43,184,157,.4);
                           border-radius:4px; padding:0.25rem 0.6rem; font-size:0.78rem; font-weight:600;
-                          cursor:pointer; transition: background .15s; }
+                          cursor:pointer; transition: background .15s, box-shadow .15s; }
     .cm-toolbar .btn-cm:hover { background:rgba(43,184,157,.3); }
-    .cm-toolbar .btn-cm-accent { background:#2bb89d; color:#fff; border:1px solid #2bb89d; }
-    .cm-toolbar .btn-cm-accent:hover { filter:brightness(1.1); }
+    .cm-toolbar .btn-cm.active, .cm-toolbar .btn-cm[aria-pressed="true"] {
+        background:#2bb89d; color:#fff; box-shadow:0 0 0 2px rgba(43,184,157,.5); }
     .cm-toolbar .cm-label { color:rgba(255,255,255,.6); font-size:0.72rem; margin-right:0.2rem; }
     .cm-toolbar .cm-sep { width:1px; height:1.2rem; background:rgba(255,255,255,.15); margin:0 0.2rem; }
-    .cm-toolbar select, .cm-toolbar input[type="number"] {
+    .cm-toolbar select, .cm-toolbar .form-select {
         background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15);
-        color:#fff; border-radius:3px; padding:0.2rem 0.3rem; font-size:0.78rem; }
-    .cm-toolbar select option { background:#1e293b; color:#fff; }
+        color:#fff; border-radius:3px; padding:0.25rem 0.3rem; font-size:0.78rem;
+        height:auto; vertical-align:middle; }
+    .cm-toolbar select option, .cm-toolbar .form-select option { background:#1e293b; color:#fff; }
+    .cm-toolbar .form-group { margin-bottom:0; display:inline-flex; align-items:center; }
+    .cm-toolbar .irs { margin:0; }
+    .cm-toolbar .shiny-input-container { margin-bottom:0; }
     """)
 
     return ui.card(
@@ -194,14 +198,14 @@ def create_model_ui():
                 ui.input_select("cell_shape", None,
                                 choices={"hexagonal": "Hexagonal", "rectangular": "Rectangular"},
                                 selected="hexagonal", width="120px"),
-                style="display:inline-block; vertical-align:middle;",
+                style="display:inline-flex; align-items:center;",
             ),
             ui.tags.div(class_="cm-sep"),
             ui.input_action_button("select_reaches_btn", "✏️ Select",
                                    class_="btn btn-cm",
-                                   title="Click river segments to assign to reaches"),
+                                   title="Toggle: click river segments to assign to reaches"),
             ui.input_action_button("generate_cells_btn", "⬡ Cells",
-                                   class_="btn btn-cm-accent",
+                                   class_="btn btn-cm",
                                    title="Generate habitat cells from selected reaches"),
             ui.input_action_button("export_btn", "📦 Export",
                                    class_="btn btn-cm",
@@ -822,11 +826,19 @@ def create_model_server(input, output, session):
         if sel_mode:
             badges.append(
                 ui.tags.span(
-                    "SELECTION MODE",
+                    "✏️ SELECTING",
                     class_="badge bg-danger",
                     style="margin-right:0.3rem;",
                 )
             )
+
+        # Toggle active class on Select button via inline JS
+        toggle_js = "active" if sel_mode else ""
+        parts.append(ui.tags.script(
+            f'document.querySelectorAll("[id$=select_reaches_btn]").forEach('
+            f'function(b){{ b.className = b.className.replace(" active",""); '
+            f'if("{toggle_js}") b.className += " active"; }});'
+        ))
 
         if badges:
             parts.append(ui.div(*badges, style="margin-top:0.25rem;"))
