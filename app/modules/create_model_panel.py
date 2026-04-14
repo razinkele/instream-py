@@ -208,10 +208,15 @@ def create_model_ui():
                 style="display:inline-block; vertical-align:middle; width:140px;",
             ),
             ui.tags.div(class_="cm-sep"),
-            ui.tags.span("Cell:", class_="cm-label"),
+            ui.tags.span("River cell:", class_="cm-label"),
             ui.div(
-                ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5, width="130px"),
-                style="display:inline-block; vertical-align:middle; width:130px;",
+                ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5, width="110px"),
+                style="display:inline-block; vertical-align:middle; width:110px;",
+            ),
+            ui.tags.span("Water cell:", class_="cm-label"),
+            ui.div(
+                ui.input_slider("water_cell_size", None, min=50, max=1000, value=200, step=50, width="110px"),
+                style="display:inline-block; vertical-align:middle; width:110px;",
             ),
             ui.div(
                 ui.input_select("cell_shape", None,
@@ -398,13 +403,11 @@ def create_model_server(input, output, session):
         layers = []
         reaches = _reaches_dict()
         for idx, (name, reach_data) in enumerate(reaches.items()):
-            # reach_data can be a list (inline) or dict with "segments" key
             segments = reach_data["segments"] if isinstance(reach_data, dict) else reach_data
             if not segments:
                 continue
-            # Always use our high-contrast palette (avoids blue which
-            # blends with the river base layer)
             color = REACH_COLORS[idx % len(REACH_COLORS)]
+            reach_type = reach_data.get("type", "river") if isinstance(reach_data, dict) else "river"
             features = []
             for seg in segments:
                 features.append({
@@ -413,31 +416,46 @@ def create_model_server(input, output, session):
                     "properties": {"reach": name},
                 })
             geoj = {"type": "FeatureCollection", "features": features}
-            # Outline layer (wider, semi-transparent) for glow effect
-            outline_color = [min(255, c + 60) if i < 3 else 100 for i, c in enumerate(color)]
-            layers.append(geojson_layer(
-                id=f"reach-outline-{name}",
-                data=geoj,
-                getLineColor=outline_color,
-                getLineWidth=14,
-                lineWidthMinPixels=8,
-                lineWidthMaxPixels=20,
-                pickable=False,
-                stroked=True,
-                filled=False,
-            ))
-            # Core layer (bright, solid, bold)
-            layers.append(geojson_layer(
-                id=f"reach-{name}",
-                data=geoj,
-                getLineColor=color,
-                getLineWidth=6,
-                lineWidthMinPixels=4,
-                lineWidthMaxPixels=12,
-                pickable=True,
-                stroked=True,
-                filled=False,
-            ))
+
+            if reach_type == "water":
+                # Water body: semi-transparent fill + bold outline
+                fill_color = [color[0], color[1], color[2], 60]
+                layers.append(geojson_layer(
+                    id=f"reach-{name}",
+                    data=geoj,
+                    getFillColor=fill_color,
+                    getLineColor=color,
+                    getLineWidth=3,
+                    lineWidthMinPixels=2,
+                    pickable=True,
+                    stroked=True,
+                    filled=True,
+                ))
+            else:
+                # River: glow outline + bold core line
+                outline_color = [min(255, c + 60) if i < 3 else 100 for i, c in enumerate(color)]
+                layers.append(geojson_layer(
+                    id=f"reach-outline-{name}",
+                    data=geoj,
+                    getLineColor=outline_color,
+                    getLineWidth=14,
+                    lineWidthMinPixels=8,
+                    lineWidthMaxPixels=20,
+                    pickable=False,
+                    stroked=True,
+                    filled=False,
+                ))
+                layers.append(geojson_layer(
+                    id=f"reach-{name}",
+                    data=geoj,
+                    getLineColor=color,
+                    getLineWidth=6,
+                    lineWidthMinPixels=4,
+                    lineWidthMaxPixels=12,
+                    pickable=True,
+                    stroked=True,
+                    filled=False,
+                ))
         return layers
 
     def _build_cells_layer():
@@ -681,27 +699,62 @@ def create_model_server(input, output, session):
         if lon is None or lat is None:
             return
 
-        rivers = _filtered_rivers_gdf()
-        if rivers is None or len(rivers) == 0:
-            _workflow_msg.set("No rivers loaded — fetch rivers first.")
-            return
-
         from shapely.geometry import Point as _Pt
         click_pt = _Pt(lon, lat)
+
+        # --- Check water bodies first (click inside polygon) ---
+        water = _water_gdf()
+        if water is not None and len(water) > 0:
+            hits = water[water.geometry.contains(click_pt)]
+            if len(hits) > 0:
+                geom = hits.geometry.iloc[0]
+                # Simplify large polygons for storage
+                if geom.geom_type == "MultiPolygon":
+                    geom = max(geom.geoms, key=lambda g: g.area)
+                reach_name = _current_reach_name()
+                if not reach_name:
+                    return
+                reaches = dict(_reaches_dict())
+                if reach_name not in reaches:
+                    reaches[reach_name] = {
+                        "segments": [], "properties": [],
+                        "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
+                        "type": "water",
+                    }
+                rd = reaches[reach_name]
+                # Avoid duplicate polygons
+                already = any(g.equals(geom) for g in rd["segments"])
+                if not already:
+                    rd["segments"].append(geom)
+                    rd["properties"].append({})
+                reaches[reach_name] = rd
+                _reaches_dict.set(reaches)
+                n = len(rd["segments"])
+                name_attr = hits.iloc[0].get("nameText", "") if "nameText" in hits.columns else ""
+                label = f" ({name_attr})" if name_attr else ""
+                _workflow_msg.set(
+                    f"Added water body{label} to '{reach_name}' ({n} features)."
+                )
+                await _refresh_map()
+                return
+
+        # --- Then check rivers (nearest line) ---
+        rivers = _filtered_rivers_gdf()
+        if rivers is None or len(rivers) == 0:
+            _workflow_msg.set("No data loaded — fetch rivers/water first.")
+            return
+
         dists = rivers.geometry.distance(click_pt)
         nearest_idx = dists.idxmin()
         min_dist = dists.iloc[nearest_idx]
-        # Accept if within ~0.02 degrees (~2km at this latitude)
         if min_dist > 0.02:
             _workflow_msg.set(
-                f"Click ({lon:.4f}, {lat:.4f}) too far from any river ({min_dist:.4f}°). "
-                "Click closer to a river segment."
+                f"Click ({lon:.4f}, {lat:.4f}) too far from any feature ({min_dist:.4f}°). "
+                "Click closer to a river or inside a water body."
             )
             return
 
         geom = rivers.geometry.iloc[nearest_idx]
-
-        # Convert to LineString if needed
         if geom.geom_type == "MultiLineString":
             geom = max(geom.geoms, key=lambda g: g.length)
         if geom.geom_type != "LineString":
@@ -712,19 +765,23 @@ def create_model_server(input, output, session):
         if not reach_name:
             return
 
-        # Use assign_segment_to_reach if available, otherwise do it inline
-        reaches = dict(_reaches_dict())  # shallow copy
+        reaches = dict(_reaches_dict())
         if assign_segment_to_reach is not None:
             reaches = assign_segment_to_reach(reaches, reach_name, geom, {})
         else:
             if reach_name not in reaches:
-                reaches[reach_name] = []
-            reaches[reach_name].append(geom)
+                reaches[reach_name] = {
+                    "segments": [], "properties": [],
+                    "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
+                    "type": "river",
+                }
+            rd = reaches[reach_name]
+            rd["segments"].append(geom)
+            rd["properties"].append({})
 
         _reaches_dict.set(reaches)
 
-        # reach structure varies: list or dict with "segments" key
-        r = reaches.get(reach_name, [])
+        r = reaches.get(reach_name, {})
         n_segs = len(r["segments"]) if isinstance(r, dict) else len(r)
         _workflow_msg.set(f"Added segment to '{reach_name}' ({n_segs} segments total).")
         await _refresh_map()
@@ -749,30 +806,61 @@ def create_model_server(input, output, session):
 
         _workflow_msg.set("Generating habitat cells...")
 
-        cell_size = input.cell_size()
+        river_cell_size = input.cell_size()
+        water_cell_size = input.water_cell_size()
         cell_shape = input.cell_shape()
 
-        # Collect all reach geometries
-        all_lines = []
-        for reach_data in reaches.values():
-            segs = reach_data["segments"] if isinstance(reach_data, dict) else reach_data
-            all_lines.extend(segs)
+        # Split reaches into river and water groups
+        river_reaches = {}
+        water_reaches = {}
+        for name, rd in reaches.items():
+            if not isinstance(rd, dict):
+                rd = {"segments": rd, "type": "river"}
+            rtype = rd.get("type", "river")
+            if rtype == "water":
+                water_reaches[name] = rd
+            else:
+                river_reaches[name] = rd
 
-        if not all_lines:
+        if not river_reaches and not water_reaches:
             _workflow_msg.set("Reaches are empty — no segments to generate cells from.")
             return
 
         import asyncio
         loop = asyncio.get_running_loop()
         try:
-            cells = await loop.run_in_executor(
-                None,
-                lambda: generate_cells(
-                    lines=all_lines,
-                    cell_size=cell_size,
-                    cell_shape=cell_shape,
-                ),
-            )
+            all_cells = []
+            # Generate river cells
+            if river_reaches:
+                river_cells = await loop.run_in_executor(
+                    None,
+                    lambda: generate_cells(
+                        reach_segments=river_reaches,
+                        cell_size=river_cell_size,
+                        cell_shape=cell_shape,
+                    ),
+                )
+                if river_cells is not None and len(river_cells) > 0:
+                    all_cells.append(river_cells)
+            # Generate water body cells
+            if water_reaches:
+                water_cells = await loop.run_in_executor(
+                    None,
+                    lambda: generate_cells(
+                        reach_segments=water_reaches,
+                        cell_size=water_cell_size,
+                        cell_shape=cell_shape,
+                    ),
+                )
+                if water_cells is not None and len(water_cells) > 0:
+                    all_cells.append(water_cells)
+
+            if all_cells:
+                cells = gpd.pd.concat(all_cells, ignore_index=True)
+                # Re-number cell IDs
+                cells["cell_id"] = [f"C{i+1:04d}" for i in range(len(cells))]
+            else:
+                cells = None
         except Exception as exc:
             _workflow_msg.set(f"Cell generation failed: {exc}")
             logger.exception("generate_cells error")

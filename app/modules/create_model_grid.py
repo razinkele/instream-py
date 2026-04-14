@@ -82,23 +82,22 @@ def generate_cells(
         Cells in UTM CRS with columns: cell_id, reach_name, area, dist_escape,
         num_hiding, frac_vel_shelter, frac_spawn, geometry.
     """
-    # Collect all segments and detect UTM zone from centroid
-    all_lines = []
+    # Collect all geometries and detect UTM zone from centroid
+    all_geoms = []
     for info in reach_segments.values():
-        all_lines.extend(info["segments"])
+        all_geoms.extend(info["segments"])
 
-    if not all_lines:
+    if not all_geoms:
         return gpd.GeoDataFrame(
             columns=["cell_id", "reach_name", "area", "dist_escape",
                       "num_hiding", "frac_vel_shelter", "frac_spawn", "geometry"],
         )
 
-    lines_gdf = gpd.GeoDataFrame(geometry=all_lines, crs="EPSG:4326")
-    centroid = unary_union(all_lines).centroid
+    geoms_gdf = gpd.GeoDataFrame(geometry=all_geoms, crs="EPSG:4326")
+    centroid = unary_union(all_geoms).centroid
     utm_epsg = detect_utm_epsg(centroid.x, centroid.y)
-    lines_utm = reproject_gdf(lines_gdf, utm_epsg)
 
-    # Build per-reach buffers and a combined buffer
+    # Build per-reach buffers/regions and a combined area
     reach_buffers = {}
     reach_endpoints = {}
     buf_dist = cell_size * buffer_factor
@@ -107,11 +106,25 @@ def generate_cells(
         seg_gdf = gpd.GeoDataFrame(geometry=info["segments"], crs="EPSG:4326")
         seg_utm = reproject_gdf(seg_gdf, utm_epsg)
         merged = unary_union(seg_utm.geometry)
-        reach_buffers[name] = merged.buffer(buf_dist)
-        # Collect endpoints (first/last coord of each segment)
+
+        # For polygons (water bodies): use the polygon directly, no buffering
+        reach_type = info.get("type", "river")
+        if reach_type == "water" or merged.geom_type in ("Polygon", "MultiPolygon"):
+            reach_buffers[name] = merged
+        else:
+            reach_buffers[name] = merged.buffer(buf_dist)
+
+        # Collect endpoints (first/last coord of each line segment)
         eps = []
         for geom in seg_utm.geometry:
-            coords = list(geom.coords)
+            if geom.geom_type in ("Polygon", "MultiPolygon"):
+                # For polygons, use boundary points as "endpoints"
+                boundary = geom.exterior if geom.geom_type == "Polygon" else geom.geoms[0].exterior
+                coords = list(boundary.coords)
+                eps.append(coords[0])
+                eps.append(coords[len(coords) // 2])
+            else:
+                coords = list(geom.coords)
             eps.append(coords[0])
             eps.append(coords[-1])
         reach_endpoints[name] = eps
