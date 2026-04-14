@@ -412,16 +412,51 @@ def create_model_server(input, output, session):
                 all_features.extend(geojson["features"])
 
         n = len(all_features)
-        _fetch_msg.set(f"Got {n} river segments. Sending to map...")
-
-        if n > 0:
-            combined = {"type": "FeatureCollection", "features": all_features}
-            gdf = gpd.GeoDataFrame.from_features(combined["features"], crs="EPSG:4326")
-            _rivers_gdf.set(gdf)
-            await _refresh_map()
-            _fetch_msg.set(f"Loaded {n} river segments (Strahler >= {strahler_min}).")
-        else:
+        if n == 0:
             _fetch_msg.set("No river features found. Try zooming in or lowering the Strahler filter.")
+            return
+
+        combined = {"type": "FeatureCollection", "features": all_features}
+        gdf = gpd.GeoDataFrame.from_features(combined["features"], crs="EPSG:4326")
+
+        # Auto-fetch water bodies for context + clipping
+        _fetch_msg.set(f"Got {n} rivers. Fetching water bodies for context...")
+        water_geojson = await loop.run_in_executor(
+            None, lambda: _query_euhydro(INLAND_WATER_LAYER, bbox)
+        )
+        water_gdf = None
+        if water_geojson and "features" in water_geojson and water_geojson["features"]:
+            water_gdf = gpd.GeoDataFrame.from_features(
+                water_geojson["features"], crs="EPSG:4326"
+            )
+            _water_gdf.set(water_gdf)
+
+        # Clip rivers: remove segments that are mostly inside water bodies
+        if water_gdf is not None and len(water_gdf) > 0:
+            _fetch_msg.set("Clipping rivers to exclude lagoon/lake segments...")
+            water_union = water_gdf.geometry.unary_union
+            keep_mask = []
+            for _, row in gdf.iterrows():
+                line = row.geometry
+                if line is None or line.is_empty:
+                    keep_mask.append(False)
+                    continue
+                try:
+                    inside = line.intersection(water_union)
+                    frac_inside = inside.length / line.length if line.length > 0 else 0
+                    keep_mask.append(frac_inside < 0.5)  # keep if <50% inside water body
+                except Exception:
+                    keep_mask.append(True)
+            n_before = len(gdf)
+            gdf = gdf[keep_mask].reset_index(drop=True)
+            n_clipped = n_before - len(gdf)
+            _fetch_msg.set(f"Clipped {n_clipped} lagoon/lake segments.")
+
+        _rivers_gdf.set(gdf)
+        await _refresh_map()
+        n_final = len(gdf)
+        water_msg = f" + {len(water_gdf)} water bodies" if water_gdf is not None else ""
+        _fetch_msg.set(f"Loaded {n_final} river segments (Strahler >= {strahler_min}){water_msg}.")
 
     @reactive.effect
     @reactive.event(input.fetch_water)
