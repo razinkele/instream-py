@@ -244,6 +244,11 @@ class _ModelDayBoundaryMixin:
             alive = alive[fw_mask]
         cs = self.fem_space.cell_state
 
+        # Transition RETURNING_ADULT → SPAWNER when spawn season opens
+        ra_mask = self.trout_state.life_history[alive] == int(LifeStage.RETURNING_ADULT)
+        if ra_mask.any():
+            self.trout_state.life_history[alive[ra_mask]] = int(LifeStage.SPAWNER)
+
         for i in alive:
             sp_idx = int(self.trout_state.species_idx[i])
             sp_name = self.species_order[sp_idx]
@@ -764,8 +769,7 @@ class _ModelDayBoundaryMixin:
             ts.reach_idx[slots] = r_idx
             ts.sex[slots] = sex
             ts.superind_rep[slots] = 1
-            # TODO: Change to LifeStage.RETURNING_ADULT when holding behavior is implemented (Task 12)
-            lh_val = int(LifeStage.SPAWNER) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
+            lh_val = int(LifeStage.RETURNING_ADULT) if getattr(sp_cfg, "is_anadromous", False) else int(LifeStage.FRY)
             ts.life_history[slots] = lh_val
             ts.in_shelter[slots] = False
             ts.spawned_this_season[slots] = False

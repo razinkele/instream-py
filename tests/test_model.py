@@ -224,3 +224,38 @@ def test_multi_reach_model_loads():
         print("Multi-reach model loaded:", model.fem_space.num_cells, "cells")
     except Exception as e:
         print("Expected failure (multi-reach WIP):", e)
+
+
+def test_adult_arrives_as_returning_adult():
+    """Anadromous adults should arrive as RETURNING_ADULT, not SPAWNER."""
+    from pathlib import Path
+    from instream.model import InSTREAMModel
+    from instream.state.life_stage import LifeStage
+
+    PROJECT = Path(__file__).resolve().parent.parent
+    config = str(PROJECT / "configs" / "example_baltic.yaml")
+    data = str(PROJECT / "tests" / "fixtures" / "example_baltic")
+    model = InSTREAMModel(config, data_dir=data)
+
+    # Run until adults start arriving (May-June, ~45-90 days from April 1)
+    for _ in range(90):
+        model.step()
+
+    ts = model.trout_state
+    alive = ts.alive_indices()
+    lengths = ts.length[alive]
+
+    # Adults are large (>50cm). Check their life stage.
+    adults = alive[lengths > 50]
+    if len(adults) > 0:
+        for i in adults:
+            stage = int(ts.life_history[i])
+            assert stage in (int(LifeStage.RETURNING_ADULT), int(LifeStage.SPAWNER)), (
+                f"Large adult fish {i} has unexpected stage {stage}"
+            )
+            # Before spawn season (Oct), should be RETURNING_ADULT
+            doy = model.time_manager.current_date.day_of_year
+            if doy < 280:  # before Oct 7
+                assert stage == int(LifeStage.RETURNING_ADULT), (
+                    f"Adult {i} should be RETURNING_ADULT before spawn season, got {stage}"
+                )
