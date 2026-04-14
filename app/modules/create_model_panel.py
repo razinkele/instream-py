@@ -402,13 +402,9 @@ def create_model_server(input, output, session):
             segments = reach_data["segments"] if isinstance(reach_data, dict) else reach_data
             if not segments:
                 continue
-            # Use reach color if available, else cycle palette
-            color = (reach_data.get("color", REACH_COLORS[idx % len(REACH_COLORS)])
-                     if isinstance(reach_data, dict)
-                     else REACH_COLORS[idx % len(REACH_COLORS)])
-            # Convert matplotlib floats [0-1] to deck.gl ints [0-255]
-            if color and all(isinstance(c, float) and c <= 1.0 for c in color[:3]):
-                color = [int(c * 255) for c in color[:3]] + [220]
+            # Always use our high-contrast palette (avoids blue which
+            # blends with the river base layer)
+            color = REACH_COLORS[idx % len(REACH_COLORS)]
             features = []
             for seg in segments:
                 features.append({
@@ -480,7 +476,8 @@ def create_model_server(input, output, session):
         if cells_lyr is not None:
             layers.append(cells_lyr)
         # Reach overlays (top)
-        layers.extend(_build_reach_layers())
+        reach_layers = _build_reach_layers()
+        layers.extend(reach_layers)
         await _widget.update(session, layers)
 
     # -----------------------------------------------------------------
