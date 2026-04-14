@@ -416,21 +416,28 @@ def create_model_server(input, output, session):
         combined = {"type": "FeatureCollection", "features": all_features}
         gdf = gpd.GeoDataFrame.from_features(combined["features"], crs="EPSG:4326")
 
-        # Auto-fetch water bodies for context + clipping
-        _fetch_msg.set(f"Got {n} rivers. Fetching water bodies for context...")
-        water_geojson = await loop.run_in_executor(
-            None, lambda: _query_euhydro(INLAND_WATER_LAYER, bbox)
-        )
+        # Auto-fetch BOTH inland water AND coastal polygons for context + clipping
+        # Curonian Lagoon is Coastal (layer 0), not InlandWater (layer 2)
+        _fetch_msg.set(f"Got {n} rivers. Fetching water bodies + coastal...")
+        all_water_features = []
+
+        for water_layer_id in [INLAND_WATER_LAYER, COASTAL_LAYER]:
+            wj = await loop.run_in_executor(
+                None, lambda lid=water_layer_id: _query_euhydro(lid, bbox)
+            )
+            if wj and "features" in wj:
+                all_water_features.extend(wj["features"])
+
         water_gdf = None
-        if water_geojson and "features" in water_geojson and water_geojson["features"]:
+        if all_water_features:
             water_gdf = gpd.GeoDataFrame.from_features(
-                water_geojson["features"], crs="EPSG:4326"
+                all_water_features, crs="EPSG:4326"
             )
             _water_gdf.set(water_gdf)
 
-        # Clip rivers: remove segments that are mostly inside water bodies
+        # Clip rivers: remove segments that are mostly inside water bodies/coastal
         if water_gdf is not None and len(water_gdf) > 0:
-            _fetch_msg.set("Clipping rivers to exclude lagoon/lake segments...")
+            _fetch_msg.set("Clipping rivers to exclude lagoon/coastal segments...")
             water_union = water_gdf.geometry.unary_union
             keep_mask = []
             for _, row in gdf.iterrows():
