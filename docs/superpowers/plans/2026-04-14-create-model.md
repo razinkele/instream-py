@@ -291,9 +291,8 @@ def generate_cells(
 
             # Distance to nearest reach endpoint (meters → cm)
             if reach_endpoints:
-                dists = [centroid.distance(
-                    gpd.points_from_xy([ep[0]], [ep[1]])[0]
-                ) for ep in reach_endpoints]
+                from shapely.geometry import Point as _Pt
+                dists = [centroid.distance(_Pt(ep[0], ep[1])) for ep in reach_endpoints]
                 dist_escape = min(dists) * 100  # m → cm
             else:
                 dist_escape = 10000  # default 100m
@@ -420,12 +419,16 @@ def detect_junctions(reaches: dict, center_lon: float, center_lat: float,
 
     utm_epsg = detect_utm_epsg(center_lon, center_lat)
 
-    # Collect start/end points per reach (in UTM)
+    # Collect start/end points per reach (batch-reproject to UTM for efficiency)
     reach_endpoints = {}
     for rname, rdata in reaches.items():
+        if not rdata["segments"]:
+            continue
+        reach_gdf = gpd.GeoDataFrame(
+            geometry=rdata["segments"], crs="EPSG:4326"
+        ).to_crs(epsg=utm_epsg)
         starts, ends = [], []
-        for seg in rdata["segments"]:
-            seg_utm = gpd.GeoSeries([seg], crs="EPSG:4326").to_crs(epsg=utm_epsg).iloc[0]
+        for seg_utm in reach_gdf.geometry:
             coords = list(seg_utm.coords)
             if coords:
                 starts.append(Point(coords[0]))
@@ -760,6 +763,120 @@ git commit -m "feat: create_model_export — shapefile, YAML, CSV, ZIP export"
 
 ---
 
+### Task 4b: Unit Tests for Core Modules
+
+Formal tests for Tasks 1-4 modules.
+
+**Files:**
+- Create: `tests/test_create_model.py`
+
+- [ ] **Step 1: Write unit tests**
+
+```python
+# tests/test_create_model.py
+"""Tests for Create Model core modules."""
+import numpy as np
+import pytest
+from shapely.geometry import LineString, Point
+
+
+class TestUtils:
+    def test_detect_utm_lithuania(self):
+        from modules.create_model_utils import detect_utm_epsg
+        assert detect_utm_epsg(21.1, 55.7) == 32634  # UTM 34N
+
+    def test_detect_utm_southern_hemisphere(self):
+        from modules.create_model_utils import detect_utm_epsg
+        assert detect_utm_epsg(21.1, -35.0) == 32734  # UTM 34S
+
+    def test_default_reach_params_nonzero(self):
+        from modules.create_model_utils import DEFAULT_REACH_PARAMS
+        for k, v in DEFAULT_REACH_PARAMS.items():
+            if k != "light_turbid_const":
+                assert v != 0.0, f"{k} should have non-zero default"
+
+
+class TestGrid:
+    def test_hexagonal_grid_produces_cells(self):
+        from modules.create_model_grid import generate_cells
+        segments = {
+            "TestReach": {
+                "segments": [LineString([(21.1, 55.7), (21.11, 55.71)])],
+                "frac_spawn": 0.3,
+            }
+        }
+        gdf = generate_cells(segments, cell_size=50, cell_shape="hexagonal")
+        assert len(gdf) > 0
+        assert "cell_id" in gdf.columns
+        assert "reach_name" in gdf.columns
+        assert gdf["reach_name"].iloc[0] == "TestReach"
+
+    def test_rectangular_grid_produces_cells(self):
+        from modules.create_model_grid import generate_cells
+        segments = {
+            "R1": {
+                "segments": [LineString([(21.1, 55.7), (21.11, 55.71)])],
+                "frac_spawn": 0.0,
+            }
+        }
+        gdf = generate_cells(segments, cell_size=50, cell_shape="rectangular")
+        assert len(gdf) > 0
+
+    def test_empty_segments_returns_empty(self):
+        from modules.create_model_grid import generate_cells
+        gdf = generate_cells({}, cell_size=20)
+        assert len(gdf) == 0
+
+
+class TestReaches:
+    def test_assign_segment(self):
+        from modules.create_model_reaches import assign_segment_to_reach
+        reaches = {}
+        seg = LineString([(0, 0), (1, 1)])
+        reaches = assign_segment_to_reach(reaches, "Main", seg, {})
+        assert "Main" in reaches
+        assert len(reaches["Main"]["segments"]) == 1
+
+    def test_remove_segment(self):
+        from modules.create_model_reaches import assign_segment_to_reach, remove_segment_from_reach
+        reaches = {}
+        seg = LineString([(0, 0), (1, 1)])
+        reaches = assign_segment_to_reach(reaches, "Main", seg, {})
+        reaches = remove_segment_from_reach(reaches, seg)
+        assert "Main" not in reaches  # Empty reach removed
+
+
+class TestExport:
+    def test_export_yaml_has_reaches(self):
+        from modules.create_model_export import export_yaml
+        import geopandas as gpd
+        from shapely.geometry import box
+        cells = gpd.GeoDataFrame(
+            {"cell_id": ["C1"], "reach_name": ["R1"], "geometry": [box(0, 0, 1, 1)]},
+            crs="EPSG:32634",
+        )
+        reaches = {"R1": {"upstream_junction": 1, "downstream_junction": 2}}
+        yaml_str = export_yaml(reaches, cells, "Test", {})
+        assert "R1:" in yaml_str
+        assert "drift_conc:" in yaml_str
+        assert "5.0e-09" in yaml_str or "5e-09" in yaml_str
+```
+
+- [ ] **Step 2: Run tests**
+
+```bash
+cd app && micromamba run -n shiny python -m pytest ../tests/test_create_model.py -v
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/test_create_model.py
+git commit -m "test: unit tests for create_model core modules"
+```
+
+---
+
 ### Task 5: Panel UI — Action Bar + Map + Slide-out + Status
 
 Rewrite the existing `create_model_panel.py` with full workflow UI.
@@ -767,47 +884,137 @@ Rewrite the existing `create_model_panel.py` with full workflow UI.
 **Files:**
 - Modify: `app/modules/create_model_panel.py`
 
-This is the largest task — the full UI with action bar, map interactions, Strahler filter, reach selection via click, configuration slide-out panel, and export. Due to size (~400 lines), this task focuses on the UI shell and wiring. The actual logic is in Tasks 1-4's modules.
+This task refactors the existing `create_model_panel.py` (310 lines, already has EU-Hydro fetch and basic map) to add the full workflow. The existing fetch logic is kept; new features are added incrementally.
 
-- [ ] **Step 1: Rewrite create_model_panel.py with full workflow**
+**Existing code to keep:** `_query_euhydro()`, `_on_fetch_rivers()`, `_on_fetch_water()`, MapWidget creation, status output.
 
-The complete rewrite is too large to inline here. Key structure:
+**New code to add:** Action bar with progressive enabling, Strahler filter slider, click-to-select handler, cell generation trigger, configuration slide-out, export + Load-into-Setup.
 
+- [ ] **Step 1: Add Strahler filter slider + Coastal fetch + progressive button enabling**
+
+In `create_model_ui()`, restructure the action bar to include all buttons with disabled state management. Add Strahler slider. Add `input_action_button` for each workflow step.
+
+Key UI additions:
 ```python
-# app/modules/create_model_panel.py
-"""Create Model panel — EU-Hydro download, reach selection, grid generation, export."""
-
-# UI: action bar with progressive button enabling
-# Map: static MapWidget with click handler
-# Slide-out: configuration panel (toggled by Configure button)
-# Status bar: feature counts + CRS
-
-# Server:
-# - _on_fetch_rivers: EU-Hydro query → display river lines
-# - _on_fetch_water: EU-Hydro query → display water polygons
-# - _on_fetch_coastal: EU-Hydro query → display coastal polygons
-# - _strahler_filter: rebuild river layer with filtered GeoDataFrame
-# - _on_select_reaches: enter selection mode, handle click events
-# - _on_click: identify clicked segment, add to current reach
-# - _on_generate_cells: call generate_cells(), display preview
-# - _on_configure: open slide-out panel
-# - _on_export: call export_zip(), offer download
-# - _on_load_setup: write to fixtures, update config dropdown
+ui.input_slider("strahler_min", "Strahler ≥", min=1, max=9, value=3, step=1),
+ui.input_action_button("fetch_coastal", "Coastal", class_="btn btn-sm btn-secondary"),
+ui.input_action_button("select_reaches_btn", "Select Reaches", class_="btn btn-sm btn-outline-primary"),
+ui.input_action_button("generate_cells_btn", "Generate Cells", class_="btn btn-sm btn-outline-success"),
+ui.input_action_button("configure_btn", "Configure", class_="btn btn-sm btn-outline-warning"),
+ui.input_action_button("export_btn", "Export", class_="btn btn-sm btn-outline-danger"),
+ui.input_slider("cell_size", "Cell size (m)", min=5, max=100, value=20, step=5),
+ui.input_select("cell_shape", "Cell shape", choices={"hexagonal": "Hexagonal", "rectangular": "Rectangular"}),
 ```
 
-- [ ] **Step 2: Run the app locally to verify the panel loads**
+- [ ] **Step 2: Add Strahler filter effect in server**
+
+```python
+@reactive.effect
+async def _strahler_filter():
+    rivers = _rivers_gdf()
+    if rivers is None:
+        return
+    threshold = input.strahler_min()
+    strahler_col = None
+    for c in rivers.columns:
+        if "strahler" in c.lower():
+            strahler_col = c
+            break
+    if strahler_col is None:
+        return
+    filtered = rivers[rivers[strahler_col] >= threshold]
+    if len(filtered) == 0:
+        return
+    layer = geojson_layer(
+        id="euhydro-rivers-filtered",
+        data=filtered.__geo_interface__,
+        get_line_color=[30, 100, 200, 200],
+        get_line_width=2,
+        line_width_min_pixels=1,
+        pickable=True, stroked=True, filled=False,
+    )
+    await _widget.update(session, [layer])
+```
+
+- [ ] **Step 3: Add click-to-select handler for reach selection**
+
+```python
+@reactive.effect
+def _on_river_click():
+    click = getattr(input, _widget.click_input_id)()
+    if click is None or not _selection_mode():
+        return
+    feature = click.get("object", {})
+    geom_coords = feature.get("geometry", {}).get("coordinates")
+    if not geom_coords:
+        return
+    from shapely.geometry import LineString
+    segment = LineString(geom_coords)
+    props = feature.get("properties", {})
+    current_reach = _current_reach_name()
+    if not current_reach:
+        return
+    from modules.create_model_reaches import assign_segment_to_reach
+    reaches = _reaches_dict()
+    reaches = assign_segment_to_reach(reaches, current_reach, segment, props)
+    _reaches_dict.set(reaches)
+```
+
+- [ ] **Step 4: Add generate cells trigger**
+
+```python
+@reactive.effect
+@reactive.event(input.generate_cells_btn)
+async def _on_generate():
+    reaches = _reaches_dict()
+    if not reaches:
+        ui.notification_show("Select reaches first", type="warning")
+        return
+    from modules.create_model_grid import generate_cells
+    cells = generate_cells(reaches, cell_size=input.cell_size(), cell_shape=input.cell_shape())
+    if cells.empty:
+        ui.notification_show("No cells generated — try larger cell size", type="warning")
+        return
+    _cells_gdf.set(cells)
+    # Display on map
+    cells_wgs = cells.to_crs(epsg=4326)
+    layer = geojson_layer(id="model-cells", data=cells_wgs.__geo_interface__,
+                          get_fill_color=[100, 200, 100, 120], get_line_color=[50, 100, 50, 150],
+                          pickable=True, stroked=True, filled=True)
+    await _widget.update(session, [layer])
+```
+
+- [ ] **Step 5: Add export trigger**
+
+```python
+@reactive.effect
+@reactive.event(input.export_btn)
+async def _on_export():
+    cells = _cells_gdf()
+    reaches = _reaches_dict()
+    if cells is None or cells.empty:
+        ui.notification_show("Generate cells first", type="warning")
+        return
+    from modules.create_model_export import export_zip
+    import tempfile
+    output_dir = Path(tempfile.mkdtemp()) / "model_export"
+    zip_path = export_zip(cells, reaches, "Model", {}, output_dir)
+    ui.notification_show(f"Exported to {zip_path}", type="message", duration=10)
+```
+
+- [ ] **Step 6: Run the app locally**
 
 ```bash
 micromamba run -n shiny shiny run app/app.py --port 8800
 ```
 
-Verify: Create Model tab visible, map renders, action bar buttons shown.
+Verify: All buttons visible, Strahler slider works, click-select assigns segments.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add app/modules/create_model_panel.py
-git commit -m "feat: Create Model panel — full workflow UI with action bar"
+git commit -m "feat: Create Model panel — full workflow with fetch, select, generate, export"
 ```
 
 ---
