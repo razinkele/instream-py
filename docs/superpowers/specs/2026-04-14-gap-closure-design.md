@@ -86,11 +86,13 @@ After simulation completes, status shows "Error — see notification" and post-s
 
 ### Design
 
-#### B1. Add completion signaling via queue
+#### B1. Add completion signaling via queue and remove status-based detection
 
 **File:** `app/app.py`
 
-Instead of relying on `run_sim_task.status()` (which depends on async callback timing), have the simulation itself signal completion through the existing `_progress_q`:
+Instead of relying on `run_sim_task.status()` (which depends on async callback timing), have the task signal completion through the existing `_progress_q`. **Remove** the `run_sim_task.status()` check entirely to avoid double-trigger races.
+
+Step 1 — Signal completion after executor returns:
 
 ```python
 # In run_sim_task (line 431-439):
@@ -109,33 +111,70 @@ async def run_sim_task(config_path, overrides):
     return result
 ```
 
+Step 2 — Rewrite `_poll_progress` to use queue-only detection. **Remove** the `run_sim_task.status()` block (lines 529-557) entirely. The queue loop becomes the sole completion detector:
+
 ```python
-# In _poll_progress (line 518-547):
-# Check progress queue for completion signal
+# In _poll_progress — replace the progress+status polling with:
 while not _progress_q.empty():
     item = _progress_q.get_nowait()
-    if isinstance(item, tuple) and item[0] == "__DONE__":
+    if isinstance(item, tuple) and len(item) == 2 and item[0] == "__DONE__":
         # Task completed — set results directly
         _sim_state.set("success")
         _active_task.set("none")
         results_rv.set(item[1])
         ui.notification_show("Simulation complete!", type="message", duration=3)
         return
+    # Normal progress tuple (int, int)
     step, total = item
-    # ... normal progress update
+    _latest_progress.set((step, total))
+
+# Schedule next poll (no status check needed)
+reactive.invalidate_later(1)
 ```
 
-This bypasses the async status race entirely. The queue is thread-safe and checked synchronously in the poll loop.
+Note: The sentinel check uses `len(item) == 2 and item[0] == "__DONE__"` which is safe because normal progress items are `(int, int)` — `"__DONE__"` is a string, so `item[0] == "__DONE__"` is False for numeric tuples. No type collision possible.
 
-#### B2. Clean up stale error state on new run
+Step 3 — Handle task errors. Add a try/except around the executor call in `run_sim_task`:
 
-**File:** `app/app.py`, function `_launch()` (line 491)
+```python
+@reactive.extended_task
+async def run_sim_task(config_path, overrides):
+    data_dir = _resolve_data_dir(config_path)
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: run_simulation(
+                config_path, overrides, _progress_q, _metrics_q, data_dir
+            ),
+        )
+        _progress_q.put(("__DONE__", result))
+        return result
+    except Exception as e:
+        _progress_q.put(("__ERROR__", str(e)))
+        raise
+```
+
+And in `_poll_progress`, check for `__ERROR__` too:
+
+```python
+    if isinstance(item, tuple) and len(item) == 2 and item[0] == "__ERROR__":
+        _sim_state.set("error")
+        _active_task.set("none")
+        ui.notification_show("Simulation failed: {}".format(item[1]),
+                             type="error", duration=30)
+        return
+```
+
+#### B2. Clean up stale state on new run
+
+**File:** `app/app.py`, function `_launch()` (line 497)
 
 Add explicit state reset before starting a new simulation:
 
 ```python
 _sim_state.set("running")
-results_rv.set(None)  # Clear previous results
+results_rv.set(None)  # Clear previous results so tabs show "loading" not stale data
 ```
 
 ### Verification
@@ -195,33 +234,51 @@ This means:
 
 **File:** `src/instream/modules/behavior.py`, function `build_candidate_lists()`
 
-Add a reach-connectivity filter after the distance-based candidate search:
+Add a reach-connectivity filter after the distance-based candidate search.
+
+Pre-compute a **bidirectional adjacency set** per reach at init time (avoids O(N_reaches) reverse-graph scan per fish):
+
+```python
+# In model_init.py, after build_reach_graph():
+# Pre-compute allowed reaches for each reach (self + forward + reverse neighbors)
+self._reach_allowed = {}
+for r_idx in range(len(self.reach_order)):
+    allowed = {r_idx}
+    allowed.update(self._reach_graph.get(r_idx, []))
+    # Reverse: reaches whose downstream connects to this reach
+    for other, neighbors in self._reach_graph.items():
+        if r_idx in neighbors:
+            allowed.add(other)
+    self._reach_allowed[r_idx] = np.array(sorted(allowed), dtype=np.int32)
+```
+
+Then in `build_candidate_lists`, add a post-filter:
 
 ```python
 def build_candidate_lists(trout_state, fem_space, move_radius_max,
                           move_radius_L1, move_radius_L9,
-                          reach_graph=None):
+                          reach_allowed=None):
     # ... existing distance-based candidate building ...
 
     # Post-filter: restrict to current reach + connected reaches
-    if reach_graph is not None:
+    if reach_allowed is not None:
         for i in range(n_fish):
             if candidate_lists[i] is None:
                 continue
             fish_reach = int(trout_state.reach_idx[i])
-            allowed_reaches = set([fish_reach]) | set(reach_graph.get(fish_reach, []))
-            # Also allow upstream reaches (reverse graph)
-            for r, neighbors in reach_graph.items():
-                if fish_reach in neighbors:
-                    allowed_reaches.add(r)
+            allowed = reach_allowed.get(fish_reach)
+            if allowed is None:
+                continue
             cell_reaches = fem_space.cell_state.reach_idx[candidate_lists[i]]
-            mask = np.isin(cell_reaches, list(allowed_reaches))
+            mask = np.isin(cell_reaches, allowed)
             candidate_lists[i] = candidate_lists[i][mask]
-    
+
     return candidate_lists
 ```
 
-**Caller update:** Pass `reach_graph=self._reach_graph` from `select_habitat_and_activity()`.
+**Caller update:** Pass `reach_allowed=self._reach_allowed` via `params` dict from `model.py` to `select_habitat_and_activity()`, then to `build_candidate_lists()`.
+
+Performance: O(N_alive_fish) with a single `np.isin` per fish against a small pre-computed array. No per-fish graph traversal.
 
 ### Verification
 
