@@ -1286,3 +1286,50 @@ class TestBatchVsScalarHabitatSelection:
             ), (
                 f"Fish {idx}: growth mismatch batch={ts_batch.last_growth_rate[idx]} scalar={ts_scalar.last_growth_rate[idx]}"
             )
+
+
+def test_candidate_lists_respect_reach_connectivity():
+    """Candidates must be restricted to current reach + connected reaches."""
+    import numpy as np
+    from instream.modules.behavior import build_candidate_lists
+    from instream.state.cell_state import CellState
+    from instream.state.trout_state import TroutState
+    from instream.space.fem_space import FEMSpace
+
+    cs = CellState.zeros(10, num_flows=2)
+    cs.centroid_x[:] = np.arange(10, dtype=np.float64) * 100
+    cs.centroid_y[:] = 0.0
+    cs.depth[:] = 50.0
+    cs.area[:] = 10000.0
+    cs.reach_idx[:5] = 0
+    cs.reach_idx[5:] = 1
+    ni = np.full((10, 4), -1, dtype=np.int32)
+    for i in range(9):
+        ni[i, 0] = i + 1
+        ni[i + 1, 1] = i
+    space = FEMSpace(cs, ni)
+
+    ts = TroutState.zeros(3)
+    ts.alive[0] = True
+    ts.cell_idx[0] = 2
+    ts.reach_idx[0] = 0
+    ts.length[0] = 10.0
+    ts.alive[1] = True
+    ts.cell_idx[1] = 7
+    ts.reach_idx[1] = 1
+    ts.length[1] = 10.0
+
+    reach_allowed = {
+        0: np.array([0], dtype=np.int32),
+        1: np.array([1], dtype=np.int32),
+    }
+
+    result = build_candidate_lists(
+        ts, space, move_radius_max=50000, move_radius_L1=3, move_radius_L9=15,
+        reach_allowed=reach_allowed,
+    )
+
+    assert result[0] is not None
+    assert all(c < 5 for c in result[0]), f"Fish 0 got cells outside reach 0: {result[0]}"
+    assert result[1] is not None
+    assert all(c >= 5 for c in result[1]), f"Fish 1 got cells outside reach 1: {result[1]}"

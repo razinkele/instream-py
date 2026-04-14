@@ -152,7 +152,8 @@ def build_candidate_mask(
 
 
 def build_candidate_lists(
-    trout_state, fem_space, move_radius_max, move_radius_L1, move_radius_L9
+    trout_state, fem_space, move_radius_max, move_radius_L1, move_radius_L9,
+    reach_allowed=None,
 ):
     """Build per-fish candidate cell arrays (sparse, no dense mask).
 
@@ -187,7 +188,6 @@ def build_candidate_lists(
         for i in range(n_fish):
             if offsets[i + 1] > offsets[i]:
                 candidate_lists[i] = flat[int(offsets[i]) : int(offsets[i + 1])]
-        return candidate_lists
     elif _HAS_NUMBA_SPATIAL:
         offsets, flat = _numba_build_cands(
             trout_state.alive,
@@ -205,10 +205,9 @@ def build_candidate_lists(
         for i in range(n_fish):
             if offsets[i + 1] > offsets[i]:
                 candidate_lists[i] = flat[int(offsets[i]) : int(offsets[i + 1])]
-        return candidate_lists
-
-    # Python fallback: KD-tree queries + vectorized wet filter
-    candidate_lists = [None] * n_fish
+    else:
+        # Python fallback: KD-tree queries + vectorized wet filter
+        candidate_lists = [None] * n_fish
     for i in range(n_fish):
         if not trout_state.alive[i]:
             continue
@@ -226,6 +225,22 @@ def build_candidate_lists(
         )
         # Vectorized wet filter (replaces Python for-loop)
         candidate_lists[i] = all_c[wet_mask[all_c]].astype(np.int32)
+
+    # Post-filter: restrict to current reach + connected reaches
+    if reach_allowed is not None:
+        for i in range(n_fish):
+            if candidate_lists[i] is None:
+                continue
+            fish_reach = int(trout_state.reach_idx[i])
+            allowed = reach_allowed.get(fish_reach)
+            if allowed is None:
+                continue
+            cell_reaches = fem_space.cell_state.reach_idx[candidate_lists[i]]
+            mask = np.isin(cell_reaches, allowed)
+            filtered = candidate_lists[i][mask]
+            if len(filtered) > 0:
+                candidate_lists[i] = filtered
+            # else: keep original candidates (don't strand the fish)
 
     return candidate_lists
 
@@ -497,6 +512,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
     _max_swim_tt_arr = np.atleast_2d(np.asarray(_raw_mstt, dtype=np.float64))
     _resp_tt_arr = np.atleast_2d(np.asarray(_raw_rtt, dtype=np.float64))
 
+    _reach_allowed = params.get("reach_allowed", None)
+
     # Build candidate lists using per-species max movement radius (use global max)
     if _sp is not None:
         _move_max = float(np.max(_sp["move_radius_max"]))
@@ -518,6 +535,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         _move_max,
         _move_L1,
         _move_L9,
+        reach_allowed=_reach_allowed,
     )
 
     cs = fem_space.cell_state

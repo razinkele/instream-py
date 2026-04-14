@@ -70,6 +70,7 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
             rp_arrays=self._rp_arrays,
             step_length=step_length,
             pisciv_densities=pisciv_densities,
+            reach_allowed=getattr(self, '_reach_allowed', None),
         )
 
         # 8. Store growth rate in memory (NOT applied to weight yet)

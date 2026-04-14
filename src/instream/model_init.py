@@ -381,6 +381,17 @@ class _ModelInitMixin:
             self.config.reaches[r].downstream_junction for r in self.reach_order
         ]
         self._reach_graph = build_reach_graph(upstream, downstream)
+
+        # Pre-compute allowed reaches per reach (self + forward + reverse neighbors)
+        self._reach_allowed = {}
+        for r_idx in range(len(self.reach_order)):
+            allowed = {r_idx}
+            allowed.update(self._reach_graph.get(r_idx, []))
+            for other, neighbors in self._reach_graph.items():
+                if r_idx in neighbors:
+                    allowed.add(other)
+            self._reach_allowed[r_idx] = np.array(sorted(allowed), dtype=np.int32)
+
         self._outmigrants = []
 
         # Harvest schedule
