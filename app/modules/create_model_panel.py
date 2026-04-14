@@ -66,16 +66,16 @@ EUHYDRO_BASE = "https://image.discomap.eea.europa.eu/arcgis/rest/services/EUHydr
 RIVER_STRAHLER_LAYERS = {1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11, 8: 12, 9: 13}
 WATER_LAYERS = [0, 1, 2]  # Coastal + Transit (lagoon!) + InlandWater
 
-# Reach colour palette (cycle for multiple reaches)
+# Reach colour palette — high-contrast, avoids blue (river colour)
 REACH_COLORS = [
-    [255, 87, 34, 220],   # deep orange
-    [76, 175, 80, 220],   # green
-    [156, 39, 176, 220],  # purple
-    [255, 193, 7, 220],   # amber
-    [0, 188, 212, 220],   # cyan
-    [244, 67, 54, 220],   # red
-    [63, 81, 181, 220],   # indigo
-    [121, 85, 72, 220],   # brown
+    [255, 87, 34, 255],   # deep orange
+    [76, 220, 80, 255],   # bright green
+    [200, 50, 220, 255],  # magenta
+    [255, 210, 0, 255],   # yellow
+    [255, 60, 60, 255],   # bright red
+    [0, 230, 180, 255],   # teal
+    [255, 140, 0, 255],   # orange
+    [180, 80, 255, 255],  # violet
 ]
 
 
@@ -168,6 +168,16 @@ def create_model_ui():
     .cm-toolbar .form-group { margin-bottom:0; display:inline-flex; align-items:center; }
     .cm-toolbar .irs { margin:0; }
     .cm-toolbar .shiny-input-container { margin-bottom:0; }
+    /* Ion Range Slider: make track/handle visible on dark toolbar */
+    .cm-toolbar .irs--shiny .irs-bar { background:#2bb89d; border-color:#2bb89d; }
+    .cm-toolbar .irs--shiny .irs-handle { background:#2bb89d; border-color:#1a9e82; }
+    .cm-toolbar .irs--shiny .irs-line { background:rgba(255,255,255,.15); border-color:transparent; }
+    .cm-toolbar .irs--shiny .irs-min,
+    .cm-toolbar .irs--shiny .irs-max { color:rgba(255,255,255,.4); background:transparent; }
+    .cm-toolbar .irs--shiny .irs-single,
+    .cm-toolbar .irs--shiny .irs-from,
+    .cm-toolbar .irs--shiny .irs-to { background:#2bb89d; color:#fff; }
+    .cm-toolbar .irs--shiny .irs-grid-text { color:rgba(255,255,255,.3); }
     """)
 
     return ui.card(
@@ -393,6 +403,20 @@ def create_model_server(input, output, session):
                     "properties": {"reach": name},
                 })
             geoj = {"type": "FeatureCollection", "features": features}
+            # Outline layer (wider, semi-transparent) for glow effect
+            outline_color = [min(255, c + 60) if i < 3 else 100 for i, c in enumerate(color)]
+            layers.append(geojson_layer(
+                id=f"reach-outline-{name}",
+                data=geoj,
+                get_line_color=outline_color,
+                get_line_width=12,
+                line_width_min_pixels=6,
+                line_width_max_pixels=16,
+                pickable=False,
+                stroked=True,
+                filled=False,
+            ))
+            # Core layer (bright, solid)
             layers.append(geojson_layer(
                 id=f"reach-{name}",
                 data=geoj,
