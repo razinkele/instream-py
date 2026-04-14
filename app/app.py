@@ -431,12 +431,18 @@ def server(input, output, session):
     async def run_sim_task(config_path, overrides):
         data_dir = _resolve_data_dir(config_path)
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None,
-            lambda: run_simulation(
-                config_path, overrides, _progress_q, _metrics_q, data_dir
-            ),
-        )
+        try:
+            result = await loop.run_in_executor(
+                None,
+                lambda: run_simulation(
+                    config_path, overrides, _progress_q, _metrics_q, data_dir
+                ),
+            )
+            _progress_q.put(("__DONE__", result))
+            return result
+        except Exception as e:
+            _progress_q.put(("__ERROR__", str(e)))
+            raise
 
     @reactive.effect
     @reactive.event(input.run_btn)
@@ -495,6 +501,7 @@ def server(input, output, session):
             _dashboard_data.set([])
             _latest_progress.set((0, 1))
             _sim_state.set("running")
+            results_rv.set(None)  # Clear stale results from previous run
             _active_task.set("sim")
             run_sim_task(config_path, overrides)
         except Exception as e:
@@ -519,42 +526,43 @@ def server(input, output, session):
 
         with reactive.isolate():
             step, total = _latest_progress.get()
+
         try:
             while not _progress_q.empty():
-                step, total = _progress_q.get_nowait()
+                item = _progress_q.get_nowait()
+                if isinstance(item, tuple) and len(item) == 2 and item[0] == "__DONE__":
+                    # Drain remaining dashboard metrics
+                    with reactive.isolate():
+                        _dash_current = _dashboard_data.get()
+                    _dash_remaining = []
+                    try:
+                        while True:
+                            _dash_remaining.append(_metrics_q.get_nowait())
+                    except Exception:
+                        pass
+                    if _dash_remaining:
+                        _dashboard_data.set(_dash_current + _dash_remaining)
+                    _sim_state.set("success")
+                    _active_task.set("none")
+                    results_rv.set(item[1])
+                    ui.notification_show(
+                        "Simulation complete!", type="message", duration=3
+                    )
+                    return
+                if isinstance(item, tuple) and len(item) == 2 and item[0] == "__ERROR__":
+                    _sim_state.set("error")
+                    _active_task.set("none")
+                    ui.notification_show(
+                        "Simulation failed: {}".format(item[1]),
+                        type="error",
+                        duration=30,
+                    )
+                    return
+                # Normal progress tuple (int, int)
+                step, total = item
         except Exception:
             pass
         _latest_progress.set((step, total))
-
-        try:
-            status = run_sim_task.status()
-        except Exception:
-            status = "running"
-
-        if status == "success":
-            with reactive.isolate():
-                _dash_current = _dashboard_data.get()
-            _dash_remaining = []
-            try:
-                while True:
-                    _dash_remaining.append(_metrics_q.get_nowait())
-            except Exception:
-                pass
-            if _dash_remaining:
-                _dashboard_data.set(_dash_current + _dash_remaining)
-            _sim_state.set("success")
-            _active_task.set("none")
-            results_rv.set(run_sim_task.result())
-            ui.notification_show("Simulation complete!", type="message", duration=3)
-        elif status == "error":
-            _sim_state.set("error")
-            _active_task.set("none")
-            err = "unknown"
-            try:
-                err = str(run_sim_task.result())
-            except Exception as ex:
-                err = str(ex)
-            ui.notification_show("Simulation failed: {}".format(err), type="error")
 
     @reactive.effect
     def _poll_dashboard():
