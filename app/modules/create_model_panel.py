@@ -137,7 +137,7 @@ def create_model_ui():
         controls=[
             {"type": "navigation", "position": "top-right"},
             {"type": "fullscreen", "position": "top-right"},
-            legend_control(position="bottom-left", show_default=True, show_checkbox=True),
+            legend_control(position="bottom-left", show_default=False, show_checkbox=True),
         ],
         tooltip={
             "html": "<b>{nameText}</b><br/>Strahler: {STRAHLER}<br/>Type: {DFDD}",
@@ -169,8 +169,10 @@ def create_model_ui():
     .cm-toolbar .irs { margin:0; }
     .cm-toolbar .shiny-input-container { margin-bottom:0; }
     /* Ion Range Slider: make track/handle visible on dark toolbar */
-    .cm-toolbar .irs--shiny .irs-bar { background:#2bb89d; border-color:#2bb89d; }
-    .cm-toolbar .irs--shiny .irs-handle { background:#2bb89d; border-color:#1a9e82; }
+    .cm-toolbar .irs--shiny .irs-bar { background:#2bb89d; border-color:#2bb89d; height:4px; top:25px; }
+    .cm-toolbar .irs--shiny .irs-line { height:4px; top:25px; }
+    .cm-toolbar .irs--shiny .irs-handle { background:#2bb89d; border-color:#1a9e82;
+        width:14px; height:14px; top:19px; cursor:pointer; }
     .cm-toolbar .irs--shiny .irs-line { background:rgba(255,255,255,.15); border-color:transparent; }
     .cm-toolbar .irs--shiny .irs-min,
     .cm-toolbar .irs--shiny .irs-max { color:rgba(255,255,255,.4); background:transparent; }
