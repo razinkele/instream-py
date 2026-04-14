@@ -991,22 +991,24 @@ EU-Hydro river network data. Follow these steps to create a new model:
         _workflow_msg.set("Exporting model files...")
 
         import asyncio
+        import tempfile
         loop = asyncio.get_running_loop()
+        output_dir = Path(tempfile.mkdtemp(prefix="salmopy_export_"))
         try:
             zip_path = await loop.run_in_executor(
                 None,
                 lambda: export_zip(
                     cells_gdf=cells,
-                    reaches_dict=reaches,
+                    reaches=reaches,
+                    model_name="model",
+                    species_params={},
+                    output_dir=output_dir,
                 ),
             )
             _workflow_msg.set(f"Exported to: {zip_path}")
-            await session.send_custom_message(
-                "notification",
-                {"message": f"Model exported to {zip_path}", "type": "message"},
-            )
         except Exception as exc:
             _workflow_msg.set(f"Export failed: {exc}")
+            logger.exception("export_zip error")
             logger.exception("export_zip error")
 
     # -----------------------------------------------------------------
