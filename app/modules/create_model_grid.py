@@ -87,6 +87,12 @@ def generate_cells(
     for info in reach_segments.values():
         all_lines.extend(info["segments"])
 
+    if not all_lines:
+        return gpd.GeoDataFrame(
+            columns=["cell_id", "reach_name", "area", "dist_escape",
+                      "num_hiding", "frac_vel_shelter", "frac_spawn", "geometry"],
+        )
+
     lines_gdf = gpd.GeoDataFrame(geometry=all_lines, crs="EPSG:4326")
     centroid = unary_union(all_lines).centroid
     utm_epsg = detect_utm_epsg(centroid.x, centroid.y)
