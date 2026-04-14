@@ -200,8 +200,8 @@ def movement_server(input, output, session, dashboard_data_rv):
                     sid = pos["species_idx"][i]
                     act = pos["activity"][i]
 
-                    if cid >= len(_centroid_lut[0]):
-                        continue
+                    if cid < 0 or cid >= len(_centroid_lut[0]):
+                        continue  # skip marine fish (cell_idx=-1) and out-of-bounds
 
                     # Slot-reuse detection
                     if fid in _last_seen_day and day_num > _last_seen_day[fid] + 1:
