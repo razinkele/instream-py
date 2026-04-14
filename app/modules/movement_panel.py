@@ -233,7 +233,7 @@ def movement_server(input, output, session, dashboard_data_rv):
                 )
                 _cells_sent[0] = True
 
-            # Build scatterplot of current fish positions (head only, no trails)
+            # Build TripsLayer for animated fish movement trails
             if not _trajectory_history:
                 return
 
@@ -243,39 +243,43 @@ def movement_server(input, output, session, dashboard_data_rv):
             except Exception:
                 pass
 
-            points = []
+            # Find the current max time for animation
+            max_time = 0
+            trips_data = []
             for fid, path in _trajectory_history.items():
-                if not path:
+                if len(path) < 2:
                     continue
-                lon, lat, _ = path[-1]  # latest position
                 sid = _species_map.get(fid, 0)
                 if color_mode == "activity":
                     act = _activity_map.get(fid, 0)
                     color = _ACTIVITY_COLORS.get(act, [127, 127, 127, 220])
                 else:
                     color = _TAB10[sid % len(_TAB10)]
-                points.append(
-                    {
-                        "position": [lon, lat],
-                        "color": color,
-                    }
-                )
+                timestamps = [p[2] for p in path]
+                if timestamps:
+                    max_time = max(max_time, max(timestamps))
+                trips_data.append({
+                    "path": path,  # [[lon, lat, time], ...]
+                    "timestamps": timestamps,
+                    "color": color,
+                })
 
-            if points:
-                from shiny_deckgl.layers import layer
+            if trips_data:
+                from shiny_deckgl import trips_layer
 
-                fish_lyr = layer(
-                    "ScatterplotLayer",
-                    "fish_positions",
-                    points,
-                    getPosition="@@d.position",
-                    getFillColor="@@d.color",
-                    getRadius=8,
-                    radiusMinPixels=3,
-                    radiusMaxPixels=10,
-                    pickable=True,
+                trail_lyr = trips_layer(
+                    "fish_trails",
+                    trips_data,
+                    getPath="@@d.path",
+                    getTimestamps="@@d.timestamps",
+                    getColor="@@d.color",
+                    currentTime=max_time,
+                    trailLength=30,  # show last 30 days of trail
+                    widthMinPixels=2,
+                    widthMaxPixels=5,
+                    pickable=False,
                 )
-                await widget.partial_update(session, [fish_lyr])
+                await widget.partial_update(session, [trail_lyr])
 
         except Exception as e:
             if "SilentException" in type(e).__name__:
