@@ -87,6 +87,12 @@ def generate_shapefile():
     """Build contiguous multi-reach polygon grid."""
     all_cells = []
 
+    # ── Global offset: place the grid at Curonian Lagoon in EPSG:3035 ──
+    # Without this, the grid sits at (0,0) which is the LAEA origin
+    # (Atlantic west of Africa), causing CRS mismatch on the map.
+    X_OFF = 5016104.0  # EPSG:3035 easting for ~21.1°E
+    Y_OFF = 3675495.0  # EPSG:3035 northing for ~55.7°N
+
     # ── Layout constants — zero-gap transitions ──
     # All y-coordinates are computed so each section starts exactly
     # where the previous one ends (no gaps).
@@ -95,19 +101,19 @@ def generate_shapefile():
     river_h = 20.0
     main_cols, main_rows = 4, 30
     main_w = 18.0
-    main_x = 0.0
-    main_y0 = 0.0
+    main_x = X_OFF
+    main_y0 = Y_OFF
     main_top = main_y0 + main_rows * river_h  # = 600
 
     west_cols, west_rows = 3, 20
     west_w = 12.0
-    west_x = main_x - (main_cols * main_w / 2) - 50 - (west_cols * west_w / 2)
+    west_x = X_OFF - (main_cols * main_w / 2) - 50 - (west_cols * west_w / 2)
     west_y0 = main_top - west_rows * 18.0  # align tops
     west_top = west_y0 + west_rows * 18.0
 
     east_cols, east_rows = 3, 25
     east_w = 14.0
-    east_x = main_x + (main_cols * main_w / 2) + 50 + (east_cols * east_w / 2)
+    east_x = X_OFF + (main_cols * main_w / 2) + 50 + (east_cols * east_w / 2)
     east_y0 = main_top - east_rows * 20.0  # align tops
     east_top = east_y0 + east_rows * 20.0
 
@@ -159,7 +165,7 @@ def generate_shapefile():
     lagoon_w, lagoon_h = 100.0, 100.0
     lagoon_cols, lagoon_rows = 12, 8
     # Center the lagoon to span the full river/delta width
-    lagoon_x0 = -(lagoon_cols * lagoon_w) / 2
+    lagoon_x0 = X_OFF - (lagoon_cols * lagoon_w) / 2
     for row in range(lagoon_rows):
         for col in range(lagoon_cols):
             x0 = lagoon_x0 + col * lagoon_w
@@ -180,7 +186,7 @@ def generate_shapefile():
     coast_y0 = lagoon_top  # NO GAP
     coast_w, coast_h = 400.0, 400.0
     coast_cols, coast_rows = 25, 12
-    coast_x0 = -(coast_cols * coast_w) / 2
+    coast_x0 = X_OFF - (coast_cols * coast_w) / 2
     for row in range(coast_rows):
         for col in range(coast_cols):
             x0 = coast_x0 + col * coast_w
