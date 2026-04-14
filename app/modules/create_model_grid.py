@@ -21,9 +21,14 @@ def _hexagon(cx: float, cy: float, size: float) -> Polygon:
 
 
 def hexagonal_grid(bounds: tuple, cell_size: float) -> list[Polygon]:
-    """Generate flat-top hexagonal grid covering *bounds* (minx, miny, maxx, maxy)."""
+    """Generate flat-top hexagonal grid covering *bounds* (minx, miny, maxx, maxy).
+
+    ``cell_size`` is the circumradius (center to vertex).  For tight
+    tessellation the column spacing is ``1.5 * R`` and the row spacing
+    is ``sqrt(3) * R``, with odd columns offset by half a row.
+    """
     minx, miny, maxx, maxy = bounds
-    dx = cell_size * 3.0  # horizontal spacing between hex centres (flat-top)
+    dx = cell_size * 1.5   # horizontal spacing between hex centres (flat-top)
     dy = cell_size * math.sqrt(3.0)  # vertical spacing
 
     hexagons = []
