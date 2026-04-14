@@ -214,6 +214,9 @@ def create_model_ui():
             ui.input_action_button("select_reaches_btn", "✏️ Select",
                                    class_="btn btn-cm",
                                    title="Toggle: click river segments to assign to reaches"),
+            ui.input_action_button("clear_reaches_btn", "🗑 Clear",
+                                   class_="btn btn-cm",
+                                   title="Clear all selected reaches and cells"),
             ui.input_action_button("generate_cells_btn", "⬡ Cells",
                                    class_="btn btn-cm",
                                    title="Generate habitat cells from selected reaches"),
@@ -595,6 +598,20 @@ def create_model_server(input, output, session):
     async def _on_strahler_change():
         if _rivers_gdf() is not None:
             await _refresh_map()
+
+    # -----------------------------------------------------------------
+    # Clear all reaches and cells
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.clear_reaches_btn)
+    async def _on_clear_reaches():
+        _reaches_dict.set({})
+        _cells_gdf.set(None)
+        _selection_mode.set(False)
+        _current_reach_name.set("")
+        _workflow_msg.set("All reaches and cells cleared.")
+        await _refresh_map()
 
     # -----------------------------------------------------------------
     # Select Reaches toggle
