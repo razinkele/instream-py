@@ -329,8 +329,7 @@ _WEBGL_FALLBACK_JS = """
 
     // Inject GPU badge into map-tab card headers
     if (window._salmopyWebGL) {
-        var gpuLabel = renderer.replace('ANGLE (', '').split(',')[0].replace(')', '').trim() || 'GPU';
-        var badgeHtml = '<span class="sp-gpu-badge" title="Hardware-accelerated rendering via ' + gpuLabel + '. The map uses WebGL to render layers on the GPU for smooth pan, zoom and animation."><i class="bi bi-gpu-card"></i>WebGL \u2014 ' + gpuLabel + '</span>';
+        var badgeHtml = '<span class="sp-gpu-badge" title="Hardware-accelerated WebGL rendering. Maps use the GPU for smooth pan, zoom and animation."><i class="bi bi-gpu-card"></i>WebGL</span>';
         function injectGpuBadges() {
             document.querySelectorAll('.card-header').forEach(function(hdr) {
                 var txt = hdr.textContent || '';
