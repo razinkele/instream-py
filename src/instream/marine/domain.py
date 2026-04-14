@@ -300,7 +300,7 @@ def accumulate_smolt_readiness(
         temp_signal = max(0.0, 1.0 - temp_diff / optimal_temp) if optimal_temp > 0 else 0.0
 
         increment = photo_weight * photo_signal + temp_weight * temp_signal
-        readiness[i] = min(1.0, readiness[i] + increment * 0.005)  # multi-year rate
+        readiness[i] = min(1.0, readiness[i] + increment * 0.012)  # 2-spring rate
 
 
 # ---------------------------------------------------------------------------

@@ -565,7 +565,7 @@ def test_smolt_readiness_builds_across_years():
             doy=doy, min_length=8.0,
         )
     year1 = float(readiness[0])
-    assert 0.2 < year1 < 0.6, f"Year 1 readiness should be 0.2-0.6, got {year1}"
+    assert 0.5 < year1 <= 1.0, f"Year 1 readiness should be 0.5-1.0, got {year1}"
 
     for doy in range(270, 366):
         accumulate_smolt_readiness(
@@ -585,7 +585,7 @@ def test_smolt_readiness_builds_across_years():
             doy=doy, min_length=8.0,
         )
     year2 = float(readiness[0])
-    assert 0.4 < year2 < 0.9, f"After 2 springs, readiness should be 0.4-0.9, got {year2}"
+    assert year2 >= 0.8, f"After 2 springs, readiness should be >= 0.8, got {year2}"
 
 
 def test_smolt_emigration_requires_both_length_and_readiness():

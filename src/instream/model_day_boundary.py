@@ -537,6 +537,29 @@ class _ModelDayBoundaryMixin:
                 )
                 self._outmigrants.extend(out)
                 continue
+            # v0.30.0 — Smolt run: during spring window (DOY 90-180),
+            # PARR with sufficient readiness AND length unconditionally
+            # migrate downstream toward the river mouth. Like kelts,
+            # they don't evaluate fitness — the physiological smolt
+            # transformation drives a one-way downstream movement.
+            doy = self.time_manager.current_date.day_of_year
+            if (
+                lh == int(LifeStage.PARR)
+                and 90 <= doy <= 180
+                and float(self.trout_state.smolt_readiness[i]) >= smolt_readiness_threshold
+                and float(self.trout_state.length[i]) >= smolt_min_length
+            ):
+                out, smoltified = migrate_fish_downstream(
+                    self.trout_state, i, self._reach_graph,
+                    marine_config=marine_cfg,
+                    smolt_readiness_threshold=smolt_readiness_threshold,
+                    smolt_min_length=smolt_min_length,
+                    current_date=current_date,
+                )
+                self._outmigrants.extend(out)
+                if smoltified and marine_domain is not None:
+                    marine_domain.total_smoltified += 1
+                continue
             if lh != LifeStage.PARR:
                 continue
             sp_idx = int(self.trout_state.species_idx[i])
