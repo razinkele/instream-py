@@ -18,6 +18,31 @@ from shiny_deckgl import MapWidget, geojson_layer
 from shiny_deckgl.controls import legend_control
 from simulation import _value_to_rgba
 
+# Water polygons for basemap context
+_WATER_PATH = Path(__file__).parent.parent / "data" / "water_polygons.geojson"
+_WATER_COLORS = {"sea": [173, 216, 230, 100], "lagoon": [135, 206, 235, 120], "river": [100, 149, 237, 130]}
+
+
+def _water_layer():
+    """Build a GeoJSON layer for water polygons if available."""
+    if not _WATER_PATH.exists():
+        return None
+    gdf = gpd.read_file(str(_WATER_PATH))
+    geojson = gdf.__geo_interface__
+    for feat in geojson["features"]:
+        wtype = feat["properties"].get("type", "water")
+        feat["properties"]["_fill"] = _WATER_COLORS.get(wtype, [173, 216, 230, 100])
+    return geojson_layer(
+        id="water-background",
+        data=geojson,
+        get_fill_color="@@=properties._fill",
+        get_line_color=[100, 140, 180, 80],
+        get_line_width=1,
+        stroked=True,
+        filled=True,
+        pickable=False,
+    )
+
 logger = logging.getLogger(__name__)
 
 BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
@@ -226,8 +251,15 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
             span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
             zoom = max(1, min(18, 14 - math.log2(max(span, 0.001))))
 
+            # Build layer list: water background + grid cells
+            layers = []
+            wl = _water_layer()
+            if wl is not None:
+                layers.append(wl)
+            layers.append(layer)
+
             if not _layer_sent():
-                await _widget.update(session, [layer], animate=False)
+                await _widget.update(session, layers, animate=False)
                 await _widget.set_view_state(session, {
                     "longitude": center_lon,
                     "latitude": center_lat,
@@ -236,9 +268,7 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
                 })
                 _layer_sent.set(True)
             else:
-                # Full update for recoloring — partial_update doesn't refresh
-                # deck.gl data when only fill colors change
-                await _widget.update(session, [layer])
+                await _widget.update(session, layers)
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return

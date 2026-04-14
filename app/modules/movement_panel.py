@@ -17,8 +17,29 @@ from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
 from shiny_deckgl.controls import legend_control
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_WATER_PATH = Path(__file__).parent.parent / "data" / "water_polygons.geojson"
+_WATER_COLORS = {"sea": [173, 216, 230, 80], "lagoon": [135, 206, 235, 100], "river": [100, 149, 237, 110]}
+
+
+def _water_layer():
+    if not _WATER_PATH.exists():
+        return None
+    import geopandas as _gpd
+    gdf = _gpd.read_file(str(_WATER_PATH))
+    geojson = gdf.__geo_interface__
+    for feat in geojson["features"]:
+        wtype = feat["properties"].get("type", "water")
+        feat["properties"]["_fill"] = _WATER_COLORS.get(wtype, [173, 216, 230, 80])
+    return geojson_layer(
+        id="water-bg", data=geojson,
+        get_fill_color="@@=properties._fill",
+        get_line_color=[100, 140, 180, 60],
+        get_line_width=1, stroked=True, filled=True, pickable=False,
+    )
 
 # OpenStreetMap-based basemap with terrain, roads, labels — highly visible
 BASEMAP_VOYAGER = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
@@ -303,8 +324,11 @@ def movement_server(input, output, session, dashboard_data_rv):
                     widthMaxPixels=5,
                     pickable=False,
                 )
-                # Rebuild cells layer to send together with trails
-                layers = [trail_lyr]
+                # Rebuild all layers: water background + cells + trails
+                layers = []
+                wl = _water_layer()
+                if wl is not None:
+                    layers.append(wl)
                 if _cells_gdf[0] is not None:
                     cells_lyr = geojson_layer(
                         "movement_cells",
@@ -314,7 +338,8 @@ def movement_server(input, output, session, dashboard_data_rv):
                         lineWidthMinPixels=1,
                         pickable=True,
                     )
-                    layers.insert(0, cells_lyr)
+                    layers.append(cells_lyr)
+                layers.append(trail_lyr)
                 await widget.update(session, layers)
 
         except Exception as e:
