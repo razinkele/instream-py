@@ -140,7 +140,7 @@ def create_model_ui():
             legend_control(position="bottom-left", show_default=True, show_checkbox=True),
         ],
         tooltip={
-            "html": "<b>{DFDD}</b><br/>Strahler: {STRAHLER}<br/>Name: {NAME}",
+            "html": "<b>{nameText}</b><br/>Strahler: {STRAHLER}<br/>Type: {DFDD}",
             "style": {
                 "backgroundColor": "#fff",
                 "color": "#333",
@@ -179,8 +179,8 @@ def create_model_ui():
                 ),
                 ui.div(
                     ui.input_select("cell_shape", None,
-                                    choices={"hexagonal": "Hex", "rectangular": "Rect"},
-                                    selected="hexagonal", width="65px"),
+                                    choices={"hexagonal": "Hexagonal", "rectangular": "Rectangular"},
+                                    selected="hexagonal", width="120px"),
                     style="display:inline-block; vertical-align:middle;",
                 ),
                 style="display:inline-flex; align-items:center; gap:0.2rem; margin-right:0.6rem;",
@@ -545,31 +545,47 @@ def create_model_server(input, output, session):
 
     @reactive.effect
     async def _on_map_click():
-        """Handle click on map — reads click input reactively."""
+        """Handle click on map — find nearest river segment to click point."""
         try:
             data = getattr(input, _widget.click_input_id)()
         except Exception:
             return
         if data is None or not _selection_mode():
             return
+
+        # First try: extract geometry from click object (full GeoJSON feature)
         obj = data.get("object")
-        if obj is None:
-            return
+        geom = None
+        if obj is not None:
+            geom_dict = obj.get("geometry")
+            if geom_dict is not None:
+                try:
+                    geom = shape(geom_dict)
+                except Exception:
+                    pass
 
-        # Extract geometry from the clicked GeoJSON feature
-        geom_dict = obj.get("geometry")
-        if geom_dict is None:
-            return
+        # Fallback: use click coordinate to find nearest river segment
+        if geom is None:
+            coord = data.get("coordinate")
+            if coord is None:
+                return
+            rivers = _filtered_rivers_gdf()
+            if rivers is None or len(rivers) == 0:
+                return
+            from shapely.geometry import Point as _Pt
+            click_pt = _Pt(coord[0], coord[1])
+            dists = rivers.geometry.distance(click_pt)
+            nearest_idx = dists.idxmin()
+            geom = rivers.geometry.iloc[nearest_idx]
+            # Only accept if within ~0.002 degrees (~200m)
+            if dists.iloc[nearest_idx] > 0.002:
+                return
 
-        try:
-            geom = shape(geom_dict)
-        except Exception:
-            _workflow_msg.set("Could not parse clicked geometry.")
+        if geom is None:
             return
 
         # Convert to LineString if needed
         if geom.geom_type == "MultiLineString":
-            # Take the longest component
             geom = max(geom.geoms, key=lambda g: g.length)
         if geom.geom_type != "LineString":
             _workflow_msg.set(f"Clicked geometry is {geom.geom_type}, expected LineString.")
