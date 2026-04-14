@@ -224,6 +224,22 @@ def create_model_server(input, output, session):
     _water_gdf = reactive.value(None)
     _fetch_msg = reactive.value("")
 
+    _map_initialized = reactive.value(False)
+
+    @reactive.effect
+    async def _init_map():
+        """Force deck.gl to initialize the map on first render."""
+        if _map_initialized():
+            return
+        import asyncio
+        await asyncio.sleep(1.5)  # Wait for tab to render in DOM
+        try:
+            await _widget.update(session, [])  # Empty layer list triggers map init
+            _map_initialized.set(True)
+        except Exception:
+            pass  # Tab not visible yet — will retry via invalidate_later
+            reactive.invalidate_later(2)
+
     # -- New reactive state --
     _reaches_dict = reactive.value({})       # {reach_name: [LineString, ...]}
     _cells_gdf = reactive.value(None)        # GeoDataFrame of generated cells
