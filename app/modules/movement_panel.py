@@ -244,7 +244,7 @@ def movement_server(input, output, session, dashboard_data_rv):
                 )
                 _cells_sent[0] = True
 
-            # Build TripsLayer for animated fish movement trails
+            # Build TripsLayer — only for fish seen in the latest snapshot
             if not _trajectory_history:
                 return
 
@@ -254,11 +254,20 @@ def movement_server(input, output, session, dashboard_data_rv):
             except Exception:
                 pass
 
-            # Find the current max time for animation
+            # Determine the current day and which fish are alive
             max_time = 0
+            for path in _trajectory_history.values():
+                if path:
+                    max_time = max(max_time, path[-1][2])
+
+            # Only show fish that were updated on the latest day (alive)
             trips_data = []
             for fid, path in _trajectory_history.items():
                 if len(path) < 2:
+                    continue
+                # Skip dead fish — their last seen day is old
+                last_day = _last_seen_day.get(fid, -1)
+                if last_day < max_time:
                     continue
                 sid = _species_map.get(fid, 0)
                 if color_mode == "activity":
@@ -267,10 +276,8 @@ def movement_server(input, output, session, dashboard_data_rv):
                 else:
                     color = _TAB10[sid % len(_TAB10)]
                 timestamps = [p[2] for p in path]
-                if timestamps:
-                    max_time = max(max_time, max(timestamps))
                 trips_data.append({
-                    "path": path,  # [[lon, lat, time], ...]
+                    "path": path,
                     "timestamps": timestamps,
                     "color": color,
                 })
