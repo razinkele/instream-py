@@ -30,7 +30,11 @@ CONFIGS_DIR = Path(__file__).parent / "configs"
 if not CONFIGS_DIR.exists():
     CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 CONFIG_CHOICES = (
-    {str(p): p.stem for p in sorted(CONFIGS_DIR.glob("*.yaml"))}
+    {
+        str(p): p.stem
+        for p in sorted(CONFIGS_DIR.glob("*.yaml"))
+        if p.stem.startswith("example")  # exclude species-only configs
+    }
     if CONFIGS_DIR.exists()
     else {}
 )
