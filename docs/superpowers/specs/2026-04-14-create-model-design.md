@@ -63,7 +63,7 @@ Rivers: 142 | Water bodies: 3 | Reaches: 5 (127 segments) | Cells: 798 | CRS: EP
 - Show loading spinner on map during fetch
 - Rivers: blue lines, `lineWidthMinPixels` scaled by Strahler (1→1px, 5→3px, 9→6px)
 - Water bodies: `[135, 206, 235, 120]` semi-transparent fill
-- Strahler slider filters rivers client-side (rebuild layer with filtered GeoJSON)
+- Strahler slider filters rivers: Python-side GeoDataFrame filter (`gdf[gdf["STRAHLER"] >= threshold]`), then rebuild geojson_layer and send via `widget.update()`. Debounced at 300ms (Shiny `reactive.isolate` with `reactive.invalidate_later(0.3)`) to prevent rapid re-renders while dragging the slider.
 - On error: show notification "EU-Hydro query failed — try zooming in"
 
 **Coordinate handling:**
@@ -98,9 +98,9 @@ Rivers: 142 | Water bodies: 3 | Reaches: 5 (127 segments) | Cells: 798 | CRS: EP
 - Assign junction IDs: start from 1, increment per unique junction point
 - For T-junctions (3+ reaches meeting): create a single junction node shared by all
 - **Upstream/downstream by geometry** (not Strahler — Strahler is unreliable for same-order reaches):
-  1. For each reach, the segment startpoint is upstream, endpoint is downstream (EU-Hydro digitization follows flow direction)
+  1. For each reach, the segment startpoint is upstream, endpoint is downstream. EU-Hydro river network lines are digitized in the downstream direction per the EEA technical specification (EU-Hydro Product User Manual, section 3.2: "The flow direction is defined by the digitization direction of the line feature").
   2. At a junction: the reach whose endpoint matches the junction is upstream; the reach whose startpoint matches is downstream
-  3. If ambiguous (both start or both end at junction): fall back to elevation if available, otherwise prompt user to click an arrow to set direction
+  3. If ambiguous (both start or both end at junction): show a notification "Ambiguous junction — click to set flow direction" and display two clickable arrow icons (→ and ←) next to the junction node on the map. User clicks the arrow showing correct flow direction. Store the user override.
 - Display junction nodes as circles on the map with junction ID labels and flow direction arrows
 
 **Data stored:** `_reaches` dict: `{reach_name: {"segments": [geom,...], "color": [...], "upstream_junction": int, "downstream_junction": int}}`
@@ -220,12 +220,13 @@ Note: Centroids are NOT stored in the DBF — they're computed from polygon geom
 Note: Example A uses 26 flows. 10 is sufficient for a template — users add more flow breakpoints when they have real hydraulic data. The template serves as a runnable starting point, not a substitute for calibrated hydraulics.
 
 **"Load into Setup"** button:
-1. Creates directory `app/data/fixtures/{model_name}/`
+1. Creates directory `app/data/fixtures/example_{model_name}/`
 2. Writes shapefile + CSVs to that directory
-3. Writes config YAML to `configs/{model_name}.yaml` (config stem must start with "example" to appear in dropdown)
-4. Sets `input.config_file` to the new config path
-5. Triggers Setup tab's `load_config_btn` to reload the grid
-6. No writes to `tests/` — that's for test fixtures only
+3. Writes config YAML to `configs/example_{model_name}.yaml` (prefixed with "example" so it appears in the config dropdown which filters `p.stem.startswith("example")`)
+4. Updates `CONFIG_CHOICES` dict at module level to include the new config (no app restart needed — Shiny reads the dict reactively)
+5. Uses `session.send_custom_message()` to programmatically update the `config_file` select input to the new config path, then triggers the Setup panel's `_on_load_click` by incrementing `input.load_config_btn` via `session.send_input_message()`
+6. Shows notification: "Model loaded into Setup tab — switch to Setup to review"
+7. No writes to `tests/` — that's for test fixtures only
 
 ---
 
