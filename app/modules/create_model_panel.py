@@ -57,12 +57,14 @@ BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
 # EU-Hydro ArcGIS REST endpoints
 EUHYDRO_BASE = "https://image.discomap.eea.europa.eu/arcgis/rest/services/EUHydro/EUHydro_RiverNetworkDatabase/MapServer"
-# Layer IDs: 0=Coastal, 2=InlandWater
+# Polygon layers for water overlay + clipping:
+#   0 = Coastal_polygon (Baltic Sea, DFDD=SA010)
+#   1 = Transit_polygon  (Curonian Lagoon, DFDD=BH999)
+#   2 = InlandWater       (small lakes/ponds, DFDD=BH000)
 # River lines: layer 4 is GROUP LAYER (not queryable!)
 # Actual feature layers: 5=Strahler1, 6=Strahler2, ..., 13=Strahler9
 RIVER_STRAHLER_LAYERS = {1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11, 8: 12, 9: 13}
-INLAND_WATER_LAYER = 2
-COASTAL_LAYER = 0
+WATER_LAYERS = [0, 1, 2]  # Coastal + Transit (lagoon!) + InlandWater
 
 # Reach colour palette (cycle for multiple reaches)
 REACH_COLORS = [
@@ -424,22 +426,20 @@ def create_model_server(input, output, session):
         combined = {"type": "FeatureCollection", "features": all_features}
         gdf = gpd.GeoDataFrame.from_features(combined["features"], crs="EPSG:4326")
 
-        # Auto-fetch BOTH inland water AND coastal polygons for context + clipping
-        # Curonian Lagoon is Coastal (layer 0), not InlandWater (layer 2)
-        _fetch_msg.set(f"Got {n} rivers. Fetching water bodies + coastal...")
+        # Auto-fetch ALL water polygon layers for context + clipping
+        # Layer 0=Coastal (Baltic Sea), 1=Transit (Curonian Lagoon!), 2=InlandWater
+        _fetch_msg.set(f"Got {n} rivers. Fetching water bodies + lagoon + coast...")
         all_water_features = []
+        layer_names = {0: "Coastal", 1: "Lagoon/Transit", 2: "InlandWater"}
 
-        for water_layer_id in [INLAND_WATER_LAYER, COASTAL_LAYER]:
-            _fetch_msg.set(f"Fetching water layer {water_layer_id}...")
+        for water_layer_id in WATER_LAYERS:
+            lname = layer_names.get(water_layer_id, str(water_layer_id))
+            _fetch_msg.set(f"Fetching {lname}...")
             wj = await loop.run_in_executor(
                 None, lambda lid=water_layer_id: _query_euhydro(lid, bbox)
             )
-            if wj and "features" in wj:
-                n_w = len(wj["features"])
-                logger.info("Water layer %d: %d features", water_layer_id, n_w)
+            if wj and "features" in wj and wj["features"]:
                 all_water_features.extend(wj["features"])
-            else:
-                logger.warning("Water layer %d: no features or query failed", water_layer_id)
 
         water_gdf = None
         if all_water_features:
@@ -478,27 +478,31 @@ def create_model_server(input, output, session):
     @reactive.effect
     @reactive.event(input.fetch_water)
     async def _on_fetch_water():
-        _fetch_msg.set("Fetching water bodies from EU-Hydro...")
+        _fetch_msg.set("Fetching water bodies (inland + lagoon + coastal)...")
         bbox = _get_view_bbox()
 
         import asyncio
         loop = asyncio.get_running_loop()
-        geojson = await loop.run_in_executor(
-            None, lambda: _query_euhydro(INLAND_WATER_LAYER, bbox)
-        )
 
-        if geojson is None or "features" not in geojson:
-            _fetch_msg.set("Failed to fetch water body data.")
+        all_feats = []
+        layer_names = {0: "Coastal", 1: "Lagoon/Transit", 2: "InlandWater"}
+        for lid in WATER_LAYERS:
+            lname = layer_names.get(lid, str(lid))
+            _fetch_msg.set(f"Fetching {lname}...")
+            wj = await loop.run_in_executor(
+                None, lambda l=lid: _query_euhydro(l, bbox)
+            )
+            if wj and "features" in wj and wj["features"]:
+                all_feats.extend(wj["features"])
+
+        if not all_feats:
+            _fetch_msg.set("No water bodies found in this area.")
             return
 
-        n = len(geojson["features"])
-        if n > 0:
-            gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
-            _water_gdf.set(gdf)
-            await _refresh_map()
-            _fetch_msg.set(f"Loaded {n} water bodies.")
-        else:
-            _fetch_msg.set("No water bodies found in this area.")
+        gdf = gpd.GeoDataFrame.from_features(all_feats, crs="EPSG:4326")
+        _water_gdf.set(gdf)
+        await _refresh_map()
+        _fetch_msg.set(f"Loaded {len(gdf)} water bodies (coastal + lagoon + inland).")
 
     # -----------------------------------------------------------------
     # Strahler filter — re-render map when slider changes
