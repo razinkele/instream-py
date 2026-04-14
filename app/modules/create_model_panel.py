@@ -213,6 +213,44 @@ def create_model_ui():
         ),
         # -- Map (shown immediately, before any fetch) ---
         _widget.ui(height="550px"),
+        # Hidden action button + JS bridge for map click events.
+        # Action buttons are event-type inputs: each click increments
+        # a counter, and @reactive.event always fires on increment.
+        # The click coordinate data is stored in a separate hidden input.
+        ui.div(
+            ui.input_action_button("map_click_trigger", "click", style="display:none"),
+            ui.input_text("map_click_coords", "", value=""),
+            style="display:none !important; height:0; overflow:hidden;",
+        ),
+        ui.tags.script("""
+        // Bridge: intercept shiny_deckgl map_click → trigger hidden action button
+        document.addEventListener('DOMContentLoaded', function() {
+          function patchWhenReady() {
+            if (typeof Shiny === 'undefined' || !Shiny.setInputValue) {
+              setTimeout(patchWhenReady, 200);
+              return;
+            }
+            var srcKey = 'create-create_map_map_click';
+            var coordKey = 'create-map_click_coords';
+            var triggerKey = 'create-map_click_trigger';
+            var clickCount = 0;
+            var origSetInput = Shiny.setInputValue.bind(Shiny);
+            Shiny.setInputValue = function(name, value, opts) {
+              origSetInput(name, value, opts);
+              if (name === srcKey && value) {
+                clickCount++;
+                var json = JSON.stringify({
+                  longitude: value.longitude,
+                  latitude: value.latitude
+                });
+                origSetInput(coordKey, json);
+                origSetInput(triggerKey + ':shiny.action', clickCount, {priority: 'event'});
+              }
+            };
+          }
+          patchWhenReady();
+        });
+        """),
         # -- Status (compact) ---
         ui.output_ui("fetch_status"),
         ui.output_ui("data_summary"),
@@ -304,9 +342,9 @@ def create_model_server(input, output, session):
             id="euhydro-rivers",
             data=geoj,
             get_line_color=[30, 100, 200, 200],
-            get_line_width=2,
-            line_width_min_pixels=1,
-            line_width_max_pixels=6,
+            get_line_width=3,
+            line_width_min_pixels=2,
+            line_width_max_pixels=8,
             pickable=True,
             stroked=True,
             filled=False,
@@ -335,10 +373,18 @@ def create_model_server(input, output, session):
         """Build one GeoJSON layer per reach with distinct colours."""
         layers = []
         reaches = _reaches_dict()
-        for idx, (name, segments) in enumerate(reaches.items()):
+        for idx, (name, reach_data) in enumerate(reaches.items()):
+            # reach_data can be a list (inline) or dict with "segments" key
+            segments = reach_data["segments"] if isinstance(reach_data, dict) else reach_data
             if not segments:
                 continue
-            color = REACH_COLORS[idx % len(REACH_COLORS)]
+            # Use reach color if available, else cycle palette
+            color = (reach_data.get("color", REACH_COLORS[idx % len(REACH_COLORS)])
+                     if isinstance(reach_data, dict)
+                     else REACH_COLORS[idx % len(REACH_COLORS)])
+            # Convert matplotlib floats [0-1] to deck.gl ints [0-255]
+            if color and all(isinstance(c, float) and c <= 1.0 for c in color[:3]):
+                color = [int(c * 255) for c in color[:3]] + [220]
             features = []
             for seg in segments:
                 features.append({
@@ -554,58 +600,57 @@ def create_model_server(input, output, session):
     # -----------------------------------------------------------------
     # Click-to-select handler
     # -----------------------------------------------------------------
+    # JS bridge: shiny_deckgl fires Shiny.setInputValue for map clicks,
+    # our monkey-patch in the UI script intercepts that and also fires
+    # a hidden action button (map_click_trigger) + text input (map_click_coords).
+    # This gives us a reliable @reactive.event trigger.
 
     @reactive.effect
+    @reactive.event(input.map_click_trigger)
     async def _on_map_click():
-        """Handle click on map — find nearest river segment to click point."""
-        try:
-            data = getattr(input, _widget.click_input_id)()
-        except Exception:
+        """Handle map-level click — find nearest river segment.
+
+        Triggered by a hidden action button that JS increments on
+        every map click. Coordinates come from a companion text input.
+        """
+        raw = input.map_click_coords()
+        if not raw:
             return
-        if data is None:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
             return
 
-        # Debug: always show what we got
+        lon = data.get("longitude")
+        lat = data.get("latitude")
         sel = _selection_mode()
-        coord = data.get("coordinate", [])
-        obj_keys = list(data.get("object", {}).keys()) if data.get("object") else []
-        _workflow_msg.set(
-            f"Click: coord={coord[:2] if coord else '?'}, obj_keys={obj_keys}, sel_mode={sel}"
-        )
 
         if not sel:
+            _workflow_msg.set(f"Click: ({lon:.4f}, {lat:.4f}) — selection mode OFF")
             return
 
-        # First try: extract geometry from click object (full GeoJSON feature)
-        obj = data.get("object")
-        geom = None
-        if obj is not None:
-            geom_dict = obj.get("geometry")
-            if geom_dict is not None:
-                try:
-                    geom = shape(geom_dict)
-                except Exception:
-                    pass
-
-        # Fallback: use click coordinate to find nearest river segment
-        if geom is None:
-            coord = data.get("coordinate")
-            if coord is None:
-                return
-            rivers = _filtered_rivers_gdf()
-            if rivers is None or len(rivers) == 0:
-                return
-            from shapely.geometry import Point as _Pt
-            click_pt = _Pt(coord[0], coord[1])
-            dists = rivers.geometry.distance(click_pt)
-            nearest_idx = dists.idxmin()
-            geom = rivers.geometry.iloc[nearest_idx]
-            # Only accept if within ~0.002 degrees (~200m)
-            if dists.iloc[nearest_idx] > 0.002:
-                return
-
-        if geom is None:
+        if lon is None or lat is None:
             return
+
+        rivers = _filtered_rivers_gdf()
+        if rivers is None or len(rivers) == 0:
+            _workflow_msg.set("No rivers loaded — fetch rivers first.")
+            return
+
+        from shapely.geometry import Point as _Pt
+        click_pt = _Pt(lon, lat)
+        dists = rivers.geometry.distance(click_pt)
+        nearest_idx = dists.idxmin()
+        min_dist = dists.iloc[nearest_idx]
+        # Accept if within ~0.02 degrees (~2km at this latitude)
+        if min_dist > 0.02:
+            _workflow_msg.set(
+                f"Click ({lon:.4f}, {lat:.4f}) too far from any river ({min_dist:.4f}°). "
+                "Click closer to a river segment."
+            )
+            return
+
+        geom = rivers.geometry.iloc[nearest_idx]
 
         # Convert to LineString if needed
         if geom.geom_type == "MultiLineString":
@@ -621,7 +666,7 @@ def create_model_server(input, output, session):
         # Use assign_segment_to_reach if available, otherwise do it inline
         reaches = dict(_reaches_dict())  # shallow copy
         if assign_segment_to_reach is not None:
-            reaches = assign_segment_to_reach(reaches, reach_name, geom)
+            reaches = assign_segment_to_reach(reaches, reach_name, geom, {})
         else:
             if reach_name not in reaches:
                 reaches[reach_name] = []
@@ -629,7 +674,9 @@ def create_model_server(input, output, session):
 
         _reaches_dict.set(reaches)
 
-        n_segs = len(reaches.get(reach_name, []))
+        # reach structure varies: list or dict with "segments" key
+        r = reaches.get(reach_name, [])
+        n_segs = len(r["segments"]) if isinstance(r, dict) else len(r)
         _workflow_msg.set(f"Added segment to '{reach_name}' ({n_segs} segments total).")
         await _refresh_map()
 
@@ -658,7 +705,8 @@ def create_model_server(input, output, session):
 
         # Collect all reach geometries
         all_lines = []
-        for segs in reaches.values():
+        for reach_data in reaches.values():
+            segs = reach_data["segments"] if isinstance(reach_data, dict) else reach_data
             all_lines.extend(segs)
 
         if not all_lines:
