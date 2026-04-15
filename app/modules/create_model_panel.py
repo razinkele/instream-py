@@ -180,6 +180,9 @@ def create_model_ui():
     .cm-toolbar .irs--shiny .irs-from,
     .cm-toolbar .irs--shiny .irs-to { background:#2bb89d; color:#fff; }
     .cm-toolbar .irs--shiny .irs-grid-text { color:rgba(255,255,255,.3); }
+    /* Force slider track to fill container width */
+    .cm-toolbar .irs { width:100% !important; }
+    .cm-toolbar .irs--shiny { padding:0 6px; }
     /* Toolbar badges */
     .cm-badge { display:inline-block; padding:0.15rem 0.5rem; border-radius:3px;
                 font-size:0.72rem; font-weight:600; margin-left:0.3rem; vertical-align:middle; }
@@ -190,7 +193,16 @@ def create_model_ui():
     """)
 
     return ui.card(
-        ui.card_header("Create Model"),
+        ui.card_header(
+            ui.div(
+                ui.tags.span("Create Model"),
+                ui.input_action_button("help_btn", "? Help",
+                                       class_="btn btn-cm",
+                                       style="margin-left:auto; padding:0.15rem 0.5rem; font-size:0.72rem;",
+                                       title="Show model creation guide"),
+                style="display:flex; align-items:center; width:100%;",
+            ),
+        ),
         _toolbar_css,
         # -- Compact toolbar matching sidebar theme ---
         ui.div(
@@ -204,19 +216,19 @@ def create_model_ui():
             ui.tags.div(class_="cm-sep"),
             ui.tags.span("Strahler≥", class_="cm-label"),
             ui.div(
-                ui.input_slider("strahler_min", None, min=1, max=9, value=3, step=1, width="140px"),
-                style="display:inline-block; vertical-align:middle; width:140px;",
+                ui.input_slider("strahler_min", None, min=1, max=9, value=3, step=1, width="100%"),
+                style="display:inline-block; vertical-align:middle; width:160px;",
             ),
             ui.tags.div(class_="cm-sep"),
             ui.tags.span("River cell:", class_="cm-label"),
             ui.div(
-                ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5, width="110px"),
-                style="display:inline-block; vertical-align:middle; width:110px;",
+                ui.input_slider("cell_size", None, min=5, max=100, value=20, step=5, width="100%"),
+                style="display:inline-block; vertical-align:middle; width:150px;",
             ),
             ui.tags.span("Water cell:", class_="cm-label"),
             ui.div(
-                ui.input_slider("water_cell_size", None, min=50, max=1000, value=200, step=50, width="110px"),
-                style="display:inline-block; vertical-align:middle; width:110px;",
+                ui.input_slider("water_cell_size", None, min=50, max=1000, value=200, step=50, width="100%"),
+                style="display:inline-block; vertical-align:middle; width:150px;",
             ),
             ui.div(
                 ui.input_select("cell_shape", None,
@@ -237,9 +249,6 @@ def create_model_ui():
             ui.input_action_button("export_btn", "📦 Export",
                                    class_="btn btn-cm",
                                    title="Export shapefile + YAML config as ZIP"),
-            ui.input_action_button("help_btn", "? Help",
-                                   class_="btn btn-cm",
-                                   title="Show model creation guide"),
             ui.tags.div(style="flex:1;"),  # spacer
             ui.output_ui("toolbar_badges"),
         ),
@@ -902,70 +911,126 @@ def create_model_server(input, output, session):
         m = ui.modal(
             ui.h4("Creating a Model in SalmoPy", style="margin-top:0;"),
             ui.markdown("""
-**SalmoPy** builds individual-based salmon simulation models from
-EU-Hydro river network data. Follow these steps to create a new model:
+**SalmoPy** is an individual-based salmon population model. This panel
+lets you create a new model domain from EU-Hydro river network data:
+select river reaches, generate habitat cells, and export a ready-to-run
+simulation configuration.
 
 ---
 
-### Step 1 — Load River Data
+### Key Concepts
+
+**Strahler stream order** classifies rivers by size. Order 1 is a
+headwater stream with no tributaries. When two order-1 streams merge
+they form an order-2 stream; two order-2 streams form order-3, and so
+on. The **Strahler** slider filters the map display:
+
+| Order | Typical width | Example |
+|-------|--------------|---------|
+| 1-2 | < 2 m | Small headwater brooks |
+| 3-4 | 2-10 m | Medium streams |
+| 5-6 | 10-50 m | Large rivers (e.g. Minija) |
+| 7-9 | > 50 m | Major rivers (e.g. Nemunas) |
+
+Set the slider higher to hide small tributaries and focus on the main
+channels relevant for salmon habitat.
+
+**River cell size** (5-100 m) controls the spatial resolution of
+habitat cells along river reaches. Each cell is a hexagonal or
+rectangular polygon that represents a patch of river habitat with its
+own depth, velocity, and substrate properties. Smaller cells give more
+spatial detail but increase computation time:
+
+| Cell size | Cells per km | Best for |
+|-----------|-------------|----------|
+| 10-20 m | 50-100 | Detailed reach studies |
+| 20-50 m | 20-50 | Standard models |
+| 50-100 m | 10-20 | Large-scale screening |
+
+**Water cell size** (50-1000 m) applies to water body reaches
+(lagoons, lakes, estuaries). These features are much larger than river
+channels and need bigger cells to keep the model tractable. The
+Curonian Lagoon, for example, is ~1,600 km² — at 200 m cell size it
+produces ~40,000 cells; at 500 m about 6,400 cells.
+
+---
+
+### Step 1 — Load Data
 
 1. **Pan and zoom** the map to your area of interest.
-2. Click **🌊 Rivers** to download EU-Hydro river segments for the current view.
-3. Click **💧 Water** to download water bodies (lagoons, lakes, coastal polygons).
-4. Use the **Strahler** slider to filter small tributaries (higher = larger rivers only).
+2. Click **🌊 Rivers** to download EU-Hydro river line segments.
+3. Click **💧 Water** to download water body polygons (lagoons, lakes, coastal areas).
+4. Adjust the **Strahler** slider to filter small streams in real-time.
+
+> River data comes from the EEA EU-Hydro River Network Database
+> (Copernicus Land Monitoring Service). Water bodies include
+> inland water, transit water (lagoons), and coastal polygons.
 
 ### Step 2 — Select Reaches
 
-1. Click **✏️ Select** to enter selection mode (badge turns red: SELECTING).
+1. Click **✏️ Select** to enter selection mode (pulsing red SELECTING badge appears).
 2. **Click on a river line** to add that segment to the current reach.
-   Multiple clicks add more segments to the same reach.
+   Click more segments to extend the reach.
 3. **Click inside a water body** (lagoon, lake) to add it as a water reach.
 4. Click **✏️ Select** again to finish the current reach.
 5. Click **✏️ Select** once more to start a **new reach** (auto-named reach_2, reach_3, ...).
-6. Each reach gets a distinct colour on the map.
+6. Each reach is drawn in a distinct colour (orange, green, magenta, ...).
+7. Use **🗑 Clear** to reset all selections and start over.
 
-> **Tip:** A reach should represent a hydrologically connected section
-> (e.g., main stem, tributary, lagoon). Fish move between reaches via junctions.
+> **What is a reach?** A reach is a hydrologically connected section of
+> the river network. Salmon move between reaches through junctions.
+> Typical reaches: main stem, tributary, lagoon passage, estuary.
 
 ### Step 3 — Generate Habitat Cells
 
-1. Set the **River cell** size (5-100 m, default 20 m) — smaller = more detail.
-2. Set the **Water cell** size (50-1000 m, default 200 m) — for lagoons and lakes.
-3. Choose **Hexagonal** or **Rectangular** cell shape.
-4. Click **⬡ Cells** to generate the habitat grid.
-5. Cells appear on the map, coloured by reach.
+1. Set the **River cell** and **Water cell** sizes using the sliders.
+2. Choose **Hexagonal** (recommended) or **Rectangular** cell shape.
+3. Click **⬡ Cells** to generate the habitat grid.
+4. Green cells appear on the map, covering each reach.
+
+> Hexagonal cells tessellate tightly and have uniform neighbour
+> distances, making them ideal for ecological models. Rectangular
+> cells are simpler but create directional artefacts.
 
 ### Step 4 — Export
 
-1. Click **📦 Export** to download a ZIP file containing:
-   - **Shapefile** (Model.shp) — cell polygons with attributes
-   - **model_config.yaml** — full simulation configuration
-   - **TimeSeriesInputs.csv** — template for daily flow/temperature data
-   - **Depths.csv / Vels.csv** — template hydraulic tables (10 flows x N cells)
+Click **📦 Export** to download a ZIP containing:
 
-2. The exported config is ready to load in the **Setup** tab.
+| File | Contents |
+|------|----------|
+| `Shapefile/Model.shp` | Cell polygons with attributes (area, reach, hiding places, velocity shelter, spawning fraction) |
+| `model_config.yaml` | Full inSTREAM simulation configuration |
+| `{Reach}-TimeSeriesInputs.csv` | Template daily data (temperature, flow, turbidity) — 365 rows |
+| `{Reach}-Depths.csv` | Template depth table (10 flows x N cells) |
+| `{Reach}-Vels.csv` | Template velocity table (10 flows x N cells) |
+
+> Template CSVs contain **placeholder values**. Replace them with real
+> hydraulic data from HEC-RAS, River2D, or field measurements for
+> accurate simulations.
 
 ### Step 5 — Run Simulation
 
 1. Switch to the **Setup** tab.
-2. Select the exported config from the dropdown.
-3. Click **Load Config**, then **Run Simulation**.
+2. Select the exported config from the dropdown and click **Load Config**.
+3. Set start/end dates and click **Run Simulation**.
 
 ---
 
-### Tips
+### Cell Attributes
 
-- **🗑 Clear** resets all selected reaches and cells.
-- Reaches with **water bodies** use a larger cell size for efficiency.
-- The **Strahler** slider filters rivers in real-time — no need to re-fetch.
-- Template CSV files contain placeholder values — replace with real
-  hydrological data (HEC-RAS, River2D) for accurate simulations.
-- Cell attributes (hiding places, velocity shelter, spawning fraction)
-  can be fine-tuned in the exported shapefile's DBF table.
+Each habitat cell carries these properties (editable in the shapefile):
+
+| Attribute | Description | Default |
+|-----------|-------------|---------|
+| `AREA` | Cell area in m² | Computed from geometry |
+| `M_TO_ESC` | Distance to nearest reach endpoint (cm) | Computed |
+| `NUM_HIDING` | Number of hiding places | 5 (edge) / 2 (interior) |
+| `FRACVSHL` | Fraction of velocity shelter | 0.4 (edge) / 0.15 (interior) |
+| `FRACSPWN` | Fraction suitable for spawning | 0.0 (set per reach) |
 """),
             title=None,
             easy_close=True,
-            size="l",
+            size="xl",
         )
         ui.modal_show(m)
 
