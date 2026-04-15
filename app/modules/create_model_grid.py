@@ -130,8 +130,8 @@ def generate_cells(
                 eps.append(coords[len(coords) // 2])
             else:
                 coords = list(geom.coords)
-            eps.append(coords[0])
-            eps.append(coords[-1])
+                eps.append(coords[0])
+                eps.append(coords[-1])
         reach_endpoints[name] = eps
 
     combined_buffer = unary_union(list(reach_buffers.values()))

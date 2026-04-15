@@ -64,6 +64,7 @@ EUHYDRO_BASE = "https://image.discomap.eea.europa.eu/arcgis/rest/services/EUHydr
 # River lines: layer 4 is GROUP LAYER (not queryable!)
 # Actual feature layers: 5=Strahler1, 6=Strahler2, ..., 13=Strahler9
 RIVER_STRAHLER_LAYERS = {1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11, 8: 12, 9: 13}
+RIVER_POLYGON_LAYER = 19  # River_Net_polygon — wide river polygons
 WATER_LAYERS = [0, 1, 2]  # Coastal + Transit (lagoon!) + InlandWater
 
 # Marine Regions WFS (IHO sea areas — marineregions.org, no auth)
@@ -127,6 +128,7 @@ def _query_marine_regions(bbox_wgs84):
     Returns GeoJSON FeatureCollection or None on error.
     """
     west, south, east, north = bbox_wgs84
+    # GeoServer uses lon,lat axis order despite WFS 2.0.0 spec
     params = {
         "service": "WFS",
         "version": "2.0.0",
@@ -134,7 +136,7 @@ def _query_marine_regions(bbox_wgs84):
         "typeNames": "MarineRegions:iho",
         "outputFormat": "application/json",
         "srsName": "EPSG:4326",
-        "bbox": f"{south},{west},{north},{east},EPSG:4326",
+        "bbox": f"{west},{south},{east},{north},EPSG:4326",
     }
     try:
         resp = requests.get(MARINE_REGIONS_WFS, params=params, timeout=60)
@@ -177,10 +179,10 @@ def create_model_ui():
     )
     # Inline CSS matching sidebar theme
     _toolbar_css = ui.tags.style("""
-    .cm-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:0.4rem; padding:0.5rem 0.6rem;
-                  background:#1e293b; border-radius:6px; margin-bottom:0.4rem; }
+    .cm-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:0.3rem; padding:0.3rem 0.5rem;
+                  background:#1e293b; border-radius:6px; margin-bottom:0.3rem; }
     .cm-toolbar .btn-cm { background:rgba(43,184,157,.15); color:#2bb89d; border:1px solid rgba(43,184,157,.4);
-                          border-radius:4px; padding:0.25rem 0.6rem; font-size:0.78rem; font-weight:600;
+                          border-radius:4px; padding:0.2rem 0.5rem; font-size:0.75rem; font-weight:600;
                           cursor:pointer; transition: background .15s, box-shadow .15s; }
     .cm-toolbar .btn-cm:hover { background:rgba(43,184,157,.3); }
     .cm-toolbar .btn-cm.active, .cm-toolbar .btn-cm[aria-pressed="true"] {
@@ -223,12 +225,15 @@ def create_model_ui():
         ui.card_header(
             ui.div(
                 ui.tags.span("Create Model"),
+                ui.tags.span("", id="cm-gpu-slot"),  # GPU badge injected here by JS
+                ui.tags.div(style="flex:1;"),  # spacer pushes help to right
                 ui.input_action_button("help_btn", "? Help",
                                        class_="btn btn-cm",
-                                       style="margin-left:auto; padding:0.15rem 0.5rem; font-size:0.72rem;",
+                                       style="padding:0.15rem 0.5rem; font-size:0.72rem;",
                                        title="Show model creation guide"),
-                style="display:flex; align-items:center; width:100%;",
+                style="display:flex; align-items:center; gap:0.4rem; width:100%;",
             ),
+            style="padding:0.35rem 0.6rem;",
         ),
         _toolbar_css,
         # -- Compact toolbar matching sidebar theme ---
@@ -349,6 +354,7 @@ def create_model_server(input, output, session):
 
     # -- Existing reactive state --
     _rivers_gdf = reactive.value(None)
+    _river_polygons_gdf = reactive.value(None)  # EU-Hydro layer 19 (wide river polygons)
     _water_gdf = reactive.value(None)
     _sea_gdf = reactive.value(None)
     _fetch_msg = reactive.value("")
@@ -552,6 +558,10 @@ def create_model_server(input, output, session):
             layers.append(_build_water_layer(water))
         else:
             logger.info("No water features to display")
+        # River polygons (wide rivers from EU-Hydro layer 19)
+        rpoly = _river_polygons_gdf()
+        if rpoly is not None and len(rpoly) > 0:
+            layers.append(_build_water_layer(rpoly))  # reuse water style
         # Filtered rivers
         fgdf = _filtered_rivers_gdf()
         if fgdf is not None and len(fgdf) > 0:
@@ -648,10 +658,24 @@ def create_model_server(input, output, session):
             _fetch_msg.set(f"Clipped {n_clipped} lagoon/lake segments.")
 
         _rivers_gdf.set(gdf)
+
+        # Fetch river polygons (EU-Hydro layer 19 — wide river polygons)
+        _fetch_msg.set("Fetching river polygons (wide rivers)...")
+        rpoly_geojson = await loop.run_in_executor(
+            None, lambda: _query_euhydro(RIVER_POLYGON_LAYER, bbox)
+        )
+        rpoly_gdf = None
+        if rpoly_geojson and "features" in rpoly_geojson and rpoly_geojson["features"]:
+            rpoly_gdf = gpd.GeoDataFrame.from_features(
+                rpoly_geojson["features"], crs="EPSG:4326"
+            )
+            _river_polygons_gdf.set(rpoly_gdf)
+
         await _refresh_map()
         n_final = len(gdf)
         water_msg = f" + {len(water_gdf)} water bodies" if water_gdf is not None else ""
-        _fetch_msg.set(f"Loaded {n_final} river segments (Strahler >= {strahler_min}){water_msg}.")
+        rpoly_msg = f" + {len(rpoly_gdf)} river polygons" if rpoly_gdf is not None else ""
+        _fetch_msg.set(f"Loaded {n_final} river segments (Strahler >= {strahler_min}){water_msg}{rpoly_msg}.")
 
     @reactive.effect
     @reactive.event(input.fetch_water)
@@ -701,6 +725,24 @@ def create_model_server(input, output, session):
             return
 
         gdf = gpd.GeoDataFrame.from_features(geoj["features"], crs="EPSG:4326")
+
+        # Post-filter: WFS bbox returns global polygons that merely touch
+        # the bbox. Keep only features whose geometry actually intersects
+        # the bbox interior (not just a shared edge).
+        from shapely.geometry import box as _box
+        view_box = _box(*bbox)
+        gdf = gdf[gdf.geometry.intersects(view_box)].copy()
+        # Prefer features that actually cover the bbox center
+        if len(gdf) > 1:
+            center = view_box.centroid
+            covers = gdf[gdf.geometry.contains(center)]
+            if len(covers) > 0:
+                gdf = covers.copy()
+
+        if len(gdf) == 0:
+            _fetch_msg.set("No sea areas found — try zooming out to see the coast.")
+            return
+
         # Simplify large sea polygons for display performance
         gdf["geometry"] = gdf.geometry.simplify(0.01, preserve_topology=True)
         _sea_gdf.set(gdf)
@@ -831,10 +873,50 @@ def create_model_server(input, output, session):
                 await _refresh_map()
                 return
 
-        # --- Check sea areas (click inside IHO polygon) ---
+        # --- Check river polygons (click inside wide-river polygon) ---
+        rpoly = _river_polygons_gdf()
+        if rpoly is not None and len(rpoly) > 0:
+            hits = rpoly[rpoly.geometry.contains(click_pt)]
+            if len(hits) > 0:
+                geom = hits.geometry.iloc[0]
+                if geom.geom_type == "MultiPolygon":
+                    geom = max(geom.geoms, key=lambda g: g.area)
+                reach_name = _current_reach_name()
+                if not reach_name:
+                    return
+                reaches = dict(_reaches_dict())
+                if reach_name not in reaches:
+                    reaches[reach_name] = {
+                        "segments": [], "properties": [],
+                        "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
+                        "type": "water",
+                    }
+                rd = reaches[reach_name]
+                already = any(g.equals(geom) for g in rd["segments"])
+                if not already:
+                    rd["segments"].append(geom)
+                    rd["properties"].append({})
+                reaches[reach_name] = rd
+                _reaches_dict.set(reaches)
+                n = len(rd["segments"])
+                name_attr = hits.iloc[0].get("nameText", "") if "nameText" in hits.columns else ""
+                label = f" ({name_attr})" if name_attr else ""
+                _workflow_msg.set(
+                    f"Added river polygon{label} to '{reach_name}' ({n} features)."
+                )
+                await _refresh_map()
+                return
+
+        # --- Check sea areas (click inside or near IHO polygon) ---
         sea = _sea_gdf()
         if sea is not None and len(sea) > 0:
+            # Try strict containment first, then proximity (~0.05° ≈ 5 km)
             hits = sea[sea.geometry.contains(click_pt)]
+            if len(hits) == 0:
+                dists = sea.geometry.distance(click_pt)
+                nearest_idx = dists.idxmin()
+                if dists.loc[nearest_idx] < 0.05:
+                    hits = sea.iloc[[nearest_idx]]
             if len(hits) > 0:
                 geom = hits.geometry.iloc[0]
                 if geom.geom_type == "MultiPolygon":
@@ -888,12 +970,44 @@ def create_model_server(input, output, session):
             _workflow_msg.set(f"Clicked geometry is {geom.geom_type}, expected LineString.")
             return
 
+        # Check if a river polygon from layer 19 contains this line segment.
+        # If so, use the polygon (fills the river width) instead of the line.
+        use_polygon = False
+        rpoly = _river_polygons_gdf()
+        if rpoly is not None and len(rpoly) > 0:
+            try:
+                candidates = rpoly[rpoly.geometry.intersects(geom)]
+                if len(candidates) > 0:
+                    # Pick the polygon with the largest intersection
+                    best_idx = candidates.geometry.intersection(geom).length.idxmax()
+                    poly_geom = candidates.geometry.loc[best_idx]
+                    if poly_geom.geom_type == "MultiPolygon":
+                        poly_geom = max(poly_geom.geoms, key=lambda g: g.area)
+                    geom = poly_geom
+                    use_polygon = True
+            except Exception:
+                pass  # fall back to line geometry
+
         reach_name = _current_reach_name()
         if not reach_name:
             return
 
         reaches = dict(_reaches_dict())
-        if assign_segment_to_reach is not None:
+        if use_polygon:
+            # Add as water-type reach (polygon → grid fills the area)
+            if reach_name not in reaches:
+                reaches[reach_name] = {
+                    "segments": [], "properties": [],
+                    "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
+                    "type": "water",
+                }
+            rd = reaches[reach_name]
+            already = any(g.equals(geom) for g in rd["segments"])
+            if not already:
+                rd["segments"].append(geom)
+                rd["properties"].append({})
+            reaches[reach_name] = rd
+        elif assign_segment_to_reach is not None:
             reaches = assign_segment_to_reach(reaches, reach_name, geom, {})
         else:
             if reach_name not in reaches:
@@ -910,7 +1024,8 @@ def create_model_server(input, output, session):
 
         r = reaches.get(reach_name, {})
         n_segs = len(r["segments"]) if isinstance(r, dict) else len(r)
-        _workflow_msg.set(f"Added segment to '{reach_name}' ({n_segs} segments total).")
+        poly_note = " (river polygon — grid will fill area)" if use_polygon else ""
+        _workflow_msg.set(f"Added segment to '{reach_name}' ({n_segs} segments total).{poly_note}")
         await _refresh_map()
 
     # -----------------------------------------------------------------

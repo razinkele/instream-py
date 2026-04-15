@@ -3,25 +3,25 @@
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$'; then conda run -n shiny ruff check --fix --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; conda run -n shiny ruff format --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; fi; true"
+        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\.py$'; then micromamba run -n shiny ruff check --fix --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; micromamba run -n shiny ruff format --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; fi; true"
       },
       {
         "matcher": "Edit|Write",
-        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE 'src/instream/.*\\.py$'; then MODULE=$(basename \"$CLAUDE_FILE_PATH\" .py); TEST=$(dirname \"$CLAUDE_FILE_PATH\" | sed 's|.*instream-py/||'); TESTFILE=\"tests/test_${MODULE}.py\"; if [ -f \"$TESTFILE\" ]; then conda run -n shiny python -m pytest \"$TESTFILE\" -x -q 2>&1 | tail -5; fi; fi; true"
+        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE 'src/instream/.*\.py$'; then MODULE=$(basename \"$CLAUDE_FILE_PATH\" .py); TEST=$(dirname \"$CLAUDE_FILE_PATH\" | sed 's|.*instream-py/||'); TESTFILE=\"tests/test_${MODULE}.py\"; if [ -f \"$TESTFILE\" ]; then micromamba run -n shiny python -m pytest \"$TESTFILE\" -x -q 2>&1 | tail -5; fi; fi; true"
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.(env|pem|key|secret)$'; then echo 'BLOCK: refusing to edit sensitive file'; exit 1; fi; true"
+        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\.(env|pem|key|secret)$'; then echo 'BLOCK: refusing to edit sensitive file'; exit 1; fi; true"
       },
       {
         "matcher": "Edit|Write",
-        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '(^|/)(\\.env|credentials|secrets)'; then echo 'BLOCK: refusing to edit sensitive file'; exit 1; fi; true"
+        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '(^|/)(\.env|credentials|secrets)'; then echo 'BLOCK: refusing to edit sensitive file'; exit 1; fi; true"
       },
       {
         "matcher": "Edit|Write",
-        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '(__pycache__|\\.benchmarks|\\.hypothesis|\\.lock$)'; then echo 'BLOCK: refusing to edit generated/cached file'; exit 1; fi; true"
+        "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '(__pycache__|\.benchmarks|\.hypothesis|\.lock$)'; then echo 'BLOCK: refusing to edit generated/cached file'; exit 1; fi; true"
       }
     ]
   }

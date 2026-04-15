@@ -173,14 +173,14 @@ body.sp-collapsed .sp-main-offset { margin-left: 56px; }
 body { background: #f0f4f8; }
 
 .sp-gpu-badge {
-    display: inline-flex; align-items: center; gap: .3rem;
+    display: inline-flex; align-items: center; gap: .2rem;
     background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
     color: #155724; border: 1px solid #b1dfbb; border-radius: 10px;
-    padding: .15rem .55rem; font-size: .7rem; font-weight: 600;
-    letter-spacing: .3px; margin-left: .6rem; vertical-align: middle;
+    padding: .1rem .45rem; font-size: .65rem; font-weight: 600;
+    letter-spacing: .3px; vertical-align: middle;
     white-space: nowrap; cursor: help;
 }
-.sp-gpu-badge i { font-size: .75rem; }
+.sp-gpu-badge i { font-size: .7rem; }
 """
 
 _SIDEBAR_JS = """
@@ -334,9 +334,14 @@ _WEBGL_FALLBACK_JS = """
         var gpuLabel = renderer.replace('ANGLE (', '').split(',')[0].replace(')', '').trim() || 'GPU';
         var badgeHtml = '<span class="sp-gpu-badge" title="Rendering on: ' + renderer + '"><i class="bi bi-gpu-card"></i>WebGL \u2014 ' + gpuLabel + '</span>';
         function injectGpuBadges() {
+            // Prefer dedicated slot in Create Model header
+            var slot = document.getElementById('cm-gpu-slot');
+            if (slot && !slot.querySelector('.sp-gpu-badge')) {
+                slot.innerHTML = badgeHtml;
+            }
             document.querySelectorAll('.card-header').forEach(function(hdr) {
                 var txt = hdr.textContent || '';
-                if ((/Spatial View|Live Movement|Setup Review|Create Model/i).test(txt) && !hdr.querySelector('.sp-gpu-badge')) {
+                if ((/Spatial View|Live Movement|Setup Review/i).test(txt) && !hdr.querySelector('.sp-gpu-badge')) {
                     hdr.insertAdjacentHTML('beforeend', badgeHtml);
                 }
             });
