@@ -66,6 +66,9 @@ EUHYDRO_BASE = "https://image.discomap.eea.europa.eu/arcgis/rest/services/EUHydr
 RIVER_STRAHLER_LAYERS = {1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11, 8: 12, 9: 13}
 WATER_LAYERS = [0, 1, 2]  # Coastal + Transit (lagoon!) + InlandWater
 
+# Marine Regions WFS (IHO sea areas — marineregions.org, no auth)
+MARINE_REGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
+
 # Reach colour palette — high-contrast, avoids blue (river colour)
 REACH_COLORS = [
     [255, 87, 34, 255],   # deep orange
@@ -115,6 +118,30 @@ def _query_euhydro(layer_id, bbox_wgs84, max_features=2000):
         return resp.json()
     except Exception as e:
         logger.error("EU-Hydro query failed: %s", e)
+        return None
+
+
+def _query_marine_regions(bbox_wgs84):
+    """Query Marine Regions WFS for IHO sea area polygons in a bounding box.
+
+    Returns GeoJSON FeatureCollection or None on error.
+    """
+    west, south, east, north = bbox_wgs84
+    params = {
+        "service": "WFS",
+        "version": "2.0.0",
+        "request": "GetFeature",
+        "typeNames": "MarineRegions:iho",
+        "outputFormat": "application/json",
+        "srsName": "EPSG:4326",
+        "bbox": f"{south},{west},{north},{east},EPSG:4326",
+    }
+    try:
+        resp = requests.get(MARINE_REGIONS_WFS, params=params, timeout=60)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.error("Marine Regions query failed: %s", e)
         return None
 
 
@@ -213,6 +240,9 @@ def create_model_ui():
             ui.input_action_button("fetch_water", "💧 Water",
                                    class_="btn btn-cm",
                                    title="Fetch EU-Hydro water bodies (lakes, lagoons)"),
+            ui.input_action_button("fetch_sea", "🌊 Sea",
+                                   class_="btn btn-cm",
+                                   title="Fetch IHO sea areas from Marine Regions"),
             ui.tags.div(class_="cm-sep"),
             ui.tags.span("Strahler≥", class_="cm-label"),
             ui.div(
@@ -228,6 +258,11 @@ def create_model_ui():
             ui.tags.span("Water cell:", class_="cm-label"),
             ui.div(
                 ui.input_slider("water_cell_size", None, min=50, max=1000, value=200, step=50, width="100%"),
+                style="display:inline-block; vertical-align:middle; width:150px;",
+            ),
+            ui.tags.span("Sea cell:", class_="cm-label"),
+            ui.div(
+                ui.input_slider("sea_cell_size", None, min=500, max=10000, value=2000, step=500, width="100%"),
                 style="display:inline-block; vertical-align:middle; width:150px;",
             ),
             ui.div(
@@ -315,6 +350,7 @@ def create_model_server(input, output, session):
     # -- Existing reactive state --
     _rivers_gdf = reactive.value(None)
     _water_gdf = reactive.value(None)
+    _sea_gdf = reactive.value(None)
     _fetch_msg = reactive.value("")
 
     _map_initialized = reactive.value(False)
@@ -410,6 +446,21 @@ def create_model_server(input, output, session):
             filled=True,
         )
 
+    def _build_sea_layer(gdf):
+        """Build a deck.gl GeoJSON layer from sea area polygons."""
+        geoj = json.loads(gdf.to_json())
+        return geojson_layer(
+            id="marine-sea-areas",
+            data=geoj,
+            getFillColor=[50, 80, 140, 40],
+            getLineColor=[30, 60, 120, 150],
+            getLineWidth=2,
+            lineWidthMinPixels=1,
+            pickable=True,
+            stroked=True,
+            filled=True,
+        )
+
     def _build_reach_layers():
         """Build one GeoJSON layer per reach with distinct colours."""
         layers = []
@@ -490,7 +541,11 @@ def create_model_server(input, output, session):
     async def _refresh_map():
         """Rebuild all map layers from current state and push to widget."""
         layers = []
-        # Water bodies (bottom)
+        # Sea areas (bottommost)
+        sea = _sea_gdf()
+        if sea is not None and len(sea) > 0:
+            layers.append(_build_sea_layer(sea))
+        # Water bodies
         water = _water_gdf()
         if water is not None and len(water) > 0:
             logger.info("Water layer: %d features", len(water))
@@ -628,6 +683,32 @@ def create_model_server(input, output, session):
         _fetch_msg.set(f"Loaded {len(gdf)} water bodies (coastal + lagoon + inland).")
 
     # -----------------------------------------------------------------
+    # Fetch sea areas (Marine Regions IHO)
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.fetch_sea)
+    async def _on_fetch_sea():
+        _fetch_msg.set("Fetching IHO sea areas from Marine Regions...")
+        bbox = _get_view_bbox()
+
+        import asyncio
+        loop = asyncio.get_running_loop()
+        geoj = await loop.run_in_executor(None, _query_marine_regions, bbox)
+
+        if geoj is None or not geoj.get("features"):
+            _fetch_msg.set("No sea areas found — try zooming out to see the coast.")
+            return
+
+        gdf = gpd.GeoDataFrame.from_features(geoj["features"], crs="EPSG:4326")
+        # Simplify large sea polygons for display performance
+        gdf["geometry"] = gdf.geometry.simplify(0.01, preserve_topology=True)
+        _sea_gdf.set(gdf)
+        names = ", ".join(gdf["name"].dropna().unique()[:5]) if "name" in gdf.columns else ""
+        _fetch_msg.set(f"Loaded {len(gdf)} sea areas. {names}")
+        await _refresh_map()
+
+    # -----------------------------------------------------------------
     # Strahler filter — re-render map when slider changes
     # -----------------------------------------------------------------
 
@@ -750,6 +831,40 @@ def create_model_server(input, output, session):
                 await _refresh_map()
                 return
 
+        # --- Check sea areas (click inside IHO polygon) ---
+        sea = _sea_gdf()
+        if sea is not None and len(sea) > 0:
+            hits = sea[sea.geometry.contains(click_pt)]
+            if len(hits) > 0:
+                geom = hits.geometry.iloc[0]
+                if geom.geom_type == "MultiPolygon":
+                    geom = max(geom.geoms, key=lambda g: g.area)
+                reach_name = _current_reach_name()
+                if not reach_name:
+                    return
+                reaches = dict(_reaches_dict())
+                if reach_name not in reaches:
+                    reaches[reach_name] = {
+                        "segments": [], "properties": [],
+                        "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
+                        "type": "sea",
+                    }
+                rd = reaches[reach_name]
+                already = any(g.equals(geom) for g in rd["segments"])
+                if not already:
+                    rd["segments"].append(geom)
+                    rd["properties"].append({})
+                reaches[reach_name] = rd
+                _reaches_dict.set(reaches)
+                n = len(rd["segments"])
+                sea_name = hits.iloc[0].get("name", "") if "name" in hits.columns else ""
+                label = f" ({sea_name})" if sea_name else ""
+                _workflow_msg.set(
+                    f"Added sea area{label} to '{reach_name}' ({n} features)."
+                )
+                await _refresh_map()
+                return
+
         # --- Then check rivers (nearest line) ---
         rivers = _filtered_rivers_gdf()
         if rivers is None or len(rivers) == 0:
@@ -820,21 +935,25 @@ def create_model_server(input, output, session):
 
         river_cell_size = input.cell_size()
         water_cell_size = input.water_cell_size()
+        sea_cell_size = input.sea_cell_size()
         cell_shape = input.cell_shape()
 
-        # Split reaches into river and water groups
+        # Split reaches by type
         river_reaches = {}
         water_reaches = {}
+        sea_reaches = {}
         for name, rd in reaches.items():
             if not isinstance(rd, dict):
                 rd = {"segments": rd, "type": "river"}
             rtype = rd.get("type", "river")
-            if rtype == "water":
+            if rtype == "sea":
+                sea_reaches[name] = rd
+            elif rtype == "water":
                 water_reaches[name] = rd
             else:
                 river_reaches[name] = rd
 
-        if not river_reaches and not water_reaches:
+        if not river_reaches and not water_reaches and not sea_reaches:
             _workflow_msg.set("Reaches are empty — no segments to generate cells from.")
             return
 
@@ -866,6 +985,19 @@ def create_model_server(input, output, session):
                 )
                 if water_cells is not None and len(water_cells) > 0:
                     all_cells.append(water_cells)
+            # Generate sea area cells
+            if sea_reaches:
+                _workflow_msg.set("Generating sea area cells (this may take a moment)...")
+                sea_cells = await loop.run_in_executor(
+                    None,
+                    lambda: generate_cells(
+                        reach_segments=sea_reaches,
+                        cell_size=sea_cell_size,
+                        cell_shape=cell_shape,
+                    ),
+                )
+                if sea_cells is not None and len(sea_cells) > 0:
+                    all_cells.append(sea_cells)
 
             if all_cells:
                 cells = gpd.pd.concat(all_cells, ignore_index=True)
@@ -953,6 +1085,11 @@ channels and need bigger cells to keep the model tractable. The
 Curonian Lagoon, for example, is ~1,600 km² — at 200 m cell size it
 produces ~40,000 cells; at 500 m about 6,400 cells.
 
+**Sea cell size** (500-10,000 m) applies to open sea/ocean reaches
+selected from IHO sea area boundaries. Marine areas are vast and
+require very large cells. For salmon marine migration modelling,
+typical cell sizes are 2-5 km (2,000-5,000 m).
+
 ---
 
 ### Step 1 — Load Data
@@ -960,11 +1097,13 @@ produces ~40,000 cells; at 500 m about 6,400 cells.
 1. **Pan and zoom** the map to your area of interest.
 2. Click **🌊 Rivers** to download EU-Hydro river line segments.
 3. Click **💧 Water** to download water body polygons (lagoons, lakes, coastal areas).
-4. Adjust the **Strahler** slider to filter small streams in real-time.
+4. Click **🌊 Sea** to download IHO sea area boundaries (Baltic Sea, Gulf of Bothnia, etc.).
+5. Adjust the **Strahler** slider to filter small streams in real-time.
 
-> River data comes from the EEA EU-Hydro River Network Database
-> (Copernicus Land Monitoring Service). Water bodies include
-> inland water, transit water (lagoons), and coastal polygons.
+> River and water body data comes from the EEA EU-Hydro River Network
+> Database (Copernicus Land Monitoring Service). Sea areas come from
+> the Marine Regions database (marineregions.org), using IHO
+> (International Hydrographic Organization) sea area boundaries.
 
 ### Step 2 — Select Reaches
 
@@ -972,7 +1111,8 @@ produces ~40,000 cells; at 500 m about 6,400 cells.
 2. **Click on a river line** to add that segment to the current reach.
    Click more segments to extend the reach.
 3. **Click inside a water body** (lagoon, lake) to add it as a water reach.
-4. Click **✏️ Select** again to finish the current reach.
+4. **Click inside a sea area** (after loading sea data) to add it as a marine reach.
+5. Click **✏️ Select** again to finish the current reach.
 5. Click **✏️ Select** once more to start a **new reach** (auto-named reach_2, reach_3, ...).
 6. Each reach is drawn in a distinct colour (orange, green, magenta, ...).
 7. Use **🗑 Clear** to reset all selections and start over.
