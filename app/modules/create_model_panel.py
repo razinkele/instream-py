@@ -455,7 +455,7 @@ def create_model_server(input, output, session):
 
     def _build_water_layer(gdf):
         """Build a deck.gl GeoJSON layer from a water bodies GeoDataFrame."""
-        # Simplify large polygons to reduce WebGL payload
+        sel = _selection_mode()
         simplified = gdf.copy()
         simplified["geometry"] = simplified.geometry.simplify(0.001, preserve_topology=True)
         simplified = simplified[~simplified.geometry.is_empty]
@@ -467,13 +467,14 @@ def create_model_server(input, output, session):
             getFillColor=[135, 206, 235, 120],
             getLineColor=[70, 130, 180, 150],
             getLineWidth=1,
-            pickable=True,
+            pickable=(sel == "lagoon"),
             stroked=True,
             filled=True,
         )
 
     def _build_sea_layer(gdf):
         """Build a deck.gl GeoJSON layer from sea area polygons."""
+        sel = _selection_mode()
         geoj = json.loads(gdf.to_json())
         return geojson_layer(
             id="marine-sea-areas",
@@ -482,7 +483,7 @@ def create_model_server(input, output, session):
             getLineColor=[30, 60, 120, 150],
             getLineWidth=2,
             lineWidthMinPixels=1,
-            pickable=True,
+            pickable=(sel == "sea"),
             stroked=True,
             filled=True,
         )
@@ -547,6 +548,24 @@ def create_model_server(input, output, session):
                 ))
         return layers
 
+    def _build_river_polygon_layer(gdf):
+        """Build a deck.gl layer for EU-Hydro river polygons (wide rivers, layer 19)."""
+        sel = _selection_mode()
+        simplified = gdf.copy()
+        simplified["geometry"] = simplified.geometry.simplify(0.001, preserve_topology=True)
+        simplified = simplified[~simplified.geometry.is_empty]
+        geoj = json.loads(simplified.to_json())
+        return geojson_layer(
+            id="euhydro-river-polygons",
+            data=geoj,
+            getFillColor=[30, 100, 200, 80],
+            getLineColor=[30, 100, 200, 150],
+            getLineWidth=1,
+            pickable=(sel == "river"),
+            stroked=True,
+            filled=True,
+        )
+
     def _build_cells_layer():
         """Build a GeoJSON layer for generated cells."""
         gdf = _cells_gdf()
@@ -581,7 +600,7 @@ def create_model_server(input, output, session):
         # River polygons (wide rivers from EU-Hydro layer 19)
         rpoly = _river_polygons_gdf()
         if rpoly is not None and len(rpoly) > 0:
-            layers.append(_build_water_layer(rpoly))  # reuse water style
+            layers.append(_build_river_polygon_layer(rpoly))
         # Filtered rivers
         fgdf = _filtered_rivers_gdf()
         if fgdf is not None and len(fgdf) > 0:
@@ -821,18 +840,21 @@ def create_model_server(input, output, session):
 
     @reactive.effect
     @reactive.event(input.sel_river_btn)
-    def _on_sel_river():
+    async def _on_sel_river():
         _toggle_selection_mode("river")
+        await _refresh_map()
 
     @reactive.effect
     @reactive.event(input.sel_lagoon_btn)
-    def _on_sel_lagoon():
+    async def _on_sel_lagoon():
         _toggle_selection_mode("lagoon")
+        await _refresh_map()
 
     @reactive.effect
     @reactive.event(input.sel_sea_btn)
-    def _on_sel_sea():
+    async def _on_sel_sea():
         _toggle_selection_mode("sea")
+        await _refresh_map()
 
     # Highlight the active selection mode button via JS
     @reactive.effect
