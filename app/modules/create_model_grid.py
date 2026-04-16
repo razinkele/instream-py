@@ -1,5 +1,6 @@
 """Hexagonal and rectangular habitat cell generation from river reach segments."""
 
+import logging
 import math
 
 import geopandas as gpd
@@ -8,6 +9,8 @@ from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
 from modules.create_model_utils import detect_utm_epsg, reproject_gdf
+
+logger = logging.getLogger(__name__)
 
 
 def _hexagon(cx: float, cy: float, size: float) -> Polygon:
@@ -92,7 +95,11 @@ def generate_cells(
     for info in reach_segments.values():
         all_geoms.extend(info["segments"])
 
+    logger.info("generate_cells: %d reaches, %d geometries, cell_size=%s, shape=%s",
+                len(reach_segments), len(all_geoms), cell_size, cell_shape)
+
     if not all_geoms:
+        logger.warning("generate_cells: no geometries found")
         return gpd.GeoDataFrame(
             columns=["cell_id", "reach_name", "area", "dist_escape",
                       "num_hiding", "frac_vel_shelter", "frac_spawn", "geometry"],
@@ -112,12 +119,16 @@ def generate_cells(
         seg_utm = reproject_gdf(seg_gdf, utm_epsg)
         merged = unary_union(seg_utm.geometry)
 
-        # For polygons (water bodies): use the polygon directly, no buffering
+        # For polygons (water bodies, sea areas): use the polygon directly, no buffering
         reach_type = info.get("type", "river")
-        if reach_type == "water" or merged.geom_type in ("Polygon", "MultiPolygon"):
+        if reach_type in ("water", "sea") or merged.geom_type in ("Polygon", "MultiPolygon"):
             reach_buffers[name] = merged
+            logger.info("  reach '%s': type=%s, geom=%s, area=%.1f m², using polygon directly",
+                        name, reach_type, merged.geom_type, merged.area)
         else:
             reach_buffers[name] = merged.buffer(buf_dist)
+            logger.info("  reach '%s': type=%s, geom=%s, buffered by %.1f m",
+                        name, reach_type, merged.geom_type, buf_dist)
 
         # Collect endpoints (first/last coord of each line segment)
         eps = []
@@ -135,6 +146,8 @@ def generate_cells(
         reach_endpoints[name] = eps
 
     combined_buffer = unary_union(list(reach_buffers.values()))
+    logger.info("combined_buffer: type=%s, area=%.1f m², bounds=%s",
+                combined_buffer.geom_type, combined_buffer.area, combined_buffer.bounds)
 
     # Generate grid
     bx = combined_buffer.bounds  # (minx, miny, maxx, maxy)
@@ -144,6 +157,8 @@ def generate_cells(
         raw_cells = rectangular_grid(bx, cell_size)
     else:
         raise ValueError(f"Unknown cell_shape: {cell_shape!r}")
+
+    logger.info("raw grid: %d cells over bounds %s", len(raw_cells), bx)
 
     # Clip cells to buffer and assign to reaches
     records = []
@@ -201,4 +216,5 @@ def generate_cells(
     gdf = gpd.GeoDataFrame(records, crs=f"EPSG:{utm_epsg}")
     # Reproject to WGS84 for map display (keep UTM area/distance values)
     gdf = gdf.to_crs("EPSG:4326")
+    logger.info("generate_cells: returning %d cells", len(gdf))
     return gdf

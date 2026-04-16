@@ -1087,12 +1087,18 @@ def create_model_server(input, output, session):
             if not isinstance(rd, dict):
                 rd = {"segments": rd, "type": "river"}
             rtype = rd.get("type", "river")
+            n_segs = len(rd.get("segments", []))
+            geom_types = [g.geom_type for g in rd.get("segments", [])]
+            logger.info("Reach '%s': type=%s, %d segments, geom_types=%s", name, rtype, n_segs, geom_types)
             if rtype == "sea":
                 sea_reaches[name] = rd
             elif rtype == "water":
                 water_reaches[name] = rd
             else:
                 river_reaches[name] = rd
+
+        logger.info("Split: %d river, %d water, %d sea reaches",
+                     len(river_reaches), len(water_reaches), len(sea_reaches))
 
         if not river_reaches and not water_reaches and not sea_reaches:
             _workflow_msg.set("Reaches are empty — no segments to generate cells from.")
