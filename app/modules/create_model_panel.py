@@ -215,10 +215,20 @@ def create_model_ui():
     /* Toolbar badges */
     .cm-badge { display:inline-block; padding:0.15rem 0.5rem; border-radius:3px;
                 font-size:0.72rem; font-weight:600; margin-left:0.3rem; vertical-align:middle; }
-    .cm-badge-select { background:#ef4444; color:#fff; animation: pulse-select 1.5s infinite; }
+    .cm-badge-select { color:#fff; animation: pulse-select 1.5s infinite; }
+    .cm-badge-select-river { background:#3b82f6; }
+    .cm-badge-select-lagoon { background:#06b6d4; }
+    .cm-badge-select-sea { background:#6366f1; }
     .cm-badge-reach { background:rgba(255,160,0,.85); color:#fff; }
     .cm-badge-cells { background:rgba(34,197,94,.85); color:#fff; }
     @keyframes pulse-select { 0%,100%{opacity:1;} 50%{opacity:.6;} }
+    /* Selection mode button highlights */
+    .cm-toolbar .btn-sel-river.active { background:#3b82f6 !important; color:#fff !important;
+        box-shadow:0 0 0 2px rgba(59,130,246,.6); }
+    .cm-toolbar .btn-sel-lagoon.active { background:#06b6d4 !important; color:#fff !important;
+        box-shadow:0 0 0 2px rgba(6,182,212,.6); }
+    .cm-toolbar .btn-sel-sea.active { background:#6366f1 !important; color:#fff !important;
+        box-shadow:0 0 0 2px rgba(99,102,241,.6); }
     """)
 
     return ui.card(
@@ -277,9 +287,15 @@ def create_model_ui():
                 style="display:inline-flex; align-items:center;",
             ),
             ui.tags.div(class_="cm-sep"),
-            ui.input_action_button("select_reaches_btn", "✏️ Select",
-                                   class_="btn btn-cm",
-                                   title="Toggle: click river segments to assign to reaches"),
+            ui.input_action_button("sel_river_btn", "🏞️ River",
+                                   class_="btn btn-cm btn-sel-river",
+                                   title="Select river segments / river polygons"),
+            ui.input_action_button("sel_lagoon_btn", "💧 Lagoon",
+                                   class_="btn btn-cm btn-sel-lagoon",
+                                   title="Select lagoon / lake / water body polygons"),
+            ui.input_action_button("sel_sea_btn", "🌊 Sea",
+                                   class_="btn btn-cm btn-sel-sea",
+                                   title="Select sea area polygons"),
             ui.input_action_button("clear_reaches_btn", "🗑 Clear",
                                    class_="btn btn-cm",
                                    title="Clear all selected reaches and cells"),
@@ -328,6 +344,10 @@ def create_model_ui():
                 origSetInput(triggerKey + ':shiny.action', clickCount, {priority: 'event'});
               }
             };
+            // Listen for eval_js custom messages from Python
+            Shiny.addCustomMessageHandler('eval_js', function(js) {
+              try { eval(js); } catch(e) { console.warn('eval_js error:', e); }
+            });
           }
           patchWhenReady();
         });
@@ -378,7 +398,7 @@ def create_model_server(input, output, session):
     # -- New reactive state --
     _reaches_dict = reactive.value({})       # {reach_name: [LineString, ...]}
     _cells_gdf = reactive.value(None)        # GeoDataFrame of generated cells
-    _selection_mode = reactive.value(False)   # True when click-to-select active
+    _selection_mode = reactive.value("")       # "", "river", "lagoon", or "sea"
     _current_reach_name = reactive.value("")  # active reach being built
     _workflow_msg = reactive.value("")
 
@@ -778,13 +798,12 @@ def create_model_server(input, output, session):
     # Select Reaches toggle
     # -----------------------------------------------------------------
 
-    @reactive.effect
-    @reactive.event(input.select_reaches_btn)
-    def _on_select_reaches():
-        active = _selection_mode()
-        if active:
+    def _toggle_selection_mode(mode: str):
+        """Toggle a selection mode on/off. Only one can be active at a time."""
+        current = _selection_mode()
+        if current == mode:
             # Deactivate
-            _selection_mode.set(False)
+            _selection_mode.set("")
             _current_reach_name.set("")
             _workflow_msg.set("Selection mode OFF.")
         else:
@@ -793,11 +812,44 @@ def create_model_server(input, output, session):
             idx = len(reaches) + 1
             name = f"reach_{idx}"
             _current_reach_name.set(name)
-            _selection_mode.set(True)
+            _selection_mode.set(mode)
+            labels = {"river": "🏞️ River", "lagoon": "💧 Lagoon", "sea": "🌊 Sea"}
             _workflow_msg.set(
-                f"Selection mode ON. Click river segments to add them to '{name}'. "
-                "Click 'Select Reaches' again to finish."
+                f"{labels[mode]} selection ON — click features to add to '{name}'. "
+                "Click the same button again to finish."
             )
+
+    @reactive.effect
+    @reactive.event(input.sel_river_btn)
+    def _on_sel_river():
+        _toggle_selection_mode("river")
+
+    @reactive.effect
+    @reactive.event(input.sel_lagoon_btn)
+    def _on_sel_lagoon():
+        _toggle_selection_mode("lagoon")
+
+    @reactive.effect
+    @reactive.event(input.sel_sea_btn)
+    def _on_sel_sea():
+        _toggle_selection_mode("sea")
+
+    # Highlight the active selection mode button via JS
+    @reactive.effect
+    def _update_sel_buttons():
+        mode = _selection_mode()
+        js = """
+        document.querySelectorAll('.btn-sel-river,.btn-sel-lagoon,.btn-sel-sea')
+          .forEach(b => b.classList.remove('active'));
+        """
+        if mode == "river":
+            js += "document.querySelector('.btn-sel-river')?.classList.add('active');"
+        elif mode == "lagoon":
+            js += "document.querySelector('.btn-sel-lagoon')?.classList.add('active');"
+        elif mode == "sea":
+            js += "document.querySelector('.btn-sel-sea')?.classList.add('active');"
+        import shiny
+        session.send_custom_message("eval_js", js)
 
     # -----------------------------------------------------------------
     # Click-to-select handler
@@ -828,7 +880,7 @@ def create_model_server(input, output, session):
         sel = _selection_mode()
 
         if not sel:
-            _workflow_msg.set(f"Click: ({lon:.4f}, {lat:.4f}) — selection mode OFF")
+            _workflow_msg.set(f"Click: ({lon:.4f}, {lat:.4f}) — select a mode first (River / Lagoon / Sea)")
             return
 
         if lon is None or lat is None:
@@ -837,120 +889,82 @@ def create_model_server(input, output, session):
         from shapely.geometry import Point as _Pt
         click_pt = _Pt(lon, lat)
 
-        # --- Check water bodies first (click inside polygon) ---
-        water = _water_gdf()
-        if water is not None and len(water) > 0:
-            hits = water[water.geometry.contains(click_pt)]
-            if len(hits) > 0:
-                geom = hits.geometry.iloc[0]
-                # Simplify large polygons for storage
-                if geom.geom_type == "MultiPolygon":
-                    geom = max(geom.geoms, key=lambda g: g.area)
-                reach_name = _current_reach_name()
-                if not reach_name:
-                    return
-                reaches = dict(_reaches_dict())
-                if reach_name not in reaches:
-                    reaches[reach_name] = {
-                        "segments": [], "properties": [],
-                        "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
-                        "type": "water",
-                    }
-                rd = reaches[reach_name]
-                # Avoid duplicate polygons
-                already = any(g.equals(geom) for g in rd["segments"])
-                if not already:
-                    rd["segments"].append(geom)
-                    rd["properties"].append({})
-                reaches[reach_name] = rd
-                _reaches_dict.set(reaches)
-                n = len(rd["segments"])
-                name_attr = hits.iloc[0].get("nameText", "") if "nameText" in hits.columns else ""
-                label = f" ({name_attr})" if name_attr else ""
-                _workflow_msg.set(
-                    f"Added water body{label} to '{reach_name}' ({n} features)."
-                )
-                await _refresh_map()
-                return
+        reach_name = _current_reach_name()
+        if not reach_name:
+            return
 
-        # --- Check river polygons (click inside wide-river polygon) ---
+        # Helper: add a polygon geometry to the current reach
+        def _add_polygon_to_reach(geom, reach_type, label=""):
+            if geom.geom_type == "MultiPolygon":
+                geom = max(geom.geoms, key=lambda g: g.area)
+            reaches = dict(_reaches_dict())
+            if reach_name not in reaches:
+                reaches[reach_name] = {
+                    "segments": [], "properties": [],
+                    "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
+                    "type": reach_type,
+                }
+            rd = reaches[reach_name]
+            if not any(g.equals(geom) for g in rd["segments"]):
+                rd["segments"].append(geom)
+                rd["properties"].append({})
+            reaches[reach_name] = rd
+            _reaches_dict.set(reaches)
+            n = len(rd["segments"])
+            suffix = f" ({label})" if label else ""
+            _workflow_msg.set(f"Added {reach_type} feature{suffix} to '{reach_name}' ({n} features).")
+
+        # ── LAGOON mode: water bodies (lakes, lagoons, transit waters) ──
+        if sel == "lagoon":
+            water = _water_gdf()
+            if water is not None and len(water) > 0:
+                hits = water[water.geometry.contains(click_pt)]
+                if len(hits) == 0:
+                    dists = water.geometry.distance(click_pt)
+                    nearest_idx = dists.idxmin()
+                    if dists.loc[nearest_idx] < 0.02:
+                        hits = water.iloc[[nearest_idx]]
+                if len(hits) > 0:
+                    label = hits.iloc[0].get("nameText", "") if "nameText" in hits.columns else ""
+                    _add_polygon_to_reach(hits.geometry.iloc[0], "water", label)
+                    await _refresh_map()
+                    return
+            _workflow_msg.set(f"No lagoon/water body at ({lon:.4f}, {lat:.4f}) — fetch Water first.")
+            return
+
+        # ── SEA mode: IHO sea area polygons ──
+        if sel == "sea":
+            sea = _sea_gdf()
+            if sea is not None and len(sea) > 0:
+                hits = sea[sea.geometry.contains(click_pt)]
+                if len(hits) == 0:
+                    dists = sea.geometry.distance(click_pt)
+                    nearest_idx = dists.idxmin()
+                    if dists.loc[nearest_idx] < 0.05:
+                        hits = sea.iloc[[nearest_idx]]
+                if len(hits) > 0:
+                    label = hits.iloc[0].get("name", "") if "name" in hits.columns else ""
+                    _add_polygon_to_reach(hits.geometry.iloc[0], "sea", label)
+                    await _refresh_map()
+                    return
+            _workflow_msg.set(f"No sea area at ({lon:.4f}, {lat:.4f}) — fetch Sea first.")
+            return
+
+        # ── RIVER mode: river lines + river polygons ──
+        # First check river polygons (wide rivers, layer 19)
         rpoly = _river_polygons_gdf()
         if rpoly is not None and len(rpoly) > 0:
             hits = rpoly[rpoly.geometry.contains(click_pt)]
             if len(hits) > 0:
-                geom = hits.geometry.iloc[0]
-                if geom.geom_type == "MultiPolygon":
-                    geom = max(geom.geoms, key=lambda g: g.area)
-                reach_name = _current_reach_name()
-                if not reach_name:
-                    return
-                reaches = dict(_reaches_dict())
-                if reach_name not in reaches:
-                    reaches[reach_name] = {
-                        "segments": [], "properties": [],
-                        "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
-                        "type": "water",
-                    }
-                rd = reaches[reach_name]
-                already = any(g.equals(geom) for g in rd["segments"])
-                if not already:
-                    rd["segments"].append(geom)
-                    rd["properties"].append({})
-                reaches[reach_name] = rd
-                _reaches_dict.set(reaches)
-                n = len(rd["segments"])
-                name_attr = hits.iloc[0].get("nameText", "") if "nameText" in hits.columns else ""
-                label = f" ({name_attr})" if name_attr else ""
-                _workflow_msg.set(
-                    f"Added river polygon{label} to '{reach_name}' ({n} features)."
-                )
+                label = hits.iloc[0].get("nameText", "") if "nameText" in hits.columns else ""
+                _add_polygon_to_reach(hits.geometry.iloc[0], "water", label)
                 await _refresh_map()
                 return
 
-        # --- Check sea areas (click inside or near IHO polygon) ---
-        sea = _sea_gdf()
-        if sea is not None and len(sea) > 0:
-            # Try strict containment first, then proximity (~0.05° ≈ 5 km)
-            hits = sea[sea.geometry.contains(click_pt)]
-            if len(hits) == 0:
-                dists = sea.geometry.distance(click_pt)
-                nearest_idx = dists.idxmin()
-                if dists.loc[nearest_idx] < 0.05:
-                    hits = sea.iloc[[nearest_idx]]
-            if len(hits) > 0:
-                geom = hits.geometry.iloc[0]
-                if geom.geom_type == "MultiPolygon":
-                    geom = max(geom.geoms, key=lambda g: g.area)
-                reach_name = _current_reach_name()
-                if not reach_name:
-                    return
-                reaches = dict(_reaches_dict())
-                if reach_name not in reaches:
-                    reaches[reach_name] = {
-                        "segments": [], "properties": [],
-                        "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
-                        "type": "sea",
-                    }
-                rd = reaches[reach_name]
-                already = any(g.equals(geom) for g in rd["segments"])
-                if not already:
-                    rd["segments"].append(geom)
-                    rd["properties"].append({})
-                reaches[reach_name] = rd
-                _reaches_dict.set(reaches)
-                n = len(rd["segments"])
-                sea_name = hits.iloc[0].get("name", "") if "name" in hits.columns else ""
-                label = f" ({sea_name})" if sea_name else ""
-                _workflow_msg.set(
-                    f"Added sea area{label} to '{reach_name}' ({n} features)."
-                )
-                await _refresh_map()
-                return
-
-        # --- Then check rivers (nearest line) ---
+        # Then nearest river line
         rivers = _filtered_rivers_gdf()
         if rivers is None or len(rivers) == 0:
-            _workflow_msg.set("No data loaded — fetch rivers/water first.")
+            _workflow_msg.set("No rivers loaded — fetch Rivers first.")
             return
 
         dists = rivers.geometry.distance(click_pt)
@@ -958,8 +972,7 @@ def create_model_server(input, output, session):
         min_dist = dists.iloc[nearest_idx]
         if min_dist > 0.02:
             _workflow_msg.set(
-                f"Click ({lon:.4f}, {lat:.4f}) too far from any feature ({min_dist:.4f}°). "
-                "Click closer to a river or inside a water body."
+                f"Click ({lon:.4f}, {lat:.4f}) too far from any river ({min_dist:.4f}°)."
             )
             return
 
@@ -970,15 +983,12 @@ def create_model_server(input, output, session):
             _workflow_msg.set(f"Clicked geometry is {geom.geom_type}, expected LineString.")
             return
 
-        # Check if a river polygon from layer 19 contains this line segment.
-        # If so, use the polygon (fills the river width) instead of the line.
+        # Check if a river polygon from layer 19 contains this line segment
         use_polygon = False
-        rpoly = _river_polygons_gdf()
         if rpoly is not None and len(rpoly) > 0:
             try:
                 candidates = rpoly[rpoly.geometry.intersects(geom)]
                 if len(candidates) > 0:
-                    # Pick the polygon with the largest intersection
                     best_idx = candidates.geometry.intersection(geom).length.idxmax()
                     poly_geom = candidates.geometry.loc[best_idx]
                     if poly_geom.geom_type == "MultiPolygon":
@@ -986,15 +996,10 @@ def create_model_server(input, output, session):
                     geom = poly_geom
                     use_polygon = True
             except Exception:
-                pass  # fall back to line geometry
-
-        reach_name = _current_reach_name()
-        if not reach_name:
-            return
+                pass
 
         reaches = dict(_reaches_dict())
         if use_polygon:
-            # Add as water-type reach (polygon → grid fills the area)
             if reach_name not in reaches:
                 reaches[reach_name] = {
                     "segments": [], "properties": [],
@@ -1002,8 +1007,7 @@ def create_model_server(input, output, session):
                     "type": "water",
                 }
             rd = reaches[reach_name]
-            already = any(g.equals(geom) for g in rd["segments"])
-            if not already:
+            if not any(g.equals(geom) for g in rd["segments"]):
                 rd["segments"].append(geom)
                 rd["properties"].append({})
             reaches[reach_name] = rd
@@ -1343,7 +1347,11 @@ Each habitat cell carries these properties (editable in the shapefile):
         sel_mode = _selection_mode()
         badges = []
         if sel_mode:
-            badges.append(ui.tags.span("SELECTING", class_="cm-badge cm-badge-select"))
+            mode_labels = {"river": "RIVER", "lagoon": "LAGOON", "sea": "SEA"}
+            mode_css = {"river": "cm-badge-select-river", "lagoon": "cm-badge-select-lagoon", "sea": "cm-badge-select-sea"}
+            label = mode_labels.get(sel_mode, "SELECT")
+            css = mode_css.get(sel_mode, "cm-badge-select-river")
+            badges.append(ui.tags.span(f"✏️ {label}", class_=f"cm-badge cm-badge-select {css}"))
         if reaches:
             total_segs = sum(
                 len(r["segments"]) if isinstance(r, dict) else len(r)
@@ -1451,21 +1459,16 @@ Each habitat cell carries these properties (editable in the shapefile):
                 )
             )
         if sel_mode:
+            mode_labels = {"river": "🏞️ RIVER", "lagoon": "💧 LAGOON", "sea": "🌊 SEA"}
             badges.append(
                 ui.tags.span(
-                    "✏️ SELECTING",
+                    mode_labels.get(sel_mode, "✏️ SELECTING"),
                     class_="badge bg-danger",
                     style="margin-right:0.3rem;",
                 )
             )
 
-        # Toggle active class on Select button via inline JS
-        toggle_js = "active" if sel_mode else ""
-        parts.append(ui.tags.script(
-            f'document.querySelectorAll("[id$=select_reaches_btn]").forEach('
-            f'function(b){{ b.className = b.className.replace(" active",""); '
-            f'if("{toggle_js}") b.className += " active"; }});'
-        ))
+        # Button highlighting is handled by _update_sel_buttons reactive effect
 
         if badges:
             parts.append(ui.div(*badges, style="margin-top:0.25rem;"))
