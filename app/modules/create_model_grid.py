@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _hexagon(cx: float, cy: float, size: float) -> Polygon:
     """Create a flat-top regular hexagon centered at (cx, cy)."""
-    angles_deg = [0, 60, 120, 180, 240, 300]
+    angles_deg = [0, 60, 120, 180, 240, 300]  # flat-top
     coords = [
         (cx + size * math.cos(math.radians(a)), cy + size * math.sin(math.radians(a)))
         for a in angles_deg

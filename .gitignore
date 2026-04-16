@@ -37,6 +37,7 @@ __pycache__/*.nbc
 # Data
 *.h5
 *.hdf5
+app/data/osm/*.pbf
 
 # Output
 output/

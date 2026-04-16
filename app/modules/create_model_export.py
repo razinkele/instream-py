@@ -48,11 +48,11 @@ def export_shapefile(
 
 def export_yaml(
     reaches: dict,
-    cells_gdf: gpd.GeoDataFrame,
-    model_name: str,
-    species_params: dict,
-    start_date: str,
-    end_date: str,
+    cells_gdf: "gpd.GeoDataFrame | None" = None,
+    model_name: str = "model",
+    species_params: "dict | None" = None,
+    start_date: str = "2020-01-01",
+    end_date: str = "2025-12-31",
     backend: str = "numpy",
     marine_enabled: bool = False,
 ) -> str:
@@ -81,7 +81,7 @@ def export_yaml(
     str
         YAML text ready to write to file.
     """
-    n_cells = len(cells_gdf)
+    n_cells = len(cells_gdf) if cells_gdf is not None else 0
     trout_cap = max(2000, n_cells * 15)
 
     config: dict = {
@@ -124,8 +124,8 @@ def export_yaml(
 
     # Species section
     if species_params:
-        species_name = species_params.pop("_name", "Species1")
-        config["species"] = {species_name: species_params}
+        species_name = species_params.get("_name", "Species1")
+        config["species"] = {species_name: {k: v for k, v in species_params.items() if k != "_name"}}
 
     # Reaches section — merge user overrides onto defaults
     reaches_cfg: dict = {}
@@ -137,8 +137,8 @@ def export_yaml(
         for k, v in user_params.items():
             if k in merged:
                 merged[k] = v
-        merged["upstream_junction"] = junction_counter + i
-        merged["downstream_junction"] = junction_counter + i + 1
+        merged["upstream_junction"] = user_params.get("upstream_junction", junction_counter + i)
+        merged["downstream_junction"] = user_params.get("downstream_junction", junction_counter + i + 1)
         merged["time_series_input_file"] = f"{rname}-TimeSeriesInputs.csv"
         merged["depth_file"] = f"{rname}-Depths.csv"
         merged["velocity_file"] = f"{rname}-Vels.csv"

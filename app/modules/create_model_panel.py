@@ -1,11 +1,12 @@
-"""Create Model panel — download EU-Hydro river network and build model grid.
+"""Create Model panel — extract local OSM river data and build model grid.
 
 Workflow:
 1. Pan/zoom the map to the area of interest
-2. Click "Fetch Rivers" to download EU-Hydro river network in the current view
-3. Filter by Strahler order, then click "Select Reaches" and click segments
-4. Generate hexagonal/rectangular habitat cells from selected reaches
-5. Export as shapefile + YAML config
+2. Select your country/region from the dropdown
+3. Click "Fetch Rivers" to extract river network from local OSM PBF data
+4. Filter by Strahler order, then click "Select Reaches" and click segments
+5. Generate hexagonal/rectangular habitat cells from selected reaches
+6. Export as shapefile + YAML config
 """
 
 import json
@@ -19,6 +20,7 @@ from io import BytesIO
 from pathlib import Path
 from shapely.geometry import shape, box, Polygon, MultiPolygon, LineString
 from shapely.ops import unary_union
+from shapely.validation import make_valid
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
@@ -51,21 +53,25 @@ try:
 except ImportError:
     detect_utm_epsg = None
 
+try:
+    from modules.create_model_osm import (
+        query_waterways,
+        query_water_bodies,
+        WATERWAY_STRAHLER,
+        GEOFABRIK_COUNTRIES,
+        REGION_VIEWS,
+    )
+except ImportError:
+    from app.modules.create_model_osm import (
+        query_waterways,
+        query_water_bodies,
+        WATERWAY_STRAHLER,
+        GEOFABRIK_COUNTRIES,
+        REGION_VIEWS,
+    )
 logger = logging.getLogger(__name__)
 
 BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-
-# EU-Hydro ArcGIS REST endpoints
-EUHYDRO_BASE = "https://image.discomap.eea.europa.eu/arcgis/rest/services/EUHydro/EUHydro_RiverNetworkDatabase/MapServer"
-# Polygon layers for water overlay + clipping:
-#   0 = Coastal_polygon (Baltic Sea, DFDD=SA010)
-#   1 = Transit_polygon  (Curonian Lagoon, DFDD=BH999)
-#   2 = InlandWater       (small lakes/ponds, DFDD=BH000)
-# River lines: layer 4 is GROUP LAYER (not queryable!)
-# Actual feature layers: 5=Strahler1, 6=Strahler2, ..., 13=Strahler9
-RIVER_STRAHLER_LAYERS = {1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11, 8: 12, 9: 13}
-RIVER_POLYGON_LAYER = 19  # River_Net_polygon — wide river polygons
-WATER_LAYERS = [0, 1, 2]  # Coastal + Transit (lagoon!) + InlandWater
 
 # Marine Regions WFS (IHO sea areas — marineregions.org, no auth)
 MARINE_REGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
@@ -81,45 +87,6 @@ REACH_COLORS = [
     [255, 140, 0, 255],   # orange
     [180, 80, 255, 255],  # violet
 ]
-
-
-def _query_euhydro(layer_id, bbox_wgs84, max_features=2000):
-    """Query EU-Hydro ArcGIS REST API for features in a bounding box.
-
-    Parameters
-    ----------
-    layer_id : int
-        ArcGIS layer ID.
-    bbox_wgs84 : tuple
-        (west, south, east, north) in WGS84.
-    max_features : int
-        Maximum features to return.
-
-    Returns
-    -------
-    dict or None
-        GeoJSON FeatureCollection, or None on error.
-    """
-    url = f"{EUHYDRO_BASE}/{layer_id}/query"
-    west, south, east, north = bbox_wgs84
-    params = {
-        "where": "1=1",
-        "geometry": f"{west},{south},{east},{north}",
-        "geometryType": "esriGeometryEnvelope",
-        "inSR": "4326",
-        "outSR": "4326",
-        "spatialRel": "esriSpatialRelIntersects",
-        "outFields": "*",
-        "f": "geojson",
-        "resultRecordCount": max_features,
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=60)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.error("EU-Hydro query failed: %s", e)
-        return None
 
 
 def _query_marine_regions(bbox_wgs84):
@@ -169,7 +136,7 @@ def create_model_ui():
             legend_control(position="bottom-left", show_default=False, show_checkbox=True),
         ],
         tooltip={
-            "html": "<b>{nameText}</b><br/>Strahler: {STRAHLER}<br/>Type: {DFDD}",
+            "html": "<b>{nameText}</b><br/>Strahler: {STRAHLER}<br/>Type: {waterway}",
             "style": {
                 "backgroundColor": "#fff",
                 "color": "#333",
@@ -249,12 +216,22 @@ def create_model_ui():
         # -- Compact toolbar matching sidebar theme ---
         ui.div(
             {"class": "cm-toolbar"},
+            ui.tags.span("Region:", class_="cm-label"),
+            ui.div(
+                ui.input_select(
+                    "osm_country", None,
+                    choices=sorted(GEOFABRIK_COUNTRIES),
+                    selected="lithuania",
+                    width="120px",
+                ),
+                style="display:inline-block; vertical-align:middle;",
+            ),
             ui.input_action_button("fetch_rivers", "🌊 Rivers",
                                    class_="btn btn-cm",
-                                   title="Fetch EU-Hydro river network for current map view"),
+                                   title="Extract river network from local OSM data"),
             ui.input_action_button("fetch_water", "💧 Water",
                                    class_="btn btn-cm",
-                                   title="Fetch EU-Hydro water bodies (lakes, lagoons)"),
+                                   title="Extract water bodies from local OSM data"),
             ui.input_action_button("fetch_sea", "🌊 Sea",
                                    class_="btn btn-cm",
                                    title="Fetch IHO sea areas from Marine Regions"),
@@ -374,7 +351,6 @@ def create_model_server(input, output, session):
 
     # -- Existing reactive state --
     _rivers_gdf = reactive.value(None)
-    _river_polygons_gdf = reactive.value(None)  # EU-Hydro layer 19 (wide river polygons)
     _water_gdf = reactive.value(None)
     _sea_gdf = reactive.value(None)
     _fetch_msg = reactive.value("")
@@ -439,19 +415,66 @@ def create_model_server(input, output, session):
         return gdf[gdf[strahler_col] >= threshold].copy()
 
     def _build_river_layer(gdf):
-        """Build a deck.gl GeoJSON layer from a rivers GeoDataFrame."""
-        geoj = json.loads(gdf.to_json())
-        return geojson_layer(
-            id="euhydro-rivers",
-            data=geoj,
-            getLineColor=[30, 100, 200, 200],
-            getLineWidth=3,
-            lineWidthMinPixels=2,
-            lineWidthMaxPixels=8,
-            pickable=True,
-            stroked=True,
-            filled=False,
-        )
+        """Build deck.gl GeoJSON layers from a rivers GeoDataFrame.
+
+        River polygons are rendered as filled shapes.  Line features
+        are split by waterway type and styled with MapLibre-like width
+        scaling: rivers get thick lines, streams get thin ones.
+        Returns a list of layers.
+        """
+        layers = []
+        is_poly = gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])
+        polys = gdf[is_poly]
+        lines = gdf[~is_poly]
+
+        if len(polys) > 0:
+            geoj = json.loads(polys.to_json())
+            layers.append(geojson_layer(
+                id="osm-river-polys",
+                data=geoj,
+                getFillColor=[135, 185, 230, 140],
+                getLineColor=[30, 100, 200, 200],
+                getLineWidth=1,
+                lineWidthMinPixels=1,
+                pickable=True,
+                stroked=True,
+                filled=True,
+            ))
+
+        if len(lines) > 0:
+            # Split lines by waterway type for MapLibre-style width scaling.
+            # river/canal get thick lines; stream/ditch get thin ones.
+            wtype_col = "waterway" if "waterway" in lines.columns else None
+            big = lines[lines[wtype_col].isin(["river", "canal"])] if wtype_col else lines.iloc[:0]
+            small = lines[~lines.index.isin(big.index)] if wtype_col else lines
+
+            if len(big) > 0:
+                geoj = json.loads(big.to_json())
+                layers.append(geojson_layer(
+                    id="osm-river-lines-big",
+                    data=geoj,
+                    getLineColor=[100, 160, 220, 220],
+                    getLineWidth=12,
+                    lineWidthMinPixels=4,
+                    lineWidthMaxPixels=24,
+                    pickable=True,
+                    stroked=True,
+                    filled=False,
+                ))
+            if len(small) > 0:
+                geoj = json.loads(small.to_json())
+                layers.append(geojson_layer(
+                    id="osm-river-lines-small",
+                    data=geoj,
+                    getLineColor=[30, 100, 200, 180],
+                    getLineWidth=3,
+                    lineWidthMinPixels=1,
+                    lineWidthMaxPixels=8,
+                    pickable=True,
+                    stroked=True,
+                    filled=False,
+                ))
+        return layers
 
     def _build_water_layer(gdf):
         """Build a deck.gl GeoJSON layer from a water bodies GeoDataFrame."""
@@ -462,7 +485,7 @@ def create_model_server(input, output, session):
         logger.info("Water layer: %d features (simplified from %d)", len(simplified), len(gdf))
         geoj = json.loads(simplified.to_json())
         return geojson_layer(
-            id="euhydro-water",
+            id="osm-water",
             data=geoj,
             getFillColor=[135, 206, 235, 120],
             getLineColor=[70, 130, 180, 150],
@@ -548,24 +571,6 @@ def create_model_server(input, output, session):
                 ))
         return layers
 
-    def _build_river_polygon_layer(gdf):
-        """Build a deck.gl layer for EU-Hydro river polygons (wide rivers, layer 19)."""
-        sel = _selection_mode()
-        simplified = gdf.copy()
-        simplified["geometry"] = simplified.geometry.simplify(0.001, preserve_topology=True)
-        simplified = simplified[~simplified.geometry.is_empty]
-        geoj = json.loads(simplified.to_json())
-        return geojson_layer(
-            id="euhydro-river-polygons",
-            data=geoj,
-            getFillColor=[30, 100, 200, 80],
-            getLineColor=[30, 100, 200, 150],
-            getLineWidth=1,
-            pickable=(sel == "river"),
-            stroked=True,
-            filled=True,
-        )
-
     def _build_cells_layer():
         """Build a GeoJSON layer for generated cells."""
         gdf = _cells_gdf()
@@ -597,14 +602,10 @@ def create_model_server(input, output, session):
             layers.append(_build_water_layer(water))
         else:
             logger.info("No water features to display")
-        # River polygons (wide rivers from EU-Hydro layer 19)
-        rpoly = _river_polygons_gdf()
-        if rpoly is not None and len(rpoly) > 0:
-            layers.append(_build_river_polygon_layer(rpoly))
-        # Filtered rivers
+        # Filtered rivers (polygons + line fallbacks)
         fgdf = _filtered_rivers_gdf()
         if fgdf is not None and len(fgdf) > 0:
-            layers.append(_build_river_layer(fgdf))
+            layers.extend(_build_river_layer(fgdf))
         # Cells
         cells_lyr = _build_cells_layer()
         if cells_lyr is not None:
@@ -621,129 +622,107 @@ def create_model_server(input, output, session):
     @reactive.effect
     @reactive.event(input.fetch_rivers)
     async def _on_fetch_rivers():
-        _fetch_msg.set("Fetching river network from EU-Hydro...")
+        country = input.osm_country()
         bbox = _get_view_bbox()
-        strahler_min = input.strahler_min()
+        _fetch_msg.set(f"Extracting river network for {country} (bbox clipped)...")
 
         import asyncio
         loop = asyncio.get_running_loop()
 
-        # Query each Strahler sub-layer >= threshold, merge results
-        all_features = []
-        for strahler_order, layer_id in RIVER_STRAHLER_LAYERS.items():
-            if strahler_order < strahler_min:
-                continue
-            _fetch_msg.set(f"Fetching Strahler {strahler_order} rivers...")
-            geojson = await loop.run_in_executor(
-                None, lambda lid=layer_id: _query_euhydro(lid, bbox)
-            )
-            if geojson and "features" in geojson:
-                # Add STRAHLER attribute to each feature
-                for feat in geojson["features"]:
-                    if "properties" not in feat:
-                        feat["properties"] = {}
-                    feat["properties"]["STRAHLER"] = strahler_order
-                all_features.extend(geojson["features"])
+        def _progress(msg):
+            _fetch_msg.set(msg)
 
-        n = len(all_features)
-        if n == 0:
-            _fetch_msg.set("No river features found. Try zooming in or lowering the Strahler filter.")
+        gdf = await loop.run_in_executor(
+            None, lambda: query_waterways(country, bbox, progress_cb=_progress)
+        )
+
+        if gdf is None or len(gdf) == 0:
+            _fetch_msg.set("No river features found. Try zooming in or selecting a different region.")
             return
 
-        combined = {"type": "FeatureCollection", "features": all_features}
-        gdf = gpd.GeoDataFrame.from_features(combined["features"], crs="EPSG:4326")
+        # Count polygons vs lines
+        is_poly = gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])
+        n_polys = int(is_poly.sum())
+        n_lines = len(gdf) - n_polys
 
-        # Auto-fetch ALL water polygon layers for context + clipping
-        # Layer 0=Coastal (Baltic Sea), 1=Transit (Curonian Lagoon!), 2=InlandWater
-        _fetch_msg.set(f"Got {n} rivers. Fetching water bodies + lagoon + coast...")
-        all_water_features = []
-        layer_names = {0: "Coastal", 1: "Lagoon/Transit", 2: "InlandWater"}
+        # Auto-fetch water body polygons (lakes, lagoons) for context
+        _fetch_msg.set(f"Got {n_polys} river polygons + {n_lines} stream lines. Fetching water bodies...")
+        water_gdf = await loop.run_in_executor(
+            None, lambda: query_water_bodies(country, bbox)
+        )
 
-        for water_layer_id in WATER_LAYERS:
-            lname = layer_names.get(water_layer_id, str(water_layer_id))
-            _fetch_msg.set(f"Fetching {lname}...")
-            wj = await loop.run_in_executor(
-                None, lambda lid=water_layer_id: _query_euhydro(lid, bbox)
-            )
-            if wj and "features" in wj and wj["features"]:
-                all_water_features.extend(wj["features"])
-
-        water_gdf = None
-        if all_water_features:
-            water_gdf = gpd.GeoDataFrame.from_features(
-                all_water_features, crs="EPSG:4326"
-            )
-            _water_gdf.set(water_gdf)
-
-        # Clip rivers: remove segments that are mostly inside water bodies/coastal
         if water_gdf is not None and len(water_gdf) > 0:
-            _fetch_msg.set("Clipping rivers to exclude lagoon/coastal segments...")
-            water_union = water_gdf.geometry.unary_union
-            keep_mask = []
-            for _, row in gdf.iterrows():
-                line = row.geometry
-                if line is None or line.is_empty:
-                    keep_mask.append(False)
-                    continue
-                try:
-                    inside = line.intersection(water_union)
-                    frac_inside = inside.length / line.length if line.length > 0 else 0
-                    keep_mask.append(frac_inside < 0.5)  # keep if <50% inside water body
-                except Exception:
-                    keep_mask.append(True)
-            n_before = len(gdf)
-            gdf = gdf[keep_mask].reset_index(drop=True)
-            n_clipped = n_before - len(gdf)
-            _fetch_msg.set(f"Clipped {n_clipped} lagoon/lake segments.")
+            _water_gdf.set(water_gdf)
+        else:
+            water_gdf = None
+
+        # Clip only small stream/ditch/drain lines that cross water bodies.
+        # Never clip river/canal centerlines — they legitimately flow through
+        # lagoons, lakes, and their own river polygons.
+        clip_types = {"stream", "ditch", "drain"}
+        if water_gdf is not None and len(water_gdf) > 0 and n_lines > 0:
+            _fetch_msg.set("Clipping small streams to exclude lagoon/lake segments...")
+            try:
+                valid_geoms = water_gdf.geometry.apply(
+                    lambda g: make_valid(g) if g and not g.is_valid else g
+                )
+                repaired = valid_geoms.apply(lambda g: g.buffer(0) if g and not g.is_empty else g)
+                water_union = repaired.unary_union
+            except Exception as e:
+                logger.warning("Water union failed, skipping stream clipping: %s", e)
+                water_union = None
+
+            if water_union is not None:
+                keep_mask = []
+                for idx, row in gdf.iterrows():
+                    geom = row.geometry
+                    if geom is None or geom.is_empty:
+                        keep_mask.append(False)
+                    elif geom.geom_type in ("Polygon", "MultiPolygon"):
+                        keep_mask.append(True)
+                    elif row.get("waterway", "") not in clip_types:
+                        keep_mask.append(True)
+                    else:
+                        try:
+                            inside = geom.intersection(water_union)
+                            frac_inside = inside.length / geom.length if geom.length > 0 else 0
+                            keep_mask.append(frac_inside < 0.5)
+                        except Exception:
+                            keep_mask.append(True)
+                n_before = len(gdf)
+                gdf = gdf[keep_mask].reset_index(drop=True)
+                n_clipped = n_before - len(gdf)
+                if n_clipped > 0:
+                    _fetch_msg.set(f"Clipped {n_clipped} lagoon/lake stream segments.")
 
         _rivers_gdf.set(gdf)
 
-        # Fetch river polygons (EU-Hydro layer 19 — wide river polygons)
-        _fetch_msg.set("Fetching river polygons (wide rivers)...")
-        rpoly_geojson = await loop.run_in_executor(
-            None, lambda: _query_euhydro(RIVER_POLYGON_LAYER, bbox)
-        )
-        rpoly_gdf = None
-        if rpoly_geojson and "features" in rpoly_geojson and rpoly_geojson["features"]:
-            rpoly_gdf = gpd.GeoDataFrame.from_features(
-                rpoly_geojson["features"], crs="EPSG:4326"
-            )
-            _river_polygons_gdf.set(rpoly_gdf)
-
         await _refresh_map()
-        n_final = len(gdf)
+        is_poly_final = gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])
         water_msg = f" + {len(water_gdf)} water bodies" if water_gdf is not None else ""
-        rpoly_msg = f" + {len(rpoly_gdf)} river polygons" if rpoly_gdf is not None else ""
-        _fetch_msg.set(f"Loaded {n_final} river segments (Strahler >= {strahler_min}){water_msg}{rpoly_msg}.")
+        _fetch_msg.set(f"Loaded {int(is_poly_final.sum())} river polygons + {int((~is_poly_final).sum())} stream lines{water_msg}.")
 
     @reactive.effect
     @reactive.event(input.fetch_water)
     async def _on_fetch_water():
-        _fetch_msg.set("Fetching water bodies (inland + lagoon + coastal)...")
+        country = input.osm_country()
         bbox = _get_view_bbox()
+        _fetch_msg.set(f"Extracting water bodies for {country} (bbox clipped)...")
 
         import asyncio
         loop = asyncio.get_running_loop()
 
-        all_feats = []
-        layer_names = {0: "Coastal", 1: "Lagoon/Transit", 2: "InlandWater"}
-        for lid in WATER_LAYERS:
-            lname = layer_names.get(lid, str(lid))
-            _fetch_msg.set(f"Fetching {lname}...")
-            wj = await loop.run_in_executor(
-                None, lambda l=lid: _query_euhydro(l, bbox)
-            )
-            if wj and "features" in wj and wj["features"]:
-                all_feats.extend(wj["features"])
+        gdf = await loop.run_in_executor(
+            None, lambda: query_water_bodies(country, bbox)
+        )
 
-        if not all_feats:
+        if gdf is None or len(gdf) == 0:
             _fetch_msg.set("No water bodies found in this area.")
             return
 
-        gdf = gpd.GeoDataFrame.from_features(all_feats, crs="EPSG:4326")
         _water_gdf.set(gdf)
         await _refresh_map()
-        _fetch_msg.set(f"Loaded {len(gdf)} water bodies (coastal + lagoon + inland).")
+        _fetch_msg.set(f"Loaded {len(gdf)} water bodies from local OSM data.")
 
     # -----------------------------------------------------------------
     # Fetch sea areas (Marine Regions IHO)
@@ -793,6 +772,41 @@ def create_model_server(input, output, session):
     # Strahler filter — re-render map when slider changes
     # -----------------------------------------------------------------
 
+    _last_region = reactive.value("")
+    _pending_fly_to = reactive.value(None)  # (lon, lat, zoom) or None
+
+    @reactive.effect
+    @reactive.event(input.osm_country)
+    async def _on_region_change():
+        """Fly the map to the selected region center on user change."""
+        country = input.osm_country()
+        prev = _last_region()
+        _last_region.set(country)
+        if not prev:
+            return  # skip initial dropdown fire
+        view = REGION_VIEWS.get(country)
+        if not view:
+            return
+        if not _map_initialized():
+            _pending_fly_to.set(view)  # defer until map ready
+            return
+        lon, lat, zoom = view
+        await _widget.fly_to(session, lon, lat, zoom=zoom)
+
+    @reactive.effect
+    async def _flush_pending_fly():
+        """Fly to pending region after map initialization completes."""
+        if not _map_initialized():
+            return
+        pending = _pending_fly_to()
+        if pending is None:
+            return
+        _pending_fly_to.set(None)
+        import asyncio
+        await asyncio.sleep(0.5)  # let deck.gl finish layer init
+        lon, lat, zoom = pending
+        await _widget.fly_to(session, lon, lat, zoom=zoom)
+
     @reactive.effect
     @reactive.event(input.strahler_min)
     async def _on_strahler_change():
@@ -808,7 +822,7 @@ def create_model_server(input, output, session):
     async def _on_clear_reaches():
         _reaches_dict.set({})
         _cells_gdf.set(None)
-        _selection_mode.set(False)
+        _selection_mode.set("")
         _current_reach_name.set("")
         _workflow_msg.set("All reaches and cells cleared.")
         await _refresh_map()
@@ -899,13 +913,12 @@ def create_model_server(input, output, session):
 
         lon = data.get("longitude")
         lat = data.get("latitude")
-        sel = _selection_mode()
-
-        if not sel:
-            _workflow_msg.set(f"Click: ({lon:.4f}, {lat:.4f}) — select a mode first (River / Lagoon / Sea)")
+        if lon is None or lat is None:
             return
 
-        if lon is None or lat is None:
+        sel = _selection_mode()
+        if not sel:
+            _workflow_msg.set(f"Click: ({lon:.4f}, {lat:.4f}) — select a mode first (River / Lagoon / Sea)")
             return
 
         from shapely.geometry import Point as _Pt
@@ -972,68 +985,63 @@ def create_model_server(input, output, session):
             _workflow_msg.set(f"No sea area at ({lon:.4f}, {lat:.4f}) — fetch Sea first.")
             return
 
-        # ── RIVER mode: river lines + river polygons ──
-        # First check river polygons (wide rivers, layer 19)
-        rpoly = _river_polygons_gdf()
-        if rpoly is not None and len(rpoly) > 0:
-            hits = rpoly[rpoly.geometry.contains(click_pt)]
+        # ── RIVER mode: river polygons + line fallbacks ──
+        rivers = _filtered_rivers_gdf()
+        if rivers is None or len(rivers) == 0:
+            _workflow_msg.set("No rivers loaded — fetch Rivers first.")
+            return
+
+        # Split into polygons and lines (filter out exotic geometry types)
+        is_poly = rivers.geometry.geom_type.isin(["Polygon", "MultiPolygon"])
+        is_line = rivers.geometry.geom_type.isin(["LineString", "MultiLineString"])
+        polys = rivers[is_poly]
+        lines = rivers[is_line]
+
+        if len(polys) == 0 and len(lines) == 0:
+            _workflow_msg.set(f"No valid river geometries near ({lon:.4f}, {lat:.4f}).")
+            return
+
+        if len(polys) > 0:
+            hits = polys[polys.geometry.contains(click_pt)]
             if len(hits) > 0:
                 label = hits.iloc[0].get("nameText", "") if "nameText" in hits.columns else ""
                 _add_polygon_to_reach(hits.geometry.iloc[0], "water", label)
                 await _refresh_map()
                 return
 
-        # Then nearest river line
-        rivers = _filtered_rivers_gdf()
-        if rivers is None or len(rivers) == 0:
-            _workflow_msg.set("No rivers loaded — fetch Rivers first.")
-            return
+        # Fallback: nearest line segment (small streams)
+        if len(lines) > 0:
+            dists = lines.geometry.distance(click_pt)
+            nearest_idx = dists.idxmin()
+            min_dist = dists.loc[nearest_idx]
+        else:
+            # All features are polygons but click missed — find nearest polygon boundary
+            dists = polys.geometry.boundary.distance(click_pt)
+            nearest_idx = dists.idxmin()
+            min_dist = dists.loc[nearest_idx]
+            if min_dist < 0.005:
+                label = polys.loc[nearest_idx].get("nameText", "") if "nameText" in polys.columns else ""
+                _add_polygon_to_reach(polys.geometry.loc[nearest_idx], "water", label)
+                await _refresh_map()
+            else:
+                _workflow_msg.set(f"Click ({lon:.4f}, {lat:.4f}) too far from any river polygon ({min_dist:.4f}°).")
+            return  # always return from polygon-only path
 
-        dists = rivers.geometry.distance(click_pt)
-        nearest_idx = dists.idxmin()
-        min_dist = dists.iloc[nearest_idx]
         if min_dist > 0.02:
             _workflow_msg.set(
                 f"Click ({lon:.4f}, {lat:.4f}) too far from any river ({min_dist:.4f}°)."
             )
             return
 
-        geom = rivers.geometry.iloc[nearest_idx]
+        geom = lines.geometry.loc[nearest_idx]
         if geom.geom_type == "MultiLineString":
             geom = max(geom.geoms, key=lambda g: g.length)
         if geom.geom_type != "LineString":
             _workflow_msg.set(f"Clicked geometry is {geom.geom_type}, expected LineString.")
             return
 
-        # Check if a river polygon from layer 19 contains this line segment
-        use_polygon = False
-        if rpoly is not None and len(rpoly) > 0:
-            try:
-                candidates = rpoly[rpoly.geometry.intersects(geom)]
-                if len(candidates) > 0:
-                    best_idx = candidates.geometry.intersection(geom).length.idxmax()
-                    poly_geom = candidates.geometry.loc[best_idx]
-                    if poly_geom.geom_type == "MultiPolygon":
-                        poly_geom = max(poly_geom.geoms, key=lambda g: g.area)
-                    geom = poly_geom
-                    use_polygon = True
-            except Exception:
-                pass
-
         reaches = dict(_reaches_dict())
-        if use_polygon:
-            if reach_name not in reaches:
-                reaches[reach_name] = {
-                    "segments": [], "properties": [],
-                    "color": REACH_COLORS[len(reaches) % len(REACH_COLORS)],
-                    "type": "water",
-                }
-            rd = reaches[reach_name]
-            if not any(g.equals(geom) for g in rd["segments"]):
-                rd["segments"].append(geom)
-                rd["properties"].append({})
-            reaches[reach_name] = rd
-        elif assign_segment_to_reach is not None:
+        if assign_segment_to_reach is not None:
             reaches = assign_segment_to_reach(reaches, reach_name, geom, {})
         else:
             if reach_name not in reaches:
@@ -1050,8 +1058,7 @@ def create_model_server(input, output, session):
 
         r = reaches.get(reach_name, {})
         n_segs = len(r["segments"]) if isinstance(r, dict) else len(r)
-        poly_note = " (river polygon — grid will fill area)" if use_polygon else ""
-        _workflow_msg.set(f"Added segment to '{reach_name}' ({n_segs} segments total).{poly_note}")
+        _workflow_msg.set(f"Added segment to '{reach_name}' ({n_segs} segments total).")
         await _refresh_map()
 
     # -----------------------------------------------------------------
@@ -1147,7 +1154,8 @@ def create_model_server(input, output, session):
                     all_cells.append(sea_cells)
 
             if all_cells:
-                cells = gpd.pd.concat(all_cells, ignore_index=True)
+                import pandas as pd
+                cells = gpd.GeoDataFrame(pd.concat(all_cells, ignore_index=True))
                 # Re-number cell IDs
                 cells["cell_id"] = [f"C{i+1:04d}" for i in range(len(cells))]
             else:
@@ -1165,22 +1173,6 @@ def create_model_server(input, output, session):
             _workflow_msg.set("Cell generation returned no cells.")
 
     # -----------------------------------------------------------------
-    # Configure (placeholder)
-    # -----------------------------------------------------------------
-
-    @reactive.effect
-    @reactive.event(input.configure_btn)
-    def _on_configure():
-        reaches = _reaches_dict()
-        cells = _cells_gdf()
-        n_reaches = len(reaches)
-        n_cells = len(cells) if cells is not None else 0
-        _workflow_msg.set(
-            f"Configure: {n_reaches} reaches, {n_cells} cells. "
-            "(Configuration dialog not yet implemented.)"
-        )
-
-    # -----------------------------------------------------------------
     # Help modal
     # -----------------------------------------------------------------
 
@@ -1191,7 +1183,7 @@ def create_model_server(input, output, session):
             ui.h4("Creating a Model in SalmoPy", style="margin-top:0;"),
             ui.markdown("""
 **SalmoPy** is an individual-based salmon population model. This panel
-lets you create a new model domain from EU-Hydro river network data:
+lets you create a new model domain from OpenStreetMap river network data:
 select river reaches, generate habitat cells, and export a ready-to-run
 simulation configuration.
 
@@ -1242,15 +1234,17 @@ typical cell sizes are 2-5 km (2,000-5,000 m).
 ### Step 1 — Load Data
 
 1. **Pan and zoom** the map to your area of interest.
-2. Click **🌊 Rivers** to download EU-Hydro river line segments.
-3. Click **💧 Water** to download water body polygons (lagoons, lakes, coastal areas).
-4. Click **🌊 Sea** to download IHO sea area boundaries (Baltic Sea, Gulf of Bothnia, etc.).
+2. Select your **Region** from the dropdown (country for Geofabrik PBF data).
+3. Click **🌊 Rivers** to extract river network from local OSM data.
+4. Click **💧 Water** to extract water body polygons (lagoons, lakes, coastal areas).
+5. Click **🌊 Sea** to download IHO sea area boundaries (Baltic Sea, Gulf of Bothnia, etc.).
 5. Adjust the **Strahler** slider to filter small streams in real-time.
 
-> River and water body data comes from the EEA EU-Hydro River Network
-> Database (Copernicus Land Monitoring Service). Sea areas come from
-> the Marine Regions database (marineregions.org), using IHO
-> (International Hydrographic Organization) sea area boundaries.
+> River and water body data is extracted from OpenStreetMap via local
+> .osm.pbf files downloaded from Geofabrik. Select your region from
+> the dropdown — the data file is downloaded once (~200 MB) and
+> clipped to your map view on each fetch (~23s). Sea areas come from
+> the Marine Regions database (marineregions.org).
 
 ### Step 2 — Select Reaches
 
@@ -1361,7 +1355,6 @@ Each habitat cell carries these properties (editable in the shapefile):
         except Exception as exc:
             _workflow_msg.set(f"Export failed: {exc}")
             logger.exception("export_zip error")
-            logger.exception("export_zip error")
 
     # -----------------------------------------------------------------
     # Outputs
@@ -1440,7 +1433,7 @@ Each habitat cell carries these properties (editable in the shapefile):
             ))
 
         return ui.div(
-            ui.h6("EU-Hydro Data"),
+            ui.h6("OSM River Data"),
             ui.tags.table(
                 {"class": "table table-sm table-striped", "style": "font-size:0.85rem;"},
                 ui.tags.thead(ui.tags.tr(

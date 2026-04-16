@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
 from typing import Any
 
 import geopandas as gpd
@@ -14,16 +13,9 @@ from .create_model_utils import detect_utm_epsg
 
 # Tab10 palette as RGBA float lists (matplotlib default qualitative palette)
 _TAB10 = [list(mcolors.to_rgba(c)) for c in mcolors.TABLEAU_COLORS.values()]
-_color_cycle = itertools.cycle(_TAB10)
-_color_index = 0
-
-
-def _next_color() -> list[float]:
-    """Return next Tab10 RGBA color as [R, G, B, A]."""
-    global _color_index
-    color = _TAB10[_color_index % len(_TAB10)]
-    _color_index += 1
-    return list(color)
+def _next_color(index: int) -> list[float]:
+    """Return Tab10 RGBA color for the given reach index."""
+    return list(_TAB10[index % len(_TAB10)])
 
 
 def _empty_reach(name: str, color: list[float]) -> dict[str, Any]:
@@ -50,7 +42,7 @@ def assign_segment_to_reach(
     Returns the updated reaches dict.
     """
     if reach_name not in reaches:
-        reaches[reach_name] = _empty_reach(reach_name, _next_color())
+        reaches[reach_name] = _empty_reach(reach_name, _next_color(len(reaches)))
 
     reach = reaches[reach_name]
     reach["segments"].append(segment_geom)
@@ -96,8 +88,8 @@ def detect_junctions(
     """Auto-detect upstream/downstream junctions between reaches.
 
     Batch-reprojects all reach segments to UTM, extracts start/end points,
-    and matches endpoint pairs within *tolerance_m* metres.  EU-Hydro
-    digitisation convention: startpoint = upstream, endpoint = downstream.
+    and matches endpoint pairs within *tolerance_m* metres.  OSM/EU-Hydro
+    convention: startpoint = upstream, endpoint = downstream.
 
     Shared junctions get the same integer ID; unmatched endpoints get unique
     auto-incremented IDs.  Returns the updated reaches dict with
@@ -114,6 +106,10 @@ def detect_junctions(
     for name, reach in reaches.items():
         segs = reach["segments"]
         if not segs:
+            continue
+
+        # Skip polygon reaches — they have no meaningful upstream/downstream
+        if any(s.geom_type in ("Polygon", "MultiPolygon") for s in segs):
             continue
 
         gdf = gpd.GeoDataFrame(geometry=segs, crs="EPSG:4326").to_crs(
