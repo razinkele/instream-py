@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "ices-fish-data": {
+      "command": "C:\\Users\\arturas.baziukas\\micromamba\\envs\\shiny\\python.exe",
+      "args": [
+        "${workspaceFolder}/ices-mcp/ices_mcp_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/ices-mcp"
+      }
+    }
+  }
+}
