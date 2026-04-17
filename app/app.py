@@ -410,6 +410,7 @@ _WEBGL_FALLBACK_JS = """
 
 app_ui = ui.page_fluid(
     ui.tags.head(
+        ui.tags.title("inSTREAM"),
         ui.tags.style(_SIDEBAR_CSS),
         ui.tags.script(_SIDEBAR_JS),
         ui.tags.script(_WEBGL_FALLBACK_JS),
