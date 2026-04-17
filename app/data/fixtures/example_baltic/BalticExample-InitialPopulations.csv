@@ -1,18 +1,18 @@
 ; Trout initialization for Baltic example
-; Baltic Atlantic salmon across river + delta reaches
+; Baltic Atlantic salmon across Nemunas river + delta reaches
 ; Species,Reach,Age,Number,Length min,Length mode,Length max
-BalticAtlanticSalmon,MainStem,0,1200,3,4.5,6
-BalticAtlanticSalmon,MainStem,1,500,7,10,13
-BalticAtlanticSalmon,MainStem,2,120,12,15,20
-BalticAtlanticSalmon,WestTrib,0,600,3,4.2,5.5
-BalticAtlanticSalmon,WestTrib,1,250,7,9.5,12
-BalticAtlanticSalmon,WestTrib,2,60,12,14,18
-BalticAtlanticSalmon,EastTrib,0,800,3.5,5,6.5
-BalticAtlanticSalmon,EastTrib,1,350,8,11,14
-BalticAtlanticSalmon,EastTrib,2,80,13,16,21
-BalticAtlanticSalmon,CentralDelta,0,300,3.5,5,6.5
-BalticAtlanticSalmon,CentralDelta,1,100,8,10,13
-BalticAtlanticSalmon,WestDelta,0,200,3,4.5,6
-BalticAtlanticSalmon,WestDelta,1,80,7,9,12
-BalticAtlanticSalmon,EastDelta,0,250,3.5,5,6.5
-BalticAtlanticSalmon,EastDelta,1,90,8,10,13
+BalticAtlanticSalmon,Nemunas,0,1200,3,4.5,6
+BalticAtlanticSalmon,Nemunas,1,500,7,10,13
+BalticAtlanticSalmon,Nemunas,2,120,12,15,20
+BalticAtlanticSalmon,Merkys,0,600,3,4.2,5.5
+BalticAtlanticSalmon,Merkys,1,250,7,9.5,12
+BalticAtlanticSalmon,Merkys,2,60,12,14,18
+BalticAtlanticSalmon,Sesupe,0,800,3.5,5,6.5
+BalticAtlanticSalmon,Sesupe,1,350,8,11,14
+BalticAtlanticSalmon,Sesupe,2,80,13,16,21
+BalticAtlanticSalmon,Atmata,0,300,3.5,5,6.5
+BalticAtlanticSalmon,Atmata,1,100,8,10,13
+BalticAtlanticSalmon,Skirvyte,0,200,3,4.5,6
+BalticAtlanticSalmon,Skirvyte,1,80,7,9,12
+BalticAtlanticSalmon,Gilija,0,250,3.5,5,6.5
+BalticAtlanticSalmon,Gilija,1,90,8,10,13

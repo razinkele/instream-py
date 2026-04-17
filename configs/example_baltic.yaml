@@ -1,19 +1,20 @@
-# Baltic Atlantic Salmon — Tributaries → Meandering Delta → Lagoon → Coastal Sea
+# Baltic Atlantic Salmon — Nemunas basin → Curonian Lagoon → Baltic coast
 #
-# Large mock example: ~800 cells, ~5000 initial fish, 465 adults/year
-#   MainStem      (120 cells) — main river channel
-#   WestTrib      (60 cells)  — cold headwater, best spawning
-#   EastTrib      (75 cells)  — warmer lowland, good rearing
-#   CentralDelta  (54 cells)  — main delta outflow, gentle meander
-#   WestDelta     (45 cells)  — reed-choked western channel, strong meander
-#   EastDelta     (48 cells)  — warm shallow eastern channel
-#   Lagoon        (96 cells)  — brackish Curonian-lagoon-like
-#   CoastalSea    (300 cells, 400m×400m) — 48 km² nearshore Baltic marine
+# Real-world geography (grid anchored at 21.1°E, 55.7°N, ETRS89/LAEA):
+#   Nemunas        (120 cells) — main Nemunas channel (real: ~900 km long)
+#   Merkys         (60 cells)  — cold right-bank tributary, best spawning
+#   Šešupė         (75 cells)  — warmer lowland tributary (ASCII: Sesupe)
+#   Atmata         (54 cells)  — main Nemunas-delta branch past Rusnė
+#   Skirvytė       (45 cells)  — reed-choked middle delta branch (ASCII: Skirvyte)
+#   Gilija         (48 cells)  — warm shallow southern delta branch
+#   CuronianLagoon (96 cells)  — Kuršių marios, brackish 0-7 PSU
+#   BalticCoast    (300 cells, 400m×400m) — 48 km² nearshore off Klaipėda
 #
 # Marine domain: Estuary → Coastal → Baltic Proper (abstract zones)
 # Full lifecycle: egg → fry → parr → smolt → ocean → return → spawn
 #
-# Synthetic data — NOT REAL. Run scripts/generate_baltic_example.py to regenerate.
+# Synthetic hydraulics/populations — geometry is schematic (not real bathymetry).
+# Run scripts/generate_baltic_example.py to regenerate fixtures from source.
 
 simulation:
   start_date: "2011-04-01"
@@ -173,8 +174,8 @@ species:
       192: 0.0
 
 reaches:
-  MainStem:
-    drift_conc: 2.0e-08       # very high invertebrate drift in boreal river
+  Nemunas:                     # main river channel (real: ~900 km)
+    drift_conc: 2.0e-08        # very high invertebrate drift in boreal river
     search_prod: 2.00e-06
     shelter_speed_frac: 0.3
     prey_energy_density: 4500
@@ -189,12 +190,12 @@ reaches:
     shear_B: 0.40
     upstream_junction: 1
     downstream_junction: 2
-    time_series_input_file: "MainStem-TimeSeriesInputs.csv"
-    depth_file: "MainStem-Depths.csv"
-    velocity_file: "MainStem-Vels.csv"
+    time_series_input_file: "Nemunas-TimeSeriesInputs.csv"
+    depth_file: "Nemunas-Depths.csv"
+    velocity_file: "Nemunas-Vels.csv"
 
-  WestTrib:
-    drift_conc: 2.5e-08       # cold headwater = richest drift
+  Merkys:                      # cold right-bank tributary, best spawning
+    drift_conc: 2.5e-08        # cold headwater = richest drift
     search_prod: 2.50e-06
     shelter_speed_frac: 0.40
     prey_energy_density: 5000
@@ -209,11 +210,11 @@ reaches:
     shear_B: 0.48
     upstream_junction: 3
     downstream_junction: 1
-    time_series_input_file: "WestTrib-TimeSeriesInputs.csv"
-    depth_file: "WestTrib-Depths.csv"
-    velocity_file: "WestTrib-Vels.csv"
+    time_series_input_file: "Merkys-TimeSeriesInputs.csv"
+    depth_file: "Merkys-Depths.csv"
+    velocity_file: "Merkys-Vels.csv"
 
-  EastTrib:
+  Sesupe:                      # Šešupė — warmer lowland tributary
     drift_conc: 1.5e-08
     search_prod: 1.80e-06
     shelter_speed_frac: 0.22
@@ -229,13 +230,13 @@ reaches:
     shear_B: 0.35
     upstream_junction: 4
     downstream_junction: 1
-    time_series_input_file: "EastTrib-TimeSeriesInputs.csv"
-    depth_file: "EastTrib-Depths.csv"
-    velocity_file: "EastTrib-Vels.csv"
+    time_series_input_file: "Sesupe-TimeSeriesInputs.csv"
+    depth_file: "Sesupe-Depths.csv"
+    velocity_file: "Sesupe-Vels.csv"
 
-  # ── Delta channels (meandering, between rivers and lagoon) ──
+  # ── Nemunas Delta branches (meandering, between river and lagoon) ──
 
-  CentralDelta:
+  Atmata:                      # main delta branch past Rusnė
     drift_conc: 8.0e-09        # moderate food — transition zone
     search_prod: 1.00e-06
     shelter_speed_frac: 0.15
@@ -251,11 +252,11 @@ reaches:
     shear_B: 0.30
     upstream_junction: 2
     downstream_junction: 5
-    time_series_input_file: "CentralDelta-TimeSeriesInputs.csv"
-    depth_file: "CentralDelta-Depths.csv"
-    velocity_file: "CentralDelta-Vels.csv"
+    time_series_input_file: "Atmata-TimeSeriesInputs.csv"
+    depth_file: "Atmata-Depths.csv"
+    velocity_file: "Atmata-Vels.csv"
 
-  WestDelta:
+  Skirvyte:                    # Skirvytė — reed-choked middle delta branch
     drift_conc: 3.0e-09
     search_prod: 5.00e-07
     shelter_speed_frac: 0.25   # reed beds provide shelter
@@ -271,11 +272,11 @@ reaches:
     shear_B: 0.25
     upstream_junction: 1
     downstream_junction: 5
-    time_series_input_file: "WestDelta-TimeSeriesInputs.csv"
-    depth_file: "WestDelta-Depths.csv"
-    velocity_file: "WestDelta-Vels.csv"
+    time_series_input_file: "Skirvyte-TimeSeriesInputs.csv"
+    depth_file: "Skirvyte-Depths.csv"
+    velocity_file: "Skirvyte-Vels.csv"
 
-  EastDelta:
+  Gilija:                      # warm shallow southern delta branch
     drift_conc: 3.5e-09
     search_prod: 5.50e-07
     shelter_speed_frac: 0.12
@@ -291,11 +292,11 @@ reaches:
     shear_B: 0.28
     upstream_junction: 1
     downstream_junction: 5
-    time_series_input_file: "EastDelta-TimeSeriesInputs.csv"
-    depth_file: "EastDelta-Depths.csv"
-    velocity_file: "EastDelta-Vels.csv"
+    time_series_input_file: "Gilija-TimeSeriesInputs.csv"
+    depth_file: "Gilija-Depths.csv"
+    velocity_file: "Gilija-Vels.csv"
 
-  Lagoon:
+  CuronianLagoon:              # Kuršių marios — brackish 0-7 PSU (~1,584 km² real)
     drift_conc: 1.0e-09        # very low food in open lagoon
     search_prod: 3.00e-07
     shelter_speed_frac: 0.03
@@ -311,12 +312,12 @@ reaches:
     shear_B: 0.20
     upstream_junction: 2
     downstream_junction: 5
-    time_series_input_file: "Lagoon-TimeSeriesInputs.csv"
-    depth_file: "Lagoon-Depths.csv"
-    velocity_file: "Lagoon-Vels.csv"
+    time_series_input_file: "CuronianLagoon-TimeSeriesInputs.csv"
+    depth_file: "CuronianLagoon-Depths.csv"
+    velocity_file: "CuronianLagoon-Vels.csv"
 
-  CoastalSea:
-    drift_conc: 0.2e-09       # almost no invertebrate drift at sea
+  BalticCoast:                 # nearshore Baltic off Klaipėda (~6-7 PSU real)
+    drift_conc: 0.2e-09        # almost no invertebrate drift at sea
     search_prod: 1.00e-07
     shelter_speed_frac: 0.0
     prey_energy_density: 1500
@@ -331,9 +332,9 @@ reaches:
     shear_B: 0.15
     upstream_junction: 5
     downstream_junction: 6
-    time_series_input_file: "CoastalSea-TimeSeriesInputs.csv"
-    depth_file: "CoastalSea-Depths.csv"
-    velocity_file: "CoastalSea-Vels.csv"
+    time_series_input_file: "BalticCoast-TimeSeriesInputs.csv"
+    depth_file: "BalticCoast-Depths.csv"
+    velocity_file: "BalticCoast-Vels.csv"
 
 marine:
   zones:

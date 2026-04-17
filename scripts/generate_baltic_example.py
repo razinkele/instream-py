@@ -1,26 +1,38 @@
-"""Generate Baltic example: tributaries → meandering delta → Lagoon → Coastal Sea.
+"""Generate Baltic example: Nemunas tributaries -> delta arms -> Curonian Lagoon -> Baltic coast.
 
-All cells are spatially contiguous — no gaps between reaches. The grid
+Reaches are named after the real Nemunas basin (Lithuania / Kaliningrad):
+    Nemunas         - main river channel (~900 km real; modeled as "main stem")
+    Merkys          - cold right-bank headwater tributary (real Nemunas trib)
+    Sesupe          - warmer lowland tributary (real Nemunas trib; ASCII for Sesupe)
+    Atmata          - main Nemunas-Delta branch past Rusne to the lagoon
+    Skirvyte        - reed-choked middle delta branch (ASCII for Skirvyte)
+    Gilija          - warm shallow southern delta branch
+    CuronianLagoon  - brackish Kursiu marios (~1,584 km^2 real)
+    BalticCoast     - nearshore Baltic Sea off Klaipeda / Nemunas mouth
+
+All cells are spatially contiguous - no gaps between reaches. The grid
 forms a connected river-to-sea landscape.
 
 Spatial layout (north is up, y increases upward):
 
-    COASTAL SEA (25×12, 400m×400m)
-    ┌─────────────────────────────────────────────────────────────┐
-    │              Nearshore Baltic — contiguous with lagoon       │
-    ├─────────────────────────────────────────────────────────────┤
-    LAGOON (12×8, 100m×100m)
-    ┌─────────────────────────────────────────────────────────────┐
-    │         Brackish — contiguous with delta tops               │
-    ├──────┬───────────────────┬───────────────────┬──────────────┤
-    │WDelta│   CentralDelta    │    EastDelta      │              │
-    │meand.│   gentle meander  │    meander        │              │
-    ├──────┴─┬─────────────────┴─┬─────────────────┘              │
-    │WestTrib│    MainStem       │  EastTrib                      │
-    │        │                   │                                │
-    └────────┴───────────────────┴────────────────────────────────┘
+    BALTIC COAST (25x12, 400m x 400m)
+    +-----------------------------------------------------------------+
+    |              Nearshore Baltic - contiguous with lagoon          |
+    +-----------------------------------------------------------------+
+    CURONIAN LAGOON (12x8, 100m x 100m)
+    +-----------------------------------------------------------------+
+    |      Brackish (0-7 PSU) - contiguous with delta tops            |
+    +--------+--------------------+--------------------+--------------+
+    |Skirvyte|       Atmata       |       Gilija       |              |
+    | meand. |   gentle meander   |      meander       |              |
+    +--------+-+------------------+-+------------------+              |
+    | Merkys   |      Nemunas       |      Sesupe                     |
+    |          |                    |                                 |
+    +----------+--------------------+---------------------------------+
 
-CRS: EPSG:3035 (ETRS89/LAEA Europe)
+CRS: EPSG:3035 (ETRS89/LAEA Europe). Grid is anchored at approximately
+the real Nemunas Delta coordinates (21.1 degE, 55.7 degN) - the Klaipeda /
+Silute area where the Nemunas enters the Curonian Lagoon.
 """
 
 import math
@@ -118,17 +130,17 @@ def generate_shapefile():
     east_top = east_y0 + east_rows * 20.0
 
     all_cells.extend(_river_cells(
-        "MainStem", main_cols, main_rows, main_w, river_h,
+        "Nemunas", main_cols, main_rows, main_w, river_h,
         x_center=main_x, y_bottom=main_y0,
         frac_spawn_upper=0.30, hiding_base=4,
     ))
     all_cells.extend(_river_cells(
-        "WestTrib", west_cols, west_rows, west_w, 18.0,
+        "Merkys", west_cols, west_rows, west_w, 18.0,
         x_center=west_x, y_bottom=west_y0,
         frac_spawn_upper=0.55, hiding_base=5,
     ))
     all_cells.extend(_river_cells(
-        "EastTrib", east_cols, east_rows, east_w, 20.0,
+        "Sesupe", east_cols, east_rows, east_w, 20.0,
         x_center=east_x, y_bottom=east_y0,
         frac_spawn_upper=0.20, hiding_base=3,
     ))
@@ -141,19 +153,19 @@ def generate_shapefile():
     delta_rows_east = 16
 
     all_cells.extend(_delta_cells(
-        "CentralDelta", 3, delta_rows_central, 16.0, delta_h,
+        "Atmata", 3, delta_rows_central, 16.0, delta_h,
         x_center=main_x, y_bottom=delta_y0,
         meander_amp=20, meander_freq=12,
         hiding_base=2, frac_spawn=0.05,
     ))
     all_cells.extend(_delta_cells(
-        "WestDelta", 3, delta_rows_west, 14.0, 16.0,
+        "Skirvyte", 3, delta_rows_west, 14.0, 16.0,
         x_center=west_x, y_bottom=delta_y0,
         meander_amp=35, meander_freq=10,
         hiding_base=3, frac_spawn=0.02,
     ))
     all_cells.extend(_delta_cells(
-        "EastDelta", 3, delta_rows_east, 15.0, 17.0,
+        "Gilija", 3, delta_rows_east, 15.0, 17.0,
         x_center=east_x, y_bottom=delta_y0,
         meander_amp=30, meander_freq=11,
         hiding_base=2, frac_spawn=0.03,
@@ -173,7 +185,7 @@ def generate_shapefile():
             is_shore = row == 0 or row == lagoon_rows - 1 or col == 0 or col == lagoon_cols - 1
             all_cells.append({
                 "geometry": box(x0, y0, x0 + lagoon_w, y0 + lagoon_h),
-                "REACH_NAME": "Lagoon",
+                "REACH_NAME": "CuronianLagoon",
                 "AREA": lagoon_w * lagoon_h,
                 "M_TO_ESC": 25 + row * 8,
                 "NUM_HIDING": (2 if is_shore else 0),
@@ -193,7 +205,7 @@ def generate_shapefile():
             y0 = coast_y0 + row * coast_h
             all_cells.append({
                 "geometry": box(x0, y0, x0 + coast_w, y0 + coast_h),
-                "REACH_NAME": "CoastalSea",
+                "REACH_NAME": "BalticCoast",
                 "AREA": coast_w * coast_h,
                 "M_TO_ESC": 150 + row * 20,
                 "NUM_HIDING": 0,
@@ -223,49 +235,49 @@ def generate_shapefile():
 # ---------------------------------------------------------------------------
 
 REACH_PARAMS = {
-    "MainStem": {
+    "Nemunas": {
         "temp_mean": 8.5, "temp_amp": 8.5, "flow_base": 6.0, "turb_base": 2,
         "flows": [1.0, 2.0, 4.0, 6.0, 9.0, 14.0, 22.0, 40.0, 100.0, 500.0],
         "depth_base": 0.45, "depth_flood": 3.0,
         "vel_base": 0.30, "vel_flood": 1.5,
     },
-    "WestTrib": {
+    "Merkys": {
         "temp_mean": 6.5, "temp_amp": 6.5, "flow_base": 2.0, "turb_base": 1,
         "flows": [0.3, 0.7, 1.2, 2.0, 3.5, 5.0, 8.0, 15.0, 40.0, 200.0],
         "depth_base": 0.25, "depth_flood": 1.8,
         "vel_base": 0.45, "vel_flood": 2.0,
     },
-    "EastTrib": {
+    "Sesupe": {
         "temp_mean": 9.5, "temp_amp": 8.0, "flow_base": 3.0, "turb_base": 3,
         "flows": [0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 25.0, 60.0, 300.0],
         "depth_base": 0.35, "depth_flood": 2.5,
         "vel_base": 0.15, "vel_flood": 1.0,
     },
-    "CentralDelta": {
+    "Atmata": {
         "temp_mean": 9.0, "temp_amp": 9.0, "flow_base": 4.5, "turb_base": 3,
         "flows": [0.8, 1.5, 3.0, 4.5, 7.0, 10.0, 16.0, 30.0, 70.0, 350.0],
         "depth_base": 0.50, "depth_flood": 2.5,
         "vel_base": 0.12, "vel_flood": 0.8,
     },
-    "WestDelta": {
+    "Skirvyte": {
         "temp_mean": 9.5, "temp_amp": 9.5, "flow_base": 2.5, "turb_base": 4,
         "flows": [0.5, 1.0, 1.8, 2.5, 4.0, 6.0, 10.0, 18.0, 45.0, 200.0],
         "depth_base": 0.35, "depth_flood": 1.8,
         "vel_base": 0.08, "vel_flood": 0.5,
     },
-    "EastDelta": {
+    "Gilija": {
         "temp_mean": 10.0, "temp_amp": 9.5, "flow_base": 3.0, "turb_base": 4,
         "flows": [0.6, 1.2, 2.0, 3.0, 5.0, 7.0, 12.0, 22.0, 55.0, 250.0],
         "depth_base": 0.40, "depth_flood": 2.0,
         "vel_base": 0.10, "vel_flood": 0.6,
     },
-    "Lagoon": {
+    "CuronianLagoon": {
         "temp_mean": 10.0, "temp_amp": 10.0, "flow_base": 15.0, "turb_base": 5,
         "flows": [5.0, 8.0, 12.0, 15.0, 22.0, 30.0, 45.0, 80.0, 150.0, 600.0],
         "depth_base": 2.0, "depth_flood": 4.0,
         "vel_base": 0.03, "vel_flood": 0.15,
     },
-    "CoastalSea": {
+    "BalticCoast": {
         "temp_mean": 8.0, "temp_amp": 7.0, "flow_base": 40.0, "turb_base": 2,
         "flows": [10.0, 20.0, 30.0, 40.0, 60.0, 90.0, 130.0, 200.0, 400.0, 1000.0],
         "depth_base": 4.0, "depth_flood": 8.0,
@@ -345,23 +357,23 @@ def generate_populations():
     pop_path = OUT / "BalticExample-InitialPopulations.csv"
     with open(pop_path, "w", newline="") as f:
         f.write("; Trout initialization for Baltic example\n")
-        f.write("; Baltic Atlantic salmon across river + delta reaches\n")
+        f.write("; Baltic Atlantic salmon across Nemunas river + delta reaches\n")
         f.write("; Species,Reach,Age,Number,Length min,Length mode,Length max\n")
-        f.write("BalticAtlanticSalmon,MainStem,0,1200,3,4.5,6\n")
-        f.write("BalticAtlanticSalmon,MainStem,1,500,7,10,13\n")
-        f.write("BalticAtlanticSalmon,MainStem,2,120,12,15,20\n")
-        f.write("BalticAtlanticSalmon,WestTrib,0,600,3,4.2,5.5\n")
-        f.write("BalticAtlanticSalmon,WestTrib,1,250,7,9.5,12\n")
-        f.write("BalticAtlanticSalmon,WestTrib,2,60,12,14,18\n")
-        f.write("BalticAtlanticSalmon,EastTrib,0,800,3.5,5,6.5\n")
-        f.write("BalticAtlanticSalmon,EastTrib,1,350,8,11,14\n")
-        f.write("BalticAtlanticSalmon,EastTrib,2,80,13,16,21\n")
-        f.write("BalticAtlanticSalmon,CentralDelta,0,300,3.5,5,6.5\n")
-        f.write("BalticAtlanticSalmon,CentralDelta,1,100,8,10,13\n")
-        f.write("BalticAtlanticSalmon,WestDelta,0,200,3,4.5,6\n")
-        f.write("BalticAtlanticSalmon,WestDelta,1,80,7,9,12\n")
-        f.write("BalticAtlanticSalmon,EastDelta,0,250,3.5,5,6.5\n")
-        f.write("BalticAtlanticSalmon,EastDelta,1,90,8,10,13\n")
+        f.write("BalticAtlanticSalmon,Nemunas,0,1200,3,4.5,6\n")
+        f.write("BalticAtlanticSalmon,Nemunas,1,500,7,10,13\n")
+        f.write("BalticAtlanticSalmon,Nemunas,2,120,12,15,20\n")
+        f.write("BalticAtlanticSalmon,Merkys,0,600,3,4.2,5.5\n")
+        f.write("BalticAtlanticSalmon,Merkys,1,250,7,9.5,12\n")
+        f.write("BalticAtlanticSalmon,Merkys,2,60,12,14,18\n")
+        f.write("BalticAtlanticSalmon,Sesupe,0,800,3.5,5,6.5\n")
+        f.write("BalticAtlanticSalmon,Sesupe,1,350,8,11,14\n")
+        f.write("BalticAtlanticSalmon,Sesupe,2,80,13,16,21\n")
+        f.write("BalticAtlanticSalmon,Atmata,0,300,3.5,5,6.5\n")
+        f.write("BalticAtlanticSalmon,Atmata,1,100,8,10,13\n")
+        f.write("BalticAtlanticSalmon,Skirvyte,0,200,3,4.5,6\n")
+        f.write("BalticAtlanticSalmon,Skirvyte,1,80,7,9,12\n")
+        f.write("BalticAtlanticSalmon,Gilija,0,250,3.5,5,6.5\n")
+        f.write("BalticAtlanticSalmon,Gilija,1,90,8,10,13\n")
     total = 1200+500+120+600+250+60+800+350+80+300+100+200+80+250+90
     print(f"  Populations: {pop_path.name} ({total} fish total)")
 
@@ -373,17 +385,17 @@ def generate_populations():
                 "Arrival start,Arrival peak,Arrival end,"
                 "Length min,Length mode,Length max\n")
         for year in range(2011, 2039):
-            f.write(f"{year},BalticAtlanticSalmon,MainStem,150,0.55,"
+            f.write(f"{year},BalticAtlanticSalmon,Nemunas,150,0.55,"
                     f"5/15/{year},7/1/{year},8/31/{year},55,70,90\n")
-            f.write(f"{year},BalticAtlanticSalmon,WestTrib,100,0.60,"
+            f.write(f"{year},BalticAtlanticSalmon,Merkys,100,0.60,"
                     f"6/1/{year},7/15/{year},9/15/{year},50,65,85\n")
-            f.write(f"{year},BalticAtlanticSalmon,EastTrib,120,0.50,"
+            f.write(f"{year},BalticAtlanticSalmon,Sesupe,120,0.50,"
                     f"5/20/{year},7/5/{year},9/1/{year},55,68,88\n")
-            f.write(f"{year},BalticAtlanticSalmon,CentralDelta,40,0.55,"
+            f.write(f"{year},BalticAtlanticSalmon,Atmata,40,0.55,"
                     f"6/1/{year},7/15/{year},9/1/{year},55,68,85\n")
-            f.write(f"{year},BalticAtlanticSalmon,WestDelta,25,0.60,"
+            f.write(f"{year},BalticAtlanticSalmon,Skirvyte,25,0.60,"
                     f"6/15/{year},8/1/{year},9/15/{year},50,62,80\n")
-            f.write(f"{year},BalticAtlanticSalmon,EastDelta,30,0.50,"
+            f.write(f"{year},BalticAtlanticSalmon,Gilija,30,0.50,"
                     f"6/10/{year},7/20/{year},9/10/{year},52,65,82\n")
     print(f"  Arrivals: {arr_path.name} (465 adults/year across 6 reaches)")
 
