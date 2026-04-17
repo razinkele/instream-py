@@ -164,11 +164,15 @@ def generate_cells(
     records = []
     cell_counter = 0
 
+    # Threshold is capped by the total reach area so that reaches smaller than
+    # one cell still produce cells instead of being filtered out entirely.
+    min_clip_area = min(raw_cells[0].area, combined_buffer.area) * min_overlap
+
     for poly in raw_cells:
         if not combined_buffer.intersects(poly):
             continue
         clipped = combined_buffer.intersection(poly)
-        if clipped.is_empty or clipped.area < poly.area * min_overlap:
+        if clipped.is_empty or clipped.area < min_clip_area:
             continue
 
         # Assign to reach with largest overlap
@@ -211,6 +215,22 @@ def generate_cells(
                 "frac_spawn": frac_spawn,
                 "geometry": clipped,
             }
+        )
+
+    if not records:
+        # Defensive guard: `gpd.GeoDataFrame([], crs=…)` errors because the
+        # empty frame has no geometry column. Return a typed empty GDF so
+        # callers (see `app/modules/create_model_panel.py:_on_generate_cells`)
+        # get a consistent shape instead of an exception.
+        logger.warning(
+            "generate_cells: 0 cells after filtering (%d raw cells, reach area %.0f m²)",
+            len(raw_cells), combined_buffer.area,
+        )
+        return gpd.GeoDataFrame(
+            columns=["cell_id", "reach_name", "area", "dist_escape",
+                     "num_hiding", "frac_vel_shelter", "frac_spawn", "geometry"],
+            geometry="geometry",
+            crs="EPSG:4326",
         )
 
     gdf = gpd.GeoDataFrame(records, crs=f"EPSG:{utm_epsg}")

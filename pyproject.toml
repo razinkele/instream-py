@@ -70,6 +70,7 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: e2e tests that drive the live Shiny app (opt-in via E2E_INTEGRATION=1)",
 ]
 
 [tool.coverage.run]
