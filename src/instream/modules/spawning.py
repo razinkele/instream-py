@@ -151,7 +151,7 @@ def select_spawn_cell(
     redd_cells=None,
     centroids_x=None,
     centroids_y=None,
-    defense_area=0.0,
+    defense_area_m=0.0,
 ):
     """Select best spawning cell from candidates (Task 6.2).
 
@@ -164,9 +164,12 @@ def select_spawn_cell(
     redd_cells : array or None
         Cell indices of existing alive redds.
     centroids_x, centroids_y : array or None
-        Cell centroid coordinates.
-    defense_area : float
-        Minimum distance (cm) from existing redds. 0 = no exclusion.
+        Cell centroid coordinates (mesh CRS, meters).
+    defense_area_m : float
+        Minimum Euclidean distance (meters) from the centroid of any
+        existing alive redd. 0 disables the exclusion. Previously named
+        ``defense_area`` and advertised as cm while centroids are in the
+        mesh CRS (meters) — see remediation plan P3.5a.
 
     Returns
     -------
@@ -178,12 +181,12 @@ def select_spawn_cell(
 
     valid_mask = np.ones(len(candidates), dtype=bool)
 
-    if defense_area > 0 and redd_cells is not None and len(redd_cells) > 0:
+    if defense_area_m > 0 and redd_cells is not None and len(redd_cells) > 0:
         for rc in redd_cells:
             dx = centroids_x[candidates] - centroids_x[rc]
             dy = centroids_y[candidates] - centroids_y[rc]
             dist = np.sqrt(dx**2 + dy**2)
-            valid_mask &= dist > defense_area
+            valid_mask &= dist > defense_area_m
 
     valid_scores = np.where(valid_mask, scores, -1.0)
     best_idx = np.argmax(valid_scores)

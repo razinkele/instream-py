@@ -308,7 +308,7 @@ class TestSpawnDefenseArea:
             redd_cells=redd_cells,
             centroids_x=centroids_x,
             centroids_y=centroids_y,
-            defense_area=defense_area,
+            defense_area_m=defense_area,
         )
         assert best == 30
 
@@ -323,7 +323,7 @@ class TestSpawnDefenseArea:
             redd_cells=np.array([20]),
             centroids_x=np.zeros(21),
             centroids_y=np.zeros(21),
-            defense_area=0.0,
+            defense_area_m=0.0,
         )
         assert best == 20
 

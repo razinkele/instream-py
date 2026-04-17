@@ -308,15 +308,26 @@ class _ModelInitMixin:
         idx = 0
         for pop in populations:
             sp_name = pop["species"]
-            sp_idx = self._species_name_to_idx.get(sp_name, 0)
             if sp_name not in self._species_name_to_idx:
+                if not self.config.simulation.allow_unknown_species_remap:
+                    raise ValueError(
+                        f"Population file lists species {sp_name!r}, but "
+                        "no such species is declared in the config's "
+                        f"`species:` map (known: {list(self._species_name_to_idx)}). "
+                        "Fix the population file, add the species to the "
+                        "config, or set `simulation.allow_unknown_species_remap: "
+                        "true` to restore the legacy warn+remap behaviour."
+                    )
                 import warnings
-
                 warnings.warn(
                     "Species '{}' in population file not found in config. "
-                    "Mapping to '{}' (index 0).".format(sp_name, self.species_order[0]),
+                    "Mapping to '{}' (index 0). This legacy fallback is "
+                    "enabled via simulation.allow_unknown_species_remap.".format(
+                        sp_name, self.species_order[0]
+                    ),
                     stacklevel=2,
                 )
+            sp_idx = self._species_name_to_idx.get(sp_name, 0)
             sp_cfg = self.config.species.get(
                 sp_name, self.config.species[self.species_order[0]]
             )
@@ -381,6 +392,41 @@ class _ModelInitMixin:
             self.config.reaches[r].downstream_junction for r in self.reach_order
         ]
         self._reach_graph = build_reach_graph(upstream, downstream)
+
+        # Derive the estuary reach (P3.2) — the single river mouth where
+        # returning ocean adults re-enter freshwater. A mouth is a reach
+        # with an empty downstream list in the reach graph.
+        mouths = [r for r, nbrs in self._reach_graph.items() if not nbrs]
+        if len(mouths) == 1:
+            self._estuary_reach_idx = int(mouths[0])
+        elif len(mouths) == 0:
+            # No mouth — closed topology (shouldn't happen in a fluvial
+            # model). Leave -1; any downstream use will fail loudly.
+            self._estuary_reach_idx = -1
+        else:
+            mc = getattr(self.config, "marine", None)
+            explicit_name = getattr(mc, "estuary_reach", None) if mc else None
+            if explicit_name is None:
+                raise ValueError(
+                    "Reach topology has {n} mouths ({names!r}); set "
+                    "`marine.estuary_reach` in config to disambiguate.".format(
+                        n=len(mouths),
+                        names=[self.reach_order[m] for m in mouths],
+                    )
+                )
+            if explicit_name not in self._reach_name_to_idx:
+                raise ValueError(
+                    f"marine.estuary_reach={explicit_name!r} is not a known "
+                    f"reach name; known names: {list(self._reach_name_to_idx)}"
+                )
+            idx = self._reach_name_to_idx[explicit_name]
+            if idx not in mouths:
+                raise ValueError(
+                    f"marine.estuary_reach={explicit_name!r} (idx={idx}) is "
+                    "not a river mouth — it has downstream neighbours "
+                    f"{self._reach_graph[idx]!r}."
+                )
+            self._estuary_reach_idx = int(idx)
 
         # Reverse graph for upstream route computation (barrier passage)
         from instream.modules.barriers import (

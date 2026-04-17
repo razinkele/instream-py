@@ -293,9 +293,14 @@ class _ModelDayBoundaryMixin:
             cell = self.trout_state.cell_idx[i]
             if cell < 0:
                 continue
-            candidates = self.fem_space.cells_in_radius(
-                cell, sp_cfg.move_radius_max * 0.1
+            # P3.5b: spawn search radius. When the species config sets
+            # ``spawn_search_radius_m`` explicitly, use it; otherwise fall
+            # back to the legacy ``move_radius_max * 0.1`` (spawn search
+            # is ~10% of the daily movement radius).
+            search_r = getattr(sp_cfg, "spawn_search_radius_m", 0.0) or (
+                sp_cfg.move_radius_max * 0.1
             )
+            candidates = self.fem_space.cells_in_radius(cell, search_r)
             if len(candidates) == 0:
                 candidates = np.array([cell])
 
@@ -314,7 +319,10 @@ class _ModelDayBoundaryMixin:
 
             alive_redds = self.redd_state.alive
             redd_cells = self.redd_state.cell_idx[alive_redds]
-            defense_area = getattr(sp_cfg, "spawn_defense_area", 0.0)
+            # P3.5a: defense area is now in METERS (mesh CRS). The config
+            # validator on SpeciesConfig reconciles the legacy cm and m²
+            # fields into ``spawn_defense_area_m``.
+            defense_area_m = getattr(sp_cfg, "spawn_defense_area_m", 0.0)
 
             best_cell = select_spawn_cell(
                 scores,
@@ -322,7 +330,7 @@ class _ModelDayBoundaryMixin:
                 redd_cells=redd_cells,
                 centroids_x=cs.centroid_x,
                 centroids_y=cs.centroid_y,
-                defense_area=defense_area,
+                defense_area_m=defense_area_m,
             )
             if best_cell < 0:
                 continue

@@ -13,7 +13,7 @@ import numpy as np
 import yaml
 import math
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from instream.state.params import SpeciesParams
 
@@ -43,6 +43,15 @@ class SimulationConfig(BaseModel):
     harvest_bag_limit: int = 999999
     harvest_season_start: str = ""
     harvest_season_end: str = ""
+
+    # P3.4: legacy inputs sometimes list species names that are not
+    # declared in the config's `species:` map. Historically this emitted
+    # a warning and silently remapped those fish to species index 0,
+    # corrupting the simulation without a visible error. The model now
+    # fails loudly at init by default. Setting this flag to True
+    # restores the legacy warn+remap behaviour for backward compatibility
+    # with older population files.
+    allow_unknown_species_remap: bool = False
 
 
 class PerformanceConfig(BaseModel):
@@ -195,6 +204,17 @@ class SpeciesConfig(BaseModel, extra="allow"):
     # ignored, matching the "Python ships cm, NetLogo uses m²" precedence.
     spawn_defense_area: float = 0.0
     spawn_defense_area_m2: float = 0.0
+    # P3.5a: canonical meters form. Computed by the model_validator below
+    # when one of the legacy fields is set. `select_spawn_cell` in
+    # `instream/modules/spawning.py` uses this (and only this) as a
+    # distance threshold in the mesh CRS (meters). Setting this field
+    # directly wins over the cm/m² legacy fields.
+    spawn_defense_area_m: float = 0.0
+    # P3.5b: radius in meters used when scanning candidate cells for
+    # spawning. Defaults to 0.0, in which case model_day_boundary falls
+    # back to ``move_radius_max * 0.1`` (legacy behaviour; the factor
+    # encodes "spawn search is ~10% of daily movement radius").
+    spawn_search_radius_m: float = 0.0
     spawn_egg_viability: float = 0.0
     spawn_fecund_mult: float = 0.0
     spawn_fecund_exp: float = 0.0
@@ -271,14 +291,26 @@ class SpeciesConfig(BaseModel, extra="allow"):
 
     @model_validator(mode="after")
     def _reconcile_defense_area_semantics(self) -> "SpeciesConfig":
-        """Convert NetLogo-semantic ``spawn_defense_area_m2`` (area in m²)
-        to the Python-semantic ``spawn_defense_area`` (radius in cm) when
-        only the NetLogo field is provided. See the class-level comment
-        on ``spawn_defense_area`` for precedence rules.
+        """Reconcile the three spawn-defense fields.
+
+        Precedence:
+          1. ``spawn_defense_area_m`` (canonical) — used as-is.
+          2. ``spawn_defense_area`` (legacy cm) — radius in cm, converted to m.
+          3. ``spawn_defense_area_m2`` (NetLogo area in m²) — converted to
+             an equivalent circular-disk radius in m: sqrt(area_m2 / pi).
+
+        Also backfills the legacy cm field for any downstream callers that
+        still read it (unit tests, serialisation round-trips).
         """
-        if self.spawn_defense_area_m2 > 0 and self.spawn_defense_area == 0:
-            area_cm2 = self.spawn_defense_area_m2 * 10_000.0
-            self.spawn_defense_area = math.sqrt(area_cm2 / math.pi)
+        if self.spawn_defense_area_m > 0:
+            if self.spawn_defense_area == 0:
+                self.spawn_defense_area = self.spawn_defense_area_m * 100.0
+        elif self.spawn_defense_area > 0:
+            self.spawn_defense_area_m = self.spawn_defense_area / 100.0
+        elif self.spawn_defense_area_m2 > 0:
+            r_m = math.sqrt(self.spawn_defense_area_m2 / math.pi)
+            self.spawn_defense_area_m = r_m
+            self.spawn_defense_area = r_m * 100.0
         return self
 
     # New InSALMON parameters
@@ -320,10 +352,37 @@ class ReachConfig(BaseModel, extra="allow"):
 
 
 class BarrierDirectionConfig(BaseModel):
-    """Outcome probabilities for one direction through a barrier."""
+    """Outcome probabilities for one direction through a barrier.
+
+    The three probabilities partition the sample space and therefore
+    must be in [0, 1] and sum to 1.0 within 1e-6. Parsing a misconfigured
+    barrier raises a ``ValidationError`` rather than silently normalising,
+    because downstream RNG draws assume the triple is already a valid PMF.
+    """
     mortality: float = 0.0
     deflection: float = 0.0
     transmission: float = 1.0
+
+    @field_validator("mortality", "deflection", "transmission")
+    @classmethod
+    def _prob_in_unit_interval(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError(
+                f"barrier probability must be in [0, 1]; got {v!r}"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _probs_sum_to_one(self) -> "BarrierDirectionConfig":
+        total = self.mortality + self.deflection + self.transmission
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(
+                "barrier direction probabilities (mortality, deflection, "
+                f"transmission) must sum to 1.0 (±1e-6); got "
+                f"{self.mortality}+{self.deflection}+{self.transmission}"
+                f"={total}"
+            )
+        return self
 
 
 class BarrierConfig(BaseModel):

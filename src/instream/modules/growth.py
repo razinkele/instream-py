@@ -13,15 +13,34 @@ _LN81 = math.log(81.0)
 def cmax_temp_function(temperature, table_x, table_y):
     """CMax temperature multiplier via linear interpolation.
 
-    Uses bisect for O(log n) scalar lookup (avoids np.interp dispatch overhead).
-    Accepts numpy arrays or Python lists for table_x/table_y.
+    Fast scalar path used from per-fish Python loops; uses bisect for
+    O(log n) lookup to avoid np.interp dispatch overhead.
+
+    This is the canonical contract shared across all three backends.
+    See :func:`instream.modules.growth_math.safe_cmax_interp` for the
+    pure-numpy reference implementation used by tests and backends;
+    the two functions must stay behaviourally identical for all
+    table sizes.
+
+    * Empty table → raises ``ValueError``. A missing CMax temperature
+      table is a configuration error, not a signal to skip growth.
+      (P3.6: previously returned 0.0 silently, which the numba/jax
+      backends — using ``np.interp`` — did not match.)
+    * Single-row table → returns ``table_y[0]``.
+    * Otherwise → linear interpolation, clamped on both ends.
     """
     if hasattr(table_x, "tolist"):
         table_x = table_x.tolist()
         table_y = table_y.tolist()
     n = len(table_x)
     if n == 0:
-        return 0.0
+        raise ValueError(
+            "CMax temperature table is empty. Configure "
+            "`cmax_temp_table` on the species (at least one "
+            "(temperature, multiplier) pair)."
+        )
+    if n == 1:
+        return table_y[0]
     if temperature <= table_x[0]:
         return table_y[0]
     if temperature >= table_x[-1]:

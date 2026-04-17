@@ -157,6 +157,15 @@ class MarineConfig(BaseModel):
     # Estuary stress (salinity + dissolved oxygen)
     estuary: Optional[EstuaryConfig] = None
 
+    # Name of the reach that acts as the estuary entry point (river mouth
+    # where returning ocean adults re-enter freshwater). Optional: when
+    # the reach topology has exactly one mouth (reach with no downstream
+    # neighbour), the model derives this automatically at init and this
+    # field is ignored. It is only required when multiple mouths exist,
+    # in which case model init fails loudly without it. See remediation
+    # plan P3.2.
+    estuary_reach: Optional[str] = None
+
     @field_validator("marine_growth_efficiency")
     @classmethod
     def _efficiency_in_range(cls, v: float) -> float:

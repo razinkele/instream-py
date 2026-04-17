@@ -142,12 +142,36 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                     day_length = getattr(self, '_day_length', 0.5)
                     # Max day length at summer solstice (~0.67 for 60N)
                     max_day_length = getattr(self, '_max_day_length', 0.67)
-                    # Per-fish temperature from reach
-                    temps = np.zeros(len(self.trout_state.alive), dtype=np.float64)
-                    for i in alive_idx:
-                        r = int(self.trout_state.reach_idx[i])
-                        if 0 <= r < len(self.reach_state.temperature):
-                            temps[i] = self.reach_state.temperature[r]
+                    # P3.3: vectorized per-fish reach temperature gather with
+                    # explicit bounds check. A fish with an invalid
+                    # reach_idx (out of range, -1 sentinel) previously got
+                    # temps[i]=0.0 via silent fall-through; we now flag
+                    # that case explicitly via a debug assertion over alive
+                    # PARR fish (the only cohort that actually uses temps
+                    # in accumulate_smolt_readiness) and keep the 0.0
+                    # fall-back for dead/invalid entries so a stale index
+                    # on a non-alive fish can't propagate NaN into the
+                    # readiness vector.
+                    n_reaches = len(self.reach_state.temperature)
+                    reach_idx = self.trout_state.reach_idx
+                    valid = (reach_idx >= 0) & (reach_idx < n_reaches)
+                    safe_idx = np.where(valid, reach_idx, 0)
+                    temps = self.reach_state.temperature[safe_idx].astype(
+                        np.float64, copy=True
+                    )
+                    temps[~valid] = 0.0
+                    if __debug__:
+                        from instream.state import LifeStage as _LS
+                        parr_alive_invalid = (
+                            (~valid)
+                            & self.trout_state.alive
+                            & (self.trout_state.life_history == int(_LS.PARR))
+                        )
+                        assert not np.any(parr_alive_invalid), (
+                            "alive PARR trout with invalid reach_idx during "
+                            "smolt-readiness accumulation: "
+                            f"{np.where(parr_alive_invalid)[0][:10].tolist()}"
+                        )
                     accumulate_smolt_readiness(
                         self.trout_state.smolt_readiness,
                         self.trout_state.life_history,
@@ -178,7 +202,7 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                     rng=self.rng,
                     barrier_map=getattr(self, '_barrier_map', None),
                     reverse_reach_graph=getattr(self, '_reverse_reach_graph', None),
-                    estuary_reach=0,
+                    estuary_reach=getattr(self, "_estuary_reach_idx", 0),
                 )
                 marine_domain.total_returned += n_ret
                 marine_domain.total_repeat_spawners += n_repeat
