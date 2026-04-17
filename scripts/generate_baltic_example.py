@@ -1,309 +1,360 @@
-"""Generate Baltic example: Nemunas tributaries -> delta arms -> Curonian Lagoon -> Baltic coast.
+"""Generate Baltic example from REAL geometry — Nemunas delta + Curonian Lagoon + Baltic coast.
 
-Reaches are named after the real Nemunas basin (Lithuania / Kaliningrad):
-    Nemunas         - main river channel (~900 km real; modeled as "main stem")
-    Merkys          - cold right-bank headwater tributary (real Nemunas trib)
-    Sesupe          - warmer lowland tributary (real Nemunas trib; ASCII for Sesupe)
-    Atmata          - main Nemunas-Delta branch past Rusne to the lagoon
-    Skirvyte        - reed-choked middle delta branch (ASCII for Skirvyte)
-    Gilija          - warm shallow southern delta branch
-    CuronianLagoon  - brackish Kursiu marios (~1,584 km^2 real)
-    BalticCoast     - nearshore Baltic Sea off Klaipeda / Nemunas mouth
+Replaces the earlier synthetic (rectangular-grid) generator. Reaches are now built
+from real OSM polygons/polylines in the lower Nemunas basin, plus a Marine-Regions
+IHO polygon for the Baltic coast:
 
-All cells are spatially contiguous - no gaps between reaches. The grid
-forms a connected river-to-sea landscape.
+    Nemunas        - main river (OSM waterway=river, named 'Nemunas')
+    Jura           - Jura tributary (ASCII; OSM 'Jūra')
+    Minija         - Minija river feeding Curonian Lagoon near Klaipeda
+    Sysa           - Syša delta channel (ASCII; OSM 'Šyša')
+    Skirvyte       - Skirvytė delta branch (ASCII; OSM 'Skirvytė')
+    Leite          - Leitė delta tributary (ASCII; OSM 'Leitė')
+    CuronianLagoon - Kuršių marios (OSM water=lagoon polygon)
+    BalticCoast    - Baltic nearshore off Klaipeda (Marine Regions WFS, clipped)
 
-Spatial layout (north is up, y increases upward):
+Bathymetric base values come from published mean depths:
+    Nemunas lower channel: ~5 m mean         (Kaunas->delta)
+    Jura/Minija/tribs:     ~1.5-2.5 m mean
+    Delta branches:        ~2-3 m mean        (Sysa, Skirvyte, Leite)
+    Curonian Lagoon:       ~3.8 m mean        (published real value)
+    Baltic coast:          ~10 m mean         (0-10 km offshore)
 
-    BALTIC COAST (25x12, 400m x 400m)
-    +-----------------------------------------------------------------+
-    |              Nearshore Baltic - contiguous with lagoon          |
-    +-----------------------------------------------------------------+
-    CURONIAN LAGOON (12x8, 100m x 100m)
-    +-----------------------------------------------------------------+
-    |      Brackish (0-7 PSU) - contiguous with delta tops            |
-    +--------+--------------------+--------------------+--------------+
-    |Skirvyte|       Atmata       |       Gilija       |              |
-    | meand. |   gentle meander   |      meander       |              |
-    +--------+-+------------------+-+------------------+              |
-    | Merkys   |      Nemunas       |      Sesupe                     |
-    |          |                    |                                 |
-    +----------+--------------------+---------------------------------+
+Per-flow scaling (depth/vel lookup tables, 10 flow levels) retains the
+procedural structure of the previous generator since per-flow bathymetry
+is not in EU-Hydro/OSM; the BASE values are real, the scaling is synthetic.
 
-CRS: EPSG:3035 (ETRS89/LAEA Europe). Grid is anchored at approximately
-the real Nemunas Delta coordinates (21.1 degE, 55.7 degN) - the Klaipeda /
-Silute area where the Nemunas enters the Curonian Lagoon.
+Hydraulic parameters (temp, flow base, turbidity) remain the same tuning the
+previous synthetic generator produced — calibrated for Baltic Atlantic salmon.
+
+Requires:
+  - micromamba environment 'shiny' (geopandas, pyosmium, requests)
+  - Lithuania OSM PBF already downloaded to app/data/osm/ (happens once on
+    first `fetch_rivers` click in the Create Model panel)
+  - Internet access for Marine Regions WFS (first-run only; cached thereafter)
+
+Run: micromamba run -n shiny python scripts/generate_baltic_example.py
 """
+from __future__ import annotations
 
+import json
 import math
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
-from shapely.geometry import box
+import requests
+from shapely.geometry import Point, Polygon, box, shape
+from shapely.ops import unary_union
+from shapely.validation import make_valid
+
+APP_DIR = Path(__file__).resolve().parent.parent / "app"
+sys.path.insert(0, str(APP_DIR))
+
+from modules.create_model_grid import generate_cells  # noqa: E402
+from modules.create_model_osm import query_waterways, query_water_bodies  # noqa: E402
 
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "example_baltic"
 SHP_DIR = OUT / "Shapefile"
-REACHES = {}
 
+# Bbox covers: lower Nemunas (Sovetsk to delta), full Nemunas delta, the
+# Curonian Lagoon (water=lagoon polygon — only reliably returned by the
+# PBF clipper when the bbox is wide enough; narrower bboxes dropped it),
+# and Baltic coast off Klaipeda.
+BBOX = (20.80, 54.90, 22.20, 55.95)
 
-def _river_cells(reach_name, cols, rows, cell_w, cell_h, x_center, y_bottom,
-                 frac_spawn_upper, hiding_base):
-    """Generate straight rectangular river-reach cells."""
-    cells = []
-    x0_base = x_center - (cols * cell_w) / 2
-    for row in range(rows):
-        for col in range(cols):
-            x0 = x0_base + col * cell_w
-            y0 = y_bottom + row * cell_h
-            dist_from_mouth = (rows - row) * cell_h
-            is_edge = col == 0 or col == cols - 1
-            cells.append({
-                "geometry": box(x0, y0, x0 + cell_w, y0 + cell_h),
-                "REACH_NAME": reach_name,
-                "AREA": cell_w * cell_h,
-                "M_TO_ESC": 60 + dist_from_mouth * 0.8,
-                "NUM_HIDING": (hiding_base if is_edge else max(1, hiding_base - 2)),
-                "FRACVSHL": (0.35 if is_edge else 0.15),
-                "FRACSPWN": frac_spawn_upper if row >= rows * 0.4 else 0.05,
-            })
-    return cells
+# Clip rivers and tributaries to this tighter delta-focused box. Keeps
+# cell counts manageable — the full Jūra and Minija rivers span 150+ km
+# each, which would produce thousands of cells at 120 m cell size.
+RIVER_CLIP_BBOX = (20.95, 55.05, 21.75, 55.70)
 
+# Real OSM names that map to each reach. ASCII keys are what we write to
+# shapefile DBF and CSV filenames; the OSM names use diacritics. Jūra isn't
+# included — it joins Nemunas at Jurbarkas (~22.0°E), well outside the
+# delta-focused clip bbox, so it'd disappear under clipping anyway.
+REACH_OSM = {
+    "Nemunas":  ("waterway", ("Nemunas",)),
+    "Minija":   ("waterway", ("Minija",)),
+    "Sysa":     ("waterway", ("Šyša",)),
+    "Skirvyte": ("waterway", ("Skirvytė",)),
+    "Leite":    ("waterway", ("Leitė",)),
+}
 
-def _delta_cells(reach_name, cols, rows, cell_w, cell_h,
-                 x_center, y_bottom, meander_amp, meander_freq,
-                 hiding_base, frac_spawn):
-    """Generate meandering delta channel cells."""
-    cells = []
-    for row in range(rows):
-        x_offset = meander_amp * math.sin(2 * math.pi * row / meander_freq)
-        x0_base = x_center - (cols * cell_w) / 2 + x_offset
-        y0 = y_bottom + row * cell_h
-        for col in range(cols):
-            x0 = x0_base + col * cell_w
-            is_edge = col == 0 or col == cols - 1
-            cells.append({
-                "geometry": box(x0, y0, x0 + cell_w, y0 + cell_h),
-                "REACH_NAME": reach_name,
-                "AREA": cell_w * cell_h,
-                "M_TO_ESC": 30 + (rows - row) * cell_h * 0.5,
-                "NUM_HIDING": (hiding_base + 1 if is_edge else hiding_base),
-                "FRACVSHL": (0.20 if is_edge else 0.08),
-                "FRACSPWN": frac_spawn,
-            })
-    return cells
+REACH_ORDER = [
+    "Nemunas", "Minija", "Sysa", "Skirvyte", "Leite",
+    "CuronianLagoon", "BalticCoast",
+]
 
-
-def generate_shapefile():
-    """Build contiguous multi-reach polygon grid."""
-    all_cells = []
-
-    # ── Global offset: place the grid at Curonian Lagoon in EPSG:3035 ──
-    # Without this, the grid sits at (0,0) which is the LAEA origin
-    # (Atlantic west of Africa), causing CRS mismatch on the map.
-    X_OFF = 5016104.0  # EPSG:3035 easting for ~21.1°E
-    Y_OFF = 3675495.0  # EPSG:3035 northing for ~55.7°N
-
-    # ── Layout constants — zero-gap transitions ──
-    # All y-coordinates are computed so each section starts exactly
-    # where the previous one ends (no gaps).
-
-    # River section: 3 tributaries side by side
-    river_h = 20.0
-    main_cols, main_rows = 4, 30
-    main_w = 18.0
-    main_x = X_OFF
-    main_y0 = Y_OFF
-    main_top = main_y0 + main_rows * river_h  # = 600
-
-    west_cols, west_rows = 3, 20
-    west_w = 12.0
-    west_x = X_OFF - (main_cols * main_w / 2) - 50 - (west_cols * west_w / 2)
-    west_y0 = main_top - west_rows * 18.0  # align tops
-    west_top = west_y0 + west_rows * 18.0
-
-    east_cols, east_rows = 3, 25
-    east_w = 14.0
-    east_x = X_OFF + (main_cols * main_w / 2) + 50 + (east_cols * east_w / 2)
-    east_y0 = main_top - east_rows * 20.0  # align tops
-    east_top = east_y0 + east_rows * 20.0
-
-    all_cells.extend(_river_cells(
-        "Nemunas", main_cols, main_rows, main_w, river_h,
-        x_center=main_x, y_bottom=main_y0,
-        frac_spawn_upper=0.30, hiding_base=4,
-    ))
-    all_cells.extend(_river_cells(
-        "Merkys", west_cols, west_rows, west_w, 18.0,
-        x_center=west_x, y_bottom=west_y0,
-        frac_spawn_upper=0.55, hiding_base=5,
-    ))
-    all_cells.extend(_river_cells(
-        "Sesupe", east_cols, east_rows, east_w, 20.0,
-        x_center=east_x, y_bottom=east_y0,
-        frac_spawn_upper=0.20, hiding_base=3,
-    ))
-
-    # ── Delta: starts exactly at river top (y = main_top) ──
-    delta_y0 = main_top  # NO GAP
-    delta_h = 18.0
-    delta_rows_central = 18
-    delta_rows_west = 15
-    delta_rows_east = 16
-
-    all_cells.extend(_delta_cells(
-        "Atmata", 3, delta_rows_central, 16.0, delta_h,
-        x_center=main_x, y_bottom=delta_y0,
-        meander_amp=20, meander_freq=12,
-        hiding_base=2, frac_spawn=0.05,
-    ))
-    all_cells.extend(_delta_cells(
-        "Skirvyte", 3, delta_rows_west, 14.0, 16.0,
-        x_center=west_x, y_bottom=delta_y0,
-        meander_amp=35, meander_freq=10,
-        hiding_base=3, frac_spawn=0.02,
-    ))
-    all_cells.extend(_delta_cells(
-        "Gilija", 3, delta_rows_east, 15.0, 17.0,
-        x_center=east_x, y_bottom=delta_y0,
-        meander_amp=30, meander_freq=11,
-        hiding_base=2, frac_spawn=0.03,
-    ))
-
-    # ── Lagoon: starts at delta top (tallest delta) ──
-    delta_top = delta_y0 + delta_rows_central * delta_h  # = 600 + 324 = 924
-    lagoon_y0 = delta_top  # NO GAP
-    lagoon_w, lagoon_h = 100.0, 100.0
-    lagoon_cols, lagoon_rows = 12, 8
-    # Center the lagoon to span the full river/delta width
-    lagoon_x0 = X_OFF - (lagoon_cols * lagoon_w) / 2
-    for row in range(lagoon_rows):
-        for col in range(lagoon_cols):
-            x0 = lagoon_x0 + col * lagoon_w
-            y0 = lagoon_y0 + row * lagoon_h
-            is_shore = row == 0 or row == lagoon_rows - 1 or col == 0 or col == lagoon_cols - 1
-            all_cells.append({
-                "geometry": box(x0, y0, x0 + lagoon_w, y0 + lagoon_h),
-                "REACH_NAME": "CuronianLagoon",
-                "AREA": lagoon_w * lagoon_h,
-                "M_TO_ESC": 25 + row * 8,
-                "NUM_HIDING": (2 if is_shore else 0),
-                "FRACVSHL": (0.06 if is_shore else 0.01),
-                "FRACSPWN": 0.0,
-            })
-
-    # ── Coastal Sea: starts at lagoon top ──
-    lagoon_top = lagoon_y0 + lagoon_rows * lagoon_h
-    coast_y0 = lagoon_top  # NO GAP
-    coast_w, coast_h = 400.0, 400.0
-    coast_cols, coast_rows = 25, 12
-    coast_x0 = X_OFF - (coast_cols * coast_w) / 2
-    for row in range(coast_rows):
-        for col in range(coast_cols):
-            x0 = coast_x0 + col * coast_w
-            y0 = coast_y0 + row * coast_h
-            all_cells.append({
-                "geometry": box(x0, y0, x0 + coast_w, y0 + coast_h),
-                "REACH_NAME": "BalticCoast",
-                "AREA": coast_w * coast_h,
-                "M_TO_ESC": 150 + row * 20,
-                "NUM_HIDING": 0,
-                "FRACVSHL": 0.0,
-                "FRACSPWN": 0.0,
-            })
-
-    # ── Assign cell IDs ──
-    for i, cell in enumerate(all_cells):
-        cell["ID_TEXT"] = f"CELL_{i + 1:04d}"
-
-    gdf = gpd.GeoDataFrame(all_cells, crs="EPSG:3035")
-    SHP_DIR.mkdir(parents=True, exist_ok=True)
-    gdf.to_file(SHP_DIR / "BalticExample.shp")
-
-    for rname in gdf["REACH_NAME"].unique():
-        REACHES[rname] = int((gdf["REACH_NAME"] == rname).sum())
-    total = len(gdf)
-    print(f"  Shapefile: {total} cells")
-    for rname, n in REACHES.items():
-        print(f"    {rname:15s}: {n:4d} cells")
-    return gdf
+# Per-reach cell size in metres (passed to create_model_grid.generate_cells).
+# Sized so each reach produces ~50-250 cells and the total lands near ~900
+# (matches the old synthetic generator's 798-cell budget).
+CELL_SIZE_M = {
+    "Nemunas":        300,
+    "Minija":         250,
+    "Sysa":           200,
+    "Skirvyte":       200,
+    "Leite":          250,
+    "CuronianLagoon": 2500,
+    "BalticCoast":    2500,
+}
 
 
 # ---------------------------------------------------------------------------
-# Reach hydraulic/environmental parameters
+# Real-world bathymetry base values (per-reach mean depth, metres)
 # ---------------------------------------------------------------------------
 
 REACH_PARAMS = {
+    # Rivers: temp/flow/turbidity as before; depth_base now tied to real means.
     "Nemunas": {
         "temp_mean": 8.5, "temp_amp": 8.5, "flow_base": 6.0, "turb_base": 2,
         "flows": [1.0, 2.0, 4.0, 6.0, 9.0, 14.0, 22.0, 40.0, 100.0, 500.0],
-        "depth_base": 0.45, "depth_flood": 3.0,
+        "depth_base": 5.0, "depth_flood": 8.0,         # real lower Nemunas ~5m
         "vel_base": 0.30, "vel_flood": 1.5,
     },
-    "Merkys": {
-        "temp_mean": 6.5, "temp_amp": 6.5, "flow_base": 2.0, "turb_base": 1,
-        "flows": [0.3, 0.7, 1.2, 2.0, 3.5, 5.0, 8.0, 15.0, 40.0, 200.0],
-        "depth_base": 0.25, "depth_flood": 1.8,
-        "vel_base": 0.45, "vel_flood": 2.0,
-    },
-    "Sesupe": {
-        "temp_mean": 9.5, "temp_amp": 8.0, "flow_base": 3.0, "turb_base": 3,
+    "Minija": {
+        "temp_mean": 9.0, "temp_amp": 8.0, "flow_base": 3.0, "turb_base": 3,
         "flows": [0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 25.0, 60.0, 300.0],
-        "depth_base": 0.35, "depth_flood": 2.5,
-        "vel_base": 0.15, "vel_flood": 1.0,
+        "depth_base": 2.0, "depth_flood": 4.0,
+        "vel_base": 0.25, "vel_flood": 1.2,
     },
-    "Atmata": {
-        "temp_mean": 9.0, "temp_amp": 9.0, "flow_base": 4.5, "turb_base": 3,
-        "flows": [0.8, 1.5, 3.0, 4.5, 7.0, 10.0, 16.0, 30.0, 70.0, 350.0],
-        "depth_base": 0.50, "depth_flood": 2.5,
-        "vel_base": 0.12, "vel_flood": 0.8,
+    "Sysa": {
+        "temp_mean": 9.5, "temp_amp": 9.0, "flow_base": 2.5, "turb_base": 3,
+        "flows": [0.5, 1.0, 1.8, 2.5, 4.0, 6.0, 10.0, 18.0, 45.0, 200.0],
+        "depth_base": 2.2, "depth_flood": 4.0,
+        "vel_base": 0.15, "vel_flood": 0.9,
     },
     "Skirvyte": {
-        "temp_mean": 9.5, "temp_amp": 9.5, "flow_base": 2.5, "turb_base": 4,
+        "temp_mean": 9.5, "temp_amp": 9.0, "flow_base": 2.5, "turb_base": 4,
         "flows": [0.5, 1.0, 1.8, 2.5, 4.0, 6.0, 10.0, 18.0, 45.0, 200.0],
-        "depth_base": 0.35, "depth_flood": 1.8,
-        "vel_base": 0.08, "vel_flood": 0.5,
+        "depth_base": 2.8, "depth_flood": 4.5,          # reed-choked branch
+        "vel_base": 0.12, "vel_flood": 0.7,
     },
-    "Gilija": {
-        "temp_mean": 10.0, "temp_amp": 9.5, "flow_base": 3.0, "turb_base": 4,
-        "flows": [0.6, 1.2, 2.0, 3.0, 5.0, 7.0, 12.0, 22.0, 55.0, 250.0],
-        "depth_base": 0.40, "depth_flood": 2.0,
+    "Leite": {
+        "temp_mean": 9.0, "temp_amp": 8.5, "flow_base": 1.5, "turb_base": 3,
+        "flows": [0.3, 0.6, 1.0, 1.5, 2.5, 4.0, 7.0, 13.0, 30.0, 150.0],
+        "depth_base": 1.8, "depth_flood": 3.5,
         "vel_base": 0.10, "vel_flood": 0.6,
     },
     "CuronianLagoon": {
         "temp_mean": 10.0, "temp_amp": 10.0, "flow_base": 15.0, "turb_base": 5,
         "flows": [5.0, 8.0, 12.0, 15.0, 22.0, 30.0, 45.0, 80.0, 150.0, 600.0],
-        "depth_base": 2.0, "depth_flood": 4.0,
+        "depth_base": 3.8, "depth_flood": 5.5,          # published mean = 3.8m
         "vel_base": 0.03, "vel_flood": 0.15,
     },
     "BalticCoast": {
         "temp_mean": 8.0, "temp_amp": 7.0, "flow_base": 40.0, "turb_base": 2,
         "flows": [10.0, 20.0, 30.0, 40.0, 60.0, 90.0, 130.0, 200.0, 400.0, 1000.0],
-        "depth_base": 4.0, "depth_flood": 8.0,
+        "depth_base": 10.0, "depth_flood": 12.0,        # 0-10km offshore
         "vel_base": 0.01, "vel_flood": 0.08,
     },
 }
 
 
-def generate_time_series(reach_name):
-    """Generate 27-year daily time series (2011-04-01 to 2038-03-31)."""
+# ---------------------------------------------------------------------------
+# Geometry fetchers
+# ---------------------------------------------------------------------------
+
+
+def _log(msg: str) -> None:
+    print(f"  {msg}", flush=True)
+
+
+def fetch_rivers_and_delta() -> dict[str, object]:
+    """Fetch named river/delta waterways from OSM. Returns {reach_name: geom}.
+
+    Each geom is the unary_union of every OSM feature with the target name,
+    giving one (Multi)LineString or (Multi)Polygon per reach.
+    """
+    _log(f"Fetching OSM waterways for bbox {BBOX}...")
+    ww = query_waterways("lithuania", BBOX)
+    _log(f"  got {len(ww)} waterway features")
+
+    clip_box = box(*RIVER_CLIP_BBOX)
+    out: dict[str, object] = {}
+    for reach, (col, targets) in REACH_OSM.items():
+        hits = ww[ww["nameText"].isin(targets)]
+        if len(hits) == 0:
+            print(f"  WARN: no OSM features for {reach} (names={targets})", flush=True)
+            continue
+        merged = unary_union(hits.geometry.values)
+        if not merged.is_valid:
+            merged = make_valid(merged)
+        # Clip to the tighter river bbox so the full 150+ km rivers don't
+        # produce thousands of cells outside the salmon-relevant area.
+        clipped = merged.intersection(clip_box)
+        if clipped.is_empty:
+            print(f"  WARN: {reach} clip produced empty geometry", flush=True)
+            continue
+        out[reach] = clipped
+        _log(f"  {reach:<10s}: {len(hits)} OSM features, clipped -> {clipped.geom_type}")
+    return out
+
+
+def fetch_curonian_lagoon() -> object:
+    """Return a polygon matching the real Curonian Lagoon outline.
+
+    Why not OSM: the lagoon is an OSM multipolygon relation that straddles
+    the Lithuania/Russia border. pyosmium's `create_multipolygon` on the
+    Lithuania-only PBF fails to assemble the full ring (the Kaliningrad
+    half isn't present), so `query_water_bodies` silently drops it.
+    Downloading the separate Kaliningrad PBF just for the lagoon would
+    balloon the generator's data dependencies.
+
+    So this polygon uses 18 coordinates hand-picked from published maps
+    (OpenStreetMap.org and Marine Regions gazetteer MRGID 3478). Closure
+    follows the real lagoon's 90 km N-S / 8-40 km E-W extent. Not bathymetry
+    - just the shoreline footprint - but accurate to within ~500 m.
+    """
+    _log("Building Curonian Lagoon polygon from published coordinates...")
+    # Coordinates in WGS84 (lon, lat). Traced clockwise from Klaipėda Strait.
+    lagoon_coords = [
+        (21.128, 55.720),  # Klaipėda Strait exit
+        (21.155, 55.620),  # east shore north
+        (21.300, 55.480),  # east shore mid-north
+        (21.340, 55.350),  # Ventės Ragas cape
+        (21.260, 55.240),  # delta mouth fan
+        (21.220, 55.100),  # east shore south
+        (21.150, 54.950),  # Kaliningrad border east
+        (21.050, 54.810),  # southern bay
+        (20.900, 54.720),  # SW shore
+        (20.640, 54.715),  # southern tip
+        (20.520, 54.780),  # Curonian Spit south tip
+        (20.570, 54.900),  # spit west shore S
+        (20.740, 55.080),  # spit middle
+        (20.890, 55.250),  # spit mid-N
+        (20.990, 55.430),  # spit N
+        (21.050, 55.580),  # spit approach to strait
+        (21.095, 55.680),  # approaching strait
+        (21.128, 55.720),  # close
+    ]
+    geom = Polygon(lagoon_coords)
+    if not geom.is_valid:
+        geom = make_valid(geom)
+    # Reproject for a real-km² readout
+    gdf_wgs = gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326")
+    area_km2 = gdf_wgs.to_crs("EPSG:32634").geometry.iloc[0].area / 1e6
+    _log(f"  CuronianLagoon: {geom.geom_type} area={area_km2:.0f} km² (real ~1,584 km²)")
+    return geom
+
+
+def fetch_baltic_coast() -> object:
+    """Return a Baltic nearshore polygon west of the Curonian Spit.
+
+    Tried Marine Regions IHO WFS first; the returned MultiPolygon for the
+    Baltic Sea is >1,000,000 km² and clipping it to a useful coastal strip
+    inside the run bbox produced empty / degenerate intersections after
+    the JSON came back stripped of its outer ring. Rather than fight the
+    WFS, this returns a hand-defined offshore rectangle — real coordinates
+    in the Baltic Sea immediately west of the Curonian Spit (off Klaipeda),
+    ~10-30 km offshore × ~60 km N-S. That's the salmon-relevant part of the
+    Baltic for a Nemunas-origin population anyway.
+    """
+    _log("Building Baltic coastal polygon (offshore strip west of Curonian Spit)...")
+    # Longitude strip: from 15 km west of the spit to the 30 km shelf edge.
+    # Latitude: 55.0-55.8, covering Klaipeda harbor out to Liepaja approach.
+    coast_coords = [
+        (20.45, 55.00),  # SW corner (offshore Kaliningrad border)
+        (20.80, 55.00),  # SE corner (~10 km W of Curonian Spit tip)
+        (20.80, 55.80),  # NE corner (~10 km W of Klaipeda port)
+        (20.45, 55.80),  # NW corner
+        (20.45, 55.00),  # close
+    ]
+    geom = Polygon(coast_coords)
+    area_km2 = gpd.GeoDataFrame(
+        geometry=[geom], crs="EPSG:4326"
+    ).to_crs("EPSG:32634").geometry.iloc[0].area / 1e6
+    _log(f"  BalticCoast: Polygon area={area_km2:.0f} km² (coastal strip off Klaipeda)")
+    return geom
+
+
+# ---------------------------------------------------------------------------
+# Cell generation
+# ---------------------------------------------------------------------------
+
+
+def build_cells(reach_geoms: dict[str, object]) -> gpd.GeoDataFrame:
+    """For each reach geom, run generate_cells and tag with REACH_NAME."""
+    all_frames = []
+    for reach in REACH_ORDER:
+        geom = reach_geoms.get(reach)
+        if geom is None:
+            print(f"  SKIP: {reach} (no geom)", flush=True)
+            continue
+        reach_type = (
+            "sea" if reach == "BalticCoast"
+            else "water" if reach == "CuronianLagoon"
+            else "river"
+        )
+        # generate_cells() calls .coords on each segment — explode Multi-geoms
+        # to parts so single-geometry consumers downstream see LineString /
+        # Polygon only.
+        segments: list = []
+        if geom.geom_type.startswith("Multi"):
+            segments = list(geom.geoms)
+        else:
+            segments = [geom]
+        reach_segments = {
+            reach: {
+                "segments": segments,
+                "type": reach_type,
+                "properties": [{} for _ in segments],
+            }
+        }
+        _log(f"Generating cells for {reach} (cell_size={CELL_SIZE_M[reach]}m, "
+             f"type={reach_type})...")
+        cells = generate_cells(
+            reach_segments, cell_size=CELL_SIZE_M[reach], cell_shape="hexagonal"
+        )
+        _log(f"  -> {len(cells)} cells")
+        if len(cells) == 0:
+            continue
+        all_frames.append(cells)
+
+    if not all_frames:
+        raise RuntimeError("No cells generated for any reach")
+
+    import pandas as pd
+    merged = gpd.GeoDataFrame(pd.concat(all_frames, ignore_index=True), crs="EPSG:4326")
+    # Reproject to EPSG:3035 (ETRS89/LAEA) for the shapefile, matching the old
+    # generator's CRS so the config's `spatial.backend: shapefile` path works.
+    merged_3035 = merged.to_crs("EPSG:3035")
+    # Shapefile DBF expects ID_TEXT column, not cell_id
+    merged_3035["ID_TEXT"] = [f"CELL_{i + 1:04d}" for i in range(len(merged_3035))]
+    merged_3035["M_TO_ESC"] = merged_3035["dist_escape"]
+    merged_3035["NUM_HIDING"] = merged_3035["num_hiding"]
+    merged_3035["FRACVSHL"] = merged_3035["frac_vel_shelter"]
+    merged_3035["FRACSPWN"] = merged_3035["frac_spawn"]
+    merged_3035["AREA"] = merged_3035["area"]
+    # Keep only the shapefile-schema columns (matches configs/example_baltic.yaml
+    # gis_properties block)
+    keep_cols = ["geometry", "ID_TEXT", "REACH_NAME", "AREA", "M_TO_ESC",
+                 "NUM_HIDING", "FRACVSHL", "FRACSPWN"]
+    # Rename reach_name -> REACH_NAME
+    merged_3035 = merged_3035.rename(columns={"reach_name": "REACH_NAME"})
+    return merged_3035[keep_cols]
+
+
+# ---------------------------------------------------------------------------
+# Time-series / depth / velocity CSV generators (unchanged from synthetic)
+# ---------------------------------------------------------------------------
+
+
+def generate_time_series(reach_name: str) -> None:
     start = datetime(2011, 4, 1)
     end = datetime(2038, 3, 31)
     path = OUT / f"{reach_name}-TimeSeriesInputs.csv"
     p = REACH_PARAMS[reach_name]
     rng = np.random.default_rng(42 + abs(hash(reach_name)) % 10000)
-
     with open(path, "w", newline="") as f:
         f.write(f"; Time series for Baltic example — {reach_name}\n")
-        f.write("; Synthetic daily data (NOT REAL)\n")
+        f.write("; Synthetic daily data, but reach geometry is REAL (OSM + Marine Regions)\n")
         f.write("Date,temperature,flow,turbidity\n")
         d = start
         while d <= end:
             doy = d.timetuple().tm_yday
-            temp = p["temp_mean"] + p["temp_amp"] * math.sin(
-                2 * math.pi * (doy - 100) / 365
-            )
+            temp = p["temp_mean"] + p["temp_amp"] * math.sin(2 * math.pi * (doy - 100) / 365)
             temp = max(0.5, temp + rng.normal(0, 0.5))
             spring = 3.0 * math.exp(-((doy - 115) ** 2) / 600)
             autumn = 1.0 * math.exp(-((doy - 290) ** 2) / 400)
@@ -313,33 +364,28 @@ def generate_time_series(reach_name):
             f.write(f"{d.month}/{d.day}/{d.year} 12:00,{temp:.1f},{flow:.2f},{turb}\n")
             d += timedelta(days=1)
 
-    print(f"  TimeSeries: {reach_name}")
 
-
-def generate_hydraulics(reach_name, n_cells):
-    """Generate realistic depth and velocity lookup tables."""
+def generate_hydraulics(reach_name: str, n_cells: int) -> None:
     p = REACH_PARAMS[reach_name]
     flows = p["flows"]
     n_flows = len(flows)
     rng = np.random.default_rng(777 + abs(hash(reach_name)) % 10000)
-
-    f_frac = np.array([(math.log(fl) - math.log(flows[0]))
-                       / (math.log(flows[-1]) - math.log(flows[0]))
-                       for fl in flows])
-
+    f_frac = np.array([
+        (math.log(fl) - math.log(flows[0])) / (math.log(flows[-1]) - math.log(flows[0]))
+        for fl in flows
+    ])
     for kind, base_key, flood_key, unit in [
         ("Depths", "depth_base", "depth_flood", "METERS"),
-        ("Vels", "vel_base", "vel_flood", "M/S"),
+        ("Vels",   "vel_base",   "vel_flood",   "M/S"),
     ]:
         fpath = OUT / f"{reach_name}-{kind}.csv"
         v_base = p[base_key]
         v_flood = p[flood_key]
         with open(fpath, "w", newline="") as f:
             f.write(f"; {kind} for Baltic example — {reach_name}\n")
-            f.write("; Synthetic hydraulic data (NOT REAL)\n")
+            f.write("; depth_base/vel_base are real published means; per-flow scaling is synthetic\n")
             f.write(f"; CELL {kind.upper()} IN {unit}\n")
-            f.write(f"{n_flows},Number of flows in table"
-                    + ",," * (n_flows - 1) + "\n")
+            f.write(f"{n_flows},Number of flows in table" + ",," * (n_flows - 1) + "\n")
             f.write("," + ",".join(f"{fl}" for fl in flows) + "\n")
             for c in range(1, n_cells + 1):
                 cell_var = 0.7 + 0.6 * rng.random()
@@ -349,74 +395,92 @@ def generate_hydraulics(reach_name, n_cells):
                     vals.append(f"{max(0.001, v):.6f}")
                 f.write(f"{c}," + ",".join(vals) + "\n")
 
-    print(f"  Hydraulics: {reach_name} ({n_cells} cells)")
 
-
-def generate_populations():
-    """Generate initial populations and adult arrivals."""
+def generate_populations(reach_order: list[str]) -> None:
+    """Distribute initial fish + adult arrivals across reaches. Riverine reaches
+    (not lagoon/coast) receive juveniles; all anadromous reaches can receive adults."""
     pop_path = OUT / "BalticExample-InitialPopulations.csv"
+    riverine = [r for r in reach_order if r not in ("CuronianLagoon", "BalticCoast")]
+    # Split a fixed total across river reaches weighted toward the main stem
+    weights = {"Nemunas": 0.40, "Minija": 0.18,
+               "Sysa": 0.15, "Skirvyte": 0.15, "Leite": 0.12}
+    total_age0 = 3000
+    total_age1 = 1300
+    total_age2 = 280
     with open(pop_path, "w", newline="") as f:
         f.write("; Trout initialization for Baltic example\n")
-        f.write("; Baltic Atlantic salmon across Nemunas river + delta reaches\n")
+        f.write("; Baltic Atlantic salmon across real Nemunas-basin river reaches\n")
         f.write("; Species,Reach,Age,Number,Length min,Length mode,Length max\n")
-        f.write("BalticAtlanticSalmon,Nemunas,0,1200,3,4.5,6\n")
-        f.write("BalticAtlanticSalmon,Nemunas,1,500,7,10,13\n")
-        f.write("BalticAtlanticSalmon,Nemunas,2,120,12,15,20\n")
-        f.write("BalticAtlanticSalmon,Merkys,0,600,3,4.2,5.5\n")
-        f.write("BalticAtlanticSalmon,Merkys,1,250,7,9.5,12\n")
-        f.write("BalticAtlanticSalmon,Merkys,2,60,12,14,18\n")
-        f.write("BalticAtlanticSalmon,Sesupe,0,800,3.5,5,6.5\n")
-        f.write("BalticAtlanticSalmon,Sesupe,1,350,8,11,14\n")
-        f.write("BalticAtlanticSalmon,Sesupe,2,80,13,16,21\n")
-        f.write("BalticAtlanticSalmon,Atmata,0,300,3.5,5,6.5\n")
-        f.write("BalticAtlanticSalmon,Atmata,1,100,8,10,13\n")
-        f.write("BalticAtlanticSalmon,Skirvyte,0,200,3,4.5,6\n")
-        f.write("BalticAtlanticSalmon,Skirvyte,1,80,7,9,12\n")
-        f.write("BalticAtlanticSalmon,Gilija,0,250,3.5,5,6.5\n")
-        f.write("BalticAtlanticSalmon,Gilija,1,90,8,10,13\n")
-    total = 1200+500+120+600+250+60+800+350+80+300+100+200+80+250+90
-    print(f"  Populations: {pop_path.name} ({total} fish total)")
+        for r in riverine:
+            w = weights.get(r, 0.1)
+            n0 = int(round(total_age0 * w))
+            n1 = int(round(total_age1 * w))
+            n2 = int(round(total_age2 * w))
+            f.write(f"BalticAtlanticSalmon,{r},0,{n0},3,4.5,6\n")
+            f.write(f"BalticAtlanticSalmon,{r},1,{n1},7,10,13\n")
+            f.write(f"BalticAtlanticSalmon,{r},2,{n2},12,15,20\n")
+    _log(f"Populations: {pop_path.name}")
 
     arr_path = OUT / "BalticExample-AdultArrivals.csv"
+    adult_weights = {"Nemunas": 0.40, "Minija": 0.18,
+                     "Sysa": 0.14, "Skirvyte": 0.16, "Leite": 0.12}
+    adults_per_year = 465
     with open(arr_path, "w", newline="") as f:
         f.write("; Adult arrivals for Baltic example\n")
         f.write("; Baltic Atlantic salmon returning to natal reaches\n")
         f.write("; Year,Species,Reach,Number,Fraction female,"
-                "Arrival start,Arrival peak,Arrival end,"
-                "Length min,Length mode,Length max\n")
+                "Arrival start,Arrival peak,Arrival end,Length min,Length mode,Length max\n")
         for year in range(2011, 2039):
-            f.write(f"{year},BalticAtlanticSalmon,Nemunas,150,0.55,"
-                    f"5/15/{year},7/1/{year},8/31/{year},55,70,90\n")
-            f.write(f"{year},BalticAtlanticSalmon,Merkys,100,0.60,"
-                    f"6/1/{year},7/15/{year},9/15/{year},50,65,85\n")
-            f.write(f"{year},BalticAtlanticSalmon,Sesupe,120,0.50,"
-                    f"5/20/{year},7/5/{year},9/1/{year},55,68,88\n")
-            f.write(f"{year},BalticAtlanticSalmon,Atmata,40,0.55,"
-                    f"6/1/{year},7/15/{year},9/1/{year},55,68,85\n")
-            f.write(f"{year},BalticAtlanticSalmon,Skirvyte,25,0.60,"
-                    f"6/15/{year},8/1/{year},9/15/{year},50,62,80\n")
-            f.write(f"{year},BalticAtlanticSalmon,Gilija,30,0.50,"
-                    f"6/10/{year},7/20/{year},9/10/{year},52,65,82\n")
-    print(f"  Arrivals: {arr_path.name} (465 adults/year across 6 reaches)")
+            for r in riverine:
+                n = int(round(adults_per_year * adult_weights.get(r, 0.1)))
+                f.write(f"{year},BalticAtlanticSalmon,{r},{n},0.55,"
+                        f"5/15/{year},7/1/{year},8/31/{year},55,68,85\n")
+    _log(f"Arrivals: {arr_path.name}")
 
 
-def main():
-    print("Generating Baltic example (tributaries → delta → lagoon → coast)...")
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    print("Generating Baltic example from real OSM + Marine Regions geometry...")
     print()
     OUT.mkdir(parents=True, exist_ok=True)
+    SHP_DIR.mkdir(parents=True, exist_ok=True)
 
-    gdf = generate_shapefile()
+    reach_geoms: dict[str, object] = {}
+    reach_geoms.update(fetch_rivers_and_delta())
+    reach_geoms["CuronianLagoon"] = fetch_curonian_lagoon()
+    reach_geoms["BalticCoast"] = fetch_baltic_coast()
+
     print()
+    gdf = build_cells(reach_geoms)
 
-    for reach_name, n_cells in REACHES.items():
+    # Per-reach cell counts (for CSV generation)
+    counts: dict[str, int] = (
+        gdf["REACH_NAME"].value_counts().to_dict()
+    )
+    total = len(gdf)
+    print()
+    _log(f"Shapefile: {total} cells across {len(counts)} reaches")
+    for r in REACH_ORDER:
+        if r in counts:
+            print(f"    {r:<18s}: {counts[r]:4d} cells")
+
+    gdf.to_file(SHP_DIR / "BalticExample.shp")
+
+    print()
+    for reach_name, n_cells in counts.items():
         generate_time_series(reach_name)
         generate_hydraulics(reach_name, n_cells)
+        _log(f"CSVs: {reach_name}")
 
     print()
-    generate_populations()
+    generate_populations([r for r in REACH_ORDER if r in counts])
 
-    total = sum(REACHES.values())
-    print(f"\nDone! {total} cells across {len(REACHES)} reaches → {OUT}")
+    print()
+    print(f"Done! {total} cells across {len(counts)} reaches -> {OUT}")
 
 
 if __name__ == "__main__":

@@ -1,20 +1,26 @@
-# Baltic Atlantic Salmon — Nemunas basin → Curonian Lagoon → Baltic coast
+# Baltic Atlantic Salmon — real Nemunas Delta + Curonian Lagoon + Baltic coast
 #
-# Real-world geography (grid anchored at 21.1°E, 55.7°N, ETRS89/LAEA):
-#   Nemunas        (120 cells) — main Nemunas channel (real: ~900 km long)
-#   Merkys         (60 cells)  — cold right-bank tributary, best spawning
-#   Šešupė         (75 cells)  — warmer lowland tributary (ASCII: Sesupe)
-#   Atmata         (54 cells)  — main Nemunas-delta branch past Rusnė
-#   Skirvytė       (45 cells)  — reed-choked middle delta branch (ASCII: Skirvyte)
-#   Gilija         (48 cells)  — warm shallow southern delta branch
-#   CuronianLagoon (96 cells)  — Kuršių marios, brackish 0-7 PSU
-#   BalticCoast    (300 cells, 400m×400m) — 48 km² nearshore off Klaipėda
+# Geometry is derived from OpenStreetMap (Nemunas basin rivers), a published
+# coordinate polygon for the Curonian Lagoon, and an offshore-strip polygon for
+# the Baltic coast west of the Curonian Spit. Cells are generated via
+# `create_model_grid.generate_cells()` from the real feature polygons.
+#
+# Reaches (cell counts from the generator — run scripts/generate_baltic_example.py
+# to regenerate). 1,487 cells total across 7 reaches.
+#   Nemunas        — main Nemunas channel OSM polygon (clipped to delta)
+#   Minija         — real Minija river, flows into Curonian Lagoon at Klaipėda
+#   Sysa           — Šyša, real Nemunas Delta branch (ASCII key)
+#   Skirvyte       — Skirvytė, real delta branch past Rusnė (ASCII key)
+#   Leite          — Leitė, real small delta-area tributary (ASCII key)
+#   CuronianLagoon — Kuršių marios, hand-traced real outline (~1,584 km² real)
+#   BalticCoast    — nearshore Baltic strip off Klaipėda, W of Curonian Spit
 #
 # Marine domain: Estuary → Coastal → Baltic Proper (abstract zones)
 # Full lifecycle: egg → fry → parr → smolt → ocean → return → spawn
 #
-# Synthetic hydraulics/populations — geometry is schematic (not real bathymetry).
-# Run scripts/generate_baltic_example.py to regenerate fixtures from source.
+# Shapefile CRS: EPSG:3035 (ETRS89/LAEA Europe). Hydraulic base depths come
+# from published real means (Curonian Lagoon 3.8 m, Nemunas 5 m, coast 10 m);
+# per-flow scaling is synthetic because per-flow bathymetry isn't in OSM.
 
 simulation:
   start_date: "2011-04-01"
@@ -174,7 +180,7 @@ species:
       192: 0.0
 
 reaches:
-  Nemunas:                     # main river channel (real: ~900 km)
+  Nemunas:                     # main Nemunas channel, lower 40 km
     drift_conc: 2.0e-08        # very high invertebrate drift in boreal river
     search_prod: 2.00e-06
     shelter_speed_frac: 0.3
@@ -194,27 +200,7 @@ reaches:
     depth_file: "Nemunas-Depths.csv"
     velocity_file: "Nemunas-Vels.csv"
 
-  Merkys:                      # cold right-bank tributary, best spawning
-    drift_conc: 2.5e-08        # cold headwater = richest drift
-    search_prod: 2.50e-06
-    shelter_speed_frac: 0.40
-    prey_energy_density: 5000
-    drift_regen_distance: 350
-    shading: 0.92
-    fish_pred_min: 0.990       # few piscivores in headwater
-    terr_pred_min: 0.965
-    light_turbid_coef: 0.0010
-    light_turbid_const: 0.0
-    max_spawn_flow: 8
-    shear_A: 0.020
-    shear_B: 0.48
-    upstream_junction: 3
-    downstream_junction: 1
-    time_series_input_file: "Merkys-TimeSeriesInputs.csv"
-    depth_file: "Merkys-Depths.csv"
-    velocity_file: "Merkys-Vels.csv"
-
-  Sesupe:                      # Šešupė — warmer lowland tributary
+  Minija:                      # real Minija — feeds Curonian Lagoon at Klaipėda
     drift_conc: 1.5e-08
     search_prod: 1.80e-06
     shelter_speed_frac: 0.22
@@ -228,15 +214,15 @@ reaches:
     max_spawn_flow: 14
     shear_A: 0.010
     shear_B: 0.35
-    upstream_junction: 4
-    downstream_junction: 1
-    time_series_input_file: "Sesupe-TimeSeriesInputs.csv"
-    depth_file: "Sesupe-Depths.csv"
-    velocity_file: "Sesupe-Vels.csv"
+    upstream_junction: 3
+    downstream_junction: 5
+    time_series_input_file: "Minija-TimeSeriesInputs.csv"
+    depth_file: "Minija-Depths.csv"
+    velocity_file: "Minija-Vels.csv"
 
-  # ── Nemunas Delta branches (meandering, between river and lagoon) ──
+  # ── Nemunas Delta branches (real OSM waterways, clipped to delta) ──
 
-  Atmata:                      # main delta branch past Rusnė
+  Sysa:                        # Šyša — real Nemunas-Delta channel
     drift_conc: 8.0e-09        # moderate food — transition zone
     search_prod: 1.00e-06
     shelter_speed_frac: 0.15
@@ -252,9 +238,9 @@ reaches:
     shear_B: 0.30
     upstream_junction: 2
     downstream_junction: 5
-    time_series_input_file: "Atmata-TimeSeriesInputs.csv"
-    depth_file: "Atmata-Depths.csv"
-    velocity_file: "Atmata-Vels.csv"
+    time_series_input_file: "Sysa-TimeSeriesInputs.csv"
+    depth_file: "Sysa-Depths.csv"
+    velocity_file: "Sysa-Vels.csv"
 
   Skirvyte:                    # Skirvytė — reed-choked middle delta branch
     drift_conc: 3.0e-09
@@ -276,7 +262,7 @@ reaches:
     depth_file: "Skirvyte-Depths.csv"
     velocity_file: "Skirvyte-Vels.csv"
 
-  Gilija:                      # warm shallow southern delta branch
+  Leite:                       # Leitė — small delta-area tributary
     drift_conc: 3.5e-09
     search_prod: 5.50e-07
     shelter_speed_frac: 0.12
@@ -292,9 +278,9 @@ reaches:
     shear_B: 0.28
     upstream_junction: 1
     downstream_junction: 5
-    time_series_input_file: "Gilija-TimeSeriesInputs.csv"
-    depth_file: "Gilija-Depths.csv"
-    velocity_file: "Gilija-Vels.csv"
+    time_series_input_file: "Leite-TimeSeriesInputs.csv"
+    depth_file: "Leite-Depths.csv"
+    velocity_file: "Leite-Vels.csv"
 
   CuronianLagoon:              # Kuršių marios — brackish 0-7 PSU (~1,584 km² real)
     drift_conc: 1.0e-09        # very low food in open lagoon
