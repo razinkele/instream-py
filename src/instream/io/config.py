@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import yaml
@@ -257,6 +257,10 @@ class SpeciesConfig(BaseModel, extra="allow"):
     redd_devel_C: float = 0.0
     redd_area: float = 0.0
 
+    # Starvation mortality (HexSimPy ED integration)
+    mass_floor_fraction: float = 0.5   # fraction of peak weight below which starvation kicks in
+    mass_floor_survival: float = 0.9   # daily survival probability when starving
+
     # Superindividual
     superind_max_rep: float = 0.0
     superind_max_length: float = 0.0
@@ -310,6 +314,27 @@ class ReachConfig(BaseModel, extra="allow"):
     velocity_file: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Barrier config
+# ---------------------------------------------------------------------------
+
+
+class BarrierDirectionConfig(BaseModel):
+    """Outcome probabilities for one direction through a barrier."""
+    mortality: float = 0.0
+    deflection: float = 0.0
+    transmission: float = 1.0
+
+
+class BarrierConfig(BaseModel):
+    """One physical barrier between two reaches."""
+    name: str = ""
+    from_reach: str
+    to_reach: str
+    upstream: BarrierDirectionConfig = BarrierDirectionConfig()
+    downstream: BarrierDirectionConfig = BarrierDirectionConfig()
+
+
 class ModelConfig(BaseModel):
     simulation: SimulationConfig
     performance: PerformanceConfig = PerformanceConfig()
@@ -318,6 +343,7 @@ class ModelConfig(BaseModel):
     species: Dict[str, SpeciesConfig] = {}
     reaches: Dict[str, ReachConfig] = {}
     marine: Optional["MarineConfig"] = None
+    barriers: Optional[List[BarrierConfig]] = None
 
 
 # ---------------------------------------------------------------------------

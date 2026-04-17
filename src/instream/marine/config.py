@@ -24,12 +24,20 @@ class ZoneDriverData(BaseModel):
     salinity: List[float]
     prey_index: List[float]
     predation_risk: List[float]
+    dissolved_oxygen: Optional[List[float]] = None  # monthly mg/L (estuary stress)
 
     @field_validator("temperature", "salinity", "prey_index", "predation_risk")
     @classmethod
     def _check_twelve(cls, v: List[float]) -> List[float]:
         if len(v) != 12:
             raise ValueError(f"Expected 12 monthly values, got {len(v)}")
+        return v
+
+    @field_validator("dissolved_oxygen")
+    @classmethod
+    def _check_twelve_do(cls, v: Optional[List[float]]) -> Optional[List[float]]:
+        if v is not None and len(v) != 12:
+            raise ValueError(f"Expected 12 monthly values for dissolved_oxygen, got {len(v)}")
         return v
 
 
@@ -52,6 +60,18 @@ class MarineFishingConfig(BaseModel):
 
     min_legal_length: float = 60.0
     gear_types: Dict[str, GearConfig] = {}
+
+
+class EstuaryConfig(BaseModel):
+    """Estuarine stress parameters — salinity and dissolved oxygen."""
+
+    salinity_max_daily_mort: float = 0.02
+    salinity_optimal: float = 8.0
+    salinity_tolerance: float = 4.0
+    salinity_range: float = 20.0
+    do_lethal_threshold: float = 2.0
+    do_escape_threshold: float = 4.0
+    do_lethal_daily_mort: float = 0.2
 
 
 class MarineConfig(BaseModel):
@@ -133,6 +153,9 @@ class MarineConfig(BaseModel):
 
     # Fishing
     marine_fishing: Optional[MarineFishingConfig] = None
+
+    # Estuary stress (salinity + dissolved oxygen)
+    estuary: Optional[EstuaryConfig] = None
 
     @field_validator("marine_growth_efficiency")
     @classmethod

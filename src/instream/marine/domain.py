@@ -31,6 +31,7 @@ class ZoneState:
     prey_index: np.ndarray    # float64
     predation_risk: np.ndarray  # float64
     area_km2: np.ndarray      # float64
+    dissolved_oxygen: np.ndarray  # float64 (mg/L) — for estuary stress
 
     @classmethod
     def zeros(cls, num_zones: int) -> "ZoneState":
@@ -43,6 +44,7 @@ class ZoneState:
             prey_index=np.zeros(num_zones, dtype=np.float64),
             predation_risk=np.zeros(num_zones, dtype=np.float64),
             area_km2=np.zeros(num_zones, dtype=np.float64),
+            dissolved_oxygen=np.full(num_zones, 99.0, dtype=np.float64),
         )
 
 
@@ -69,6 +71,7 @@ class StaticDriver:
 
         self._zone_names: List[str] = []
         self._area_km2 = np.zeros(n, dtype=np.float64)
+        self._dissolved_oxygen = np.full((n, 12), 99.0, dtype=np.float64)
 
         for i, zc in enumerate(config.zones):
             self._zone_names.append(zc.name)
@@ -79,6 +82,10 @@ class StaticDriver:
                 self._salinity[i] = drv.salinity
                 self._prey_index[i] = drv.prey_index
                 self._predation_risk[i] = drv.predation_risk
+                # Dissolved oxygen from estuary driver data (optional)
+                do_data = getattr(drv, 'dissolved_oxygen', None)
+                if do_data is not None:
+                    self._dissolved_oxygen[i] = do_data
 
     @property
     def num_zones(self) -> int:
@@ -92,6 +99,7 @@ class StaticDriver:
         zone_state.prey_index[:] = self._prey_index[:, month_idx]
         zone_state.predation_risk[:] = self._predation_risk[:, month_idx]
         zone_state.area_km2[:] = self._area_km2
+        zone_state.dissolved_oxygen[:] = self._dissolved_oxygen[:, month_idx]
         for i, nm in enumerate(self._zone_names):
             zone_state.name[i] = nm
 
@@ -247,6 +255,16 @@ class MarineDomain:
         if records:
             self.harvest_log.extend(records)
 
+        # 8. Estuarine stress — salinity + dissolved oxygen
+        estuary_cfg = getattr(self.config, 'estuary', None)
+        if estuary_cfg is not None:
+            from instream.modules.estuary import apply_estuary_stress
+
+            marine_mask_estuary = alive & (ts.zone_idx >= 0)
+            apply_estuary_stress(
+                ts, self.zone_state, marine_mask_estuary, estuary_cfg, self._rng
+            )
+
 
 # ---------------------------------------------------------------------------
 # Smolt readiness accumulation
@@ -315,12 +333,19 @@ def check_adult_return(
     return_condition_min: float = 0.5,
     current_date: "datetime.date | None" = None,
     rng=None,
+    barrier_map=None,
+    reverse_reach_graph=None,
+    estuary_reach: int = 0,
 ) -> tuple[int, int]:
     """Check OCEAN_ADULT fish for return to natal freshwater reach.
 
     Fish with sufficient *sea_winters* and *condition*, during spring
     (DOY 90-180), transition to RETURNING_ADULT and are placed in a
     random wet cell in their natal reach.
+
+    When *barrier_map* is provided, fish must pass all barriers on the
+    upstream route from estuary to natal reach.  Fish that are deflected
+    are placed in the last passable reach; fish killed at a barrier die.
 
     Returns
     -------
@@ -341,12 +366,6 @@ def check_adult_return(
     n_returned = 0
     n_repeat = 0
 
-    # Repeat-spawner threshold is config-aware: a first-time returner has
-    # exactly ``return_sea_winters`` sea winters. A fish that returned,
-    # became kelt, re-entered the ocean, accumulated at least one more
-    # sea winter, and returned again has ``>= return_sea_winters + 1``.
-    # Using a hard-coded ``>= 2`` would be tautological when the config
-    # sets ``return_min_sea_winters >= 2`` (v0.17.0 Phase 4 finding).
     repeat_threshold = return_sea_winters + 1
 
     for i in alive:
@@ -360,7 +379,26 @@ def check_adult_return(
             continue
 
         natal = int(trout_state.natal_reach_idx[i])
-        cells = reach_cells.get(natal)
+        target_reach = natal
+
+        # Upstream barrier passage
+        if barrier_map is not None and reverse_reach_graph is not None and rng is not None:
+            from instream.modules.barriers import (
+                attempt_upstream_route,
+                RESULT_TRANSMIT,
+                RESULT_MORTALITY,
+            )
+            result, last_passable = attempt_upstream_route(
+                barrier_map, estuary_reach, natal,
+                reverse_reach_graph, rng,
+            )
+            if result == RESULT_MORTALITY:
+                trout_state.alive[i] = False
+                continue
+            # DEFLECT or TRANSMIT: place at the reached location
+            target_reach = last_passable
+
+        cells = reach_cells.get(target_reach)
         if cells is None or len(cells) == 0:
             continue
 
@@ -369,7 +407,7 @@ def check_adult_return(
             n_repeat += 1
         trout_state.life_history[i] = int(LifeStage.RETURNING_ADULT)
         trout_state.zone_idx[i] = -1
-        trout_state.reach_idx[i] = natal
+        trout_state.reach_idx[i] = target_reach
         trout_state.cell_idx[i] = int(rng.choice(cells)) if rng is not None else int(cells[0])
         n_returned += 1
 

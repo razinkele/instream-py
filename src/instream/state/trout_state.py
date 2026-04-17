@@ -45,6 +45,9 @@ class TroutState:
     # Hatchery origin (v0.17.0, InSALMON extension — no NetLogo counterpart)
     is_hatchery: np.ndarray      # bool, True for stocked hatchery fish
 
+    # Starvation mortality (HexSimPy integration)
+    max_lifetime_weight: np.ndarray  # float64, tracks peak weight for ED-based starvation
+
     @classmethod
     def zeros(cls, capacity: int, max_steps_per_day: int = 4) -> "TroutState":
         return cls(
@@ -78,6 +81,7 @@ class TroutState:
             natal_reach_idx=np.full(capacity, -1, dtype=np.int32),
             smolt_readiness=np.zeros(capacity, dtype=np.float64),
             is_hatchery=np.zeros(capacity, dtype=bool),
+            max_lifetime_weight=np.zeros(capacity, dtype=np.float64),
         )
 
     def num_alive(self) -> int:

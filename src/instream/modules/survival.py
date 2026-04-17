@@ -333,7 +333,46 @@ def apply_mortality(alive, survival_probs, rng):
 
 
 # ---------------------------------------------------------------------------
-# 8. Redd (Egg) Survival — Low Temperature
+# 8. ED-based Starvation Mortality (HexSimPy integration)
+# ---------------------------------------------------------------------------
+
+
+def survival_mass_floor(
+    weight: float,
+    max_lifetime_weight: float,
+    floor_fraction: float = 0.5,
+    mass_floor_survival: float = 0.9,
+) -> float:
+    """Survival probability from energy depletion (starvation).
+
+    If current weight drops below ``floor_fraction × max_lifetime_weight``,
+    daily survival is reduced to ``mass_floor_survival``. Otherwise 1.0.
+
+    Parameters
+    ----------
+    weight : float
+        Current fish weight (g).
+    max_lifetime_weight : float
+        Peak weight ever achieved by this fish (g).
+    floor_fraction : float
+        Fraction of max weight below which starvation kicks in (default 0.5).
+    mass_floor_survival : float
+        Daily survival probability when starving (default 0.9).
+
+    Returns
+    -------
+    float
+        Survival probability in [0, 1].
+    """
+    if max_lifetime_weight <= 0.0:
+        return 1.0
+    if weight < floor_fraction * max_lifetime_weight:
+        return mass_floor_survival
+    return 1.0
+
+
+# ---------------------------------------------------------------------------
+# 9. Redd (Egg) Survival — Low Temperature
 # ---------------------------------------------------------------------------
 
 

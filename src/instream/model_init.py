@@ -382,6 +382,49 @@ class _ModelInitMixin:
         ]
         self._reach_graph = build_reach_graph(upstream, downstream)
 
+        # Reverse graph for upstream route computation (barrier passage)
+        from instream.modules.barriers import (
+            build_reverse_reach_graph,
+            BarrierMap,
+            BarrierDef,
+            BarrierOutcome,
+        )
+
+        self._reverse_reach_graph = build_reverse_reach_graph(self._reach_graph)
+
+        # Barrier map (None if no barriers configured)
+        self._barrier_map = None
+        if self.config.barriers:
+            barrier_defs = []
+            for bc in self.config.barriers:
+                fr = self._reach_name_to_idx.get(bc.from_reach)
+                tr = self._reach_name_to_idx.get(bc.to_reach)
+                if fr is None or tr is None:
+                    import warnings
+                    warnings.warn(
+                        f"Barrier '{bc.name}': reach name not found "
+                        f"(from={bc.from_reach!r}, to={bc.to_reach!r}), skipping.",
+                        stacklevel=2,
+                    )
+                    continue
+                barrier_defs.append(BarrierDef(
+                    name=bc.name,
+                    from_reach_idx=fr,
+                    to_reach_idx=tr,
+                    downstream=BarrierOutcome(
+                        mortality=bc.downstream.mortality,
+                        deflection=bc.downstream.deflection,
+                        transmission=bc.downstream.transmission,
+                    ),
+                    upstream=BarrierOutcome(
+                        mortality=bc.upstream.mortality,
+                        deflection=bc.upstream.deflection,
+                        transmission=bc.upstream.transmission,
+                    ),
+                ))
+            if barrier_defs:
+                self._barrier_map = BarrierMap(barrier_defs)
+
         # Pre-compute allowed reaches per reach (self + forward + reverse neighbors)
         self._reach_allowed = {}
         for r_idx in range(len(self.reach_order)):

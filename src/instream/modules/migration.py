@@ -29,12 +29,17 @@ def should_migrate(migration_fit, best_habitat_fit, life_history):
 
 def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
                             marine_config=None, smolt_readiness_threshold=0.8,
-                            smolt_min_length=12.0, current_date=None):
+                            smolt_min_length=12.0, current_date=None,
+                            barrier_map=None, rng=None):
     """Move a fish to the downstream reach, or make it an outmigrant.
 
     When *marine_config* is provided and the fish is a PARR at the river
     mouth (no downstream reach) with sufficient readiness and length, it
     transitions to SMOLT and enters the marine domain instead of dying.
+
+    When *barrier_map* is provided, each downstream step checks for a
+    barrier on the edge. Possible outcomes: transmit (pass through),
+    deflect (stay in current reach), or die.
 
     Returns
     -------
@@ -48,7 +53,26 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
     current_reach = int(trout_state.reach_idx[fish_idx])
     downstream = reach_graph.get(current_reach, [])
     if len(downstream) > 0:
-        trout_state.reach_idx[fish_idx] = downstream[0]
+        target_reach = downstream[0]
+        # Barrier check
+        if barrier_map is not None and rng is not None:
+            from instream.modules.barriers import (
+                attempt_downstream_passage,
+                RESULT_TRANSMIT,
+                RESULT_DEFLECT,
+                RESULT_MORTALITY,
+            )
+            result = attempt_downstream_passage(
+                barrier_map, current_reach, target_reach, rng
+            )
+            if result == RESULT_MORTALITY:
+                trout_state.alive[fish_idx] = False
+                return outmigrants, False
+            elif result == RESULT_DEFLECT:
+                # Fish stays in current reach
+                return outmigrants, False
+            # RESULT_TRANSMIT: fall through to normal movement
+        trout_state.reach_idx[fish_idx] = target_reach
     else:
         # No downstream reach — fish is at the river mouth.
         life_history = int(trout_state.life_history[fish_idx])

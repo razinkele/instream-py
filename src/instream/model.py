@@ -176,6 +176,9 @@ class InSTREAMModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMi
                     return_condition_min=0.0,
                     current_date=current_date,
                     rng=self.rng,
+                    barrier_map=getattr(self, '_barrier_map', None),
+                    reverse_reach_graph=getattr(self, '_reverse_reach_graph', None),
+                    estuary_reach=0,
                 )
                 marine_domain.total_returned += n_ret
                 marine_domain.total_repeat_spawners += n_repeat

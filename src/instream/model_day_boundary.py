@@ -202,6 +202,11 @@ class _ModelDayBoundaryMixin:
         self.trout_state.length[valid_alive] = new_l
         self.trout_state.condition[valid_alive] = new_k
 
+        # Track peak weight for starvation mortality
+        self.trout_state.max_lifetime_weight[valid_alive] = np.maximum(
+            self.trout_state.max_lifetime_weight[valid_alive], new_w
+        )
+
     def _do_spawning(self, step_length):
         """Check spawning readiness and create redds (per-fish species/reach)."""
         doy = self.time_manager.julian_date
@@ -512,6 +517,9 @@ class _ModelDayBoundaryMixin:
             smolt_min_length = marine_cfg.smolt_min_length
         current_date = self.time_manager.current_date
 
+        # Barrier map (None when no barriers configured)
+        barrier_map = getattr(self, '_barrier_map', None)
+
         sp_mig_L1 = self._sp_arrays["migrate_fitness_L1"]
         sp_mig_L9 = self._sp_arrays["migrate_fitness_L9"]
         alive = self.trout_state.alive_indices()
@@ -534,6 +542,8 @@ class _ModelDayBoundaryMixin:
                     smolt_readiness_threshold=smolt_readiness_threshold,
                     smolt_min_length=smolt_min_length,
                     current_date=current_date,
+                    barrier_map=barrier_map,
+                    rng=self.rng,
                 )
                 self._outmigrants.extend(out)
                 continue
@@ -556,6 +566,8 @@ class _ModelDayBoundaryMixin:
                         smolt_readiness_threshold=smolt_readiness_threshold,
                         smolt_min_length=smolt_min_length,
                         current_date=current_date,
+                        barrier_map=barrier_map,
+                        rng=self.rng,
                     )
                     self._outmigrants.extend(out)
                     if smoltified:
@@ -584,6 +596,8 @@ class _ModelDayBoundaryMixin:
                     smolt_readiness_threshold=smolt_readiness_threshold,
                     smolt_min_length=smolt_min_length,
                     current_date=current_date,
+                    barrier_map=barrier_map,
+                    rng=self.rng,
                 )
                 self._outmigrants.extend(out)
                 if smoltified and marine_domain is not None:
@@ -605,6 +619,8 @@ class _ModelDayBoundaryMixin:
                         smolt_readiness_threshold=smolt_readiness_threshold,
                         smolt_min_length=smolt_min_length,
                         current_date=current_date,
+                        barrier_map=barrier_map,
+                        rng=self.rng,
                     )
                     self._outmigrants.extend(out)
                     if smoltified and marine_domain is not None:
@@ -715,6 +731,7 @@ class _ModelDayBoundaryMixin:
             ts.sea_winters[slots] = 0
             ts.smolt_date[slots] = -1
             ts.smolt_readiness[slots] = 0.9    # ready to smoltify same day
+            ts.max_lifetime_weight[slots] = weights  # init peak weight for starvation
 
             # Apply release-shock mortality: kill (1 - release_shock_survival)
             # fraction of the batch representing 48-hour post-release losses.
@@ -822,6 +839,7 @@ class _ModelDayBoundaryMixin:
             # wild adults must not inherit is_hatchery=True from a dead
             # hatchery-origin slot.
             ts.is_hatchery[slots] = False
+            ts.max_lifetime_weight[slots] = weights  # init peak weight for starvation
 
             self._arrival_counts[key] = arrived_so_far + n_add
 

@@ -245,6 +245,35 @@ class _ModelEnvironmentMixin:
 
             survival_probs[alive] = surv**step_length
 
+        # ED-based starvation mortality (HexSimPy integration)
+        # Applied to all alive freshwater fish including fasting stages
+        alive_all = self.trout_state.alive_indices()
+        marine_domain_s = getattr(self, '_marine_domain', None)
+        if marine_domain_s is not None:
+            fw_s = self.trout_state.zone_idx[alive_all] == -1
+            starvation_alive = alive_all[fw_s]
+        else:
+            starvation_alive = alive_all
+        if len(starvation_alive) > 0:
+            from instream.modules.survival import survival_mass_floor
+            sp_idx_s = self.trout_state.species_idx[starvation_alive]
+            floor_frac = np.array([
+                getattr(self.config.species[self.species_order[si]], 'mass_floor_fraction', 0.5)
+                for si in sp_idx_s
+            ])
+            floor_surv = np.array([
+                getattr(self.config.species[self.species_order[si]], 'mass_floor_survival', 0.9)
+                for si in sp_idx_s
+            ])
+            w = self.trout_state.weight[starvation_alive]
+            mw = self.trout_state.max_lifetime_weight[starvation_alive]
+            starv_surv = np.where(
+                (mw > 0) & (w < floor_frac * mw),
+                floor_surv,
+                1.0,
+            )
+            survival_probs[starvation_alive] *= starv_surv ** step_length
+
         # v0.20.0/v0.22.0: protect post-spawn-fasting life stages from
         # juvenile-stack mortality. Both RETURNING_ADULT and KELT are
         # fasting on marine fat reserves while in freshwater:
