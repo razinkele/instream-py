@@ -6,12 +6,15 @@
 # `create_model_grid.generate_cells()` from the real feature polygons.
 #
 # Reaches (cell counts from the generator — run scripts/generate_baltic_example.py
-# to regenerate). 1,487 cells total across 7 reaches.
+# to regenerate). Now merges Lithuania + Kaliningrad OSM PBFs so the southern
+# Nemunas-Delta branch (Gilija / Матросовка / Matrosovka) is included. ~1600
+# cells total across 8 reaches (exact counts in the generator stdout).
 #   Nemunas        — main Nemunas channel OSM polygon (clipped to delta)
 #   Minija         — real Minija river, flows into Curonian Lagoon at Klaipėda
-#   Sysa           — Šyša, real Nemunas Delta branch (ASCII key)
+#   Sysa           — Šyša, real Nemunas-Delta branch (ASCII key)
 #   Skirvyte       — Skirvytė, real delta branch past Rusnė (ASCII key)
 #   Leite          — Leitė, real small delta-area tributary (ASCII key)
+#   Gilija         — southern delta branch (Матросовка / Matrosovka), from Kaliningrad PBF
 #   CuronianLagoon — Kuršių marios, hand-traced real outline (~1,584 km² real)
 #   BalticCoast    — nearshore Baltic strip off Klaipėda, W of Curonian Spit
 #
@@ -281,6 +284,27 @@ reaches:
     time_series_input_file: "Leite-TimeSeriesInputs.csv"
     depth_file: "Leite-Depths.csv"
     velocity_file: "Leite-Vels.csv"
+
+  Gilija:                      # southern Nemunas-Delta branch (Kaliningrad side;
+                               # OSM tags it as Матросовка / Matrosovka)
+    drift_conc: 3.5e-09
+    search_prod: 5.50e-07
+    shelter_speed_frac: 0.12
+    prey_energy_density: 3000
+    drift_regen_distance: 1200
+    shading: 0.45
+    fish_pred_min: 0.955
+    terr_pred_min: 0.960
+    light_turbid_coef: 0.0035
+    light_turbid_const: 0.0015
+    max_spawn_flow: 10
+    shear_A: 0.006
+    shear_B: 0.28
+    upstream_junction: 1
+    downstream_junction: 5
+    time_series_input_file: "Gilija-TimeSeriesInputs.csv"
+    depth_file: "Gilija-Depths.csv"
+    velocity_file: "Gilija-Vels.csv"
 
   CuronianLagoon:              # Kuršių marios — brackish 0-7 PSU (~1,584 km² real)
     drift_conc: 1.0e-09        # very low food in open lagoon

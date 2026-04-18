@@ -95,10 +95,13 @@ REACH_OSM = {
     "Sysa":     ("waterway", ("Šyša",)),
     "Skirvyte": ("waterway", ("Skirvytė",)),
     "Leite":    ("waterway", ("Leitė",)),
+    # Gilija is the Lithuanian name; the feature is only in the Kaliningrad PBF
+    # and OSM tags it with the Russian name Матросовка (Matrosovka).
+    "Gilija":   ("waterway", ("Матросовка", "Matrosovka", "Gilija")),
 }
 
 REACH_ORDER = [
-    "Nemunas", "Minija", "Sysa", "Skirvyte", "Leite",
+    "Nemunas", "Minija", "Sysa", "Skirvyte", "Leite", "Gilija",
     "CuronianLagoon", "BalticCoast",
 ]
 
@@ -111,6 +114,7 @@ CELL_SIZE_M = {
     "Sysa":           200,
     "Skirvyte":       200,
     "Leite":          250,
+    "Gilija":         250,   # southern delta branch from Kaliningrad PBF
     "CuronianLagoon": 2500,
     "BalticCoast":    2500,
 }
@@ -152,6 +156,15 @@ REACH_PARAMS = {
         "depth_base": 1.8, "depth_flood": 3.5,
         "vel_base": 0.10, "vel_flood": 0.6,
     },
+    "Gilija": {
+        # Southern Nemunas delta branch (Матросовка / Matrosovka on the Kaliningrad
+        # side). Warmer, flatter than the northern delta arms. Hydraulic params
+        # modelled on Leite with slightly higher depth/flow (longer effective reach).
+        "temp_mean": 10.0, "temp_amp": 9.5, "flow_base": 3.0, "turb_base": 4,
+        "flows": [0.6, 1.2, 2.0, 3.0, 5.0, 7.0, 12.0, 22.0, 55.0, 250.0],
+        "depth_base": 2.5, "depth_flood": 4.0,
+        "vel_base": 0.10, "vel_flood": 0.6,
+    },
     "CuronianLagoon": {
         "temp_mean": 10.0, "temp_amp": 10.0, "flow_base": 15.0, "turb_base": 5,
         "flows": [5.0, 8.0, 12.0, 15.0, 22.0, 30.0, 45.0, 80.0, 150.0, 600.0],
@@ -183,7 +196,9 @@ def fetch_rivers_and_delta() -> dict[str, object]:
     giving one (Multi)LineString or (Multi)Polygon per reach.
     """
     _log(f"Fetching OSM waterways for bbox {BBOX}...")
-    ww = query_waterways("lithuania", BBOX)
+    # Merge Lithuania + Kaliningrad PBFs so the Kaliningrad-side delta branch
+    # Матросовка (Gilija) is reachable.
+    ww = query_waterways(("lithuania", "kaliningrad"), BBOX)
     _log(f"  got {len(ww)} waterway features")
 
     clip_box = box(*RIVER_CLIP_BBOX)
@@ -364,10 +379,18 @@ def build_cells(reach_geoms: dict[str, object]) -> gpd.GeoDataFrame:
             else "river"
         )
         # generate_cells() calls .coords on each segment — explode Multi-geoms
-        # to parts so single-geometry consumers downstream see LineString /
-        # Polygon only.
+        # AND GeometryCollections to parts so single-geometry consumers
+        # downstream see LineString / Polygon only. GeometryCollections arise
+        # when a reach's OSM features mix line and polygon types (Gilija does).
         segments: list = []
-        if geom.geom_type.startswith("Multi"):
+        if geom.geom_type == "GeometryCollection":
+            # Keep only line/polygon members; skip Point or nested GeometryCollections.
+            for sub in geom.geoms:
+                if sub.geom_type.startswith("Multi"):
+                    segments.extend(sub.geoms)
+                elif sub.geom_type in ("LineString", "Polygon"):
+                    segments.append(sub)
+        elif geom.geom_type.startswith("Multi"):
             segments = list(geom.geoms)
         else:
             segments = [geom]
@@ -478,8 +501,8 @@ def generate_populations(reach_order: list[str]) -> None:
     pop_path = OUT / "BalticExample-InitialPopulations.csv"
     riverine = [r for r in reach_order if r not in ("CuronianLagoon", "BalticCoast")]
     # Split a fixed total across river reaches weighted toward the main stem
-    weights = {"Nemunas": 0.40, "Minija": 0.18,
-               "Sysa": 0.15, "Skirvyte": 0.15, "Leite": 0.12}
+    weights = {"Nemunas": 0.35, "Minija": 0.16, "Sysa": 0.13,
+               "Skirvyte": 0.13, "Leite": 0.11, "Gilija": 0.12}
     total_age0 = 3000
     total_age1 = 1300
     total_age2 = 280
@@ -498,8 +521,8 @@ def generate_populations(reach_order: list[str]) -> None:
     _log(f"Populations: {pop_path.name}")
 
     arr_path = OUT / "BalticExample-AdultArrivals.csv"
-    adult_weights = {"Nemunas": 0.40, "Minija": 0.18,
-                     "Sysa": 0.14, "Skirvyte": 0.16, "Leite": 0.12}
+    adult_weights = {"Nemunas": 0.35, "Minija": 0.16, "Sysa": 0.12,
+                     "Skirvyte": 0.14, "Leite": 0.11, "Gilija": 0.12}
     adults_per_year = 465
     with open(arr_path, "w", newline="") as f:
         f.write("; Adult arrivals for Baltic example\n")
