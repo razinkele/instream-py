@@ -16,9 +16,18 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
 import geopandas as gpd
-import osmium
 import shapely.wkb
 from shapely.validation import make_valid
+
+# pyosmium is optional at module-import time so the Shiny app can boot on
+# servers that don't have it installed — the Create Model panel's fetch
+# buttons will raise a clear error at *use* time instead of killing startup.
+try:
+    import osmium  # type: ignore[import-not-found]
+    _HAS_OSMIUM = True
+except ImportError:  # pragma: no cover — environment-dependent
+    osmium = None  # type: ignore[assignment]
+    _HAS_OSMIUM = False
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -229,10 +238,21 @@ def _clip_pbf(
 # ---------------------------------------------------------------------------
 
 
-class _HydroHandler(osmium.SimpleHandler):
+# Base class alias — lets us define _HydroHandler even when osmium isn't
+# installed. The class is never *instantiated* without osmium (guarded in
+# _extract_hydro), so the object-fallback is just for module import.
+_HandlerBase = osmium.SimpleHandler if _HAS_OSMIUM else object
+
+
+class _HydroHandler(_HandlerBase):  # type: ignore[misc, valid-type]
     """Collect waterway and water-body geometries from a PBF file."""
 
     def __init__(self) -> None:
+        if not _HAS_OSMIUM:
+            raise RuntimeError(
+                "pyosmium not installed — cannot parse OSM PBFs. "
+                "Install with: micromamba install -n shiny -c conda-forge pyosmium"
+            )
         super().__init__()
         self._wkb = osmium.geom.WKBFactory()
         self.waterway_rows: list[tuple[str, str, str]] = []
@@ -240,7 +260,7 @@ class _HydroHandler(osmium.SimpleHandler):
 
     # -- polygon features (areas) ------------------------------------------
 
-    def area(self, a: osmium.osm.Area) -> None:
+    def area(self, a) -> None:
         tags = a.tags
 
         # natural=water polygons
@@ -270,7 +290,7 @@ class _HydroHandler(osmium.SimpleHandler):
 
     # -- linear features (ways) --------------------------------------------
 
-    def way(self, w: osmium.osm.Way) -> None:
+    def way(self, w) -> None:
         ww = w.tags.get("waterway", "")
         if ww not in _WATERWAY_TYPES:
             return
