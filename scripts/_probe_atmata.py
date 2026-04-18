@@ -56,6 +56,33 @@ def main() -> None:
         "Skirvyte":("Skirvytė",),
         "Leite":   ("Leitė",),
     }
+    # Print the geographic extent of each reach's raw OSM features
+    # (pre-clip) so we can see how far west/south each river extends.
+    print("\n=== Raw OSM extents (pre-clip, WGS84) ===")
+    print(f"{'Reach':<10} {'min_lon':>8} {'max_lon':>8} {'min_lat':>8} {'max_lat':>8}")
+    print("-" * 50)
+    for ascii_name, osm_targets in targets.items():
+        hits = ww[ww["nameText"].isin(osm_targets)]
+        if len(hits) == 0:
+            continue
+        all_coords = []
+        for g in hits.geometry:
+            if g.geom_type == "LineString":
+                all_coords.extend(g.coords)
+            elif g.geom_type == "MultiLineString":
+                for sub in g.geoms:
+                    all_coords.extend(sub.coords)
+            elif g.geom_type == "Polygon":
+                all_coords.extend(g.exterior.coords)
+            elif g.geom_type == "MultiPolygon":
+                for sub in g.geoms:
+                    all_coords.extend(sub.exterior.coords)
+        if not all_coords:
+            continue
+        xs = [c[0] for c in all_coords]
+        ys = [c[1] for c in all_coords]
+        print(f"{ascii_name:<10} {min(xs):>8.3f} {max(xs):>8.3f} "
+              f"{min(ys):>8.3f} {max(ys):>8.3f}")
     print(f"{'Reach':<10} {'n_feat':>6}  {'L(lines km)':>12}  {'A(poly km2)':>12}  {'impl_w(m)':>10}")
     print("-" * 70)
     for ascii_name, osm_targets in targets.items():
