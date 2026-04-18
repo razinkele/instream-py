@@ -153,11 +153,19 @@ BUFFER_FACTOR = {
 
 REACH_PARAMS = {
     # Rivers: temp/flow/turbidity as before; depth_base now tied to real means.
+    # frac_spawn = per-reach fraction of cell area with spawning-gravel
+    # substrate (0–1). Salmon spawn only where a cell has BOTH (a) shallow
+    # enough depth to intersect spawn_depth_table (< 2.04 m) AND (b)
+    # frac_spawn > 0. Lower-Nemunas main channel and delta distributaries
+    # are mostly too deep for spawning regardless, but the frac_spawn values
+    # reflect real-world substrate: gravel-dominant in small tributaries
+    # (Minija, Leitė), sand/silt in delta branches (Atmata, Skirvytė, Gilija).
     "Nemunas": {
         "temp_mean": 8.5, "temp_amp": 8.5, "flow_base": 6.0, "turb_base": 2,
         "flows": [1.0, 2.0, 4.0, 6.0, 9.0, 14.0, 22.0, 40.0, 100.0, 500.0],
         "depth_base": 5.0, "depth_flood": 8.0,         # real lower Nemunas ~5m
         "vel_base": 0.30, "vel_flood": 1.5,
+        "frac_spawn": 0.02,  # limited gravel in the lower main channel
     },
     "Atmata": {
         # Main northern Nemunas-delta distributary. Splits off at Rusnė and
@@ -167,30 +175,35 @@ REACH_PARAMS = {
         "flows": [0.8, 1.5, 3.0, 4.0, 6.0, 9.0, 14.0, 25.0, 70.0, 350.0],
         "depth_base": 3.5, "depth_flood": 5.5,
         "vel_base": 0.25, "vel_flood": 1.2,
+        "frac_spawn": 0.03,  # shifting gravel patches
     },
     "Minija": {
         "temp_mean": 9.0, "temp_amp": 8.0, "flow_base": 3.0, "turb_base": 3,
         "flows": [0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 25.0, 60.0, 300.0],
         "depth_base": 2.0, "depth_flood": 4.0,
         "vel_base": 0.25, "vel_flood": 1.2,
+        "frac_spawn": 0.12,  # typical gravel-bed tributary
     },
     "Sysa": {
         "temp_mean": 9.5, "temp_amp": 9.0, "flow_base": 2.5, "turb_base": 3,
         "flows": [0.5, 1.0, 1.8, 2.5, 4.0, 6.0, 10.0, 18.0, 45.0, 200.0],
         "depth_base": 2.2, "depth_flood": 4.0,
         "vel_base": 0.15, "vel_flood": 0.9,
+        "frac_spawn": 0.08,  # delta channel with some gravel sections
     },
     "Skirvyte": {
         "temp_mean": 9.5, "temp_amp": 9.0, "flow_base": 2.5, "turb_base": 4,
         "flows": [0.5, 1.0, 1.8, 2.5, 4.0, 6.0, 10.0, 18.0, 45.0, 200.0],
         "depth_base": 2.8, "depth_flood": 4.5,          # reed-choked branch
         "vel_base": 0.12, "vel_flood": 0.7,
+        "frac_spawn": 0.05,  # reed-choked; marginal spawning habitat
     },
     "Leite": {
         "temp_mean": 9.0, "temp_amp": 8.5, "flow_base": 1.5, "turb_base": 3,
         "flows": [0.3, 0.6, 1.0, 1.5, 2.5, 4.0, 7.0, 13.0, 30.0, 150.0],
         "depth_base": 1.8, "depth_flood": 3.5,
         "vel_base": 0.10, "vel_flood": 0.6,
+        "frac_spawn": 0.10,  # small gravel-bed tributary
     },
     "Gilija": {
         # Southern Nemunas delta branch (Матросовка / Matrosovka on the Kaliningrad
@@ -200,18 +213,21 @@ REACH_PARAMS = {
         "flows": [0.6, 1.2, 2.0, 3.0, 5.0, 7.0, 12.0, 22.0, 55.0, 250.0],
         "depth_base": 2.5, "depth_flood": 4.0,
         "vel_base": 0.10, "vel_flood": 0.6,
+        "frac_spawn": 0.05,  # Kaliningrad side — mostly sandy
     },
     "CuronianLagoon": {
         "temp_mean": 10.0, "temp_amp": 10.0, "flow_base": 15.0, "turb_base": 5,
         "flows": [5.0, 8.0, 12.0, 15.0, 22.0, 30.0, 45.0, 80.0, 150.0, 600.0],
         "depth_base": 3.8, "depth_flood": 5.5,          # published mean = 3.8m
         "vel_base": 0.03, "vel_flood": 0.15,
+        "frac_spawn": 0.0,   # soft sediment / no spawning habitat
     },
     "BalticCoast": {
         "temp_mean": 8.0, "temp_amp": 7.0, "flow_base": 40.0, "turb_base": 2,
         "flows": [10.0, 20.0, 30.0, 40.0, 60.0, 90.0, 130.0, 200.0, 400.0, 1000.0],
         "depth_base": 10.0, "depth_flood": 12.0,        # 0-10km offshore
         "vel_base": 0.01, "vel_flood": 0.08,
+        "frac_spawn": 0.0,   # marine — no spawning
     },
 }
 
@@ -504,16 +520,24 @@ def build_cells(reach_geoms: dict[str, object]) -> gpd.GeoDataFrame:
             segments = list(geom.geoms)
         else:
             segments = [geom]
+        # frac_spawn propagates through generate_cells into the shapefile's
+        # FRACSPWN column; salmon spawning (modules/spawning.py) multiplies
+        # cell area by this fraction when scoring spawn suitability, so a
+        # zero here makes spawning impossible no matter how good the depth
+        # and velocity are. See REACH_PARAMS for per-reach justifications.
+        frac_spawn = REACH_PARAMS[reach].get("frac_spawn", 0.0)
         reach_segments = {
             reach: {
                 "segments": segments,
                 "type": reach_type,
                 "properties": [{} for _ in segments],
+                "frac_spawn": frac_spawn,
             }
         }
         buf_factor = BUFFER_FACTOR.get(reach, 2.0)
         _log(f"Generating cells for {reach} (cell_size={CELL_SIZE_M[reach]}m, "
-             f"buffer_factor={buf_factor}, type={reach_type})...")
+             f"buffer_factor={buf_factor}, frac_spawn={frac_spawn}, "
+             f"type={reach_type})...")
         cells = generate_cells(
             reach_segments, cell_size=CELL_SIZE_M[reach], cell_shape="hexagonal",
             buffer_factor=buf_factor,

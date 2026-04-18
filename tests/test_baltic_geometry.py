@@ -181,3 +181,58 @@ def test_documented_gap_under_budget(
         f"gap (see DOCUMENTED_GAPS comments) but the blow-up suggests a "
         f"regression — investigate the OSM fetch or per-reach clip."
     )
+
+
+# ---------------------------------------------------------------------------
+# Invariant: spawning reaches have frac_spawn > 0
+# ---------------------------------------------------------------------------
+
+# Tributaries where real-world salmon spawning occurs. If any of these drop
+# to frac_spawn = 0 in the DBF, the whole spawning pipeline silently fails —
+# spawn_suitability score = 0 for every candidate cell, no redds are ever
+# created, and the population can't reproduce. This exact bug shipped in
+# v0.30.0 → v0.30.1 because the real-OSM generator never populated the
+# `frac_spawn` key in reach_segments (default 0.0 in create_model_grid).
+SPAWNING_REACHES = ["Nemunas", "Atmata", "Minija", "Sysa", "Skirvyte",
+                    "Leite", "Gilija"]
+
+
+def test_spawning_reaches_have_nonzero_frac_spawn(
+    baltic_gdf: gpd.GeoDataFrame,
+) -> None:
+    """Every river reach must have at least one cell with FRACSPWN > 0.
+    Zero-everywhere means `create_model_grid.generate_cells()` was called
+    without `frac_spawn` in the reach_segments dict — a generator bug that
+    silently kills reproduction."""
+    failures: list[str] = []
+    for r in SPAWNING_REACHES:
+        mask = baltic_gdf["REACH_NAME"] == r
+        if mask.sum() == 0:
+            failures.append(f"{r}: no cells (reach missing)")
+            continue
+        n_nonzero = int((baltic_gdf.loc[mask, "FRACSPWN"] > 0).sum())
+        if n_nonzero == 0:
+            failures.append(f"{r}: 0/{int(mask.sum())} cells have FRACSPWN > 0")
+    assert not failures, (
+        "Reaches with no spawning habitat at all:\n  " + "\n  ".join(failures) + "\n\n"
+        "Likely cause: scripts/generate_baltic_example.py doesn't pass "
+        "'frac_spawn' in the reach_segments dict to "
+        "create_model_grid.generate_cells(), so it defaults to 0.0. Check "
+        "REACH_PARAMS and build_cells()."
+    )
+
+
+def test_non_spawning_reaches_have_zero_frac_spawn(
+    baltic_gdf: gpd.GeoDataFrame,
+) -> None:
+    """Marine / lagoon cells must have FRACSPWN = 0. If they're > 0, fish
+    might spawn in the ocean, which never happens for Atlantic salmon."""
+    for r in ("CuronianLagoon", "BalticCoast"):
+        mask = baltic_gdf["REACH_NAME"] == r
+        if mask.sum() == 0:
+            continue
+        max_fs = float(baltic_gdf.loc[mask, "FRACSPWN"].max())
+        assert max_fs == 0.0, (
+            f"Reach {r} has FRACSPWN max = {max_fs}; must be 0 for "
+            f"non-freshwater habitat."
+        )
