@@ -6,7 +6,7 @@
 [![docs](https://github.com/razinkele/instream-py/actions/workflows/docs.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/docs.yml)
 [![PyPI](https://img.shields.io/pypi/v/instream)](https://pypi.org/project/instream/)
 [![Tests](https://img.shields.io/badge/tests-920%2B-brightgreen)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.30.0-blue)](https://github.com/razinkele/instream-py/releases)
+[![Release](https://img.shields.io/badge/release-v0.30.1-blue)](https://github.com/razinkele/instream-py/releases)
 
 A high-performance Python conversion of the **inSTREAM/inSALMO 7.4**
 individual-based salmonid model — with 350-1290× the throughput of the
@@ -66,7 +66,7 @@ pip install -e ".[dev]"
 # Run Example A (single reach, Chinook salmon)
 instream configs/example_a.yaml --output-dir results/ --end-date 2012-01-01
 
-# Run the Baltic case study (8 reaches, real Nemunas geometry + EMODnet bathymetry)
+# Run the Baltic case study (9 reaches incl. Atmata, real coastline-clipped marine domain)
 instream configs/example_baltic.yaml -o results_baltic/ --end-date 2013-04-01
 ```
 
@@ -108,17 +108,19 @@ the junction network and inter-species interactions.
 
 ### `example_baltic` — Nemunas / Curonian Lagoon / Baltic coast
 
-The **real-data case study**: 8 reaches modeled on actual OSM geometry for
+The **real-data case study**: 9 reaches modeled on actual OSM geometry for
 the Nemunas basin, delta branches across the Lithuania–Kaliningrad border,
-the Curonian Lagoon, and the offshore Baltic strip. Marine reaches sample
-real bathymetry from **EMODnet** (1/16 arc-minute DTM).
+the real Curonian Lagoon polygon, and a coastline-clipped Baltic nearshore
+reach opening at the Klaipėda strait. Marine reaches sample real bathymetry
+from **EMODnet** (1/16 arc-minute DTM).
 
 - Config: [`configs/example_baltic.yaml`](configs/example_baltic.yaml)
 - Full workflow reference: [`docs/case-studies/baltic-workflow.md`](docs/case-studies/baltic-workflow.md)
 - Regeneration script: [`scripts/generate_baltic_example.py`](scripts/generate_baltic_example.py)
-- Reaches: `Nemunas`, `Minija`, `Sysa` (Šyša), `Skirvyte` (Skirvytė),
-  `Leite` (Leitė), `Gilija` (Матросовка from the Kaliningrad PBF),
-  `CuronianLagoon`, `BalticCoast` — 1,774 cells total
+- Reaches: `Nemunas`, `Atmata` (main N distributary, primary salmon route),
+  `Minija`, `Sysa` (Šyša), `Skirvyte` (Skirvytė), `Leite` (Leitė),
+  `Gilija` (Матросовка from the Kaliningrad PBF), `CuronianLagoon`,
+  `BalticCoast` — 1,591 cells total
 - Marine domain: Estuary → Coastal → Baltic Proper zones with smolt exit
   and adult return transitions
 
@@ -196,7 +198,7 @@ Benchmarked on a reference 912-day run of `example_a` (single reach, Chinook):
 | Numba JIT        | 48 ms    | 44 s        | ~1,292×                |
 | NetLogo 7.4      | ~5 s     | ~76 min     | ~12×                   |
 
-For the Baltic case study (8 reaches, 1,774 cells, ~5,000 initial fish),
+For the Baltic case study (9 reaches, 1,591 cells, ~5,000 initial fish),
 a 2-week window completes in **~90 s** under Numba — a useful fast-feedback
 loop for calibration work.
 
@@ -368,7 +370,7 @@ inSTREAM reference and this Python implementation:
   author  = {Razinkovas-Baziukas, Artūras and contributors},
   year    = {2026},
   url     = {https://github.com/razinkele/instream-py},
-  version = {0.30.0}
+  version = {0.30.1}
 }
 ```
 

@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.1] - 2026-04-19
+
+### Baltic case study geometry corrections
+
+Post-release review of the `example_baltic` map surfaced four geometry
+quality issues that made the case study visually and hydrologically
+incorrect. All fixed in this patch release with no breaking API changes.
+
+### Fixed
+
+- **Curonian Lagoon shape** — replaced the 18-point hand-traced fallback
+  (2,585 km², wrapped around the Curonian Spit and included Baltic Sea
+  water west of it) with the real OSM polygon from Nominatim relation
+  7546467 (1,558 km², within 2% of the published 1,584 km²).
+- **BalticCoast was an offshore rectangle disconnected from the Klaipėda
+  strait** — salmon migrate between the Baltic and the Curonian Lagoon
+  through the strait (55.68–55.72°N, 21.08–21.13°E), but the previous
+  rectangle ended at 21.05°E and 55.70°N, outside the strait mouth. Fixed
+  by extracting `natural=coastline` ways from the cached Lithuania OSM PBF
+  (new `scripts/_fetch_lithuania_coastline.py`), building a real land
+  polygon via shapely `split()`, and subtracting it from a wider
+  BalticCoast rectangle. The marine reach now hugs the real Klaipėda →
+  Palanga coast, opens at the strait, and connects to the Curonian Lagoon
+  (verified by `scripts/_probe_connectivity.py`).
+- **Atmata distributary was missing entirely** — the primary northern
+  Nemunas delta branch (Rusnė → Klaipėda strait; main anadromous corridor
+  for returning salmon) was not in `REACH_OSM`. Added as a dedicated reach
+  (78 cells) with its own hydraulic params, clip, and the second-largest
+  population/adult-arrival weight (20%) after Nemunas (30%).
+- **Sysa was disconnected from Atmata** — per-reach clip bboxes did not
+  overlap at the Rusnė confluence (~21.37°E, 55.30°N). Extended Sysa clip
+  west to 21.30°E and Atmata clip east to 21.50°E so cells touch through
+  Rusnė–Šilutė. Atmata↔Sysa distance on the cell grid: 3.1 km → 0 km.
+- **Linestring rivers rendered as 1 km-wide bands** — `generate_cells()`
+  default `buffer_factor=2.0` inflates linestring inputs by `cell_size × 2`
+  on each side. For Minija's 250 m cells this produced a 1 km-wide buffer
+  against a real 30 m channel — 33× overstatement. Added per-reach
+  `BUFFER_FACTOR` dict: linestring rivers get 0.25–0.5, polygon reaches
+  (Nemunas riverbank, Skirvytė, lagoon, coast) keep the 2.0 default.
+  Implied channel widths now match reality: Minija ~30 m, Sysa ~60 m,
+  Gilija ~150 m, Atmata ~130 m.
+
+### Added
+
+- `scripts/_fetch_curonian_lagoon_osm.py` — one-time fetcher for the real
+  OSM Curonian Lagoon polygon (relation 7546467), cached to
+  `app/data/marineregions/curonian_lagoon.geojson`.
+- `scripts/_fetch_curonian_spit_osm.py` — one-time fetcher for the real
+  OSM Curonian Spit polygon (relation 309762), cached to
+  `app/data/marineregions/curonian_spit.geojson`.
+- `scripts/_fetch_lithuania_coastline.py` — offline extraction of
+  `natural=coastline` ways from the cached Lithuania PBF via osmium;
+  builds `lithuania_coastline.geojson` (MultiLineString) and
+  `lithuania_land_real.geojson` (land polygon for sea clipping).
+- `scripts/_audit_reach_centroids.py` — per-reach centroid + bbox span +
+  distance-from-Klaipėda audit. Flags reaches extending far outside the
+  salmon-relevant area (used to diagnose the 90 km Minija overextension).
+- `scripts/_probe_connectivity.py` — verifies inter-reach distances on the
+  cell grid so visual/spatial disconnections surface in CI, not on the map.
+- `scripts/_probe_atmata.py` — geometry audit for OSM waterway widths;
+  identifies linestring-only reaches that need tighter `buffer_factor`.
+
+### Changed
+
+- Baltic case study total cells: 1,774 → 1,591 across **9** reaches
+  (was 8). Atmata added; Minija/Sysa/Leite tightened; BalticCoast grown
+  from 35 to 65 cells by coastline-clipping a wider rectangle instead of
+  staying offshore.
+- `tests/e2e/test_baltic_e2e.py`: cell-count band updated from 2,000–3,500
+  → 1,300–2,200; reach list now expects 9 reaches including Atmata.
+
+### Removed
+
+- `app/data/marineregions/lithuania_land.geojson` and
+  `scripts/_fetch_lithuania_land_osm.py` (superseded). Nominatim's country
+  admin polygon includes ~20 km of territorial waters, making it unusable
+  as a real-coast clip.
+
 ## [0.30.0] - 2026-04-18
 
 ### Baltic case study now uses real-world geometry and bathymetry

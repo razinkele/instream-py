@@ -17,16 +17,19 @@ Full implementation plan preserved at
 - **Species**: Baltic Atlantic salmon (anadromous, iteroparous).
 - **Geographic scope**: lower Nemunas River + Nemunas Delta + Curonian Lagoon
   + ~15 km Baltic coastal strip off Klaipėda (Lithuania / Kaliningrad).
-- **8 reaches** (ASCII keys; OSM names in parentheses):
+- **9 reaches** (ASCII keys; OSM names in parentheses):
   - `Nemunas` — main channel
+  - `Atmata` — main northern delta distributary (Rusnė → Klaipėda strait);
+    primary anadromous corridor for returning salmon
   - `Minija` — Nemunas-basin river feeding the Curonian Lagoon at Klaipėda
   - `Sysa` — Šyša, real Nemunas-Delta channel
   - `Skirvyte` — Skirvytė, reed-choked middle delta branch
   - `Leite` — Leitė, small delta-area tributary
   - `Gilija` — Матросовка (Matrosovka) on the Kaliningrad side
-  - `CuronianLagoon` — Kuršių marios (brackish 0–7 PSU)
-  - `BalticCoast` — nearshore Baltic strip W of the Curonian Spit
-- **Scale**: 1,774 hex/rect cells total. Simulation window: 2011–2036.
+  - `CuronianLagoon` — Kuršių marios (brackish 0–7 PSU), real OSM polygon
+  - `BalticCoast` — nearshore Baltic strip opening at the Klaipėda strait,
+    clipped by the real Lithuanian coastline (OSM `natural=coastline` ways)
+- **Scale**: 1,591 hex/rect cells total. Simulation window: 2011–2036.
 - **Marine domain**: three abstract zones (Estuary → Coastal → Baltic
   Proper) declared under `marine.zones` in the YAML.
 
@@ -37,11 +40,12 @@ Full implementation plan preserved at
 | Purpose | Source | Access | Size |
 |---|---|---|---|
 | River geometry (Nemunas + tributaries + delta branches) | OpenStreetMap, Geofabrik PBFs | HTTP download → local cache | Lithuania 219 MB, Kaliningrad 27 MB |
-| Curonian Lagoon polygon | Marine Regions gazetteer **MRGID 3642** (attempted) → hand-traced fallback | WFS at `geo.vliz.be` | ~50 kB GeoJSON |
-| Baltic coastal polygon | Hand-defined rectangle west of Curonian Spit | None (inline coords) | N/A |
+| Curonian Lagoon polygon | **OSM relation 7546467** via Nominatim (primary); Marine Regions MRGID 3642 attempted for future use | Nominatim `search.php` | ~300 kB GeoJSON |
+| Curonian Spit polygon | **OSM relation 309762** via Nominatim (used as fallback coastline clip) | Nominatim `search.php` | ~140 kB GeoJSON |
+| Baltic coastal polygon | Rectangle opening at Klaipėda strait, clipped by real Lithuanian coastline | OSM `natural=coastline` ways via osmium from the cached Lithuania PBF | ~400 kB GeoJSON (coastline + land) |
 | Marine reach bathymetry | EMODnet Bathymetry DTM 1/16 arc-min | WCS at `ows.emodnet-bathymetry.eu` | ~16 MB GeoTIFF for Baltic bbox |
 | Strahler stream order | Heuristic from OSM `waterway` tag | (in code) `WATERWAY_STRAHLER` dict | N/A |
-| Hydraulic time series (temp/flow/turbidity) | Synthetic (seasonal sinusoids + noise) | Generated inline | ~200 kB × 8 reaches |
+| Hydraulic time series (temp/flow/turbidity) | Synthetic (seasonal sinusoids + noise) | Generated inline | ~200 kB × 9 reaches |
 | Populations (initial + adult arrivals) | Hand-weighted across reaches | Generated inline | ~2 kB each |
 
 **Attribution requirement**: EMODnet data requires attribution. The
@@ -439,7 +443,7 @@ The Baltic case study is essentially a 7-step template:
    fjord) that OSM can't assemble, hand-trace a polygon from published
    coordinates. Verify area against the real value and tolerate some
    over-sizing — the EMODnet sampler will correct the depth distribution.
-7. **Write a YAML config** with all 8 reaches / N reaches, `marine.zones`
+7. **Write a YAML config** with all 9 reaches / N reaches, `marine.zones`
    block, and `spatial.gis_properties` map. Add a CHANGELOG entry and
    release.
 
