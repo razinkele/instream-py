@@ -70,6 +70,21 @@ BBOX = (20.80, 54.90, 22.20, 55.95)
 # each, which would produce thousands of cells at 120 m cell size.
 RIVER_CLIP_BBOX = (20.95, 55.05, 21.75, 55.70)
 
+# Marine Regions authoritative polygon cache + metadata.
+# MRGID 3642 is the Curonian Lagoon (Kuršių marios). Per 2026-04-18 probing,
+# no Marine Regions WFS layer returns MRGID 3642 via cql_filter — the polygon
+# is in the gazetteer but not exposed as WFS-queryable content. The fetcher
+# tries anyway (future-proof), falls back to hand-traced polygon on miss.
+CURONIAN_CACHE_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "app" / "data" / "marineregions" / "curonian_lagoon.geojson"
+)
+CURONIAN_MRGID = 3642
+MARINEREGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
+# Most plausible future home for the polygon — if/when Marine Regions adds
+# MRGID 3642 to a WFS-exposed layer, gazetteer_polygon is the likely target.
+MARINEREGIONS_TYPENAME = "MarineRegions:gazetteer_polygon"
+
 # Real OSM names that map to each reach. ASCII keys are what we write to
 # shapefile DBF and CSV filenames; the OSM names use diacritics. Jūra isn't
 # included — it joins Nemunas at Jurbarkas (~22.0°E), well outside the
@@ -192,23 +207,64 @@ def fetch_rivers_and_delta() -> dict[str, object]:
     return out
 
 
-def fetch_curonian_lagoon() -> object:
-    """Return a polygon matching the real Curonian Lagoon outline.
+def _fetch_curonian_from_marineregions() -> object | None:
+    """Try to fetch the Curonian Lagoon polygon from Marine Regions WFS.
+    Returns None on any failure so the caller can fall back.
 
-    Why not OSM: the lagoon is an OSM multipolygon relation that straddles
-    the Lithuania/Russia border. pyosmium's `create_multipolygon` on the
-    Lithuania-only PBF fails to assemble the full ring (the Kaliningrad
-    half isn't present), so `query_water_bodies` silently drops it.
-    Downloading the separate Kaliningrad PBF just for the lagoon would
-    balloon the generator's data dependencies.
-
-    So this polygon uses 18 coordinates hand-picked from published maps
-    (OpenStreetMap.org and Marine Regions gazetteer MRGID 3478). Closure
-    follows the real lagoon's 90 km N-S / 8-40 km E-W extent. Not bathymetry
-    - just the shoreline footprint - but accurate to within ~500 m.
+    As of 2026-04-18, no WFS typeName exposes MRGID 3642 via cql_filter —
+    this function is future-proofing. If Marine Regions adds the polygon to
+    gazetteer_polygon (or similar) later, the fetcher picks it up automatically.
     """
-    _log("Building Curonian Lagoon polygon from published coordinates...")
-    # Coordinates in WGS84 (lon, lat). Traced clockwise from Klaipėda Strait.
+    params = {
+        "service": "WFS", "version": "2.0.0", "request": "GetFeature",
+        "typeNames": MARINEREGIONS_TYPENAME,
+        "cql_filter": f"MRGID={CURONIAN_MRGID}",
+        "outputFormat": "application/json",
+    }
+    try:
+        resp = requests.get(MARINEREGIONS_WFS, params=params, timeout=60)
+        resp.raise_for_status()
+    except Exception as exc:
+        print(f"  WARN: Marine Regions fetch failed ({exc}); using fallback", flush=True)
+        return None
+
+    try:
+        data = resp.json()
+    except Exception as exc:
+        print(f"  WARN: Marine Regions response not JSON ({exc}); using fallback", flush=True)
+        return None
+
+    feats = data.get("features", [])
+    geoms: list = []
+    for f in feats:
+        g = f.get("geometry")
+        if g is None:
+            continue
+        geom = shape(g)
+        if not geom.is_valid:
+            geom = make_valid(geom)
+        geoms.append(geom)
+    if not geoms:
+        print(f"  WARN: Marine Regions returned 0 features for MRGID={CURONIAN_MRGID}; "
+              "using fallback", flush=True)
+        return None
+    return unary_union(geoms)
+
+
+def _write_curonian_cache(geom) -> None:
+    CURONIAN_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326").to_file(
+        CURONIAN_CACHE_PATH, driver="GeoJSON"
+    )
+
+
+def _fallback_curonian_polygon() -> object:
+    """18-coord hand-traced polygon (pre-2026-04-18 implementation, kept as fallback).
+
+    Traced clockwise from Klaipėda Strait. Accurate to ~500 m along the shoreline.
+    Real lagoon: 1,584 km². This polygon computes to ~2,585 km² (63% too large),
+    but that's the best static fallback available without Marine Regions WFS data.
+    """
     lagoon_coords = [
         (21.128, 55.720),  # Klaipėda Strait exit
         (21.155, 55.620),  # east shore north
@@ -229,12 +285,32 @@ def fetch_curonian_lagoon() -> object:
         (21.095, 55.680),  # approaching strait
         (21.128, 55.720),  # close
     ]
-    geom = Polygon(lagoon_coords)
-    if not geom.is_valid:
-        geom = make_valid(geom)
-    # Reproject for a real-km² readout
-    gdf_wgs = gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326")
-    area_km2 = gdf_wgs.to_crs("EPSG:32634").geometry.iloc[0].area / 1e6
+    return Polygon(lagoon_coords)
+
+
+def fetch_curonian_lagoon() -> object:
+    """Return the Curonian Lagoon polygon. Priority:
+      1. Cached GeoJSON at app/data/marineregions/curonian_lagoon.geojson
+      2. Marine Regions WFS (MRGID 3642) — currently a no-op, future-proof
+      3. 18-coord hand-traced fallback
+    """
+    if CURONIAN_CACHE_PATH.exists():
+        _log(f"Loading cached Curonian Lagoon polygon from {CURONIAN_CACHE_PATH.name}...")
+        gdf = gpd.read_file(CURONIAN_CACHE_PATH)
+        return gdf.geometry.iloc[0]
+
+    _log(f"Fetching Curonian Lagoon from Marine Regions WFS (MRGID {CURONIAN_MRGID})...")
+    geom = _fetch_curonian_from_marineregions()
+    if geom is None:
+        _log("Using hand-traced fallback polygon...")
+        geom = _fallback_curonian_polygon()
+    else:
+        _write_curonian_cache(geom)
+        _log(f"  Cached to {CURONIAN_CACHE_PATH}")
+
+    area_km2 = gpd.GeoDataFrame(geometry=[geom], crs="EPSG:4326").to_crs(
+        "EPSG:32634"
+    ).geometry.iloc[0].area / 1e6
     _log(f"  CuronianLagoon: {geom.geom_type} area={area_km2:.0f} km² (real ~1,584 km²)")
     return geom
 
