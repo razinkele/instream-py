@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0] - 2026-04-18
+
+### Baltic case study now uses real-world geometry and bathymetry
+
+The Baltic Atlantic salmon example (`configs/example_baltic.yaml`) moved from
+synthetic rectangular grids to authoritative data sources: OpenStreetMap for
+the Nemunas basin + delta branches, Marine Regions for the Curonian Lagoon
+(with hand-traced fallback), and EMODnet Bathymetry for per-cell real depths
+on marine reaches.
+
+### Added
+
+- **Baltic case study real-data upgrade** — 8 reaches across the lower Nemunas, its delta, the Curonian Lagoon, and the Baltic coast: `Nemunas`, `Minija`, `Sysa` (Šyša), `Skirvyte` (Skirvytė), `Leite` (Leitė), `Gilija` (Матросовка from the Kaliningrad PBF), `CuronianLagoon`, `BalticCoast`. 1,774 cells total.
+- **EMODnet Bathymetry DTM sampling** for real per-cell depths on marine reaches — new `app/modules/bathymetry.py` (`fetch_emodnet_dtm`, `sample_depth`) + 4 unit tests. CuronianLagoon: 0.1–24.9 m, mean 2.9 m. BalticCoast: 0.1–56.8 m, mean 9.1 m. Attribution: EMODnet Bathymetry Consortium (`https://emodnet.ec.europa.eu/en/bathymetry`).
+- **Marine Regions WFS fetcher** with cache + hand-traced polygon fallback for the Curonian Lagoon (MRGID 3642). Future-proof: if Marine Regions adds the polygon to `gazetteer_polygon` later, the fetcher picks it up automatically.
+- **Multi-region Geofabrik PBF support** — `query_waterways()` / `query_water_bodies()` accept `str | Iterable[str]`. Enables cross-border OSM fetches (e.g. `("lithuania", "kaliningrad")`), which unlocks the southern Nemunas delta branch Gilija.
+- **Baltic case study e2e test suite** (`tests/e2e/test_baltic_e2e.py`): 6 fast smoke tests (config dropdown, setup summary, reach names, marine zones, cell count, spatial-tab reachability) + 1 opt-in integration test gated on `E2E_INTEGRATION=1` that drives the full load → 2-week sim → Spatial map render pipeline. 7/7 pass in 3m14s against a live app.
+- **Playwright e2e suite for Create Model panel** (`tests/e2e/test_create_model_e2e.py` + `test_create_model_integration.py`) — 33 tests covering widgets, defaults, map canvas, help modal, click-to-select bridge, and full fetch→generate→export pipeline. Integration tests gated on `E2E_INTEGRATION=1`.
+- **`integration` pytest marker** registered for opt-in network/long-running tests.
+
+### Changed
+
+- **Shiny app** renders `<title>inSTREAM</title>` in `<head>`; previously the browser tab showed blank.
+- **`_clip_pbf` cache key** now `(pbf_filename, bbox)` instead of bbox alone. Fixed a pre-existing silent-collision bug where a second source PBF with the same bbox would receive the first PBF's clipped file.
+- **`GEOFABRIK_REGIONS`** entries starting with `http(s)://` are now treated as absolute URL overrides. Needed for regions Geofabrik moved out of `/europe/` (e.g. Kaliningrad, which now lives at `/russia/kaliningrad`).
+- **`build_cells()` in `scripts/generate_baltic_example.py`** flattens `GeometryCollection` inputs into their LineString / Polygon members. Gilija's OSM features merge into a mixed-type collection that the previous `Multi*`-only handler couldn't consume.
+- **`hashlib.md5` → `hashlib.sha1(..., usedforsecurity=False)`** in cache-key functions (`_clip_pbf`, `bathymetry._cache_path_for_bbox`). FIPS-mode Windows compatibility.
+- **`tests/test_e2e_spatial.py`** adapted to the sidebar-nav refactor (`ui.navset_hidden`): tab clicks now route through `.sp-nav-link[data-tab=...]` instead of the hidden Bootstrap `[role="tab"]` elements. Test port moved 18901 → 18903 to sidestep OneDrive zombie-socket issues.
+
+### Fixed
+
+- **`create_model_grid.generate_cells` crash** on water/sea polygons smaller than one cell (`ValueError: Assigning CRS to a GeoDataFrame without a geometry column`). Filter threshold capped by `min(cell_area, reach_area) * min_overlap`; empty-records case returns a typed empty GeoDataFrame. Regression tests in `tests/test_create_model_grid.py`.
+- **`src/instream/__init__.py::__version__`** was stale at `0.14.0`; now tracks `pyproject.toml`.
+
+### Infrastructure
+
+- New directory `tests/e2e/` with session-scoped `base_url` fixture that skips cleanly when the Shiny app isn't reachable.
+- `.gitignore` adds `app/data/emodnet/*.tif` (50–200 MB cached DTMs).
+- `app/data/marineregions/` tracked as a new cache directory.
+- Full implementation plan archived at `docs/superpowers/plans/2026-04-18-baltic-real-data-upgrades.md` (three sub-projects, 15 tasks, three adversarial review passes before execution).
+
+### Tests
+
+**920+ passed** across unit + targeted e2e suites. Baltic end-to-end test (`test_adult_arrives_as_returning_adult`) runs in ~140 s against the real-data config.
+
 ## [0.28.0] - 2026-04-13
 
 ### Performance — vectorized piscivore density + spawn suitability

@@ -76,11 +76,12 @@ Key design decisions:
 
 | Metric          | Value                                          |
 |-----------------|------------------------------------------------|
-| Version         | **v0.28.0**                                    |
-| Tests           | 882+                                           |
+| Version         | **v0.30.0**                                    |
+| Tests           | 920+ (incl. Playwright e2e suites)             |
 | Validation      | 17/17 (11 original + 6 NetLogo cross-val)      |
 | Marine ecology  | Hanson bioenergetics, 5-source survival, fishing |
 | Marine domain   | Baltic Sea zones, smolt exit, adult return     |
+| Baltic case study | Real OSM geometry (Nemunas + 7 tributaries/delta branches) + EMODnet bathymetry |
 | model.py        | 108 lines (decomposed into 3 mixin classes)    |
 | Step time       | 48 ms (Example A, Numba JIT)                   |
 
