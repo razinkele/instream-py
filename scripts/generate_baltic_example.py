@@ -249,17 +249,20 @@ def fetch_rivers_and_delta() -> dict[str, object]:
         # 55.7°N); the narrower bbox drops upstream canals that also carry
         # the "Minija" name.
         "Minija": (21.20, 55.30, 21.55, 55.75),
-        # Šyša (Sysa) has named canals extending through the Rusnė polder
-        # drainage system. Keep only the lower ~15 km where the river meets
-        # the delta proper — centred on Šilutė (~21.48°E, 55.35°N).
-        "Sysa":   (21.40, 55.25, 21.70, 55.45),
+        # Šyša (Sysa) joins the Nemunas main channel just upstream of Rusnė
+        # (the confluence is at ~21.37°E, 55.30°N). Clip must extend west
+        # to that point so Sysa cells connect to Atmata cells at Rusnė.
+        # Cover the whole lower reach from the confluence through Šilutė
+        # (~21.48°E, 55.35°N) to Saugos (21.60°E, 55.42°N).
+        "Sysa":   (21.30, 55.25, 21.70, 55.45),
         # Матросовка (Gilija) starts at the Kaliningrad delta split and runs
         # west to the lagoon. Clip to the lower Kaliningrad delta band.
         "Gilija": (21.10, 55.00, 21.80, 55.25),
         # Atmata splits off the Nemunas at Rusnė (~21.39°E, 55.29°N) and
-        # discharges into the Klaipėda strait (~21.10°E, 55.30°N). Tight
-        # bbox covers the entire ~30 km distributary.
-        "Atmata": (21.05, 55.25, 21.45, 55.35),
+        # discharges into the Klaipėda strait (~21.10°E, 55.30°N). Extend
+        # east edge to 21.50°E so cells overlap Sysa's clip at the Rusnė
+        # confluence (visual + spatial connectivity for fish migration).
+        "Atmata": (21.05, 55.25, 21.50, 55.38),
     }
     out: dict[str, object] = {}
     for reach, (col, targets) in REACH_OSM.items():
@@ -393,55 +396,77 @@ SPIT_CACHE_PATH = (
     Path(__file__).resolve().parent.parent
     / "app" / "data" / "marineregions" / "curonian_spit.geojson"
 )
+LITHUANIA_LAND_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "app" / "data" / "marineregions" / "lithuania_land_real.geojson"
+)
 
 
 def fetch_baltic_coast() -> object:
-    """Return a Baltic nearshore polygon IN FRONT OF the Klaipėda channel,
-    clipped by the Curonian Spit so no cells fall on land.
+    """Return a Baltic nearshore polygon in front of the Klaipėda channel,
+    clipped by the real Lithuanian mainland coastline so cells follow the
+    coast and open into the Klaipėda strait.
 
-    Salmon leaving the Nemunas exit through the Klaipėda strait (~55.70°N,
-    21.10°E) and head north into the Baltic Proper. This reach captures
-    that transit corridor: a ~18 × 28 km rectangle immediately north of
-    the strait, east of the offshore shelf, west of the Lithuanian
-    mainland coast (Klaipėda–Palanga coastline sits at lon ~21.06-21.13°E
-    between lat 55.70 and 55.95). The east edge is pinned at 21.05°E so
-    the rectangle never crosses the mainland coast.
+    Salmon migrate between the Baltic Sea and the Curonian Lagoon through
+    the Klaipėda strait (~55.68-55.72°N, 21.08-21.13°E — a narrow ~400 m
+    channel between the Curonian Spit tip and the Klaipėda port). The
+    marine reach must (a) include water on both sides of the strait so
+    cells connect the Baltic to the lagoon, and (b) follow the real
+    coastline north of Klaipėda toward Palanga, not a straight offshore
+    line.
 
-    Previous iteration placed a rectangle WEST of the Curonian Spit
-    (wrong side — that's Kaliningrad offshore, not a salmon transit
-    corridor). The spit polygon (cached from OSM relation 309762) is
-    subtracted to handle any southern overlap with the spit tip.
+    Previous iteration used a plain rectangle offshore of the mainland;
+    the east edge was pinned at 21.05°E which kept cells entirely offshore
+    and never reached the strait. Fix: start from a wider rectangle that
+    overlaps the coast (east edge at 21.20°E) and subtract the Lithuanian
+    land polygon (Nominatim relation 72596, cached). The result is a sea
+    polygon with the real coast as its east boundary and an opening at the
+    strait where the spit ends.
     """
-    _log("Building Baltic coastal polygon (offshore N of Klaipėda strait)...")
-    # Longitude: 20.80-21.05 (stays offshore of the Lithuanian mainland at
-    # Klaipėda–Palanga, which hugs ~21.06-21.13°E).
-    # Latitude: 55.70 (north shore of the strait) → 55.95 (Palanga area).
+    _log("Building Baltic coastal polygon with real-coastline clip...")
+    # Wider rectangle that overlaps the coast + strait approach.
+    # Lon 20.70-21.20 spans offshore → past the mainland coast; land
+    # subtraction leaves only sea.
+    # Lat 55.65-55.98 covers strait mouth (55.68-55.72) through Palanga.
     coast_rect = Polygon([
-        (20.80, 55.70),   # SW corner, immediately N of the strait
-        (21.05, 55.70),   # SE corner, just W of Klaipėda port
-        (21.05, 55.95),   # NE corner, just W of Palanga
-        (20.80, 55.95),   # NW corner, ~15 km offshore
-        (20.80, 55.70),
+        (20.70, 55.65),   # SW corner — offshore, south of strait mouth
+        (21.20, 55.65),   # SE corner — east of mainland Klaipėda
+        (21.20, 55.98),   # NE corner — east of Palanga mainland
+        (20.70, 55.98),   # NW corner — offshore
+        (20.70, 55.65),
     ])
 
-    # Clip by the Curonian Spit polygon so any cells that would fall on
-    # land (the spit tip near Smiltynė reaches up to ~55.73°N) are removed.
+    # Subtract Lithuanian land derived from OSM natural=coastline ways
+    # (lithuania_land_real.geojson, built by scripts/_fetch_lithuania_coastline.py).
+    # This is the REAL coast — it does not include the territorial sea band
+    # that Nominatim's admin polygon for relation 72596 wraps around.
+    # The polygon captures the mainland coast from Šventoji → Palanga →
+    # Klaipėda plus the Curonian Spit, so a single subtraction leaves only
+    # sea + the strait + the spit-west offshore band.
     geom = coast_rect
-    if SPIT_CACHE_PATH.exists():
+    if LITHUANIA_LAND_PATH.exists():
+        land = gpd.read_file(LITHUANIA_LAND_PATH).geometry.iloc[0]
+        geom = coast_rect.difference(land)
+        if not geom.is_valid:
+            geom = make_valid(geom)
+        _log("  Clipped BalticCoast by real coastline-derived land polygon "
+             "(OSM natural=coastline ways).")
+    elif SPIT_CACHE_PATH.exists():
+        # Fallback: spit only if the Lithuania cache hasn't been fetched yet.
         spit = gpd.read_file(SPIT_CACHE_PATH).geometry.iloc[0]
         geom = coast_rect.difference(spit)
         if not geom.is_valid:
             geom = make_valid(geom)
-        _log("  Clipped BalticCoast by Curonian Spit polygon (OSM 309762).")
+        _log("  Clipped BalticCoast by Curonian Spit polygon only (fallback).")
     else:
-        _log("  WARN: curonian_spit.geojson missing — BalticCoast not spit-clipped. "
-             "Run scripts/_fetch_curonian_spit_osm.py to generate it.")
+        _log("  WARN: no coastline cache found — BalticCoast is an un-clipped "
+             "rectangle. Run scripts/_fetch_lithuania_land_osm.py.")
 
     area_km2 = gpd.GeoDataFrame(
         geometry=[geom], crs="EPSG:4326"
     ).to_crs("EPSG:32634").geometry.iloc[0].area / 1e6
     _log(f"  BalticCoast: {geom.geom_type} area={area_km2:.0f} km² "
-         f"(offshore transit zone N of Klaipėda strait)")
+         f"(coastline-clipped, opens at Klaipėda strait)")
     return geom
 
 
