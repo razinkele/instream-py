@@ -55,6 +55,7 @@ sys.path.insert(0, str(APP_DIR))
 
 from modules.create_model_grid import generate_cells  # noqa: E402
 from modules.create_model_osm import query_waterways, query_water_bodies  # noqa: E402
+from modules.bathymetry import fetch_emodnet_dtm, sample_depth  # noqa: E402
 
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "example_baltic"
 SHP_DIR = OUT / "Shapefile"
@@ -464,7 +465,19 @@ def generate_time_series(reach_name: str) -> None:
             d += timedelta(days=1)
 
 
-def generate_hydraulics(reach_name: str, n_cells: int) -> None:
+def generate_hydraulics(
+    reach_name: str,
+    n_cells: int,
+    depths_by_cell: "np.ndarray | None" = None,
+) -> None:
+    """Write -Depths.csv and -Vels.csv for *reach_name*.
+
+    If *depths_by_cell* is provided (from EMODnet sampling for marine reaches),
+    the Depths CSV uses per-cell real base depths with the reach's published
+    flood:base ratio for per-flow scaling. Otherwise (river reaches, or when
+    EMODnet is unavailable), per-cell values are synthesized with a ±30 %
+    jitter around the reach's published mean depth.
+    """
     p = REACH_PARAMS[reach_name]
     flows = p["flows"]
     n_flows = len(flows)
@@ -480,19 +493,39 @@ def generate_hydraulics(reach_name: str, n_cells: int) -> None:
         fpath = OUT / f"{reach_name}-{kind}.csv"
         v_base = p[base_key]
         v_flood = p[flood_key]
+        real_bathy = kind == "Depths" and depths_by_cell is not None
         with open(fpath, "w", newline="") as f:
             f.write(f"; {kind} for Baltic example — {reach_name}\n")
-            f.write("; depth_base/vel_base are real published means; per-flow scaling is synthetic\n")
+            if real_bathy:
+                f.write("; per-cell depth_base sampled from EMODnet DTM "
+                        "(1/16 arc-min, https://emodnet.ec.europa.eu/en/bathymetry); "
+                        "per-flow scaling synthetic\n")
+            else:
+                f.write("; depth_base/vel_base are real published means; "
+                        "per-flow scaling is synthetic\n")
             f.write(f"; CELL {kind.upper()} IN {unit}\n")
             f.write(f"{n_flows},Number of flows in table" + ",," * (n_flows - 1) + "\n")
             f.write("," + ",".join(f"{fl}" for fl in flows) + "\n")
+            flood_base_ratio = p["depth_flood"] / p["depth_base"] if p["depth_base"] else 1.0
             for c in range(1, n_cells + 1):
-                cell_var = 0.7 + 0.6 * rng.random()
-                vals = []
-                for fi in range(n_flows):
-                    v = cell_var * (v_base + (v_flood - v_base) * f_frac[fi])
-                    vals.append(f"{max(0.001, v):.6f}")
-                f.write(f"{c}," + ",".join(vals) + "\n")
+                if real_bathy:
+                    # Per-cell real base depth; scale flood by same ratio as the
+                    # reach's published (base, flood) pair to keep per-flow curves
+                    # sensible even for land-adjacent cells (clamped to 0.1 m).
+                    cell_base = float(depths_by_cell[c - 1])
+                    cell_flood = cell_base * flood_base_ratio
+                    vals = []
+                    for fi in range(n_flows):
+                        v = cell_base + (cell_flood - cell_base) * f_frac[fi]
+                        vals.append(f"{max(0.001, v):.6f}")
+                    f.write(f"{c}," + ",".join(vals) + "\n")
+                else:
+                    cell_var = 0.7 + 0.6 * rng.random()
+                    vals = []
+                    for fi in range(n_flows):
+                        v = cell_var * (v_base + (v_flood - v_base) * f_frac[fi])
+                        vals.append(f"{max(0.001, v):.6f}")
+                    f.write(f"{c}," + ",".join(vals) + "\n")
 
 
 def generate_populations(reach_order: list[str]) -> None:
@@ -569,10 +602,32 @@ def main() -> None:
 
     gdf.to_file(SHP_DIR / "BalticExample.shp")
 
+    # Fetch EMODnet DTM once and sample per-cell real depths for marine reaches.
+    # River reaches retain the published-mean-depth scaling (EMODnet coverage
+    # is marine-only). Failures are non-fatal — fall back to synthetic scaling.
+    depths_by_reach: dict[str, np.ndarray] = {}
+    dtm_bbox = (BBOX[0] - 0.1, BBOX[1] - 0.1, BBOX[2] + 0.1, BBOX[3] + 0.1)
+    try:
+        _log(f"Fetching EMODnet DTM for marine reaches (bbox {dtm_bbox})...")
+        dtm_path = fetch_emodnet_dtm(dtm_bbox)
+        _log(f"  DTM cached at {dtm_path.name}")
+        gdf_wgs = gdf.to_crs("EPSG:4326")
+        for reach in ("CuronianLagoon", "BalticCoast"):
+            mask = gdf_wgs["REACH_NAME"] == reach
+            if mask.any():
+                depths = sample_depth(gdf_wgs[mask], dtm_path)
+                depths_by_reach[reach] = depths
+                _log(f"  {reach}: sampled {len(depths)} depths "
+                     f"(min {depths.min():.1f} m, max {depths.max():.1f} m, "
+                     f"mean {depths.mean():.1f} m)")
+    except Exception as exc:
+        print(f"  WARN: EMODnet fetch/sample failed ({exc}); "
+              "marine reaches fall back to synthetic depth scaling", flush=True)
+
     print()
     for reach_name, n_cells in counts.items():
         generate_time_series(reach_name)
-        generate_hydraulics(reach_name, n_cells)
+        generate_hydraulics(reach_name, n_cells, depths_by_reach.get(reach_name))
         _log(f"CSVs: {reach_name}")
 
     print()
