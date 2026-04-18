@@ -50,6 +50,66 @@ on marine reaches.
 
 **920+ passed** across unit + targeted e2e suites. Baltic end-to-end test (`test_adult_arrives_as_returning_adult`) runs in ~140 s against the real-data config.
 
+## [0.29.0] - 2026-04-13 (unreleased, rolled into 0.30.0)
+
+Pre-release cycle between v0.28.0 and v0.30.0. `pyproject.toml` was bumped
+to 0.29.0 but never tagged; the work landed on master and shipped under
+the v0.30.0 tag. Summarised here for historical completeness.
+
+### Added
+
+- **Create Model panel** — interactive Shiny UI for building new case
+  studies from OpenStreetMap geometry: fetch rivers by Strahler order,
+  click-select reaches, generate hexagonal habitat cells, export
+  shapefile + YAML config + template CSVs as a ZIP. Replaces the earlier
+  Overpass API dependency with a local OSM PBF pipeline
+  (Geofabrik → `osmium extract` → `pyosmium`).
+- **EU-Hydro and OSM river fetchers** — per-Strahler sub-layer queries,
+  water-body polygons (lagoons, lakes, transit waters), Marine Regions
+  IHO sea areas.
+- **Setup Review panel** — inspect grid + habitat layers before running,
+  with color-by-variable controls.
+- **TripsLayer fish movement trails** — deck.gl animation of per-fish
+  trajectories across days, replacing the earlier ScatterplotLayer.
+- **Baltic example v1** — synthetic multi-reach delta grid (tributaries →
+  meandering delta → lagoon → coastal sea, 798 cells). v2 real-geometry
+  overhaul landed in 0.30.0.
+- **Adult holding** — returning anadromous adults arrive as
+  `RETURNING_ADULT` and transition to `SPAWNER` at spawn season.
+- **Reach-junction enforcement** — habitat selection restricted to
+  connected reaches via the junction network.
+- **Smolt lifecycle closure** — downstream spring migration for
+  ready-to-smolt parr, decoupling smolt readiness from length only.
+- **SalmoPy rebrand + AQUABC-aligned sidebar** — dark-themed icon
+  navigation, collapsible sidebar, GPU badge on map tabs, self-hosted
+  Bootstrap Icons.
+- **WebGL fallback** — graceful degradation with distinct messages per
+  failure mode.
+
+### Performance — batch-Numba habitat selection
+
+Flattened the outer Python fish loop into a single Numba call per step.
+Eliminates ~75% of per-step overhead via two-pass parallel kernels,
+geometry candidate cache, reach-cell cache, and vectorised growth.
+
+| Version | Runtime (7-year Baltic sim) | Notes |
+|---|---:|---|
+| v0.28.0 | ~53 min | vectorised piscivore + spawn suitability |
+| **v0.29.0** | **~43 min** | batch-Numba habitat selection (~18% faster) |
+
+### Fixed
+
+- Movement trails only show alive fish (not accumulated dead ones).
+- Color-by recoloring + trail-length slider wiring.
+- Marine fish (`cell_idx=-1`) correctly filtered from `bincount`
+  calls in simulation wrapper.
+- Map-init race on Create Model tab (empty-update with delay).
+- Click-to-select uses nearest-segment fallback, tooltip shows `nameText`.
+
+### Tests
+
+**578+ tests passed**; 17/17 NetLogo cross-validation maintained.
+
 ## [0.28.0] - 2026-04-13
 
 ### Performance — vectorized piscivore density + spawn suitability
