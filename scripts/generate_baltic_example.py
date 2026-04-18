@@ -95,6 +95,10 @@ MARINEREGIONS_TYPENAME = "MarineRegions:gazetteer_polygon"
 # delta-focused clip bbox, so it'd disappear under clipping anyway.
 REACH_OSM = {
     "Nemunas":  ("waterway", ("Nemunas",)),
+    # Atmata is the main northern distributary splitting off the Nemunas at
+    # Rusnė and flowing to the Klaipėda strait — the primary anadromous route
+    # from the Baltic into the Nemunas basin, so it gets its own reach.
+    "Atmata":   ("waterway", ("Atmata",)),
     "Minija":   ("waterway", ("Minija",)),
     "Sysa":     ("waterway", ("Šyša",)),
     "Skirvyte": ("waterway", ("Skirvytė",)),
@@ -105,22 +109,41 @@ REACH_OSM = {
 }
 
 REACH_ORDER = [
-    "Nemunas", "Minija", "Sysa", "Skirvyte", "Leite", "Gilija",
+    "Nemunas", "Atmata", "Minija", "Sysa", "Skirvyte", "Leite", "Gilija",
     "CuronianLagoon", "BalticCoast",
 ]
 
 # Per-reach cell size in metres (passed to create_model_grid.generate_cells).
-# Sized so each reach produces ~50-250 cells and the total lands near ~900
-# (matches the old synthetic generator's 798-cell budget).
+# Sized so each reach produces ~50-300 cells and the total lands near ~1,800.
+# Linestring-only rivers use smaller cells so the visual channel width more
+# closely matches the real 30-100m wetted width.
 CELL_SIZE_M = {
-    "Nemunas":        300,
-    "Minija":         250,
-    "Sysa":           200,
-    "Skirvyte":       200,
-    "Leite":          250,
-    "Gilija":         250,   # southern delta branch from Kaliningrad PBF
+    "Nemunas":        300,    # polygon-based, ~300m real width
+    "Atmata":         150,    # main northern distributary, ~150-200m
+    "Minija":         100,    # linestring, real ~30-50m; small cell keeps visual narrow
+    "Sysa":           100,    # linestring, real ~30-60m
+    "Skirvyte":       200,    # polygon-based
+    "Leite":          100,    # linestring, real ~30m
+    "Gilija":         150,    # mixed; real ~100-150m
     "CuronianLagoon": 2500,
     "BalticCoast":    2500,
+}
+
+# Per-reach buffer_factor for create_model_grid.generate_cells. Default is 2.0
+# which buffers a linestring by 2 × cell_size on each side — fine for polygon
+# inputs (ocean/lake) where the buffer is a no-op, but for linestring rivers
+# it inflates a 30m-wide channel into a 1 km band of cells. Small overrides
+# (0.15-0.5) place cells snug against the real channel.
+BUFFER_FACTOR = {
+    "Nemunas":        2.0,    # polygon input; buffer is a no-op
+    "Atmata":         0.5,    # ~75m buffer (cell 150m) matches ~150m wide channel
+    "Minija":         0.25,   # ~25m buffer (cell 100m) matches ~50m wide channel
+    "Sysa":           0.25,   # ~25m buffer matches ~50m wide channel
+    "Skirvyte":       2.0,    # polygon input
+    "Leite":          0.25,   # ~25m buffer
+    "Gilija":         0.4,    # mixed; ~60m buffer spans the known riverbank polygon
+    "CuronianLagoon": 2.0,
+    "BalticCoast":    2.0,
 }
 
 
@@ -135,6 +158,15 @@ REACH_PARAMS = {
         "flows": [1.0, 2.0, 4.0, 6.0, 9.0, 14.0, 22.0, 40.0, 100.0, 500.0],
         "depth_base": 5.0, "depth_flood": 8.0,         # real lower Nemunas ~5m
         "vel_base": 0.30, "vel_flood": 1.5,
+    },
+    "Atmata": {
+        # Main northern Nemunas-delta distributary. Splits off at Rusnė and
+        # discharges into the Klaipėda strait — the primary anadromous path.
+        # Wider and faster than Skirvytė/Leitė, closer to a lower-Nemunas regime.
+        "temp_mean": 9.0, "temp_amp": 8.5, "flow_base": 4.0, "turb_base": 2,
+        "flows": [0.8, 1.5, 3.0, 4.0, 6.0, 9.0, 14.0, 25.0, 70.0, 350.0],
+        "depth_base": 3.5, "depth_flood": 5.5,
+        "vel_base": 0.25, "vel_flood": 1.2,
     },
     "Minija": {
         "temp_mean": 9.0, "temp_amp": 8.0, "flow_base": 3.0, "turb_base": 3,
@@ -212,13 +244,22 @@ def fetch_rivers_and_delta() -> dict[str, object]:
     per_reach_clip = {
         # Minija's full basin reaches Plateliai lake (~22.0°E, ~56.0°N),
         # 90+ km from the lagoon. Anadromous salmon rarely ascend past
-        # the lower-Minija confluence with the lagoon. Keep only the lower
-        # ~35 km of the river between the lagoon and the first major inland
-        # bend. Real geography: Minija enters Curonian Lagoon at Ventės Ragas
-        # (~21.20°E, 55.34°N) via Klaipėda; lower Minija runs through
-        # Gargždai (~21.4°E, 55.7°N). Clip to lon [21.20, 21.55], lat
-        # [55.30, 55.75].
+        # the lower-Minija confluence with the lagoon. Keep the lower reach
+        # between Ventės Ragas (~21.20°E, 55.34°N) and Gargždai (~21.4°E,
+        # 55.7°N); the narrower bbox drops upstream canals that also carry
+        # the "Minija" name.
         "Minija": (21.20, 55.30, 21.55, 55.75),
+        # Šyša (Sysa) has named canals extending through the Rusnė polder
+        # drainage system. Keep only the lower ~15 km where the river meets
+        # the delta proper — centred on Šilutė (~21.48°E, 55.35°N).
+        "Sysa":   (21.40, 55.25, 21.70, 55.45),
+        # Матросовка (Gilija) starts at the Kaliningrad delta split and runs
+        # west to the lagoon. Clip to the lower Kaliningrad delta band.
+        "Gilija": (21.10, 55.00, 21.80, 55.25),
+        # Atmata splits off the Nemunas at Rusnė (~21.39°E, 55.29°N) and
+        # discharges into the Klaipėda strait (~21.10°E, 55.30°N). Tight
+        # bbox covers the entire ~30 km distributary.
+        "Atmata": (21.05, 55.25, 21.45, 55.35),
     }
     out: dict[str, object] = {}
     for reach, (col, targets) in REACH_OSM.items():
@@ -445,10 +486,12 @@ def build_cells(reach_geoms: dict[str, object]) -> gpd.GeoDataFrame:
                 "properties": [{} for _ in segments],
             }
         }
+        buf_factor = BUFFER_FACTOR.get(reach, 2.0)
         _log(f"Generating cells for {reach} (cell_size={CELL_SIZE_M[reach]}m, "
-             f"type={reach_type})...")
+             f"buffer_factor={buf_factor}, type={reach_type})...")
         cells = generate_cells(
-            reach_segments, cell_size=CELL_SIZE_M[reach], cell_shape="hexagonal"
+            reach_segments, cell_size=CELL_SIZE_M[reach], cell_shape="hexagonal",
+            buffer_factor=buf_factor,
         )
         _log(f"  -> {len(cells)} cells")
         if len(cells) == 0:
@@ -577,8 +620,9 @@ def generate_populations(reach_order: list[str]) -> None:
     pop_path = OUT / "BalticExample-InitialPopulations.csv"
     riverine = [r for r in reach_order if r not in ("CuronianLagoon", "BalticCoast")]
     # Split a fixed total across river reaches weighted toward the main stem
-    weights = {"Nemunas": 0.35, "Minija": 0.16, "Sysa": 0.13,
-               "Skirvyte": 0.13, "Leite": 0.11, "Gilija": 0.12}
+    # and the primary distributary Atmata. Weights sum to 1.0.
+    weights = {"Nemunas": 0.30, "Atmata": 0.18, "Minija": 0.13,
+               "Sysa": 0.10, "Skirvyte": 0.11, "Leite": 0.09, "Gilija": 0.09}
     total_age0 = 3000
     total_age1 = 1300
     total_age2 = 280
@@ -597,8 +641,10 @@ def generate_populations(reach_order: list[str]) -> None:
     _log(f"Populations: {pop_path.name}")
 
     arr_path = OUT / "BalticExample-AdultArrivals.csv"
-    adult_weights = {"Nemunas": 0.35, "Minija": 0.16, "Sysa": 0.12,
-                     "Skirvyte": 0.14, "Leite": 0.11, "Gilija": 0.12}
+    # Atmata gets the largest homing share after the main Nemunas stem —
+    # it's the shortest, widest distributary from the Baltic to the basin.
+    adult_weights = {"Nemunas": 0.30, "Atmata": 0.20, "Minija": 0.13,
+                     "Sysa": 0.09, "Skirvyte": 0.12, "Leite": 0.08, "Gilija": 0.08}
     adults_per_year = 465
     with open(arr_path, "w", newline="") as f:
         f.write("; Adult arrivals for Baltic example\n")

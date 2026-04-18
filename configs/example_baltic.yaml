@@ -6,17 +6,19 @@
 # `create_model_grid.generate_cells()` from the real feature polygons.
 #
 # Reaches (cell counts from the generator — run scripts/generate_baltic_example.py
-# to regenerate). Now merges Lithuania + Kaliningrad OSM PBFs so the southern
-# Nemunas-Delta branch (Gilija / Матросовка / Matrosovka) is included. ~1600
-# cells total across 8 reaches (exact counts in the generator stdout).
+# to regenerate). Merges Lithuania + Kaliningrad OSM PBFs so the southern
+# Nemunas-Delta branch (Gilija / Матросовка / Matrosovka) is included. 9
+# reaches total; linestring rivers use a tight buffer_factor so visual width
+# matches real channel widths (~50-200 m, not the default 500-1000 m inflation).
 #   Nemunas        — main Nemunas channel OSM polygon (clipped to delta)
+#   Atmata         — main N distributary, Rusnė → Klaipėda strait (salmon route)
 #   Minija         — real Minija river, flows into Curonian Lagoon at Klaipėda
 #   Sysa           — Šyša, real Nemunas-Delta branch (ASCII key)
 #   Skirvyte       — Skirvytė, real delta branch past Rusnė (ASCII key)
 #   Leite          — Leitė, real small delta-area tributary (ASCII key)
 #   Gilija         — southern delta branch (Матросовка / Matrosovka), from Kaliningrad PBF
-#   CuronianLagoon — Kuršių marios, hand-traced real outline (~1,584 km² real)
-#   BalticCoast    — nearshore Baltic strip off Klaipėda, W of Curonian Spit
+#   CuronianLagoon — Kuršių marios, real OSM outline (~1,584 km² real)
+#   BalticCoast    — nearshore Baltic strip N of Klaipėda, clipped by Curonian Spit
 #
 # Marine domain: Estuary → Coastal → Baltic Proper (abstract zones)
 # Full lifecycle: egg → fry → parr → smolt → ocean → return → spawn
@@ -202,6 +204,28 @@ reaches:
     time_series_input_file: "Nemunas-TimeSeriesInputs.csv"
     depth_file: "Nemunas-Depths.csv"
     velocity_file: "Nemunas-Vels.csv"
+
+  Atmata:                      # main northern Nemunas-Delta distributary;
+                               # splits off at Rusnė → Klaipėda strait — primary
+                               # anadromous corridor into the basin
+    drift_conc: 1.2e-08
+    search_prod: 1.50e-06
+    shelter_speed_frac: 0.20
+    prey_energy_density: 3800
+    drift_regen_distance: 800
+    shading: 0.50              # lowland, partial riparian
+    fish_pred_min: 0.970
+    terr_pred_min: 0.965
+    light_turbid_coef: 0.0025
+    light_turbid_const: 0.0008
+    max_spawn_flow: 18
+    shear_A: 0.009
+    shear_B: 0.32
+    upstream_junction: 2        # bifurcates off Nemunas
+    downstream_junction: 5      # discharges to CuronianLagoon / strait
+    time_series_input_file: "Atmata-TimeSeriesInputs.csv"
+    depth_file: "Atmata-Depths.csv"
+    velocity_file: "Atmata-Vels.csv"
 
   Minija:                      # real Minija — feeds Curonian Lagoon at Klaipėda
     drift_conc: 1.5e-08

@@ -1,21 +1,24 @@
 ; Trout initialization for Baltic example
 ; Baltic Atlantic salmon across real Nemunas-basin river reaches
 ; Species,Reach,Age,Number,Length min,Length mode,Length max
-BalticAtlanticSalmon,Nemunas,0,1050,3,4.5,6
-BalticAtlanticSalmon,Nemunas,1,455,7,10,13
-BalticAtlanticSalmon,Nemunas,2,98,12,15,20
-BalticAtlanticSalmon,Minija,0,480,3,4.5,6
-BalticAtlanticSalmon,Minija,1,208,7,10,13
-BalticAtlanticSalmon,Minija,2,45,12,15,20
-BalticAtlanticSalmon,Sysa,0,390,3,4.5,6
-BalticAtlanticSalmon,Sysa,1,169,7,10,13
-BalticAtlanticSalmon,Sysa,2,36,12,15,20
-BalticAtlanticSalmon,Skirvyte,0,390,3,4.5,6
-BalticAtlanticSalmon,Skirvyte,1,169,7,10,13
-BalticAtlanticSalmon,Skirvyte,2,36,12,15,20
-BalticAtlanticSalmon,Leite,0,330,3,4.5,6
-BalticAtlanticSalmon,Leite,1,143,7,10,13
-BalticAtlanticSalmon,Leite,2,31,12,15,20
-BalticAtlanticSalmon,Gilija,0,360,3,4.5,6
-BalticAtlanticSalmon,Gilija,1,156,7,10,13
-BalticAtlanticSalmon,Gilija,2,34,12,15,20
+BalticAtlanticSalmon,Nemunas,0,900,3,4.5,6
+BalticAtlanticSalmon,Nemunas,1,390,7,10,13
+BalticAtlanticSalmon,Nemunas,2,84,12,15,20
+BalticAtlanticSalmon,Atmata,0,540,3,4.5,6
+BalticAtlanticSalmon,Atmata,1,234,7,10,13
+BalticAtlanticSalmon,Atmata,2,50,12,15,20
+BalticAtlanticSalmon,Minija,0,390,3,4.5,6
+BalticAtlanticSalmon,Minija,1,169,7,10,13
+BalticAtlanticSalmon,Minija,2,36,12,15,20
+BalticAtlanticSalmon,Sysa,0,300,3,4.5,6
+BalticAtlanticSalmon,Sysa,1,130,7,10,13
+BalticAtlanticSalmon,Sysa,2,28,12,15,20
+BalticAtlanticSalmon,Skirvyte,0,330,3,4.5,6
+BalticAtlanticSalmon,Skirvyte,1,143,7,10,13
+BalticAtlanticSalmon,Skirvyte,2,31,12,15,20
+BalticAtlanticSalmon,Leite,0,270,3,4.5,6
+BalticAtlanticSalmon,Leite,1,117,7,10,13
+BalticAtlanticSalmon,Leite,2,25,12,15,20
+BalticAtlanticSalmon,Gilija,0,270,3,4.5,6
+BalticAtlanticSalmon,Gilija,1,117,7,10,13
+BalticAtlanticSalmon,Gilija,2,25,12,15,20

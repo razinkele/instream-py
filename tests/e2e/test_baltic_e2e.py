@@ -5,7 +5,7 @@ example config (`configs/example_baltic.yaml`):
 
     TestBalticSmoke (runs whenever app reachable):
       - example_baltic listed in the sidebar config dropdown
-      - Loading it populates the Setup summary with 8 real Nemunas-basin reaches
+      - Loading it populates the Setup summary with 9 real Nemunas-basin reaches
       - Setup summary mentions the 3 marine zones (Estuary / Coastal / Baltic Proper)
       - Spatial tab mounts the deck.gl map container
 
@@ -34,12 +34,13 @@ from playwright.sync_api import Page, expect
 INTEGRATION_ENABLED = os.environ.get("E2E_INTEGRATION") == "1"
 
 # ASCII reach names as they appear in the shapefile DBF / Setup summary table.
-# Real OSM / geography: Nemunas (main), Minija (Klaipėda tributary), Šyša
-# (delta branch → Sysa), Skirvytė (middle delta → Skirvyte), Leitė (small
-# tributary → Leite), Gilija (southern delta, from Kaliningrad PBF as
-# Матросовка), plus the hand-traced Curonian Lagoon and offshore Baltic strip.
+# Real OSM / geography: Nemunas (main), Atmata (primary N distributary at
+# Rusnė → Klaipėda strait — main anadromous route), Minija (Klaipėda
+# tributary), Šyša (delta branch → Sysa), Skirvytė (middle delta → Skirvyte),
+# Leitė (small tributary → Leite), Gilija (southern delta, from Kaliningrad PBF
+# as Матросовка), plus the real-OSM Curonian Lagoon and offshore Baltic strip.
 BALTIC_REACHES = [
-    "Nemunas", "Minija", "Sysa", "Skirvyte", "Leite", "Gilija",
+    "Nemunas", "Atmata", "Minija", "Sysa", "Skirvyte", "Leite", "Gilija",
     "CuronianLagoon", "BalticCoast",
 ]
 
@@ -62,11 +63,11 @@ def _select_baltic_config(pg: Page) -> None:
     pg.locator("#load_config_btn").click()
     # Shiny reactive propagation: setup_summary re-renders after the click.
     # Wait for the output to update via a specific signal — the Baltic config
-    # advertises "8 reaches" which is unique to this config.
+    # advertises "9 reaches" which is unique to this config.
     pg.wait_for_function(
         """() => {
             const el = document.querySelector('#setup-setup_summary');
-            return el && el.textContent.includes('8 reaches');
+            return el && el.textContent.includes('9 reaches');
         }""",
         timeout=20_000,
     )
@@ -94,11 +95,11 @@ class TestBalticSmoke:
         )
 
     def test_load_baltic_populates_setup_summary(self, baltic_page: Page) -> None:
-        """After loading Baltic, the Setup summary header says 'across 8 reaches'."""
+        """After loading Baltic, the Setup summary header says 'across 9 reaches'."""
         _select_baltic_config(baltic_page)
         summary = baltic_page.locator("#setup-setup_summary")
         expect(summary).to_be_visible(timeout=10_000)
-        expect(summary).to_contain_text("8 reaches")
+        expect(summary).to_contain_text("9 reaches")
 
     def test_setup_summary_lists_real_reach_names(self, baltic_page: Page) -> None:
         """All 8 Baltic-basin reach names appear in the setup-summary table."""
@@ -135,11 +136,11 @@ class TestBalticSmoke:
         m = re.search(r"Grid:\s*(\d+)\s*cells", text)
         assert m, f"Cell count pattern not found in summary: {text[:200]!r}"
         n_cells = int(m.group(1))
-        assert 1800 <= n_cells <= 3000, (
-            f"Baltic cell count {n_cells} outside expected 1800-3000 band "
-            f"(current baseline 2,022 after Minija tightening + BalticCoast "
-            f"repositioning — if you retuned CELL_SIZE_M, RIVER_CLIP_BBOX, or "
-            f"per-reach clips, update this bound)"
+        assert 1300 <= n_cells <= 2200, (
+            f"Baltic cell count {n_cells} outside expected 1300-2200 band "
+            f"(current baseline 1,552 after Atmata addition + per-reach "
+            f"buffer_factor tuning — if you retuned CELL_SIZE_M, BUFFER_FACTOR, "
+            f"RIVER_CLIP_BBOX, or per-reach clips, update this bound)"
         )
 
     def test_spatial_tab_navigable_after_baltic_load(self, baltic_page: Page) -> None:
@@ -175,7 +176,7 @@ class TestBalticSmoke:
         baltic_page.wait_for_function(
             """() => {
                 const el = document.querySelector('#setup-setup_summary');
-                return el && el.textContent.includes('8 reaches');
+                return el && el.textContent.includes('9 reaches');
             }""",
             timeout=20_000,
         )
