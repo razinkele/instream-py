@@ -13,7 +13,7 @@ import hashlib
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional, Union
 
 import geopandas as gpd
 import osmium
@@ -27,9 +27,13 @@ from shapely.validation import make_valid
 _OSM_DIR = Path(__file__).resolve().parent.parent / "data" / "osm"
 
 _GEOFABRIK_BASE = "https://download.geofabrik.de/europe"
+_GEOFABRIK_ROOT = "https://download.geofabrik.de"
 
-# Display name → Geofabrik URL path (relative to _GEOFABRIK_BASE).
-# Most are direct children of /europe/; sub-regions use nested paths.
+# Display name → Geofabrik URL path. Values starting with "http" are used
+# as-is (absolute overrides for regions outside /europe/). Everything else
+# is treated as a path under _GEOFABRIK_BASE.
+# NB: Kaliningrad used to live under /europe/russia/ but was moved to the
+# top-level /russia/ — absolute URL avoids a 302 → landing-page trap.
 GEOFABRIK_REGIONS: dict[str, str] = {
     "belgium": "belgium",
     "denmark": "denmark",
@@ -39,7 +43,7 @@ GEOFABRIK_REGIONS: dict[str, str] = {
     "germany": "germany",
     "ireland": "ireland",
     "italy": "italy",
-    "kaliningrad": "russia/kaliningrad",
+    "kaliningrad": f"{_GEOFABRIK_ROOT}/russia/kaliningrad",
     "latvia": "latvia",
     "lithuania": "lithuania",
     "netherlands": "netherlands",
@@ -95,7 +99,17 @@ def geofabrik_url(country: str) -> str:
     """Return the Geofabrik download URL for *country*."""
     c = country.lower().strip()
     path = GEOFABRIK_REGIONS.get(c, c)
+    # Absolute URL override for regions outside /europe/ (e.g. kaliningrad).
+    if path.startswith("http://") or path.startswith("https://"):
+        return f"{path}-latest.osm.pbf"
     return f"{_GEOFABRIK_BASE}/{path}-latest.osm.pbf"
+
+
+def _normalize_regions(countries: "Union[str, Iterable[str]]") -> tuple[str, ...]:
+    """Accept a single country name or an iterable of them. Returns tuple."""
+    if isinstance(countries, str):
+        return (countries,)
+    return tuple(countries)
 
 
 def pbf_path(country: str) -> Path:
@@ -165,8 +179,13 @@ def _clip_pbf(
     """
     left, bottom, right, top = bbox_wgs84
     bbox_str = f"{left},{bottom},{right},{top}"
-    bbox_hash = hashlib.md5(bbox_str.encode()).hexdigest()[:12]
-    clipped = _OSM_DIR / f"clip_{bbox_hash}.osm.pbf"
+    # Cache key on (pbf basename, bbox) — earlier versions keyed on bbox alone,
+    # which caused a silent cache collision once multiple source PBFs (e.g.
+    # lithuania + kaliningrad) were clipped to the same bbox.
+    # SHA-1 with usedforsecurity=False for FIPS-mode compatibility.
+    cache_key = f"{pbf_file.name}|{bbox_str}"
+    cache_hash = hashlib.sha1(cache_key.encode(), usedforsecurity=False).hexdigest()[:12]
+    clipped = _OSM_DIR / f"clip_{cache_hash}.osm.pbf"
 
     if clipped.exists():
         return clipped
@@ -266,31 +285,39 @@ class _HydroHandler(osmium.SimpleHandler):
         self.waterway_rows.append((wkb_hex, name, ww))
 
 
-_hydro_cache: dict[str, tuple] = {}  # pbf_path_str → (waterway_rows, water_body_rows)
+_hydro_cache: dict[tuple, tuple] = {}  # (sorted pbf paths) → (waterway_rows, water_body_rows)
 
 
 def _extract_hydro(
-    pbf_file: Path,
+    pbf_files: "Union[Path, list[Path]]",
     progress_cb: Optional[Callable[[str], None]] = None,
 ) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
-    """Run pyosmium handler and return (waterway_rows, water_body_rows).
+    """Run pyosmium handler over one or many PBFs; return (waterway_rows, water_body_rows).
 
-    Results are cached by PBF path so that ``query_waterways`` and
-    ``query_water_bodies`` called for the same bbox don't re-parse.
+    Accepts a single Path (for backward compatibility) or a list of Paths.
+    When multiple PBFs are given, pyosmium's ``apply_file`` is called on each
+    in sequence; row lists accumulate across them so that cross-border OSM
+    relations can be re-assembled by downstream consumers.
+
+    Results are cached by the sorted tuple of PBF paths. Cache is size-1 by
+    design (keep only the most recent entry to bound memory) — preserved
+    behaviour from the pre-multi-region code.
     """
-    key = str(pbf_file)
+    if isinstance(pbf_files, Path):
+        pbf_files = [pbf_files]
+    key = tuple(sorted(str(p) for p in pbf_files))
     if key in _hydro_cache:
         return _hydro_cache[key]
 
     if progress_cb:
-        progress_cb("Extracting hydrology features …")
+        progress_cb(f"Extracting hydrology features from {len(pbf_files)} PBF(s) …")
 
     handler = _HydroHandler()
-    handler.apply_file(str(pbf_file), locations=True)
+    for p in pbf_files:
+        handler.apply_file(str(p), locations=True)
 
     result = (handler.waterway_rows, handler.water_body_rows)
-    # Keep only the most recent entry to bound memory
-    _hydro_cache.clear()
+    _hydro_cache.clear()  # size-1 cache
     _hydro_cache[key] = result
     return result
 
@@ -348,25 +375,45 @@ def _rows_to_gdf(
 # ---------------------------------------------------------------------------
 
 
+def _download_and_clip_all(
+    countries: "Union[str, Iterable[str]]",
+    bbox_wgs84: tuple[float, float, float, float],
+    progress_cb: Optional[Callable[[str], None]] = None,
+) -> list[Path]:
+    """Ensure PBFs exist and are clipped for every region. Returns the list
+    of clipped-PBF paths, one per region."""
+    clipped_files: list[Path] = []
+    for region in _normalize_regions(countries):
+        pbf = ensure_pbf(region, progress_cb)
+        clipped_files.append(_clip_pbf(pbf, bbox_wgs84, progress_cb))
+    return clipped_files
+
+
 def query_waterways(
-    country: str,
+    countries: "Union[str, Iterable[str]]",
     bbox_wgs84: tuple[float, float, float, float],
     progress_cb: Optional[Callable[[str], None]] = None,
 ) -> gpd.GeoDataFrame:
-    """Return waterway centerlines + river polygons as a GeoDataFrame."""
-    pbf = ensure_pbf(country, progress_cb)
-    clipped = _clip_pbf(pbf, bbox_wgs84, progress_cb)
-    ww_rows, _ = _extract_hydro(clipped, progress_cb)
+    """Return waterway centerlines + river polygons as a GeoDataFrame.
+
+    Accepts a single country name (``"lithuania"``) or an iterable
+    (``("lithuania", "kaliningrad")``) — the latter lets cross-border OSM
+    relations assemble correctly.
+    """
+    clipped_files = _download_and_clip_all(countries, bbox_wgs84, progress_cb)
+    ww_rows, _ = _extract_hydro(clipped_files, progress_cb)
     return _rows_to_gdf(ww_rows, "waterway")
 
 
 def query_water_bodies(
-    country: str,
+    countries: "Union[str, Iterable[str]]",
     bbox_wgs84: tuple[float, float, float, float],
     progress_cb: Optional[Callable[[str], None]] = None,
 ) -> gpd.GeoDataFrame:
-    """Return water-body polygons as a GeoDataFrame."""
-    pbf = ensure_pbf(country, progress_cb)
-    clipped = _clip_pbf(pbf, bbox_wgs84, progress_cb)
-    _, wb_rows = _extract_hydro(clipped, progress_cb)
+    """Return water-body polygons as a GeoDataFrame.
+
+    Accepts a single country name or an iterable of them — see query_waterways.
+    """
+    clipped_files = _download_and_clip_all(countries, bbox_wgs84, progress_cb)
+    _, wb_rows = _extract_hydro(clipped_files, progress_cb)
     return _rows_to_gdf(wb_rows, "water")

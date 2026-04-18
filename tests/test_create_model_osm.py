@@ -9,7 +9,28 @@ def test_geofabrik_url():
     from app.modules.create_model_osm import geofabrik_url
 
     assert geofabrik_url("lithuania") == "https://download.geofabrik.de/europe/lithuania-latest.osm.pbf"
-    assert geofabrik_url("kaliningrad") == "https://download.geofabrik.de/europe/russia/kaliningrad-latest.osm.pbf"
+    # Kaliningrad lives under /russia/ (not /europe/russia/ any more) — the
+    # mapping is an absolute URL override; see create_model_osm.py.
+    assert geofabrik_url("kaliningrad") == "https://download.geofabrik.de/russia/kaliningrad-latest.osm.pbf"
+
+
+@pytest.mark.skipif(not PBF.exists(), reason="Lithuania PBF not downloaded")
+def test_query_waterways_accepts_multi_region():
+    """query_waterways should accept an iterable of regions and return features
+    from all of them combined."""
+    from app.modules.create_model_osm import query_waterways
+
+    # Narrow bbox near the Lithuania/Kaliningrad border to keep the probe fast
+    # while still guaranteeing features on both sides.
+    bbox = (20.80, 54.90, 22.20, 55.95)
+
+    lt_only = query_waterways("lithuania", bbox)
+    both = query_waterways(("lithuania", "kaliningrad"), bbox)
+
+    assert len(both) > len(lt_only), (
+        f"Expected merged fetch to have more features than LT alone: "
+        f"{len(both)} vs {len(lt_only)}"
+    )
 
 
 def test_pbf_path():
