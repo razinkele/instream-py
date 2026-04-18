@@ -47,6 +47,30 @@ logger = logging.getLogger(__name__)
 
 BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
+
+def _discover_configs() -> dict[str, str]:
+    """Return {full_path: stem} for every runnable example-*.yaml config.
+
+    Duplicates app.py's CONFIG_CHOICES logic so the Setup panel can offer its
+    own picker without a circular import. Filter matches `app.py`: only files
+    whose stem starts with ``example`` (excludes species-only configs).
+    """
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "configs",
+        Path(__file__).resolve().parent.parent / "configs",
+    ]
+    for d in candidates:
+        if d.exists():
+            return {
+                str(p): p.stem
+                for p in sorted(d.glob("*.yaml"))
+                if p.stem.startswith("example")
+            }
+    return {}
+
+
+_SETUP_CONFIG_CHOICES = _discover_configs()
+
 LAYER_CHOICES = {
     "reach": "Reach (color by reach)",
     "frac_spawn": "Spawning Habitat",
@@ -103,6 +127,29 @@ def setup_ui():
     )
     return ui.card(
         ui.card_header("Setup Review"),
+        # Inline config picker — mirrors the sidebar Configuration selector
+        # so users can load a different config without hunting for the
+        # sidebar (which can be collapsed). Loading here sets the Setup
+        # panel's local state *and* updates the sidebar dropdown so the
+        # Run Simulation button picks up the same choice.
+        ui.div(
+            ui.tags.span("Config:", style="font-weight:500; margin-right:0.5rem;"),
+            ui.div(
+                ui.input_select(
+                    "setup_config", None,
+                    choices=_SETUP_CONFIG_CHOICES,
+                    width="300px",
+                ),
+                style="display:inline-block; vertical-align:middle;",
+            ),
+            ui.input_action_button(
+                "setup_load_btn", "Load",
+                class_="btn btn-sm btn-primary",
+                style="margin-left:0.5rem;",
+            ),
+            style="display:flex; align-items:center; margin-bottom:0.5rem; "
+                  "gap:0.3rem;",
+        ),
         ui.div(
             ui.tags.span("Color by:", style="font-weight:500; margin-right:0.5rem;"),
             ui.div(
@@ -176,11 +223,34 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
     @reactive.effect
     @reactive.event(load_btn_rv)
     def _on_load_click():
-        """Store the config path when Load button is clicked."""
+        """Store the config path when the sidebar's Load Config button is clicked."""
         config_path = config_file_rv()
         if config_path:
             _loaded_config.set(config_path)
             _layer_sent.set(False)
+
+    @reactive.effect
+    @reactive.event(input.setup_load_btn)
+    def _on_setup_load_click():
+        """Allow loading a config directly from the Setup panel picker.
+
+        Mirrors the selection into the sidebar's `config_file` widget so the
+        Run Simulation button picks up the same choice. Uses the root session
+        because `config_file` is defined in the main app namespace, not the
+        `setup` module namespace.
+        """
+        config_path = input.setup_config()
+        if not config_path:
+            return
+        _loaded_config.set(config_path)
+        _layer_sent.set(False)
+        try:
+            # session here is the module session; its `parent` is the root
+            # ShinySession whose inputs include the sidebar's `config_file`.
+            root = getattr(session, "parent", None) or session
+            ui.update_select("config_file", selected=config_path, session=root)
+        except Exception as exc:  # pragma: no cover — defensive for API drift
+            logger.debug("Could not sync sidebar config_file: %s", exc)
 
     @reactive.calc
     def _load_gdf():
@@ -278,7 +348,14 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
     def setup_summary():
         gdf = _load_gdf()
         if gdf is None:
-            return ui.div()
+            return ui.div(
+                ui.p(
+                    ui.tags.strong("No configuration loaded. "),
+                    "Pick one above (or in the sidebar Configuration selector) "
+                    "and click Load to inspect its reaches, cells, and marine zones.",
+                    style="color:#555; font-size:0.9rem; margin-top:0.4rem;",
+                ),
+            )
 
         raw = gdf.attrs.get("raw_config", {})
         reaches = raw.get("reaches", {})

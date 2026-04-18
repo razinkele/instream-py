@@ -153,6 +153,47 @@ class TestBalticSmoke:
         placeholder = baltic_page.locator("text=Run a simulation")
         expect(placeholder.first).to_be_visible(timeout=10_000)
 
+    def test_setup_panel_has_inline_config_picker(self, baltic_page: Page) -> None:
+        """Setup panel exposes its own `setup_config` dropdown + Load button
+        so users don't have to hunt for the sidebar's Configuration selector
+        (which can be collapsed). Baltic appears in both pickers.
+        """
+        picker = baltic_page.locator("#setup-setup_config")
+        expect(picker).to_be_attached(timeout=10_000)
+        options = picker.locator("option").all_text_contents()
+        assert "example_baltic" in options, (
+            f"Setup panel picker missing example_baltic: {options}"
+        )
+        expect(baltic_page.locator("#setup-setup_load_btn")).to_be_visible()
+
+    def test_setup_panel_inline_picker_loads_baltic(self, baltic_page: Page) -> None:
+        """Selecting Baltic in the Setup panel's own picker + clicking its
+        Load button populates the setup_summary with the 8 real reaches."""
+        baltic_page.locator("#setup-setup_config").select_option(label="example_baltic")
+        baltic_page.locator("#setup-setup_load_btn").click()
+        baltic_page.wait_for_function(
+            """() => {
+                const el = document.querySelector('#setup-setup_summary');
+                return el && el.textContent.includes('8 reaches');
+            }""",
+            timeout=20_000,
+        )
+        summary_text = (
+            baltic_page.locator("#setup-setup_summary").text_content() or ""
+        )
+        for reach in ("Nemunas", "CuronianLagoon", "BalticCoast"):
+            assert reach in summary_text, (
+                f"Setup summary missing {reach} after inline-picker load"
+            )
+
+    def test_setup_panel_shows_helpful_empty_state(self, baltic_page: Page) -> None:
+        """Before any config is loaded, Setup shows a guidance message, not a
+        blank panel."""
+        # Fresh page fixture — no config loaded yet
+        summary = baltic_page.locator("#setup-setup_summary")
+        expect(summary).to_be_visible(timeout=10_000)
+        expect(summary).to_contain_text("No configuration loaded")
+
 
 @pytest.mark.integration
 @pytest.mark.skipif(
