@@ -39,14 +39,31 @@ STAGE_NAMES = {int(s): s.name for s in LifeStage}
 
 
 def _stage_histogram(model: InSTREAMModel) -> dict[str, int]:
-    """Count living trout by life-history stage."""
+    """Count living trout by life-history stage. Also includes live redds
+    (as REDD) and total eggs across them (as EGGS) — these live in a
+    separate state container from trout_state, so they'd otherwise be
+    invisible to a stage-only dump."""
     ts = model.trout_state
     alive = ts.alive_indices()
-    if len(alive) == 0:
-        return {}
-    stages = ts.life_history[alive]
-    counts = Counter(int(s) for s in stages)
-    return {STAGE_NAMES.get(s, f"stage_{s}"): n for s, n in sorted(counts.items())}
+    counts: Counter[int | str] = Counter()
+    if len(alive) > 0:
+        for s in ts.life_history[alive]:
+            counts[int(s)] += 1
+    # Redds + eggs (if the model has a redd_state — InSALMON does, older
+    # configs might not).
+    redd_state = getattr(model, "redd_state", None)
+    if redd_state is not None and redd_state.num_alive() > 0:
+        import numpy as np
+        live = redd_state.alive
+        counts["REDD"] = int(np.sum(live))
+        counts["EGGS"] = int(np.sum(redd_state.num_eggs[live]))
+    out: dict[str, int] = {}
+    for k, n in counts.items():
+        if isinstance(k, int):
+            out[STAGE_NAMES.get(k, f"stage_{k}")] = n
+        else:
+            out[k] = n
+    return out
 
 
 def _format_stage_row(counts: dict[str, int]) -> str:
@@ -72,14 +89,22 @@ def main(days: int = 14) -> None:
     milestones = [m for m in milestones if m <= days]
     milestones_set = set(milestones)
 
+    # First-appearance tracking per stage — shows when new cohorts emerge
+    # (e.g. first SPAWNER at spawn season, first natal FRY ~6 months after
+    # spawning). Invaluable for verifying the lifecycle pipeline end-to-end.
+    first_seen: dict[str, int] = {}
+
     t_run = time.perf_counter()
     for step in range(1, days + 1):
         t_step = time.perf_counter()
         model.step()
         step_ms.append((time.perf_counter() - t_step) * 1000.0)
+        counts = _stage_histogram(model)
+        for name in counts:
+            if name not in first_seen:
+                first_seen[name] = step
         if step in milestones_set:
             alive = model.trout_state.num_alive()
-            counts = _stage_histogram(model)
             print(f"  day {step:>4d}: alive={alive:>5d}  "
                   f"{_format_stage_row(counts)}")
     wall = time.perf_counter() - t_run
@@ -92,6 +117,10 @@ def main(days: int = 14) -> None:
               f"median={statistics.median(step_ms):.0f}  "
               f"min={min(step_ms):.0f}  "
               f"max={max(step_ms):.0f}")
+    print()
+    print("First-appearance day per stage (lifecycle milestones):")
+    for name, day in sorted(first_seen.items(), key=lambda kv: kv[1]):
+        print(f"  day {day:>4d}: {name}")
     print()
     print("Final lifecycle histogram:")
     print(f"  {_format_stage_row(_stage_histogram(model))}")
