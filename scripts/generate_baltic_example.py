@@ -66,10 +66,13 @@ SHP_DIR = OUT / "Shapefile"
 # and Baltic coast off Klaipeda.
 BBOX = (20.80, 54.90, 22.20, 55.95)
 
-# Clip rivers and tributaries to this tighter delta-focused box. Keeps
-# cell counts manageable — the full Jūra and Minija rivers span 150+ km
-# each, which would produce thousands of cells at 120 m cell size.
-RIVER_CLIP_BBOX = (20.95, 55.05, 21.75, 55.70)
+# River clip bbox — match the fetch bbox so we don't truncate reaches.
+# Previous tighter clip (20.95, 55.05, 21.75, 55.70) cut off Gilija's southern
+# half (Kaliningrad, south of 55.05°N) and Nemunas's upper section (east of
+# 21.75°E). With our current cell sizes (200-300 m for rivers, 2500 m for
+# marine), the full bbox stays under ~2500 cells so the tight clip is no
+# longer needed.
+RIVER_CLIP_BBOX = BBOX
 
 # Marine Regions authoritative polygon cache + metadata.
 # MRGID 3642 is the Curonian Lagoon (Kuršių marios). Per 2026-04-18 probing,
