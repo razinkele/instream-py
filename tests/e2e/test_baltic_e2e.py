@@ -135,10 +135,11 @@ class TestBalticSmoke:
         m = re.search(r"Grid:\s*(\d+)\s*cells", text)
         assert m, f"Cell count pattern not found in summary: {text[:200]!r}"
         n_cells = int(m.group(1))
-        assert 2000 <= n_cells <= 3500, (
-            f"Baltic cell count {n_cells} outside expected 2000-3500 band "
-            f"(current baseline 2,920 after real-lagoon + full-river fix — if you "
-            f"retuned CELL_SIZE_M or RIVER_CLIP_BBOX, update this bound)"
+        assert 1800 <= n_cells <= 3000, (
+            f"Baltic cell count {n_cells} outside expected 1800-3000 band "
+            f"(current baseline 2,022 after Minija tightening + BalticCoast "
+            f"repositioning — if you retuned CELL_SIZE_M, RIVER_CLIP_BBOX, or "
+            f"per-reach clips, update this bound)"
         )
 
     def test_spatial_tab_navigable_after_baltic_load(self, baltic_page: Page) -> None:
