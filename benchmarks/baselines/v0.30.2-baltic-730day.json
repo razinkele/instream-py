@@ -1,0 +1,116 @@
+{
+  "inSTREAM_version": "0.30.2",
+  "host": "RazinkaX1",
+  "timestamp": "2026-04-19T18:36:25",
+  "config": "example_baltic.yaml",
+  "days": 730,
+  "initial_population": 4579,
+  "build_seconds": 4.85,
+  "wall_seconds": 988.63,
+  "days_per_minute": 44.3,
+  "step_ms": {
+    "median": 1435.0,
+    "min": 287.9,
+    "max": 3874.1
+  },
+  "milestones": [
+    {
+      "day": 1,
+      "alive": 4546,
+      "stages": {
+        "FRY": 4546
+      }
+    },
+    {
+      "day": 7,
+      "alive": 4352,
+      "stages": {
+        "FRY": 4352
+      }
+    },
+    {
+      "day": 14,
+      "alive": 4211,
+      "stages": {
+        "FRY": 4211
+      }
+    },
+    {
+      "day": 30,
+      "alive": 4060,
+      "stages": {
+        "FRY": 4060
+      }
+    },
+    {
+      "day": 90,
+      "alive": 3974,
+      "stages": {
+        "FRY": 3773,
+        "RETURNING_ADULT": 201
+      }
+    },
+    {
+      "day": 180,
+      "alive": 3759,
+      "stages": {
+        "FRY": 3294,
+        "RETURNING_ADULT": 465
+      }
+    },
+    {
+      "day": 270,
+      "alive": 3185,
+      "stages": {
+        "FRY": 2836,
+        "SPAWNER": 330,
+        "KELT": 19,
+        "REDD": 907,
+        "EGGS": 49544
+      }
+    },
+    {
+      "day": 365,
+      "alive": 1766,
+      "stages": {
+        "PARR": 1473,
+        "SPAWNER": 274,
+        "KELT": 19,
+        "REDD": 907,
+        "EGGS": 1427
+      }
+    },
+    {
+      "day": 730,
+      "alive": 905,
+      "stages": {
+        "SPAWNER": 281,
+        "OCEAN_ADULT": 589,
+        "KELT": 33,
+        "PARR": 2,
+        "REDD": 52,
+        "EGGS": 632
+      }
+    }
+  ],
+  "first_seen_day": {
+    "FRY": 1,
+    "RETURNING_ADULT": 48,
+    "SPAWNER": 198,
+    "KELT": 198,
+    "REDD": 198,
+    "EGGS": 198,
+    "PARR": 275,
+    "SMOLT": 440,
+    "OCEAN_JUVENILE": 454,
+    "OCEAN_ADULT": 641
+  },
+  "final_histogram": {
+    "SPAWNER": 281,
+    "OCEAN_ADULT": 589,
+    "KELT": 33,
+    "PARR": 2,
+    "REDD": 52,
+    "EGGS": 632
+  }
+}
