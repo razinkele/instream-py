@@ -463,6 +463,7 @@ class _ModelDayBoundaryMixin:
                 sp_cfg.weight_A,
                 sp_cfg.weight_B,
                 species_index=sp_idx,
+                superind_max_rep=int(getattr(sp_cfg, "superind_max_rep", 10) or 10),
             )
 
     def _increment_age_if_new_year(self):
