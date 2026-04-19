@@ -571,3 +571,41 @@ stability; record the Brännäs data points as the v0.20.0 re-fit target.
     in relation to temperature: a laboratory study. *Journal of Fish
     Biology*, 33(4), 589–600.
     https://doi.org/10.1111/j.1095-8649.1988.tb05502.x
+
+## Arc D (2026-04-19): migration architecture rewrite
+
+Three coordinated default-value and architecture changes to close the
+21x outmigrant deficit reported in
+`docs/validation/v0.30.2-netlogo-comparison.md`. Full rationale and
+NetLogo source citations in that report.
+
+1. **`outmigration_min_length`: 8.0 → 4.0 cm** (`io/config.py:322`).
+   NetLogo InSALMO 7.3 event logs
+   (`netlogo-models/InSALMO7.3/FishEventsOut-r1_*.csv`) record
+   outmigration at 3.6–4.0 cm in example_a. The previous 8.0 cm default
+   blocked the supplementary fitness-based outmigration path
+   (`_do_migration:634`) for all small fish. Per-species YAML overrides
+   still respected.
+
+2. **FRY → PARR promotion: annual → continuous**
+   (`model_day_boundary.py:_increment_age_if_new_year`). Anadromous FRY
+   are now promoted to PARR on the first daily boundary where length
+   ≥ `parr_promotion_length` (new species parameter, default 4.0 cm)
+   OR age ≥ 1. Matches NetLogo's size/age-continuous anad-juvenile
+   assignment. Non-anadromous FRY are excluded (preserves the v0.16.0
+   guard against rainbow-trout PARR death).
+
+3. **Migration comparator: `fitness_memory` EMA → per-tick
+   `best_habitat_fitness`** (`model_day_boundary.py:617`). Both
+   `migration_fitness` (size logistic in [0.1, 0.9]) and
+   `best_habitat_fitness` (expected survival^horizon in [0, 1]) are
+   now on the same probability scale, matching NetLogo `fitness-for`
+   at `InSALMO7.3:2798-2840`. The `fitness_memory` EMA mixed raw
+   growth (g/day) with survival probability, silently returning
+   values that could not be meaningfully compared against the
+   logistic's 0.1-0.9 range.
+
+Growth calibration (~32% Python juvenile length shortfall vs NetLogo)
+is a separate Arc E track — Arc D targets only the migration
+architecture. Expected residual after Arc D: a 3-6x outmigrant gap
+pending growth calibration.

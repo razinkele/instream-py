@@ -319,7 +319,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
     fecundity_noise: float = 0.0
     spawn_date_jitter_days: int = 0
     outmigration_max_prob: float = 0.1
-    outmigration_min_length: float = 8.0
+    outmigration_min_length: float = 4.0  # Arc D: was 8.0; NetLogo FishEventsOut logs 3.6-4.0 cm outmigrants
     fitness_growth_weight: float = 1.0
 
 
