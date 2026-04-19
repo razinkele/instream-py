@@ -164,6 +164,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
     # Migration
     migrate_fitness_L1: float = 0.0
     migrate_fitness_L9: float = 0.0
+    parr_promotion_length: float = 4.0  # Arc D: anadromous FRY->PARR length threshold (cm)
 
     # Movement
     move_radius_max: float = 0.0
