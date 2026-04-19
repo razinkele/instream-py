@@ -381,9 +381,18 @@ class NumbaBackend:
         L1 = np.atleast_1d(np.asarray(L1, dtype=np.float64))
         L9 = np.atleast_1d(np.asarray(L9, dtype=np.float64))
         degenerate = np.abs(L1 - L9) < 1e-15
-        b = np.where(degenerate, 1.0, np.log(81.0) / (L9 - L1))
+        # np.where evaluates both branches — use np.divide with where= to
+        # skip the zero-denominator entries on the degenerate side. See
+        # numpy_backend.evaluate_logistic for the full rationale.
+        safe_delta = np.where(degenerate, 1.0, L9 - L1)
+        b = np.divide(
+            np.log(81.0), safe_delta, out=np.ones_like(safe_delta),
+            where=~degenerate,
+        )
         a = -b * (L1 + L9) / 2.0
-        result = 1.0 / (1.0 + np.exp(-(a + b * x)))
+        # Clip exponent to ±500 to avoid overflow warnings in np.exp.
+        arg = np.clip(-(a + b * x), -500.0, 500.0)
+        result = 1.0 / (1.0 + np.exp(arg))
         result = np.where(degenerate, np.where(x >= L1, 0.9, 0.1), result)
         return result
 

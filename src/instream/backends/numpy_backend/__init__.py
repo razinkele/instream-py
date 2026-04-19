@@ -470,9 +470,26 @@ class NumpyBackend:
         L1 = np.atleast_1d(np.asarray(L1, dtype=np.float64))
         L9 = np.atleast_1d(np.asarray(L9, dtype=np.float64))
         degenerate = np.abs(L1 - L9) < 1e-15
-        b = np.where(degenerate, 1.0, np.log(81.0) / (L9 - L1))
+        # np.where evaluates BOTH branches eagerly, so
+        # ``np.where(degenerate, 1.0, log(81)/(L9-L1))`` still divides by
+        # zero on the degenerate side and emits a RuntimeWarning even
+        # though the result is unused. Use np.divide with where= so the
+        # zero-denominator entries are never computed.
+        safe_delta = np.where(degenerate, 1.0, L9 - L1)
+        b = np.divide(
+            np.log(81.0), safe_delta, out=np.ones_like(safe_delta),
+            where=~degenerate,
+        )
         a = -b * (L1 + L9) / 2.0
-        result = 1.0 / (1.0 + np.exp(-(a + b * x)))
+        # Clip the exponent argument to ±500 to keep np.exp from
+        # overflowing float64 (exp(500) ≈ 1.4e217, exp(708)+ = inf).
+        # For x well beyond the logistic transition region the saturated
+        # output (≈0 or ≈1) is correct to double precision; the clip
+        # just silences the RuntimeWarning that would otherwise fire
+        # thousands of times per simulation. Same pattern as
+        # modules/behavior.py:69.
+        arg = np.clip(-(a + b * x), -500.0, 500.0)
+        result = 1.0 / (1.0 + np.exp(arg))
         result = np.where(degenerate, np.where(x >= L1, 0.9, 0.1), result)
         return result
 
