@@ -128,9 +128,11 @@ def _run_python_example_a() -> dict:
 
     rows: list[dict] = []
     prev_outmig = 0
-    total_steps = int(model.time_manager.total_steps)
 
-    for _ in range(total_steps):
+    # Mirror model.run()'s loop condition so we handle both daily and
+    # sub-daily modes cleanly. Hook in at each day boundary to snapshot
+    # the per-stage counts.
+    while not model.time_manager.is_done():
         model.step()
         if not model.time_manager.is_day_boundary:
             continue
