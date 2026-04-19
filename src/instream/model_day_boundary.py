@@ -734,6 +734,7 @@ class _ModelDayBoundaryMixin:
             ts.survival_memory[slots, :] = 0.0
             ts.last_growth_rate[slots] = 0.0
             ts.fitness_memory[slots] = 0.5
+            ts.best_habitat_fitness[slots] = 0.0
             # Reset marine state (slot-reuse hygiene)
             ts.zone_idx[slots] = -1
             ts.sea_winters[slots] = 0
@@ -832,6 +833,7 @@ class _ModelDayBoundaryMixin:
             ts.survival_memory[slots, :] = 0.0
             ts.last_growth_rate[slots] = 0.0
             ts.fitness_memory[slots] = 0.0
+            ts.best_habitat_fitness[slots] = 0.0
 
             # Reset marine state — slots may have been freed by a previous
             # ocean death, and without this the new adult would inherit
