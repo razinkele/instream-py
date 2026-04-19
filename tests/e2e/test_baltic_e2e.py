@@ -189,6 +189,22 @@ class TestBalticSmoke:
         placeholder = baltic_page.locator("text=Run a simulation")
         expect(placeholder.first).to_be_visible(timeout=10_000)
 
+    def test_spatial_panel_has_redds_toggle(self, baltic_page: Page) -> None:
+        """Spatial panel must expose a 'Show redds' checkbox so users can
+        see/hide the egg-nest markers. Added in v0.30.2 — without this
+        control there's no UI surface for the redd layer and the spawning
+        lifecycle stays invisible on the map."""
+        _select_baltic_config(baltic_page)
+        _click_tab(baltic_page, "Spatial")
+        checkbox = baltic_page.locator("#spatial-show_redds")
+        expect(checkbox).to_be_attached(timeout=10_000)
+        # Must be visibly labelled so users can find it. Shiny wraps
+        # input_checkbox markup differently than plain <label for="..."/>,
+        # so assert on visible page text instead of a specific locator.
+        expect(baltic_page.locator("text=Show redds").first).to_be_visible(
+            timeout=5_000,
+        )
+
     def test_setup_panel_has_inline_config_picker(self, baltic_page: Page) -> None:
         """Setup panel exposes its own `setup_config` dropdown + Load button
         so users don't have to hunt for the sidebar's Configuration selector

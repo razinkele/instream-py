@@ -17,6 +17,7 @@ from shiny import module, reactive, render, ui
 from shiny_deckgl import (
     MapWidget,
     geojson_layer,
+    scatterplot_layer,
     trips_layer,
 )
 from shiny_deckgl.controls import legend_control
@@ -55,6 +56,7 @@ def spatial_ui():
         ui.layout_columns(
             ui.input_checkbox("show_trips", "Show fish trails", value=True),
             ui.input_checkbox("show_heads", "Show fish icons", value=True),
+            ui.input_checkbox("show_redds", "Show redds (egg nests)", value=True),
             ui.input_slider(
                 "trail_width",
                 "Trail width (px)",
@@ -63,7 +65,7 @@ def spatial_ui():
                 value=3,
                 step=1,
             ),
-            col_widths=(3, 3, 6),
+            col_widths=(3, 3, 3, 3),
         ),
         ui.output_ui("anim_controls"),
         ui.output_ui("map_container"),
@@ -175,15 +177,42 @@ def spatial_server(input, output, session, results_rv):
 
             cells_layer = _build_cells_layer(gdf_wgs84, color_var)
 
-            # Send only the cells layer; _update_trips handles trips
-            # after _cells_sent becomes True (avoids double-send)
-            await widget.update(session, [cells_layer], animate=True)
+            # Redd layer: scatterplot of egg nests at host-cell centroids.
+            # Sent here so it renders alongside cells on first paint;
+            # toggled via _toggle_redds below.
+            with reactive.isolate():
+                show_redds = input.show_redds()
+            redds_layer = _build_redds_layer(results, visible=show_redds)
+
+            # Send cells + redds together; _update_trips handles trips
+            # after _cells_sent becomes True (avoids double-send).
+            await widget.update(session, [cells_layer, redds_layer], animate=True)
             _cells_sent.set(True)
 
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return
             logger.exception("Error sending initial layers")
+
+    # ------------------------------------------------------------------
+    # REDD VISIBILITY — partial_update when the show_redds checkbox flips
+    # ------------------------------------------------------------------
+    @reactive.effect
+    async def _toggle_redds():
+        widget = _widget()
+        if widget is None or not _cells_sent():
+            return
+        results = results_rv()
+        if results is None:
+            return
+        show = input.show_redds()
+        try:
+            redds_layer = _build_redds_layer(results, visible=show)
+            await widget.partial_update(session, [redds_layer])
+        except Exception as e:
+            if "SilentException" in type(e).__name__:
+                return
+            logger.exception("Error updating redds layer")
 
     # ------------------------------------------------------------------
     # CELL RE-COLORING — partial_update when color_var changes
@@ -288,6 +317,68 @@ def _fit_bounds_zoom(bounds, map_width_px=800, map_height_px=600):
 
     zoom = min(zoom_lng, zoom_lat) - 0.5  # padding
     return max(8, min(20, zoom))
+
+
+def _build_redds_layer(results, visible: bool = True):
+    """Scatterplot of redd (egg-nest) locations at their host cell centroids.
+
+    Point radius scales with ``sqrt(eggs)`` so a 1,000-egg redd is ~3x the
+    visual radius of a 100-egg redd (log-ish scaling keeps small redds
+    visible without dwarfing them). Colour is deep pink (``#e2007a``)
+    matching the dashboard's redd chart trace.
+
+    Returns ``None`` when the simulation produced no redds (empty DF).
+    """
+    import math
+
+    redds = results.get("redds")
+    if redds is None or redds.empty:
+        # Return an empty layer so partial_update toggles work cleanly.
+        return scatterplot_layer("redds", [], visible=visible)
+
+    cells = results.get("cells")
+    if cells is None or cells.empty:
+        return scatterplot_layer("redds", [], visible=visible)
+
+    # Reproject cells to WGS84 if needed, then grab each redd's host
+    # cell's centroid. Redds reference cells by positional index.
+    cells_wgs84 = (
+        cells if cells.crs is None or cells.crs.to_epsg() == 4326
+        else cells.to_crs(epsg=4326)
+    )
+    centroids = cells_wgs84.geometry.centroid
+    data = []
+    for _, r in redds.iterrows():
+        cidx = int(r["cell_idx"])
+        if cidx < 0 or cidx >= len(centroids):
+            continue
+        c = centroids.iloc[cidx]
+        eggs = int(r.get("eggs", 0))
+        # Radius in metres; sqrt(eggs) keeps a 10,000-egg redd at 100 m
+        # and a 100-egg redd at ~10 m. radiusMinPixels floors it visibly.
+        radius_m = max(5.0, math.sqrt(max(eggs, 1)) * 1.5)
+        data.append({
+            "position": [float(c.x), float(c.y)],
+            "radius": radius_m,
+            "eggs": eggs,
+            "species": str(r.get("species", "")),
+            "frac_developed": float(r.get("frac_developed", 0.0)),
+        })
+
+    return scatterplot_layer(
+        "redds",
+        data,
+        getPosition="@@=d.position",
+        getRadius="@@=d.radius",
+        getFillColor=[226, 0, 122, 200],          # #e2007a to match dashboard
+        getLineColor=[100, 0, 60, 255],
+        lineWidthMinPixels=1,
+        radiusMinPixels=4,
+        radiusMaxPixels=40,
+        radiusUnits="meters",
+        pickable=True,
+        visible=visible,
+    )
 
 
 def _build_cells_layer(gdf_wgs84, color_var):
