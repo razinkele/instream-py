@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.2] - 2026-04-19
+
+### Fixed
+
+- **Spawning was silently broken in v0.30.0–v0.30.1 Baltic case study.**
+  `scripts/generate_baltic_example.py` omitted the `frac_spawn` key in
+  the reach_segments dict passed to
+  `create_model_grid.generate_cells()`, which then defaulted it to 0.0.
+  Every cell in the committed `BalticExample.shp` had `FRACSPWN=0`,
+  making `spawn_suitability = depth_suit × vel_suit × frac_spawn × area`
+  zero everywhere, which failed the `spawn_suitability_tol=0.1` gate.
+  Result: SPAWNER stage reached each October as expected, but zero
+  redds were ever created and reproduction was impossible.
+
+  The bug shipped undetected in v0.30.0 because the existing test
+  suite's longest Baltic run was 90 days (adult arrivals only);
+  benchmarks/bench_baltic.py (v0.30.1) was the first scenario to run
+  past the spawn window and notice that `model.redd_state.num_alive()
+  == 0` after October.
+
+  Fix: added per-reach `frac_spawn` values to `REACH_PARAMS` (0.02 to
+  0.12 for river reaches, 0.0 for marine/lagoon) and threaded them
+  through `build_cells()`. No Python package changes.
+
+  Verification — 400-day headless run on the regenerated fixture shows
+  the full self-sustaining lifecycle:
+
+  | Day | SPAWNER | REDD | EGGS | PARR | FRY (natal) |
+  |-----|---------|------|------|------|-------------|
+  | 198 | first   | first | first | –   | –           |
+  | 270 | 330     | 907  | 49,544 | – | –           |
+  | 365 | 274     | 907  | 1,427 | 1,473 | –        |
+  | 400 | 245     | 252  | 370   | 1,190 | **776** (natal) |
+
+  Natal FRY emerge around day 380 (mid-April of year 2), confirming
+  that the v0.25.0 "self-sustaining Baltic population" property still
+  holds after the v0.30.1 geometry refactor.
+
+### Added
+
+- `tests/test_baltic_geometry.py::test_spawning_reaches_have_nonzero_frac_spawn`
+  — fails loudly in CI if any river reach regresses to `FRACSPWN=0`.
+- `tests/test_baltic_geometry.py::test_non_spawning_reaches_have_zero_frac_spawn`
+  — ensures lagoon/coast stay at 0 (no marine spawning).
+- `scripts/_diag_spawn_pipeline.py` — walks the spawn pipeline gate
+  by gate with drop counts; used to find the `frac_spawn=0` root cause.
+- `scripts/_test_fracspawn_hypothesis.py` — Phase-3 systematic-debugging
+  hypothesis test that patched the shapefile in-place and confirmed
+  redds appear; kept for future generator debugging.
+- `scripts/_inspect_baltic_shp_columns.py` — DBF column range audit.
+
 ## [0.30.1] - 2026-04-19
 
 ### Baltic case study geometry corrections

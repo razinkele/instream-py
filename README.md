@@ -6,7 +6,7 @@
 [![docs](https://github.com/razinkele/instream-py/actions/workflows/docs.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/docs.yml)
 [![PyPI](https://img.shields.io/pypi/v/instream)](https://pypi.org/project/instream/)
 [![Tests](https://img.shields.io/badge/tests-920%2B-brightgreen)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.30.1-blue)](https://github.com/razinkele/instream-py/releases)
+[![Release](https://img.shields.io/badge/release-v0.30.2-blue)](https://github.com/razinkele/instream-py/releases)
 
 A high-performance Python conversion of the **inSTREAM/inSALMO 7.4**
 individual-based salmonid model — with 350-1290× the throughput of the
@@ -370,7 +370,7 @@ inSTREAM reference and this Python implementation:
   author  = {Razinkovas-Baziukas, Artūras and contributors},
   year    = {2026},
   url     = {https://github.com/razinkele/instream-py},
-  version = {0.30.1}
+  version = {0.30.2}
 }
 ```
 
