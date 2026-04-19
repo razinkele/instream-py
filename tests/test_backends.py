@@ -105,7 +105,7 @@ def test_numba_evaluate_all_cells_matches_python():
     cmax_tx = np.array([0.0, 10.0, 20.0, 30.0])
     cmax_ty = np.array([0.0, 0.5, 1.0, 0.3])
 
-    best_c, best_a, best_fit, best_g = _evaluate_all_cells(
+    best_c, best_a, best_fit, best_g, best_ns = _evaluate_all_cells(
         10.0,
         5.0,
         0.9,
