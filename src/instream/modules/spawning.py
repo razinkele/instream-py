@@ -200,7 +200,7 @@ def create_redd(
     species_idx,
     cell_idx,
     reach_idx,
-    weight,
+    length,
     fecund_mult,
     fecund_exp,
     egg_viability,
@@ -215,10 +215,14 @@ def create_redd(
         Redd state arrays (modified in place).
     species_idx, cell_idx, reach_idx : int
         Species, cell, and reach identifiers.
-    weight : float
-        Spawner weight (g).
+    length : float
+        Spawner length (cm). Arc E (2026-04-20): was `weight` pre-bugfix;
+        NetLogo InSALMO7.3 `num-viable-eggs` (line 4212-4213) uses
+        `fecund_mult * length^fecund_exp * egg_viability`. The previous
+        `weight` parameterization over-produced eggs ~13x for a typical
+        60 cm / 6908 g Chinook-Spring spawner.
     fecund_mult, fecund_exp : float
-        Fecundity parameters: eggs = fecund_mult * weight^fecund_exp * egg_viability.
+        Fecundity parameters: eggs = fecund_mult * length^fecund_exp * egg_viability.
     egg_viability : float
         Fraction of eggs that are viable (0-1).
     fecundity_noise : float
@@ -236,7 +240,7 @@ def create_redd(
     if slot < 0:
         return -1
 
-    num_eggs = fecund_mult * weight**fecund_exp * egg_viability
+    num_eggs = fecund_mult * length**fecund_exp * egg_viability
     if fecundity_noise > 0.0 and rng is not None:
         num_eggs *= np.exp(rng.normal(0.0, fecundity_noise))
     num_eggs = int(num_eggs)

@@ -74,7 +74,14 @@ species:
     resp_C: 0.0020
     resp_D: 1.4
     search_area: 20000
-    spawn_defense_area: 200000
+    # Arc E (2026-04-20): NetLogo trout-spawn-defense-area=200000 is cm^2 (area),
+    # but the legacy `spawn_defense_area` field treats the raw value as cm radius.
+    # Passing 200000 through the legacy path yielded a 2000 m exclusion radius —
+    # blocking all further spawning in example_a and producing 1 giant redd
+    # instead of NetLogo's ~15. Correct semantic: 200000 cm^2 = 20 m^2, which the
+    # model_validator converts to sqrt(20/pi) ~ 2.52 m radius.
+    spawn_defense_area: 0
+    spawn_defense_area_m2: 20.0
     spawn_egg_viability: 0.8
     spawn_fecund_mult: 690
     spawn_fecund_exp: 0.552

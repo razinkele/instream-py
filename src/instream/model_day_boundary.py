@@ -341,7 +341,7 @@ class _ModelDayBoundaryMixin:
                 species_idx=sp_idx,
                 cell_idx=best_cell,
                 reach_idx=reach_idx,
-                weight=float(self.trout_state.weight[i]),
+                length=float(self.trout_state.length[i]),
                 fecund_mult=sp_cfg.spawn_fecund_mult,
                 fecund_exp=sp_cfg.spawn_fecund_exp,
                 egg_viability=sp_cfg.spawn_egg_viability,

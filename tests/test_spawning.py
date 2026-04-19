@@ -210,7 +210,7 @@ class TestSpawn:
             species_idx=0,
             cell_idx=5,
             reach_idx=0,
-            weight=50.0,
+            length=50.0,
             fecund_mult=690.0,
             fecund_exp=0.552,
             egg_viability=0.8,
@@ -228,12 +228,12 @@ class TestSpawn:
             species_idx=0,
             cell_idx=5,
             reach_idx=0,
-            weight=50.0,
+            length=50.0,
             fecund_mult=690.0,
             fecund_exp=0.552,
             egg_viability=0.8,
         )
-        expected = int(690.0 * 50.0**0.552 * 0.8)
+        expected = int(690.0 * 50.0**0.552 * 0.8)  # fecund_mult * length^exp * viability
         assert rs.num_eggs[0] == expected
 
     def test_no_redd_when_full(self):
@@ -247,7 +247,7 @@ class TestSpawn:
             species_idx=0,
             cell_idx=5,
             reach_idx=0,
-            weight=50.0,
+            length=50.0,
             fecund_mult=690.0,
             fecund_exp=0.552,
             egg_viability=0.8,
@@ -406,7 +406,7 @@ class TestFecundityNoise:
             rng = np.random.default_rng(seed)
             create_redd(
                 rs, species_idx=0, cell_idx=0, reach_idx=0,
-                weight=500.0, fecund_mult=1.0, fecund_exp=1.0,
+                length=500.0, fecund_mult=1.0, fecund_exp=1.0,
                 egg_viability=1.0, fecundity_noise=0.3, rng=rng,
             )
             eggs.append(int(rs.num_eggs[0]))
@@ -423,7 +423,7 @@ class TestFecundityNoise:
             rng = np.random.default_rng(seed)
             create_redd(
                 rs, species_idx=0, cell_idx=0, reach_idx=0,
-                weight=500.0, fecund_mult=1.0, fecund_exp=1.0,
+                length=500.0, fecund_mult=1.0, fecund_exp=1.0,
                 egg_viability=1.0, fecundity_noise=0.0, rng=rng,
             )
             eggs.append(int(rs.num_eggs[0]))
