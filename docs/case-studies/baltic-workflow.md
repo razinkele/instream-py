@@ -153,24 +153,64 @@ coordinates in `fetch_baltic_coast()`. About 1,973 km² real area.
 from modules.create_model_grid import generate_cells
 
 CELL_SIZE_M = {
-    "Nemunas":         300,    "Minija":         250,
-    "Sysa":            200,    "Skirvyte":       200,
-    "Leite":           250,    "Gilija":         250,
-    "CuronianLagoon":  2500,   "BalticCoast":    2500,
+    "Nemunas":         300,    "Atmata":          150,
+    "Minija":          100,    "Sysa":            100,
+    "Skirvyte":        200,    "Leite":           100,
+    "Gilija":          150,    "CuronianLagoon":  2500,
+    "BalticCoast":     2500,
+}
+
+# Linestring rivers need a tight buffer_factor — default 2.0 buffers
+# centerlines by `cell_size * 2.0` per side (a 1 km band for a 30 m river).
+# Values 0.25-0.5 match real channel half-widths. Polygon reaches
+# (Nemunas riverbank, Skirvytė, CuronianLagoon, BalticCoast) keep 2.0.
+BUFFER_FACTOR = {
+    "Nemunas": 2.0,   "Atmata": 0.5,   "Minija": 0.25,
+    "Sysa":    0.25,  "Skirvyte": 2.0, "Leite":  0.25,
+    "Gilija":  0.4,   "CuronianLagoon": 2.0, "BalticCoast": 2.0,
+}
+
+# frac_spawn is the per-reach fraction of cell area with spawning gravel
+# substrate — salmon cannot spawn where this is 0. Without a value here
+# the generator silently defaults to 0, every cell lands with FRACSPWN=0
+# in the shapefile, and spawn_suitability=0 blocks all redd creation.
+# Marine/lagoon stays at 0; small tributaries get 0.10-0.12; delta
+# distributaries get 0.03-0.08; lower-Nemunas main channel gets 0.02.
+FRAC_SPAWN = {
+    "Nemunas": 0.02,  "Atmata": 0.03,  "Minija": 0.12,
+    "Sysa":    0.08,  "Skirvyte": 0.05, "Leite": 0.10,
+    "Gilija":  0.05,  "CuronianLagoon": 0.0, "BalticCoast": 0.0,
 }
 
 for reach, geom in reach_geoms.items():
     segments = _flatten_geometry(geom)   # handles Multi* + GeometryCollection
     cells = generate_cells(
-        {reach: {"segments": segments, "type": reach_type}},
+        {reach: {
+            "segments": segments,
+            "type": reach_type,
+            "frac_spawn": FRAC_SPAWN[reach],   # <- critical, see Gotcha 8
+        }},
         cell_size=CELL_SIZE_M[reach],
         cell_shape="hexagonal",
+        buffer_factor=BUFFER_FACTOR[reach],
     )
 ```
 
 Cell sizes are tuned so each reach produces 50-500 cells and the total
-lands near 1,800. If you retune, update the assertion range in
+lands near 1,591 at v0.30.2 baseline. If you retune, update the
+assertion range in
 `tests/e2e/test_baltic_e2e.py::test_setup_summary_reports_cell_count`.
+
+**Validate after regeneration** by running the headless 220-day bench;
+you should see ~850 REDDs and hundreds of thousands of EGGS appearing
+around day 198 (spawn window opens):
+
+```bash
+micromamba run -n shiny python benchmarks/bench_baltic.py 220
+```
+
+If REDDs stay at 0 despite SPAWNER > 0 in the histogram, something in
+the `frac_spawn` / depth pipeline regressed — see Gotcha 8.
 
 ### Step 4.6: Sample EMODnet bathymetry for marine reaches
 
@@ -383,6 +423,53 @@ leaks sockets (known issue per `CLAUDE.md`).
 **Workaround**: Use a different port or restart the machine. For tests,
 `test_e2e_spatial.py` moved `PORT = 18901 → 18903` after the `18901`
 socket got stuck. Don't use `18901` until it clears.
+
+### Gotcha 8: Silent spawn-pipeline failure when `frac_spawn` isn't set
+
+**Symptom**: Simulation runs to completion, SPAWNER count rises as
+expected in mid-October, but `model.redd_state.num_alive() == 0`
+throughout. No redds created, no eggs, no natal fry emerging the
+following spring. Simulation isn't broken — it just can't reproduce.
+
+**Root cause**: `scripts/generate_baltic_example.py` shipped in v0.30.0
+and v0.30.1 called `generate_cells()` with a `reach_segments` dict that
+omitted the `frac_spawn` key. `generate_cells` then used its default of
+`0.0` (see `app/modules/create_model_grid.py:205`), so every cell in the
+committed `BalticExample.shp` had `FRACSPWN = 0`. The spawning module
+computes `spawn_suitability = depth_suit × vel_suit × frac_spawn × area`
+— with any factor at 0, the product is 0, which fails the
+`spawn_suitability_tol = 0.1` gate, and no redd is ever created.
+
+**Why it escaped CI**: The longest existing Baltic test was 90 days
+(`test_adult_arrives_as_returning_adult`), which stops before the spawn
+window opens. The e2e `TestBalticSimulation` window is 2 weeks. Neither
+exercised the spawning pipeline. The bug was found only after
+`benchmarks/bench_baltic.py` was added (v0.30.1) and run for 220 days.
+
+**Fix**: Populate `frac_spawn` in the reach-params dict and thread it
+into `reach_segments`. See Step 4.5 above for the v0.30.2 values.
+
+**CI guards added so this can't resurface:**
+
+- `tests/test_baltic_geometry.py::test_spawning_reaches_have_nonzero_frac_spawn`
+  — asserts every river reach has at least one cell with FRACSPWN > 0
+  in the committed shapefile.
+- `tests/e2e/test_baltic_e2e.py::test_setup_summary_shows_nonzero_spawn_habitat`
+  — loads the Baltic config in a real browser, reads the Setup panel's
+  `Spawn %` table column, and fails if every reach shows 0%.
+
+**Diagnosis tooling** if spawning ever goes quiet again:
+
+```bash
+# Walk each spawn-pipeline gate and report drop counts
+micromamba run -n shiny python scripts/_diag_spawn_pipeline.py
+
+# Quick DBF column audit
+micromamba run -n shiny python scripts/_inspect_baltic_shp_columns.py
+
+# In-place hypothesis test that patches FRACSPWN and re-runs
+micromamba run -n shiny python scripts/_test_fracspawn_hypothesis.py
+```
 
 ---
 
