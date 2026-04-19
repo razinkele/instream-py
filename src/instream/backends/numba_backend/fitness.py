@@ -200,13 +200,16 @@ def _evaluate_all_cells_v2(
 
     Accepts a pre-computed cmax_temp scalar to avoid passing variable-length
     lookup tables into the batch parallel loop.
-    Returns (best_cell, best_activity, best_fitness, best_growth).
+    Returns (best_cell, best_activity, best_fitness, best_growth, best_non_starve).
+    best_non_starve is the survival product (non_starve * s_cond) at the
+    chosen cell/activity, needed by Arc D expected-fitness comparator.
     """
     n_cand = candidate_indices.shape[0]
     best_cell = candidate_indices[0]
     best_act = 2
     best_fitness = -1e308
     best_growth = 0.0
+    best_non_starve = 0.0
 
     # Pre-compute fish-level invariants
     cmax_wt = cmax_A * fish_weight**cmax_B
@@ -367,8 +370,9 @@ def _evaluate_all_cells_v2(
                 best_cell = c
                 best_act = act
                 best_growth = growth
+                best_non_starve = non_starve * s_cond_val
 
-    return best_cell, best_act, best_fitness, best_growth
+    return best_cell, best_act, best_fitness, best_growth, best_non_starve
 
 
 @numba.njit(cache=True)
@@ -459,7 +463,7 @@ def _evaluate_all_cells(
 
     Accepts raw cmax lookup tables (table_x/table_y); interpolates temperature
     before delegating to _evaluate_all_cells_v2.
-    Returns (best_cell, best_activity, best_fitness, best_growth).
+    Returns (best_cell, best_activity, best_fitness, best_growth, best_non_starve).
     """
     cmax_temp = np.interp(temperature, cmax_temp_table_x, cmax_temp_table_y)
     return _evaluate_all_cells_v2(
@@ -628,13 +632,14 @@ def _pass1_evaluate_parallel(
     best_cells = np.empty(n_fish, dtype=np.int32)
     best_activities = np.empty(n_fish, dtype=np.int32)
     best_growths = np.empty(n_fish, dtype=np.float64)
+    best_non_starves = np.empty(n_fish, dtype=np.float64)
 
     for fi in numba.prange(n_fish):
         start = cand_offsets[fi]
         end = cand_offsets[fi + 1]
         candidates = cand_indices[start:end]
 
-        bc, ba, _, bg = _evaluate_all_cells_v2(
+        bc, ba, _, bg, bns = _evaluate_all_cells_v2(
             fish_lengths[fi],
             fish_weights[fi],
             fish_conditions[fi],
@@ -714,8 +719,9 @@ def _pass1_evaluate_parallel(
         best_cells[fi] = bc
         best_activities[fi] = ba
         best_growths[fi] = bg
+        best_non_starves[fi] = bns
 
-    return best_cells, best_activities, best_growths
+    return best_cells, best_activities, best_growths, best_non_starves
 
 
 @numba.njit(cache=True)
@@ -811,12 +817,14 @@ def batch_select_habitat(
     from each fish's chosen cell. Fish keep their Pass-1 choices regardless
     of depletion (matching NetLogo inSTREAM which does not re-evaluate).
 
-    Returns (best_cells, best_activities, best_growths, got_shelter) arrays of shape (n_fish,).
+    Returns (best_cells, best_activities, best_growths, got_shelter, best_non_starves) arrays of shape (n_fish,).
+    best_non_starves is the survival product (non_starve * s_cond) at the chosen
+    cell/activity — Arc D uses it to compute per-tick expected habitat fitness.
     """
     n_fish = fish_lengths.shape[0]
 
     # --- Pass 1: Parallel fitness evaluation (no depletion) ---
-    best_cells, best_activities, best_growths = _pass1_evaluate_parallel(
+    best_cells, best_activities, best_growths, best_non_starves = _pass1_evaluate_parallel(
         fish_lengths,
         fish_weights,
         fish_conditions,
@@ -955,4 +963,4 @@ def batch_select_habitat(
             if cell_avail_hiding[bc] >= rep:
                 cell_avail_hiding[bc] -= rep
 
-    return best_cells, best_activities, best_growths, got_shelter
+    return best_cells, best_activities, best_growths, got_shelter, best_non_starves

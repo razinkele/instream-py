@@ -407,6 +407,7 @@ def redd_emergence(
         ts.survival_memory[slots, :] = 0.0
         ts.last_growth_rate[slots] = 0.0
         ts.fitness_memory[slots] = 0.0
+        ts.best_habitat_fitness[slots] = 0.0
 
         # Reset marine state — slots may have been freed by a previous
         # smolt/adult death, and without this the new fry would inherit

@@ -21,8 +21,18 @@ def migration_fitness(length, L1, L9):
 
 
 def should_migrate(migration_fit, best_habitat_fit, life_history):
-    """Decide if fish should migrate downstream."""
-    if life_history != LifeStage.PARR:  # only anad_juve migrates
+    """Decide if a fish should migrate downstream.
+
+    Both arguments must be on the same [0, 1] probability scale.
+    best_habitat_fit should be the per-tick expected fitness of the
+    fish's chosen cell/activity (see modules.habitat_fitness and the
+    Arc D post-pass in modules.behavior), matching NetLogo InSALMO 7.3
+    fitness-for. Passing the fitness_memory EMA here is a scale bug
+    (see docs/validation/v0.30.2-netlogo-comparison.md).
+
+    Only anadromous juveniles (PARR) may migrate.
+    """
+    if life_history != LifeStage.PARR:
         return False
     return migration_fit > best_habitat_fit
 

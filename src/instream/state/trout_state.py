@@ -24,6 +24,7 @@ class TroutState:
     spawned_this_season: np.ndarray
     last_growth_rate: np.ndarray
     fitness_memory: np.ndarray
+    best_habitat_fitness: np.ndarray  # Arc D: per-tick [0,1] comparator for migration
 
     # Within-day memory: shape (capacity, max_steps_per_day)
     growth_memory: np.ndarray
@@ -67,6 +68,7 @@ class TroutState:
             spawned_this_season=np.zeros(capacity, dtype=bool),
             last_growth_rate=np.zeros(capacity, dtype=np.float64),
             fitness_memory=np.zeros(capacity, dtype=np.float64),
+            best_habitat_fitness=np.zeros(capacity, dtype=np.float64),
             growth_memory=np.zeros((capacity, max_steps_per_day), dtype=np.float64),
             consumption_memory=np.zeros(
                 (capacity, max_steps_per_day), dtype=np.float64

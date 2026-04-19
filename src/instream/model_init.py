@@ -232,6 +232,8 @@ class _ModelInitMixin:
             "migrate_fitness_L9",
             "fitness_memory_frac",
             "fitness_growth_weight",
+            "fitness_horizon",
+            "fitness_length",
         ]:
             self._sp_arrays[field] = np.array(
                 [

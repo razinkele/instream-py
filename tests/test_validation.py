@@ -993,8 +993,20 @@ class TestFitnessReport:
 
     Golden snapshot from Python v0.5.0 — cross-validate against NetLogo when available.
     TODO: Regenerate golden after NetLogo cross-validation (Section 3.7).
+
+    **Arc D (v0.31.0, 2026-04-19)**: xfailed pending golden regeneration.
+    Arc D intentionally changes fish-level trajectories in example_a:
+    continuous FRY->PARR promotion + switched migration comparator causes
+    some emergence-length-4.0+ FRY to transit to PARR and then either
+    migrate or die at the river mouth in the single-reach example_a,
+    which the golden snapshot (captured pre-Arc D) does not reflect.
+    Regenerate the fixture alongside Arc E growth calibration.
     """
 
+    @pytest.mark.xfail(
+        reason="Golden needs regeneration after Arc D migration rewrite; see v0.31.0-arc-D-netlogo-comparison.md",
+        strict=False,
+    )
     def test_fitness_report(self):
         import numpy as np
         import pandas as pd

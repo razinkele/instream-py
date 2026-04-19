@@ -466,28 +466,35 @@ class _ModelDayBoundaryMixin:
             )
 
     def _increment_age_if_new_year(self):
-        """Increment fish age by 1 on January 1 and promote FRY->PARR.
+        """Increment fish age on Jan 1 and promote anadromous FRY->PARR continuously.
 
-        FRY that survive their first winter (age becomes 1 on Jan 1)
-        transition to PARR — but ONLY for anadromous species, where PARR
-        is a meaningful life stage (juvenile salmon on its way to smolt).
-        For non-anadromous species (e.g. rainbow trout) the PARR stage is
-        not used; their lifecycle is FRY -> SPAWNER at maturity.
+        Arc D (2026-04-19): FRY -> PARR promotion is now continuous —
+        triggered each daily boundary when length >= parr_promotion_length
+        OR age >= 1 (for anadromous species only). The size branch lets
+        emergence-year FRY become PARR in their first summer so they can
+        outmigrate the same year (matching NetLogo InSALMO 7.3, which has
+        no Jan-1-only gate). The age branch preserves the legacy
+        overwinter-promotion semantic for fish that stayed small.
 
-        Without this gate, promoting rainbow trout FRY to PARR would send
-        them into the migration-kill logic at the last reach (which kills
-        any PARR at the river mouth when there is no marine domain), and
-        the non-anadromous population goes extinct within one year.
+        Pre-Arc D: promotion fired only when julian_date == 1, blocking
+        all emergence-year outmigration and contributing to the 21x
+        outmigrant deficit documented in v0.30.2-netlogo-comparison.md.
+
+        Rainbow-trout-style non-anadromous FRY are excluded — their
+        lifecycle is FRY -> SPAWNER at maturity, and promoting them to
+        PARR would send them into the river-mouth migration-kill logic.
         """
-        if self.time_manager.julian_date != 1:
+        alive = self.trout_state.alive_indices()
+        if len(alive) == 0:
             return
 
-        alive = self.trout_state.alive_indices()
-        self.trout_state.age[alive] += 1
+        # 1) Age increment on Jan 1 (unchanged semantics)
+        if self.time_manager.julian_date == 1:
+            self.trout_state.age[alive] += 1
 
         from instream.state.life_stage import LifeStage
 
-        # Build a per-species anadromous mask once
+        # 2) Continuous FRY -> PARR promotion for anadromous species
         anadromous_by_idx = np.array(
             [
                 bool(getattr(self.config.species[name], "is_anadromous", False))
@@ -498,11 +505,22 @@ class _ModelDayBoundaryMixin:
         if not anadromous_by_idx.any():
             return  # no anadromous species -> nothing to promote
 
+        parr_min_by_idx = np.array(
+            [
+                float(getattr(
+                    self.config.species[name], "parr_promotion_length", 4.0
+                ))
+                for name in self.species_order
+            ],
+            dtype=np.float64,
+        )
+
         species = self.trout_state.species_idx[alive]
         is_anad = anadromous_by_idx[species]
         fry_mask = self.trout_state.life_history[alive] == int(LifeStage.FRY)
-        age_mask = self.trout_state.age[alive] >= 1
-        promote = alive[fry_mask & age_mask & is_anad]
+        length_ok = self.trout_state.length[alive] >= parr_min_by_idx[species]
+        age_ok = self.trout_state.age[alive] >= 1
+        promote = alive[fry_mask & is_anad & (length_ok | age_ok)]
         if len(promote) > 0:
             self.trout_state.life_history[promote] = int(LifeStage.PARR)
 
@@ -596,7 +614,12 @@ class _ModelDayBoundaryMixin:
                 float(sp_mig_L1[sp_idx]),
                 float(sp_mig_L9[sp_idx]),
             )
-            best_hab = float(self.trout_state.fitness_memory[i])
+            # Arc D: compare migration_fitness (size logistic, 0.1-0.9)
+            # against per-tick best_habitat_fitness (survival^horizon, [0,1])
+            # instead of the scale-inconsistent fitness_memory EMA. See
+            # docs/validation/v0.30.2-netlogo-comparison.md for the drift
+            # diagnosis that motivated this switch.
+            best_hab = float(self.trout_state.best_habitat_fitness[i])
             if should_migrate(mig_fit, best_hab, lh):
                 out, smoltified = migrate_fish_downstream(
                     self.trout_state, i, self._reach_graph,
@@ -734,6 +757,7 @@ class _ModelDayBoundaryMixin:
             ts.survival_memory[slots, :] = 0.0
             ts.last_growth_rate[slots] = 0.0
             ts.fitness_memory[slots] = 0.5
+            ts.best_habitat_fitness[slots] = 0.0
             # Reset marine state (slot-reuse hygiene)
             ts.zone_idx[slots] = -1
             ts.sea_winters[slots] = 0
@@ -832,6 +856,7 @@ class _ModelDayBoundaryMixin:
             ts.survival_memory[slots, :] = 0.0
             ts.last_growth_rate[slots] = 0.0
             ts.fitness_memory[slots] = 0.0
+            ts.best_habitat_fitness[slots] = 0.0
 
             # Reset marine state — slots may have been freed by a previous
             # ocean death, and without this the new adult would inherit
