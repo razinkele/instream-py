@@ -138,9 +138,43 @@ class TestBalticSmoke:
         n_cells = int(m.group(1))
         assert 1300 <= n_cells <= 2200, (
             f"Baltic cell count {n_cells} outside expected 1300-2200 band "
-            f"(current baseline 1,552 after Atmata addition + per-reach "
-            f"buffer_factor tuning — if you retuned CELL_SIZE_M, BUFFER_FACTOR, "
+            f"(current baseline 1,591 after v0.30.2 frac_spawn-aware "
+            f"regeneration. If you retuned CELL_SIZE_M, BUFFER_FACTOR, "
             f"RIVER_CLIP_BBOX, or per-reach clips, update this bound)"
+        )
+
+    def test_setup_summary_shows_nonzero_spawn_habitat(self, baltic_page: Page) -> None:
+        """Setup summary's 'Spawn %' column must show non-zero values for at
+        least one reach. If every reach reports 0%, the generator failed to
+        populate frac_spawn in the shapefile — the exact bug that shipped in
+        v0.30.0 and silently disabled reproduction until v0.30.2.
+
+        A passing test means: the user loading Baltic in the UI can see
+        which reaches have spawning habitat, and the model will actually
+        produce redds when the sim runs."""
+        _select_baltic_config(baltic_page)
+        summary = baltic_page.locator("#setup-setup_summary")
+        expect(summary).to_be_visible(timeout=10_000)
+        text = summary.text_content() or ""
+        assert "Spawn %" in text, (
+            f"Setup summary missing 'Spawn %' column header. "
+            f"Text snippet: {text[:300]!r}"
+        )
+        # Every cell in the Spawn % column ends with a '%' suffix. Extract
+        # the numeric prefixes and require at least one to be > 0.
+        import re
+
+        pcts = [int(m) for m in re.findall(r"\b(\d+)%", text)]
+        assert pcts, (
+            f"Couldn't find any percent values in summary: {text[:300]!r}"
+        )
+        assert any(p > 0 for p in pcts), (
+            f"All reaches show Spawn % = 0 in the Setup summary: {pcts}. "
+            f"This means the shapefile has FRACSPWN=0 everywhere — the "
+            f"spawning pipeline is silently broken. Check that "
+            f"scripts/generate_baltic_example.py passes frac_spawn in the "
+            f"reach_segments dict to create_model_grid.generate_cells(). "
+            f"See commit 89dcdf1 (v0.30.2)."
         )
 
     def test_spatial_tab_navigable_after_baltic_load(self, baltic_page: Page) -> None:
