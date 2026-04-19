@@ -7,7 +7,7 @@ given `example_baltic` fixture still produces a realistic lifecycle (fry
 emerge, smolts exit, adults return).
 
 Usage:
-    micromamba run -n shiny python benchmarks/bench_baltic.py [days]
+    micromamba run -n shiny python benchmarks/bench_baltic.py [days] [out.json]
 
 `days` defaults to 14 (matches tests/e2e/test_baltic_e2e.py's
 TestBalticSimulation window — fast enough for local runs). Longer windows
@@ -17,13 +17,20 @@ exercise more of the salmon lifecycle:
     90 days   — matches test_adult_arrives_as_returning_adult coverage
     210 days  — spawn (October) + winter egg development
     365 days  — full year: spawn + fry emergence in the next spring
+
+The optional `out.json` path saves the full milestone table + timing +
+first-appearance dict for later version-over-version comparison. See
+benchmarks/baselines/ for baseline snapshots committed at each release.
 """
 from __future__ import annotations
 
+import json
+import platform
 import statistics
 import sys
 import time
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -72,14 +79,24 @@ def _format_stage_row(counts: dict[str, int]) -> str:
     return "  ".join(f"{name}={n}" for name, n in counts.items())
 
 
-def main(days: int = 14) -> None:
+def _get_version() -> str:
+    """Best-effort package version; falls back to 'unknown' if unreadable."""
+    try:
+        from instream import __version__  # type: ignore[import-not-found]
+        return str(__version__)
+    except Exception:
+        return "unknown"
+
+
+def main(days: int = 14, out_path: str | None = None) -> dict:
     print(f"Building InSTREAMModel from {CONFIG}")
     print(f"  data dir: {DATA_DIR}")
     t0 = time.perf_counter()
     model = InSTREAMModel(CONFIG, data_dir=DATA_DIR)
     t_build = time.perf_counter() - t0
+    initial_alive = model.trout_state.num_alive()
     print(f"  model built in {t_build:.1f}s; "
-          f"initial population: {model.trout_state.num_alive()}")
+          f"initial population: {initial_alive}")
     print(f"  initial stages: {_format_stage_row(_stage_histogram(model))}")
     print()
 
@@ -94,6 +111,10 @@ def main(days: int = 14) -> None:
     # spawning). Invaluable for verifying the lifecycle pipeline end-to-end.
     first_seen: dict[str, int] = {}
 
+    # Milestone snapshots — captured so we can serialize them to JSON
+    # later for version-over-version comparison.
+    milestone_rows: list[dict] = []
+
     t_run = time.perf_counter()
     for step in range(1, days + 1):
         t_step = time.perf_counter()
@@ -107,25 +128,60 @@ def main(days: int = 14) -> None:
             alive = model.trout_state.num_alive()
             print(f"  day {step:>4d}: alive={alive:>5d}  "
                   f"{_format_stage_row(counts)}")
+            milestone_rows.append({
+                "day": step,
+                "alive": alive,
+                "stages": dict(counts),
+            })
     wall = time.perf_counter() - t_run
 
     print()
     print(f"Completed {days} steps in {wall:.1f}s "
           f"({wall / days:.2f}s/step, {days / (wall / 60 or 1e-9):.1f} days/min)")
-    if step_ms:
+    step_ms_stats = {
+        "median": round(statistics.median(step_ms), 1),
+        "min": round(min(step_ms), 1),
+        "max": round(max(step_ms), 1),
+    } if step_ms else {}
+    if step_ms_stats:
         print(f"  step timing (ms):  "
-              f"median={statistics.median(step_ms):.0f}  "
-              f"min={min(step_ms):.0f}  "
-              f"max={max(step_ms):.0f}")
+              f"median={step_ms_stats['median']:.0f}  "
+              f"min={step_ms_stats['min']:.0f}  "
+              f"max={step_ms_stats['max']:.0f}")
     print()
     print("First-appearance day per stage (lifecycle milestones):")
     for name, day in sorted(first_seen.items(), key=lambda kv: kv[1]):
         print(f"  day {day:>4d}: {name}")
     print()
+    final_hist = _stage_histogram(model)
     print("Final lifecycle histogram:")
-    print(f"  {_format_stage_row(_stage_histogram(model))}")
+    print(f"  {_format_stage_row(final_hist)}")
+
+    report = {
+        "inSTREAM_version": _get_version(),
+        "host": platform.node(),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "config": str(Path(CONFIG).name),
+        "days": days,
+        "initial_population": initial_alive,
+        "build_seconds": round(t_build, 2),
+        "wall_seconds": round(wall, 2),
+        "days_per_minute": round(days / (wall / 60 or 1e-9), 2),
+        "step_ms": step_ms_stats,
+        "milestones": milestone_rows,
+        "first_seen_day": dict(sorted(first_seen.items(), key=lambda kv: kv[1])),
+        "final_histogram": dict(final_hist),
+    }
+    if out_path is not None:
+        out_p = Path(out_path)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(report, indent=2))
+        print()
+        print(f"Saved baseline JSON: {out_p}")
+    return report
 
 
 if __name__ == "__main__":
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 14
-    main(days)
+    out = sys.argv[2] if len(sys.argv) > 2 else None
+    main(days, out)

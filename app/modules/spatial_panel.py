@@ -340,13 +340,19 @@ def _build_redds_layer(results, visible: bool = True):
     if cells is None or cells.empty:
         return scatterplot_layer("redds", [], visible=visible)
 
-    # Reproject cells to WGS84 if needed, then grab each redd's host
-    # cell's centroid. Redds reference cells by positional index.
-    cells_wgs84 = (
-        cells if cells.crs is None or cells.crs.to_epsg() == 4326
-        else cells.to_crs(epsg=4326)
+    # Centroids from polygons in a geographic CRS (EPSG:4326 / WGS84)
+    # trigger a shapely UserWarning because degrees aren't equal-area.
+    # For the Baltic bbox the positional error is < 10 m — far below
+    # scatterplot-dot accuracy — but reprojecting to UTM 34N for the
+    # centroid calculation silences the warning AND gives a
+    # geometrically-correct result. Then we pull lon/lat back out.
+    cells_utm = (
+        cells.to_crs(epsg=4326).to_crs(epsg=32634)
+        if cells.crs is None or cells.crs.to_epsg() != 32634
+        else cells
     )
-    centroids = cells_wgs84.geometry.centroid
+    centroids_utm = cells_utm.geometry.centroid
+    centroids = centroids_utm.to_crs(epsg=4326)
     data = []
     for _, r in redds.iterrows():
         cidx = int(r["cell_idx"])

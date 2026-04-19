@@ -1,0 +1,77 @@
+{
+  "inSTREAM_version": "0.30.2",
+  "host": "RazinkaX1",
+  "timestamp": "2026-04-19T13:13:16",
+  "config": "example_baltic.yaml",
+  "days": 220,
+  "initial_population": 4579,
+  "build_seconds": 8.24,
+  "wall_seconds": 364.39,
+  "days_per_minute": 36.22,
+  "step_ms": {
+    "median": 1615.6,
+    "min": 888.7,
+    "max": 5603.2
+  },
+  "milestones": [
+    {
+      "day": 1,
+      "alive": 4546,
+      "stages": {
+        "FRY": 4546
+      }
+    },
+    {
+      "day": 7,
+      "alive": 4352,
+      "stages": {
+        "FRY": 4352
+      }
+    },
+    {
+      "day": 14,
+      "alive": 4211,
+      "stages": {
+        "FRY": 4211
+      }
+    },
+    {
+      "day": 30,
+      "alive": 4060,
+      "stages": {
+        "FRY": 4060
+      }
+    },
+    {
+      "day": 90,
+      "alive": 3974,
+      "stages": {
+        "FRY": 3773,
+        "RETURNING_ADULT": 201
+      }
+    },
+    {
+      "day": 180,
+      "alive": 3759,
+      "stages": {
+        "FRY": 3294,
+        "RETURNING_ADULT": 465
+      }
+    }
+  ],
+  "first_seen_day": {
+    "FRY": 1,
+    "RETURNING_ADULT": 48,
+    "SPAWNER": 198,
+    "KELT": 198,
+    "REDD": 198,
+    "EGGS": 198
+  },
+  "final_histogram": {
+    "FRY": 3140,
+    "SPAWNER": 378,
+    "KELT": 14,
+    "REDD": 853,
+    "EGGS": 316866
+  }
+}
