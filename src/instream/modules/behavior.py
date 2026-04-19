@@ -938,8 +938,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
         # Arc D: compute per-tick best_habitat_fitness via NetLogo fitness-for
         #   f = (daily_survival * mean_starv_survival)^horizon * length penalty
         # Vectorized gather over the batch — faster than per-fish.
-        _sp_fit_horizon = _sp["fitness_horizon"] if _sp is not None else None
-        _sp_fit_length = _sp["fitness_length"] if _sp is not None else None
+        _sp_fit_horizon = _sp.get("fitness_horizon") if _sp is not None else None
+        _sp_fit_length = _sp.get("fitness_length") if _sp is not None else None
         for fi_local in range(n_batch):
             i = normal_idx[fi_local]
             bc = int(b_cells[fi_local])
@@ -980,7 +980,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
                         L_at_h = L_now + float(b_growths[fi_local]) * horizon
                         if L_at_h < fit_len:
                             base *= max(0.0, L_at_h) / fit_len
-            trout_state.best_habitat_fitness[i] = max(0.0, min(1.0, base))
+            if hasattr(trout_state, "best_habitat_fitness"):
+                trout_state.best_habitat_fitness[i] = max(0.0, min(1.0, base))
 
     elif len(normal_fish) > 0:
         # === FALLBACK: per-fish Python/Numba scalar path ===
@@ -1442,7 +1443,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
             # Arc D: expected_fitness post-pass (same formula as batch path)
             sp_i = int(trout_state.species_idx[i])
-            if _sp is not None:
+            if _sp is not None and "fitness_horizon" in _sp:
                 _fh = float(_sp["fitness_horizon"][sp_i])
                 _fitL = float(_sp["fitness_length"][sp_i])
             else:
@@ -1457,7 +1458,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
                     _L_at_h = _fl + best_growth * _fh
                     if _L_at_h < _fitL:
                         _ehab *= max(0.0, _L_at_h) / _fitL
-            trout_state.best_habitat_fitness[i] = max(0.0, min(1.0, _ehab))
+            if hasattr(trout_state, "best_habitat_fitness"):
+                trout_state.best_habitat_fitness[i] = max(0.0, min(1.0, _ehab))
 
             if best_a == 0:
                 intake = drift_intake(
