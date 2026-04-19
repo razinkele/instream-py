@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.0] - 2026-04-19 (Arc D — migration architecture rewrite)
+
+### Changed
+
+- **Migration decision architecture rewritten** to close the 21× outmigrant
+  deficit documented in `docs/validation/v0.30.2-netlogo-comparison.md`.
+  Three coordinated changes, all tracked in
+  `docs/superpowers/plans/2026-04-19-arc-D-migration-rewrite.md`:
+
+  1. **Per-tick `best_habitat_fitness`** on `TroutState`, computed during
+     habitat selection as
+     `(daily_survival × mean_starv_survival)^time_horizon`, matching
+     NetLogo InSALMO 7.3 `fitness-for` (`InSALMO7.3:2798-2840`) and
+     bounded in [0, 1]. Replaces `fitness_memory` as the migration
+     comparator.
+  2. **FRY → PARR promotion is now continuous** (every daily boundary,
+     not only Jan 1). Triggered by anadromous species with length
+     ≥ new `parr_promotion_length` species parameter (default 4.0 cm)
+     OR age ≥ 1. Lets emergence-year fish outmigrate the same summer,
+     matching NetLogo's size/age-continuous anad-juvenile assignment.
+     Non-anadromous FRY remain excluded (preserves v0.16.0 guard).
+  3. **Migration comparator switched from `fitness_memory` EMA to
+     `best_habitat_fitness`** (`model_day_boundary.py:617`).
+     `migration_fitness` (size logistic, 0.1-0.9) and
+     `best_habitat_fitness` are now on the same [0, 1] probability
+     scale — the pre-Arc D comparator mixed raw growth (g/day) with
+     survival probability.
+
+  The three changes ship together: (1) alone has no effect; (2) alone
+  would kill all new PARRs at the river mouth because the scale-
+  mismatched comparator in (3) would fire spuriously.
+
+- **`outmigration_min_length` default lowered 8.0 → 4.0 cm.** NetLogo
+  FishEventsOut-r1 logs confirm 3.6-4.0 cm outmigration events in
+  example_a; the 8.0 cm default blocked the supplementary fitness-
+  based outmigration path for all small fish. Per-species YAML
+  overrides are still respected.
+
+### Parity impact
+
+Measured on `tests/test_run_level_parity.py::TestExampleARunVsNetLogo`
+(cached NetLogo 7.3 example_a seed=98, 2.5-year run):
+
+- Small outmigrant total: **1,943 → 12,090** (v0.30.2 → v0.31.0),
+  a **6.2× improvement**. NetLogo target is 41,146; the remaining 3.4×
+  gap is pinned on the ~32% juvenile growth shortfall addressed by Arc E.
+- Juvenile peak: still passes at rtol 0.30 (no regression).
+- Outmigrant median date: still passes at ±14 days (no regression).
+- Juvenile length @ 2012-09-30: 4.25 → 4.08 cm (within RNG noise; Arc E scope).
+- Adult peak: unchanged at 30 vs target 21 (off by 1 at atol 8; not
+  a migration-logic issue).
+
+Full report: `docs/validation/v0.31.0-arc-D-netlogo-comparison.md`.
+
+### Added
+
+- `src/instream/modules/habitat_fitness.py` — pure-function port of
+  NetLogo `fitness-for` with unit tests in `tests/test_habitat_fitness.py`.
+- `TroutState.best_habitat_fitness` float64 array, zero-initialized.
+- `SpeciesConfig.parr_promotion_length` (default 4.0 cm).
+- `tests/test_arc_d_migration.py` — 10 tests covering state schema,
+  continuous promotion, scale-consistent comparator, and post-pass recording.
+- `docs/validation/v0.31.0-arc-D-netlogo-comparison.md` — parity report
+  documenting the Arc D impact on the example_a run-level metrics.
+
+### Known limitations
+
+- **Growth calibration (Arc E, future release)**: ~32% Python juvenile
+  length shortfall vs NetLogo persists. Arc D does not touch growth;
+  expected residual outmigrant gap after Arc D is 3-6× (not 21×).
+  The `tests/test_run_level_parity.py::TestExampleARunVsNetLogo` test
+  stays red until Arc E closes growth.
+
 ## [0.30.2] - 2026-04-19
 
 ### Fixed
