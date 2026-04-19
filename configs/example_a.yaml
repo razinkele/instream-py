@@ -74,6 +74,19 @@ species:
     resp_C: 0.0020
     resp_D: 1.4
     search_area: 20000
+    # Arc E diagnosis (2026-04-20): NetLogo trout-spawn-defense-area=200000 is
+    # cm^2 (area subtracted from cell gravel) but the legacy `spawn_defense_area`
+    # field treats the raw value as cm radius. Using 200000 cm = 2000 m radius
+    # blocks nearly all further spawning in example_a and produces 1 giant redd
+    # instead of NetLogo's ~15. The semantically-correct value is
+    # spawn_defense_area_m2: 20.0 (= 200000 cm^2 → 2.52 m radius), but switching
+    # it exposes a downstream issue: Python's natal cohort crashes to 0 by
+    # 2012-09-30 under Arc D's aggressive PARR migration, regressing two parity
+    # metrics. Reverted to 200000 pending an Arc D migration-aggressiveness
+    # tweak (see docs/validation/v0.31.0-arc-D-netlogo-comparison.md and
+    # project_arc_e_root_cause memory). Function-level fecundity fix
+    # (length instead of weight, commit 06662ee) is retained — it's correct for
+    # all species and doesn't depend on this YAML value.
     spawn_defense_area: 200000
     spawn_egg_viability: 0.8
     spawn_fecund_mult: 690
