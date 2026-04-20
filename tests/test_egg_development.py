@@ -134,6 +134,8 @@ class TestReddEmergence:
         assert np.all(ts.age[alive] == 0)
 
     def test_redd_dies_when_empty(self):
+        """Arc E iter3 (2026-04-20): emergence spreads over 10 days. After
+        10 calls, all 5 eggs should be drained and the redd dead."""
         from instream.state.redd_state import ReddState
         from instream.state.trout_state import TroutState
         from instream.modules.spawning import redd_emergence
@@ -147,11 +149,12 @@ class TestReddEmergence:
 
         ts = TroutState.zeros(200)
         rng = np.random.default_rng(42)
-        redd_emergence(rs, ts, rng,
-                       emerge_length_min=3.5, emerge_length_mode=3.8,
-                       emerge_length_max=4.1, weight_A=0.0041, weight_B=3.49,
-                       species_index=0)
-        # Redd should be dead (all eggs emerged)
+        for _ in range(10):
+            redd_emergence(rs, ts, rng,
+                           emerge_length_min=3.5, emerge_length_mode=3.8,
+                           emerge_length_max=4.1, weight_A=0.0041, weight_B=3.49,
+                           species_index=0, superind_max_rep=1)
+        # Redd should be dead (all eggs emerged after 10-day spread)
         assert not rs.alive[0]
 
     def test_no_emergence_before_full_development(self):

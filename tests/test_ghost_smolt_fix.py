@@ -45,17 +45,22 @@ class TestGhostSmoltFix:
         ts, rs = _make_redd_with_ghost_slots()
         rng = np.random.default_rng(0)
 
-        redd_emergence(
-            redd_state=rs,
-            trout_state=ts,
-            rng=rng,
-            emerge_length_min=2.5,
-            emerge_length_mode=3.0,
-            emerge_length_max=3.5,
-            weight_A=0.0041,
-            weight_B=3.49,
-            species_index=0,
-        )
+        # Arc E iter3 (2026-04-20): emergence spreads over 10 days. Call 10x
+        # with superind_max_rep=1 for the old emerge-all-into-rep-1-slots
+        # behavior this test depends on.
+        for _ in range(10):
+            redd_emergence(
+                redd_state=rs,
+                trout_state=ts,
+                rng=rng,
+                emerge_length_min=2.5,
+                emerge_length_mode=3.0,
+                emerge_length_max=3.5,
+                weight_A=0.0041,
+                weight_B=3.49,
+                species_index=0,
+                superind_max_rep=1,
+            )
 
         # The 3 reused slots should now hold FRY with fully-reset marine state
         new_fry = np.where(ts.alive)[0]

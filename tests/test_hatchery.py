@@ -159,12 +159,17 @@ class TestHatcherySlotReset:
         rs.reach_idx[0] = 5
         rs.cell_idx[0] = 42
 
-        redd_emergence(
-            redd_state=rs, trout_state=ts,
-            rng=np.random.default_rng(0),
-            emerge_length_min=2.5, emerge_length_mode=3.0, emerge_length_max=3.5,
-            weight_A=0.0041, weight_B=3.49, species_index=0,
-        )
+        # Arc E iter3 (2026-04-20): emergence spreads over 10 days with
+        # super-ind aggregation. Call 10x with superind_max_rep=1 to get
+        # the 3 rep-1 FRY this test expects.
+        rng = np.random.default_rng(0)
+        for _ in range(10):
+            redd_emergence(
+                redd_state=rs, trout_state=ts, rng=rng,
+                emerge_length_min=2.5, emerge_length_mode=3.0, emerge_length_max=3.5,
+                weight_A=0.0041, weight_B=3.49, species_index=0,
+                superind_max_rep=1,
+            )
 
         new_fry = np.where(ts.alive)[0]
         assert len(new_fry) == 3
