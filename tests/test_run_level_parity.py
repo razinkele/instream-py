@@ -197,12 +197,24 @@ def _py_outmigrant_median_date(py: dict) -> pd.Timestamp:
 
 
 def _py_juve_length_on(py: dict, target_date: str) -> float:
+    """Mean juvenile length on or closest before target_date (YYYY-MM-DD).
+
+    Arc G (2026-04-20): mirror NetLogo's behavior of skipping rows where
+    the value is undefined (no juveniles alive → nan/empty). Python
+    stored 0.0 for those rows; treat 0.0 as "no juveniles" and fall
+    back to the last date when the cohort was actually alive.
+    """
     df = py["daily"]
     target = pd.Timestamp(target_date).date()
     mask = df["sim_date"] <= target
     if not mask.any():
         return float("nan")
-    return float(df.loc[mask, "juve_mean_length"].iloc[-1])
+    vals = df.loc[mask, "juve_mean_length"]
+    # Mirror NetLogo: treat 0.0 (empty-cohort sentinel) as missing
+    nonzero = vals[vals > 0.0]
+    if nonzero.empty:
+        return float("nan")
+    return float(nonzero.iloc[-1])
 
 
 # ---------------------------------------------------------------------------
