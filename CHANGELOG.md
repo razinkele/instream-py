@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.0] - 2026-04-20 (Arc K: Per-reach smolt production + PSPC)
+
+### Headline
+
+SalmoPy now emits per-reach smolt production directly comparable to
+WGBAST's Potential Smolt Production Capacity (PSPC) framework —
+the canonical deliverable of the ICES Baltic salmon assessment
+(ICES 2025, sal.27.22-31 + sal.27.32 stock annex).
+
+### Added
+
+- **Per-reach smolt production output (Arc K)**: end-of-run writes
+  `smolt_production_by_reach_{year}.csv` with columns `year`,
+  `reach_idx`, `reach_name`, `smolts_produced`, `pspc_smolts_per_year`,
+  `pspc_achieved_pct`. Emitted only when at least one reach has PSPC
+  configured (backward-compat for fixtures without PSPC).
+- **`ReachConfig.pspc_smolts_per_year: float | None`** YAML field.
+  Preliminary placeholder values added to 3 reaches in
+  `configs/example_baltic.yaml` (Nemunas 5000, Atmata 1500, Minija 1200
+  smolts/yr; flagged pending a Kesminas et al. Nemunas-basin literature
+  review).
+- **`outmigrants.csv` widened from 3 to 10 NetLogo InSALMO 7.3
+  compatible columns**: `species`, `timestep`, `reach_idx`,
+  `natal_reach_idx`, `natal_reach_name`, `age_years`, `length_category`,
+  `length_cm`, `initial_length_cm`, `superind_rep`. Enables direct
+  joins with NetLogo reference runs.
+- **`TroutState.initial_length: np.ndarray` (float32)**: length-at-creation
+  field, populated at all 5 fish-creation sites (initial pop, emergence,
+  stocking). Parity with NetLogo's InitialLength.
+- **`TimeManager.start_date` public property**: exposes `_start_date`
+  so the migration module can compute NetLogo-parity `timestep` values
+  in outmigrant records without pulling in the whole model object.
+
+### Planning
+
+- `docs/superpowers/plans/2026-04-20-arc-K-to-Q-wgbast-roadmap.md` —
+  8-iteration-reviewed roadmap for Arcs K through Q (WGBAST-driven
+  improvements). Arc K is the foundation; Arcs L (M74 year-effect),
+  M (multi-river fixtures), N (post-smolt survival forcing),
+  O (straying/homing), P (grey-seal predation), and Q (Bayesian
+  wrapper) all build on K's per-reach output schema.
+
+### References
+
+- ICES (2025). Baltic Salmon and Trout Assessment Working Group (WGBAST).
+  ICES Scientific Reports. DOI 10.17895/ices.pub.29118545.v3.
+- ICES (2025). Salmon (Salmo salar) in Subdivisions 22-31 and 32 —
+  stock annex. DOI 10.17895/ices.pub.25869088.v2.
+
+---
+
 ## [0.33.0] - 2026-04-20 (Calibration framework, Arc D→I parity close)
 
 ### Headline

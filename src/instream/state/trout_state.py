@@ -11,6 +11,7 @@ class TroutState:
     alive: np.ndarray
     species_idx: np.ndarray
     length: np.ndarray
+    initial_length: np.ndarray  # float32, length at creation (for NetLogo parity)
     weight: np.ndarray
     condition: np.ndarray
     age: np.ndarray
@@ -55,6 +56,7 @@ class TroutState:
             alive=np.zeros(capacity, dtype=bool),
             species_idx=np.zeros(capacity, dtype=np.int32),
             length=np.zeros(capacity, dtype=np.float64),
+            initial_length=np.zeros(capacity, dtype=np.float32),
             weight=np.zeros(capacity, dtype=np.float64),
             condition=np.zeros(capacity, dtype=np.float64),
             age=np.zeros(capacity, dtype=np.int32),

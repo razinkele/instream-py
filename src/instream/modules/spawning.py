@@ -434,6 +434,7 @@ def redd_emergence(
         ts.alive[slots] = True
         ts.species_idx[slots] = rs.species_idx[i]
         ts.length[slots] = lengths
+        ts.initial_length[slots] = lengths
         ts.weight[slots] = weights
         ts.condition[slots] = 1.0
         ts.age[slots] = 0

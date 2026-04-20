@@ -114,20 +114,129 @@ def write_redd_snapshot(
 
 
 def write_outmigrants(
-    outmigrants, species_order, output_dir, filename="outmigrants.csv"
+    outmigrants,
+    species_order,
+    output_dir,
+    filename="outmigrants.csv",
+    reach_names=None,
+    require_natal_reach=False,
 ):
-    """Write accumulated outmigrant records."""
+    """Write accumulated outmigrant records (NetLogo InSALMO 7.3 compatible).
+
+    Schema mirrors NetLogo 7.3 `Outmigrants-<run>.csv`:
+      species, timestep, reach_idx (exit), natal_reach_idx, natal_reach_name,
+      age_years, length_category, length_cm, initial_length_cm, superind_rep
+
+    When `require_natal_reach=True`, raise ValueError on any record with
+    natal_reach_idx == -1 — used by callers that have configured PSPC
+    (Arc K.4) to surface partial wiring early.
+    """
     path = Path(output_dir) / filename
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["species", "length_cm", "reach_idx"])
+        writer.writerow([
+            "species", "timestep", "reach_idx", "natal_reach_idx",
+            "natal_reach_name", "age_years", "length_category",
+            "length_cm", "initial_length_cm", "superind_rep",
+        ])
         for om in outmigrants:
             sp = (
                 species_order[om["species_idx"]]
                 if om["species_idx"] < len(species_order)
                 else "Unknown"
             )
-            writer.writerow([sp, round(om["length"], 4), om["reach_idx"]])
+            natal_idx = int(om.get("natal_reach_idx", -1))
+            if require_natal_reach and natal_idx < 0:
+                raise ValueError(
+                    f"outmigrant record missing natal_reach_idx: {om}"
+                )
+            natal_name = om.get("natal_reach_name") or (
+                reach_names[natal_idx]
+                if reach_names is not None and 0 <= natal_idx < len(reach_names)
+                else ""
+            )
+            writer.writerow([
+                sp,
+                int(om.get("timestep", -1)),
+                int(om.get("reach_idx", -1)),
+                natal_idx,
+                natal_name,
+                round(float(om.get("age_years", 0.0)), 4),
+                om.get("length_category", ""),
+                round(float(om.get("length", 0.0)), 4),
+                round(float(om.get("initial_length", 0.0)), 4),
+                int(om.get("superind_rep", 1)),
+            ])
+    return path
+
+
+def write_smolt_production_by_reach(
+    outmigrants,
+    reach_names,
+    reach_pspc,
+    year,
+    output_dir,
+    filename=None,
+):
+    """Write per-reach smolt production + PSPC achievement (WGBAST Arc K).
+
+    For each (year, reach) pair, counts the outmigrants whose
+    `natal_reach_idx` matches the reach and reports it alongside the
+    configured Potential Smolt Production Capacity (PSPC) and the
+    resulting % achieved. Reaches with no PSPC configured emit blank
+    cells for `pspc_smolts_per_year` and `pspc_achieved_pct` (pandas
+    reads these as NaN), but still report `smolts_produced`.
+
+    Parameters
+    ----------
+    outmigrants : list of dicts
+        Each record must include `natal_reach_idx`. See
+        `write_outmigrants` for the full schema.
+    reach_names : sequence of str
+        reach_names[i] is the human-readable label for reach index i.
+    reach_pspc : sequence of float or None
+        reach_pspc[i] is the configured PSPC (smolts/year); None =
+        non-assessment reach.
+    year : int
+        Simulation year this output covers.
+    output_dir : path-like
+    filename : str, optional
+        Default "smolt_production_by_reach_{year}.csv".
+
+    Returns
+    -------
+    Path to the CSV.
+
+    References
+    ----------
+    ICES (2025). WGBAST stock annex for sal.27.22-31 + sal.27.32.
+    DOI 10.17895/ices.pub.25869088.v2.
+    """
+    if filename is None:
+        filename = f"smolt_production_by_reach_{year}.csv"
+    path = Path(output_dir) / filename
+
+    counts = [0] * len(reach_names)
+    for om in outmigrants:
+        r = int(om.get("natal_reach_idx", -1))
+        if 0 <= r < len(counts):
+            counts[r] += 1
+
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "year", "reach_idx", "reach_name",
+            "smolts_produced", "pspc_smolts_per_year", "pspc_achieved_pct",
+        ])
+        for i, name in enumerate(reach_names):
+            pspc = reach_pspc[i]
+            if pspc is None or pspc <= 0:
+                pspc_val = ""
+                pct = ""
+            else:
+                pspc_val = round(float(pspc), 2)
+                pct = round(counts[i] / float(pspc) * 100.0, 4)
+            writer.writerow([year, i, name, counts[i], pspc_val, pct])
     return path
 
 

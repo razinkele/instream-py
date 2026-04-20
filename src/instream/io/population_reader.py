@@ -78,6 +78,7 @@ def build_initial_trout_state(
         ts.species_idx[idx:end] = species_index
         ts.age[idx:end] = pop["age"]
         ts.length[idx:end] = lengths
+        ts.initial_length[idx:end] = lengths
         ts.weight[idx:end] = weights
         ts.condition[idx:end] = 1.0
         ts.superind_rep[idx:end] = 1

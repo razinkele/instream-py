@@ -346,6 +346,13 @@ class ReachConfig(BaseModel, extra="allow"):
     depth_file: str = ""
     velocity_file: str = ""
 
+    # WGBAST Arc K: optional Potential Smolt Production Capacity for this
+    # reach/river. Used by `write_smolt_production_by_reach` to emit
+    # `pspc_achieved_pct`. None = not an assessment reach.
+    # Source: WGBAST §3 river-specific PSPC table (e.g. Torne ≈ 2,200k
+    # smolts/yr; Simo ≈ 95k; Mörrum ≈ 50k).
+    pspc_smolts_per_year: float | None = None
+
 
 # ---------------------------------------------------------------------------
 # Barrier config

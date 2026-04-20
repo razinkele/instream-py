@@ -185,7 +185,14 @@ species:
       192: 0.0
 
 reaches:
+  # Preliminary PSPC estimates — placeholders pending Kesminas et al.
+  # Nemunas smolt-production literature review. WGBAST-comparable Main-Basin
+  # rivers (Torne, Simo) use river-specific production surveys; the Nemunas
+  # figures here are order-of-magnitude only, distributed ~proportional to
+  # reach length × quality. Total basin ≈ 8000 smolts/yr is consistent with
+  # ICES sal.27.32 Gulf of Finland recruitment order-of-magnitude.
   Nemunas:                     # main Nemunas channel, lower 40 km
+    pspc_smolts_per_year: 5000   # WGBAST Arc K preliminary estimate
     drift_conc: 2.0e-08        # very high invertebrate drift in boreal river
     search_prod: 2.00e-06
     shelter_speed_frac: 0.3
@@ -208,6 +215,7 @@ reaches:
   Atmata:                      # main northern Nemunas-Delta distributary;
                                # splits off at Rusnė → Klaipėda strait — primary
                                # anadromous corridor into the basin
+    pspc_smolts_per_year: 1500   # anadromous-corridor share
     drift_conc: 1.2e-08
     search_prod: 1.50e-06
     shelter_speed_frac: 0.20
@@ -228,6 +236,7 @@ reaches:
     velocity_file: "Atmata-Vels.csv"
 
   Minija:                      # real Minija — feeds Curonian Lagoon at Klaipėda
+    pspc_smolts_per_year: 1200   # key Lithuanian spawning tributary
     drift_conc: 1.5e-08
     search_prod: 1.80e-06
     shelter_speed_frac: 0.22

@@ -87,6 +87,11 @@ class TimeManager:
         return self._current_date
 
     @property
+    def start_date(self) -> pd.Timestamp:
+        """Simulation start date (pd.Timestamp)."""
+        return self._start_date
+
+    @property
     def julian_date(self) -> int:
         """Day of year (1-365/366) for the current date."""
         return self._current_date.day_of_year
