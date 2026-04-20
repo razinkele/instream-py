@@ -68,6 +68,49 @@ def test_smolt_production_by_reach_csv(tmp_path):
     assert row1["pspc_achieved_pct"] == 0.0
 
 
+def test_end_to_end_pspc_on_tiny_baltic(tmp_path):
+    """Arc K.4: end-of-run hook emits smolt_production_by_reach_{year}.csv.
+
+    Uses the existing Baltic fixture directory via `data_dir` override so
+    the Shapefile/ + per-reach CSV data is found. Copies only the YAML
+    to tmp_path for end_date shortening.
+    """
+    import shutil
+    import yaml
+    import pandas as pd
+    from instream.model import InSTREAMModel
+
+    # Copy YAML shortening end_date, keep data_dir pointing at the fixture.
+    with open("configs/example_baltic.yaml") as f:
+        cfg_dict = yaml.safe_load(f)
+    cfg_dict["simulation"]["end_date"] = "2011-01-03"
+    cfg_dict["simulation"]["seed"] = 42
+    cfg_path = tmp_path / "baltic_tiny.yaml"
+    with open(cfg_path, "w") as f:
+        yaml.safe_dump(cfg_dict, f)
+
+    model = InSTREAMModel(
+        config_path=str(cfg_path),
+        data_dir="tests/fixtures/example_baltic",
+        output_dir=str(tmp_path),
+    )
+    model.run()
+
+    pspc_files = list(tmp_path.glob("smolt_production_by_reach_*.csv"))
+    assert len(pspc_files) >= 1, (
+        f"Expected smolt_production_by_reach_*.csv; got {list(tmp_path.iterdir())}"
+    )
+    df = pd.read_csv(pspc_files[0])
+    assert {"reach_idx", "smolts_produced", "pspc_achieved_pct"}.issubset(
+        df.columns
+    )
+    # Nemunas, Atmata, Minija have PSPC; others don't
+    reaches_with_pspc = df[df["pspc_smolts_per_year"].notna()]
+    assert len(reaches_with_pspc) == 3, (
+        f"Expected 3 reaches with PSPC, got {list(reaches_with_pspc['reach_name'])}"
+    )
+
+
 def test_smolt_production_csv_handles_none_pspc(tmp_path):
     """Reaches with pspc_smolts_per_year=None emit empty pct (NaN after CSV read)."""
     outmigrants = [

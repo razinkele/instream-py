@@ -897,6 +897,7 @@ class _ModelDayBoundaryMixin:
             write_fish_snapshot,
             write_redd_snapshot,
             write_outmigrants,
+            write_smolt_production_by_reach,
             write_summary,
         )
 
@@ -914,5 +915,27 @@ class _ModelDayBoundaryMixin:
             str(self.time_manager._current_date.date()),
             out,
         )
-        write_outmigrants(getattr(self, "_outmigrants", []), self.species_order, out)
+
+        # WGBAST Arc K: outmigrants.csv (10-col NetLogo-compat) +
+        # smolt_production_by_reach_{year}.csv (% PSPC achieved)
+        outmigrants = getattr(self, "_outmigrants", [])
+        reach_names = list(self.config.reaches.keys())
+        reach_pspc = [self.config.reaches[n].pspc_smolts_per_year
+                      for n in reach_names]
+        has_pspc = any(p is not None for p in reach_pspc)
+        write_outmigrants(
+            outmigrants,
+            self.species_order,
+            out,
+            reach_names=reach_names,
+            require_natal_reach=has_pspc,
+        )
+        if has_pspc:
+            write_smolt_production_by_reach(
+                outmigrants,
+                reach_names,
+                reach_pspc,
+                year=self.time_manager.current_date.year,
+                output_dir=out,
+            )
         write_summary(self, out)
