@@ -170,6 +170,76 @@ def write_outmigrants(
     return path
 
 
+def write_smolt_production_by_reach(
+    outmigrants,
+    reach_names,
+    reach_pspc,
+    year,
+    output_dir,
+    filename=None,
+):
+    """Write per-reach smolt production + PSPC achievement (WGBAST Arc K).
+
+    For each (year, reach) pair, counts the outmigrants whose
+    `natal_reach_idx` matches the reach and reports it alongside the
+    configured Potential Smolt Production Capacity (PSPC) and the
+    resulting % achieved. Reaches with no PSPC configured emit blank
+    cells for `pspc_smolts_per_year` and `pspc_achieved_pct` (pandas
+    reads these as NaN), but still report `smolts_produced`.
+
+    Parameters
+    ----------
+    outmigrants : list of dicts
+        Each record must include `natal_reach_idx`. See
+        `write_outmigrants` for the full schema.
+    reach_names : sequence of str
+        reach_names[i] is the human-readable label for reach index i.
+    reach_pspc : sequence of float or None
+        reach_pspc[i] is the configured PSPC (smolts/year); None =
+        non-assessment reach.
+    year : int
+        Simulation year this output covers.
+    output_dir : path-like
+    filename : str, optional
+        Default "smolt_production_by_reach_{year}.csv".
+
+    Returns
+    -------
+    Path to the CSV.
+
+    References
+    ----------
+    ICES (2025). WGBAST stock annex for sal.27.22-31 + sal.27.32.
+    DOI 10.17895/ices.pub.25869088.v2.
+    """
+    if filename is None:
+        filename = f"smolt_production_by_reach_{year}.csv"
+    path = Path(output_dir) / filename
+
+    counts = [0] * len(reach_names)
+    for om in outmigrants:
+        r = int(om.get("natal_reach_idx", -1))
+        if 0 <= r < len(counts):
+            counts[r] += 1
+
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "year", "reach_idx", "reach_name",
+            "smolts_produced", "pspc_smolts_per_year", "pspc_achieved_pct",
+        ])
+        for i, name in enumerate(reach_names):
+            pspc = reach_pspc[i]
+            if pspc is None or pspc <= 0:
+                pspc_val = ""
+                pct = ""
+            else:
+                pspc_val = round(float(pspc), 2)
+                pct = round(counts[i] / float(pspc) * 100.0, 4)
+            writer.writerow([year, i, name, counts[i], pspc_val, pct])
+    return path
+
+
 def write_cell_snapshot(cell_state, current_date, output_dir, filename=None):
     """Write cell hydraulic and resource state."""
     if filename is None:

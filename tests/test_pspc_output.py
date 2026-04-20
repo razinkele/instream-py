@@ -1,6 +1,7 @@
 from pathlib import Path
+import pandas as pd
 from instream.io.config import load_config
-from instream.io.output import write_outmigrants
+from instream.io.output import write_outmigrants, write_smolt_production_by_reach
 
 
 def test_outmigrants_csv_10col_netlogo_compat(tmp_path: Path):
@@ -39,3 +40,47 @@ def test_reach_config_accepts_pspc(tmp_path: Path):
     # Simulate a config-level override
     cfg.reaches[first_reach_name].pspc_smolts_per_year = 12000
     assert cfg.reaches[first_reach_name].pspc_smolts_per_year == 12000
+
+
+def test_smolt_production_by_reach_csv(tmp_path):
+    """Arc K.3: write_smolt_production_by_reach groups outmigrants by
+    natal_reach_idx and emits % PSPC achievement."""
+    outmigrants = [
+        {"species_idx": 0, "length": 12.3, "reach_idx": 0, "natal_reach_idx": 0},
+        {"species_idx": 0, "length": 11.1, "reach_idx": 0, "natal_reach_idx": 0},
+        {"species_idx": 0, "length": 13.0, "reach_idx": 0, "natal_reach_idx": 2},
+    ]
+    reach_names = ["Nemunas_main", "Neris", "Zeimena"]
+    reach_pspc = [5000.0, 2000.0, 1000.0]
+    path = write_smolt_production_by_reach(
+        outmigrants, reach_names, reach_pspc, year=2011, output_dir=tmp_path
+    )
+    df = pd.read_csv(path)
+    assert set(df.columns) == {
+        "year", "reach_idx", "reach_name",
+        "smolts_produced", "pspc_smolts_per_year", "pspc_achieved_pct",
+    }
+    row0 = df[df["reach_idx"] == 0].iloc[0]
+    assert row0["smolts_produced"] == 2
+    assert abs(row0["pspc_achieved_pct"] - (2 / 5000 * 100)) < 1e-6
+    row1 = df[df["reach_idx"] == 1].iloc[0]
+    assert row1["smolts_produced"] == 0
+    assert row1["pspc_achieved_pct"] == 0.0
+
+
+def test_smolt_production_csv_handles_none_pspc(tmp_path):
+    """Reaches with pspc_smolts_per_year=None emit empty pct (NaN after CSV read)."""
+    outmigrants = [
+        {"species_idx": 0, "length": 12.0, "reach_idx": 0, "natal_reach_idx": 1},
+    ]
+    reach_names = ["MainStem", "LagoonEdge"]
+    reach_pspc = [5000.0, None]
+    path = write_smolt_production_by_reach(
+        outmigrants, reach_names, reach_pspc, year=2020, output_dir=tmp_path
+    )
+    df = pd.read_csv(path)
+    lagoon = df[df["reach_idx"] == 1].iloc[0]
+    assert lagoon["smolts_produced"] == 1
+    # pandas parses empty cell as NaN
+    assert pd.isna(lagoon["pspc_achieved_pct"])
+    assert pd.isna(lagoon["pspc_smolts_per_year"])
