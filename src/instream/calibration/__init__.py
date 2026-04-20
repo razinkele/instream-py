@@ -50,6 +50,8 @@ from instream.calibration.ensemble import (
     aggregate_trajectories,
     run_replicates,
 )
+from instream.calibration.configure import DiscoveryRule, discover_parameters
+from instream.calibration.scenarios import Scenario, ScenarioManager
 try:
     from instream.calibration.sensitivity import (
         SensitivityAnalyzer,
@@ -97,6 +99,10 @@ if _HAS_SURROGATE:
     ])
 
 __all__.extend(["aggregate_scalars", "aggregate_trajectories", "run_replicates"])
+__all__.extend([
+    "DiscoveryRule", "discover_parameters",
+    "Scenario", "ScenarioManager",
+])
 
 if _HAS_SENSITIVITY:
     __all__.extend([
