@@ -343,6 +343,9 @@ def redd_emergence(
     weight_B,
     species_index,
     superind_max_rep=10,
+    m74_forcing_csv=None,
+    current_year=None,
+    river_name_by_reach_idx=None,
 ):
     """Hatch eggs from fully-developed redds, spread over EMERGENCE_SPREAD_DAYS
     days and aggregated into superindividuals (Arc E iteration 3, 2026-04-20).
@@ -409,6 +412,33 @@ def redd_emergence(
 
         if n_eggs_today <= 0:
             continue
+
+        # WGBAST Arc L: apply M74 yolk-sac-fry mortality at emergence.
+        # Only active when m74_forcing_csv is configured AND the redd's
+        # reach has a river_name AND (year, river) is in the series.
+        if (
+            m74_forcing_csv is not None
+            and current_year is not None
+            and river_name_by_reach_idx is not None
+        ):
+            from instream.modules.egg_emergence_m74 import apply_m74_cull
+
+            redd_reach_idx = int(rs.reach_idx[i])
+            river = (
+                river_name_by_reach_idx[redd_reach_idx]
+                if 0 <= redd_reach_idx < len(river_name_by_reach_idx)
+                else None
+            ) or ""
+            if river:
+                n_eggs_today = apply_m74_cull(
+                    n_fry=n_eggs_today,
+                    year=current_year,
+                    river=river,
+                    forcing_csv=m74_forcing_csv,
+                    rng=rng,
+                )
+                if n_eggs_today <= 0:
+                    continue
 
         # Aggregate eggs into super-individuals
         n_full = n_eggs_today // rep
