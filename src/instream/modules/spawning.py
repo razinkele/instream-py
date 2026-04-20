@@ -329,6 +329,9 @@ def develop_eggs(frac_developed, temperature, step_length, devel_A, devel_B, dev
     return frac_developed + increment
 
 
+EMERGENCE_SPREAD_DAYS = 10  # NetLogo InSALMO7.3:4240 — ceil(N * emerge_days/10)
+
+
 def redd_emergence(
     redd_state,
     trout_state,
@@ -339,17 +342,27 @@ def redd_emergence(
     weight_A,
     weight_B,
     species_index,
+    superind_max_rep=10,
 ):
-    """Hatch eggs from fully-developed redds and create new trout (Task 6.5).
+    """Hatch eggs from fully-developed redds, spread over EMERGENCE_SPREAD_DAYS
+    days and aggregated into superindividuals (Arc E iteration 3, 2026-04-20).
 
-    For each alive redd of the given species with frac_developed >= 1.0,
-    all remaining eggs emerge as new trout.  When num_eggs reaches 0 the
-    redd is killed.
+    NetLogo `redd-emergence` (InSALMO7.3:4228-4287) emerges a fraction of
+    remaining eggs per day following `ceil(num_eggs * emerge_days / 10)`.
+    Over 10 days, this fires ~10%, ~20%, ~30%, ... of remaining eggs,
+    so the whole cohort emerges from a single redd across ~10 days
+    rather than in one day-1 burst.
+
+    Pre-Arc-E iter 3, Python emerged ALL eggs on the first day when
+    `frac_developed >= 1.0` and used `superind_rep=1` per slot, producing
+    a single-day density spike (~1988 superind vs NetLogo peak 462).
+    The spike starved the whole natal cohort via cell-level food depletion.
 
     Parameters
     ----------
     redd_state : ReddState
-        Redd state arrays (modified in place).
+        Redd state arrays (modified in place). Uses `emerge_days` field
+        as the per-redd counter (0-indexed; incremented each emerge call).
     trout_state : TroutState
         Trout state arrays (modified in place — new fish fill dead slots).
     rng : numpy.random.Generator
@@ -360,9 +373,17 @@ def redd_emergence(
         Allometric weight parameters: weight = weight_A * length^weight_B.
     species_index : int
         Species index to match against redd species_idx.
+    superind_max_rep : int
+        Maximum number of actual fish represented by one trout_state slot.
+        Matches NetLogo `trout-superind-max-rep` (10 for Chinook in example_a).
+        Eggs are grouped into super-individuals of size `superind_max_rep`
+        with one remainder slot for leftover eggs.
     """
     rs = redd_state
     ts = trout_state
+    from instream.state.life_stage import LifeStage
+
+    rep = max(1, int(superind_max_rep))
 
     for i in range(len(rs.alive)):
         if not rs.alive[i]:
@@ -372,15 +393,30 @@ def redd_emergence(
         if rs.frac_developed[i] < 1.0:
             continue
 
-        # All remaining eggs emerge
-        n_emerge = int(rs.num_eggs[i])
-        if n_emerge <= 0:
+        remaining_eggs = int(rs.num_eggs[i])
+        if remaining_eggs <= 0:
             rs.alive[i] = False
             continue
 
-        # Pre-compute available dead slots for batch allocation
+        # NetLogo formula (InSALMO7.3:4237-4241): emerge_days++ then
+        # num_eggs_to_emerge = ceil(remaining_eggs * emerge_days / 10).
+        # Over 10 calls, the cumulative emerge approaches num_eggs.
+        emerge_days = int(rs.emerge_days[i]) + 1
+        frac = min(1.0, emerge_days / EMERGENCE_SPREAD_DAYS)
+        n_eggs_today = int(np.ceil(remaining_eggs * frac))
+        n_eggs_today = min(n_eggs_today, remaining_eggs)
+        rs.emerge_days[i] = emerge_days
+
+        if n_eggs_today <= 0:
+            continue
+
+        # Aggregate eggs into super-individuals
+        n_full = n_eggs_today // rep
+        remainder = n_eggs_today - n_full * rep
+        n_slots_needed = n_full + (1 if remainder > 0 else 0)
+
         dead_slots = np.where(~ts.alive)[0]
-        n_slots = min(n_emerge, len(dead_slots))
+        n_slots = min(n_slots_needed, len(dead_slots))
         if n_slots <= 0:
             continue
 
@@ -389,6 +425,11 @@ def redd_emergence(
             emerge_length_min, emerge_length_mode, emerge_length_max, size=n_slots
         )
         weights = weight_A * lengths**weight_B
+
+        # Assign superind_rep: first n_full slots get rep, last gets remainder
+        reps = np.full(n_slots, rep, dtype=np.int32)
+        if remainder > 0 and n_slots > n_full:
+            reps[-1] = remainder
 
         ts.alive[slots] = True
         ts.species_idx[slots] = rs.species_idx[i]
@@ -400,8 +441,7 @@ def redd_emergence(
         ts.reach_idx[slots] = rs.reach_idx[i]
         ts.natal_reach_idx[slots] = rs.reach_idx[i]
         ts.sex[slots] = rng.integers(0, 2, size=n_slots, dtype=np.int32)
-        ts.superind_rep[slots] = 1
-        from instream.state.life_stage import LifeStage
+        ts.superind_rep[slots] = reps
         ts.life_history[slots] = LifeStage.FRY
         ts.in_shelter[slots] = False
         ts.spawned_this_season[slots] = False
@@ -413,19 +453,15 @@ def redd_emergence(
         ts.fitness_memory[slots] = 0.0
         ts.best_habitat_fitness[slots] = 0.0
 
-        # Reset marine state — slots may have been freed by a previous
-        # smolt/adult death, and without this the new fry would inherit
-        # smolt_date, zone, sea_winters, and readiness from the corpse
-        # (the ghost-smoltified-fry bug, fixed in v0.16.0).
         ts.zone_idx[slots] = -1
         ts.sea_winters[slots] = 0
         ts.smolt_date[slots] = -1
         ts.smolt_readiness[slots] = 0.0
-        # Hatchery origin is reset to False — new wild fry emerging from
-        # redds are never hatchery-origin (v0.17.0).
         ts.is_hatchery[slots] = False
 
-        rs.num_eggs[i] -= n_slots
+        # Decrement redd eggs by actual eggs emerged (sum of rep's used)
+        eggs_emerged_actual = int(reps.sum())
+        rs.num_eggs[i] -= eggs_emerged_actual
         if rs.num_eggs[i] <= 0:
             rs.alive[i] = False
 

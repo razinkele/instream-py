@@ -132,6 +132,15 @@ def _run_python_example_a() -> dict:
     # Mirror model.run()'s loop condition so we handle both daily and
     # sub-daily modes cleanly. Hook in at each day boundary to snapshot
     # the per-stage counts.
+    # Arc E iter 4 (2026-04-20): asymmetric rep-weighting to match NetLogo.
+    #   - CH-S-juve-abund, CH-S-adult-abund (NetLogo): `count trout with [...]`
+    #     → agent count, NOT rep-weighted (InSALMO7.3:5231-5232, 5241-5242).
+    #   - CH-S-outmig-small (NetLogo): `+ trout-superind-rep` per migration
+    #     (InSALMO7.3:5306-5313) → rep-weighted fish count.
+    #   Pre-iter4 Python used superind_rep=1 uniformly at emergence, so both
+    #   sides of the comparison were accidentally consistent. Iter3 enabled
+    #   rep=10 super-individuals at emergence; we must rep-weight only the
+    #   outmigrant count on the Python side (NOT juvenile/adult abund).
     while not model.time_manager.is_done():
         model.step()
         if not model.time_manager.is_day_boundary:
@@ -148,7 +157,8 @@ def _run_python_example_a() -> dict:
         else:
             juve = adult = 0
             juve_mean_len = 0.0
-        outmig_total = len(getattr(model, "_outmigrants", []))
+        outmigs = getattr(model, "_outmigrants", [])
+        outmig_total = sum(o.get("superind_rep", 1) for o in outmigs)
         rows.append({
             "date": str(model.time_manager.current_date.date()),
             "juve_count": juve,

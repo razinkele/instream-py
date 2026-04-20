@@ -262,7 +262,13 @@ class TestSpawn:
 
 
 def test_redd_emergence_assigns_random_sex():
-    """Emerged fry should have both sexes and clean state."""
+    """Emerged fry should have both sexes and clean state.
+
+    Arc E iteration 3 (2026-04-20): emergence now spreads over 10 days and
+    aggregates into super-individuals per NetLogo InSALMO7.3:4228-4287.
+    Call redd_emergence 10 times with superind_max_rep=1 to reach the
+    full 100-slot emergence of the old per-call-emits-all behavior.
+    """
     from instream.state.trout_state import TroutState
     from instream.state.redd_state import ReddState
     from instream.modules.spawning import redd_emergence
@@ -276,17 +282,79 @@ def test_redd_emergence_assigns_random_sex():
     rs.frac_developed[0] = 1.0
     rs.cell_idx[0] = 0
     rs.reach_idx[0] = 0
-    redd_emergence(rs, ts, rng, 2.5, 3.0, 3.5, 0.000247, 2.9, species_index=0)
+    for _ in range(10):
+        redd_emergence(
+            rs, ts, rng, 2.5, 3.0, 3.5, 0.000247, 2.9,
+            species_index=0, superind_max_rep=1,
+        )
     alive = ts.alive_indices()
     assert len(alive) == 100
     males = int(np.sum(ts.sex[alive] == 1))
     females = int(np.sum(ts.sex[alive] == 0))
     assert males > 0, "No male fry"
     assert females > 0, "No female fry"
-    # Verify clean state initialization
+    # Verify clean state initialization (superind_max_rep=1 makes each slot one fish)
     assert np.all(ts.superind_rep[alive] == 1)
     assert np.all(ts.spawned_this_season[alive] == False)
     assert np.all(ts.growth_memory[alive] == 0.0)
+
+
+def test_redd_emergence_spreads_over_10_days():
+    """NetLogo semantic: emergence takes ~10 days. After 1 call, only ~10%
+    of eggs emerge; after 10 calls, 100%."""
+    from instream.state.trout_state import TroutState
+    from instream.state.redd_state import ReddState
+    from instream.modules.spawning import redd_emergence
+
+    ts = TroutState.zeros(200)
+    rs = ReddState.zeros(5)
+    rng = np.random.default_rng(42)
+    rs.alive[0] = True
+    rs.species_idx[0] = 0
+    rs.num_eggs[0] = 100
+    rs.frac_developed[0] = 1.0
+    rs.cell_idx[0] = 0
+    rs.reach_idx[0] = 0
+
+    redd_emergence(
+        rs, ts, rng, 2.5, 3.0, 3.5, 0.000247, 2.9,
+        species_index=0, superind_max_rep=1,
+    )
+    # Day 1: ceil(100 * 1/10) = 10 eggs emerge
+    assert np.sum(ts.alive) == 10
+    assert rs.num_eggs[0] == 90
+    assert rs.emerge_days[0] == 1
+
+
+def test_redd_emergence_aggregates_superindividuals():
+    """With superind_max_rep=10, 100 eggs over 10 days emit ~1 super-individual
+    per day (each with rep 10), not 100 rep-1 fish."""
+    from instream.state.trout_state import TroutState
+    from instream.state.redd_state import ReddState
+    from instream.modules.spawning import redd_emergence
+
+    ts = TroutState.zeros(200)
+    rs = ReddState.zeros(5)
+    rng = np.random.default_rng(42)
+    rs.alive[0] = True
+    rs.species_idx[0] = 0
+    rs.num_eggs[0] = 100
+    rs.frac_developed[0] = 1.0
+    rs.cell_idx[0] = 0
+    rs.reach_idx[0] = 0
+
+    for _ in range(10):
+        redd_emergence(
+            rs, ts, rng, 2.5, 3.0, 3.5, 0.000247, 2.9,
+            species_index=0, superind_max_rep=10,
+        )
+
+    alive = ts.alive_indices()
+    # Emergence spread yields 1-3 super-individuals per day over ~8 days
+    # (some days end up with 10-full + remainder, each in its own slot).
+    # What matters: total sum of superind_rep = 100 (all eggs accounted for).
+    assert 8 <= len(alive) <= 20, f"got {len(alive)} superind slots"
+    assert int(np.sum(ts.superind_rep[alive])) == 100  # total actual eggs
 
 
 class TestSpawnDefenseArea:
