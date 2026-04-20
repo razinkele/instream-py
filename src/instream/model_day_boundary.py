@@ -451,6 +451,15 @@ class _ModelDayBoundaryMixin:
             if self.redd_state.num_eggs[i] <= 0:
                 self.redd_state.alive[i] = False
 
+        # WGBAST Arc L: pass M74 forcing into the emergence hook so the
+        # cull fires at the correct life-stage (yolk-sac fry, freshwater).
+        m74_csv = self.config.simulation.m74_forcing_csv
+        river_name_by_reach_idx = (
+            [rc.river_name for rc in self.config.reaches.values()]
+            if m74_csv is not None else None
+        )
+        current_year = self.time_manager.current_date.year
+
         for sp_idx, sp_name in enumerate(self.species_order):
             sp_cfg = self.config.species[sp_name]
             redd_emergence(
@@ -464,6 +473,9 @@ class _ModelDayBoundaryMixin:
                 sp_cfg.weight_B,
                 species_index=sp_idx,
                 superind_max_rep=int(getattr(sp_cfg, "superind_max_rep", 10) or 10),
+                m74_forcing_csv=m74_csv,
+                current_year=current_year,
+                river_name_by_reach_idx=river_name_by_reach_idx,
             )
 
     def _increment_age_if_new_year(self):

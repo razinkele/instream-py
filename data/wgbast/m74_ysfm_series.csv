@@ -1,0 +1,103 @@
+# WGBAST M74 yolk-sac-fry mortality (YSFM) series per river per year.
+#
+# PRELIMINARY data — placeholders based on published qualitative outbreak
+# descriptions. Replace with full Vuorinen 2021 + WGBAST 2026 series via
+# Arc 0 PDF extraction (see docs/superpowers/plans/2026-04-20-arc-K-to-Q-
+# wgbast-roadmap.md Task 0.3).
+#
+# Source template:
+#   Vuorinen, P. J., Rokka, M., Nikonen, S., et al. (2021). Model for
+#   estimating thiamine-deficiency-related mortality of Atlantic salmon
+#   offspring and variation in the Baltic salmon M74 syndrome.
+#   Marine and Freshwater Behaviour and Physiology 54(3), 97-131.
+#   DOI 10.1080/10236244.2021.1941942
+#
+# WGBAST (ICES 2025). Baltic Salmon and Trout Assessment Working Group.
+#   DOI 10.17895/ices.pub.29118545.v3
+#
+# Values below reflect known outbreak years (1990s peak, 2018-2020 rebound)
+# with moderate background levels in between. These are ORDER-OF-MAGNITUDE
+# placeholders pending the exact Vuorinen 2021 supplementary-data series.
+#
+# Columns: year, river, ysfm_fraction, source
+year,river,ysfm_fraction,source
+1985,Simojoki,0.05,placeholder_prelim
+1986,Simojoki,0.08,placeholder_prelim
+1987,Simojoki,0.12,placeholder_prelim
+1988,Simojoki,0.18,placeholder_prelim
+1989,Simojoki,0.25,placeholder_prelim
+1990,Simojoki,0.40,placeholder_prelim
+1991,Simojoki,0.55,placeholder_prelim
+1992,Simojoki,0.70,placeholder_prelim
+1993,Simojoki,0.78,placeholder_prelim
+1994,Simojoki,0.82,placeholder_prelim
+1995,Simojoki,0.75,placeholder_prelim
+1996,Simojoki,0.65,placeholder_prelim
+1997,Simojoki,0.55,placeholder_prelim
+1998,Simojoki,0.42,placeholder_prelim
+1999,Simojoki,0.28,placeholder_prelim
+2000,Simojoki,0.18,placeholder_prelim
+2001,Simojoki,0.12,placeholder_prelim
+2002,Simojoki,0.08,placeholder_prelim
+2003,Simojoki,0.05,placeholder_prelim
+2004,Simojoki,0.04,placeholder_prelim
+2005,Simojoki,0.06,placeholder_prelim
+2006,Simojoki,0.09,placeholder_prelim
+2007,Simojoki,0.07,placeholder_prelim
+2008,Simojoki,0.05,placeholder_prelim
+2009,Simojoki,0.04,placeholder_prelim
+2010,Simojoki,0.03,placeholder_prelim
+2011,Simojoki,0.03,placeholder_prelim
+2012,Simojoki,0.04,placeholder_prelim
+2013,Simojoki,0.05,placeholder_prelim
+2014,Simojoki,0.04,placeholder_prelim
+2015,Simojoki,0.03,placeholder_prelim
+2016,Simojoki,0.04,placeholder_prelim
+2017,Simojoki,0.06,placeholder_prelim
+2018,Simojoki,0.11,placeholder_prelim
+2019,Simojoki,0.14,placeholder_prelim
+2020,Simojoki,0.10,placeholder_prelim
+2021,Simojoki,0.08,placeholder_prelim
+2022,Simojoki,0.07,placeholder_prelim
+2023,Simojoki,0.06,placeholder_prelim
+2024,Simojoki,0.05,placeholder_prelim
+1985,Tornionjoki,0.04,placeholder_prelim
+1986,Tornionjoki,0.06,placeholder_prelim
+1987,Tornionjoki,0.10,placeholder_prelim
+1988,Tornionjoki,0.15,placeholder_prelim
+1989,Tornionjoki,0.22,placeholder_prelim
+1990,Tornionjoki,0.35,placeholder_prelim
+1991,Tornionjoki,0.48,placeholder_prelim
+1992,Tornionjoki,0.60,placeholder_prelim
+1993,Tornionjoki,0.68,placeholder_prelim
+1994,Tornionjoki,0.72,placeholder_prelim
+1995,Tornionjoki,0.65,placeholder_prelim
+1996,Tornionjoki,0.55,placeholder_prelim
+1997,Tornionjoki,0.45,placeholder_prelim
+1998,Tornionjoki,0.35,placeholder_prelim
+1999,Tornionjoki,0.22,placeholder_prelim
+2000,Tornionjoki,0.15,placeholder_prelim
+2001,Tornionjoki,0.10,placeholder_prelim
+2002,Tornionjoki,0.07,placeholder_prelim
+2003,Tornionjoki,0.04,placeholder_prelim
+2004,Tornionjoki,0.03,placeholder_prelim
+2005,Tornionjoki,0.05,placeholder_prelim
+2006,Tornionjoki,0.07,placeholder_prelim
+2007,Tornionjoki,0.06,placeholder_prelim
+2008,Tornionjoki,0.04,placeholder_prelim
+2009,Tornionjoki,0.03,placeholder_prelim
+2010,Tornionjoki,0.02,placeholder_prelim
+2011,Tornionjoki,0.03,placeholder_prelim
+2012,Tornionjoki,0.03,placeholder_prelim
+2013,Tornionjoki,0.04,placeholder_prelim
+2014,Tornionjoki,0.03,placeholder_prelim
+2015,Tornionjoki,0.02,placeholder_prelim
+2016,Tornionjoki,0.03,placeholder_prelim
+2017,Tornionjoki,0.05,placeholder_prelim
+2018,Tornionjoki,0.09,placeholder_prelim
+2019,Tornionjoki,0.12,placeholder_prelim
+2020,Tornionjoki,0.08,placeholder_prelim
+2021,Tornionjoki,0.06,placeholder_prelim
+2022,Tornionjoki,0.05,placeholder_prelim
+2023,Tornionjoki,0.05,placeholder_prelim
+2024,Tornionjoki,0.04,placeholder_prelim

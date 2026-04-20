@@ -53,6 +53,13 @@ class SimulationConfig(BaseModel):
     # with older population files.
     allow_unknown_species_remap: bool = False
 
+    # WGBAST Arc L: path to the WGBAST M74 YSFM CSV (per-year, per-river
+    # yolk-sac-fry mortality fraction). When set, the egg→fry emergence
+    # hook applies a binomial cull based on the natal reach's `river_name`
+    # and the current simulation year. Reference: Vuorinen et al. 2021,
+    # DOI 10.1080/10236244.2021.1941942.
+    m74_forcing_csv: str | None = None
+
 
 class PerformanceConfig(BaseModel):
     backend: str = "numpy"
@@ -353,6 +360,11 @@ class ReachConfig(BaseModel, extra="allow"):
     # smolts/yr; Simo ≈ 95k; Mörrum ≈ 50k).
     pspc_smolts_per_year: float | None = None
 
+    # WGBAST Arc L: river key used to look up per-(year, river) M74 YSFM
+    # fraction from `simulation.m74_forcing_csv`. None = non-WGBAST reach
+    # (no M74 cull applied at egg-emergence).
+    river_name: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Barrier config
@@ -437,6 +449,7 @@ class ReachParams:
     shear_B: float = 0.0
     upstream_junction: int = 0
     downstream_junction: int = 0
+    river_name: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -614,6 +627,7 @@ def params_from_config(
             shear_B=r.shear_B,
             upstream_junction=r.upstream_junction,
             downstream_junction=r.downstream_junction,
+            river_name=r.river_name,
         )
 
     return species_params, reach_params

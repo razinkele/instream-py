@@ -40,6 +40,14 @@ simulation:
   population_file: "BalticExample-InitialPopulations.csv"
   adult_arrival_file: "BalticExample-AdultArrivals.csv"
 
+  # WGBAST Arc L: per-(year, river) M74 YSFM forcing. Activate by
+  # uncommenting and setting river_name on the WGBAST-comparable reaches
+  # below (e.g. Nemunas → a real Lithuanian river not currently in the
+  # Vuorinen series). For the placeholder CSV the forcing only fires on
+  # "Simojoki" and "Tornionjoki"; Baltic fixtures lack a river_name match
+  # so the cull is a no-op for now.
+  # m74_forcing_csv: "data/wgbast/m74_ysfm_series.csv"
+
 performance:
   backend: "numpy"
   device: "cpu"
