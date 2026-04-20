@@ -39,7 +39,7 @@ for p in _DATRAS_PATHS:
 from mcp.server.fastmcp import FastMCP
 
 # Local clients
-from ices_clients import sag, sid, gis, vocab
+from ices_clients import sag, sid, gis, vocab, migratory
 
 logger = logging.getLogger(__name__)
 
@@ -709,6 +709,156 @@ def api_endpoints() -> str:
         "vocab": "https://vocab.ices.dk/services/pox/GetCodeList/",
         "gis_wfs": "https://gis.ices.dk/geoserver/wfs",
     })
+
+
+# ===========================================================================
+# Migratory Fish Tools (project-specific — WGBAST, WGEEL, WGNAS, WGDIAD,
+# ecosystem overviews, diadromous-species catalogue)
+# ===========================================================================
+
+
+@mcp.tool()
+def migratory_list_working_groups() -> str:
+    """Curated ICES working groups covering migratory fish.
+
+    Returns a dict keyed by WG acronym (WGBAST, WGEEL, WGNAS, WGDIAD,
+    WGRECORDS, WKBALT, WKTRUTTA, WKEELMIGR, WKESDLS) with their full
+    title and the species they cover. Use this to pick a WG acronym
+    before calling `migratory_latest_wg_report`.
+    """
+    return json.dumps(migratory.list_migratory_wgs(), indent=2)
+
+
+@mcp.tool()
+def migratory_latest_wg_report(wg_acronym: str) -> str:
+    """Fetch the most recent ICES Library entry for a migratory-fish WG.
+
+    Parameters
+    ----------
+    wg_acronym : str
+        One of WGBAST, WGEEL, WGNAS, WGDIAD, WGRECORDS, WKBALT, WKTRUTTA,
+        WKEELMIGR, WKESDLS. Case-insensitive.
+
+    Returns JSON with the latest matching report (DOI, title,
+    published_date, download URL) plus up to 4 older versions.
+    """
+    return json.dumps(migratory.latest_wg_report(wg_acronym), indent=2, default=str)
+
+
+@mcp.tool()
+def ices_library_search(
+    query: str,
+    page_size: int = 20,
+    order: str = "published_date",
+) -> str:
+    """Full-text search of the ICES Library (Figshare-backed).
+
+    Works for any ICES publication — working group reports, workshop
+    reports, advice sheets, ecosystem overviews, cooperative research
+    reports, journal articles.
+
+    Parameters
+    ----------
+    query : str
+        Search string. Supports quoted phrases (e.g. '"Baltic salmon"').
+    page_size : int
+        Max results (default 20, max 100).
+    order : str
+        "published_date" | "relevance" | "cited" | "views".
+
+    Returns JSON list of {id, doi, title, published_date, url_public_html}.
+    """
+    results = migratory.search_ices_library(
+        query=query, page_size=min(page_size, 100), order=order
+    )
+    return json.dumps({"query": query, "count": len(results), "results": results}, default=str)
+
+
+@mcp.tool()
+def ices_library_get_article(article_id: int) -> str:
+    """Full metadata for one ICES Library article by Figshare ID.
+
+    Returns DOI, authors, categories, description, file list (with
+    download URLs and sizes), and citation. Use after
+    `ices_library_search` to get the PDF URL and citation string.
+    """
+    return json.dumps(migratory.get_ices_article(article_id), indent=2, default=str)
+
+
+@mcp.tool()
+def ices_list_ecoregions() -> str:
+    """List the 11 ICES ecoregion names (Baltic Sea, Greater North Sea, etc.)."""
+    return json.dumps({"ecoregions": migratory.list_ecoregions()}, indent=2)
+
+
+@mcp.tool()
+def ices_ecosystem_overview(ecoregion: str, year: int = 0) -> str:
+    """Find the ICES ecosystem overview publication for an ecoregion.
+
+    Parameters
+    ----------
+    ecoregion : str
+        Full name or keyword (e.g. "Baltic Sea", "Greater North Sea",
+        "Celtic Seas", "Barents", "Norwegian"). Matched case-insensitively
+        against publication titles.
+    year : int
+        Filter to a publication year (e.g. 2023). 0 = no filter.
+    """
+    year_arg = year if year > 0 else None
+    return json.dumps(
+        migratory.ecosystem_overview(ecoregion, year=year_arg),
+        indent=2,
+        default=str,
+    )
+
+
+@mcp.tool()
+def migratory_species_catalog(habitat: str = "") -> str:
+    """Curated catalogue of diadromous / migratory fish species.
+
+    Parameters
+    ----------
+    habitat : str
+        Filter by life history: "anad" (anadromous), "cata" (catadromous),
+        "amph" (amphidromous). Empty string (default) returns all.
+
+    Returns JSON list of {common, scientific, aphia, habitat} for each
+    species. Use the aphia ID for DATRAS / Vocab / SAG cross-references.
+    """
+    h = habitat.strip().lower() or None
+    return json.dumps(
+        {"habitat_filter": h or "all", "species": migratory.migratory_species_catalog(h)},
+        indent=2,
+    )
+
+
+@mcp.tool()
+def migratory_aphia_map() -> str:
+    """Return the {scientific_name: aphia_id} map for catalogued migratory fish.
+
+    Use this as a quick lookup before calling DATRAS CPUE / distribution
+    tools for migratory-fish-focused analyses.
+    """
+    return json.dumps(migratory.migratory_aphia_ids(), indent=2)
+
+
+@mcp.resource("ices://migratory/overview")
+def migratory_overview_resource() -> str:
+    """Overview of ICES migratory-fish coverage — WGs, ecoregions, species."""
+    return json.dumps({
+        "description": "ICES migratory / diadromous fish advisory coverage",
+        "working_groups": migratory.list_migratory_wgs(),
+        "ecoregions": migratory.list_ecoregions(),
+        "species_catalogue": migratory.migratory_species_catalog(),
+        "usage": {
+            "find_latest_wg_report":    "migratory_latest_wg_report('WGBAST')",
+            "search_library":           "ices_library_search('sea trout advice 2023')",
+            "get_article_metadata":     "ices_library_get_article(29118545)",
+            "find_ecosystem_overview":  "ices_ecosystem_overview('Baltic Sea', 2023)",
+            "species_by_habitat":       "migratory_species_catalog('anad')",
+            "aphia_lookup":             "migratory_aphia_map()",
+        },
+    }, indent=2)
 
 
 # ---------------------------------------------------------------------------

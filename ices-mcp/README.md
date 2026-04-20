@@ -11,8 +11,10 @@ Model Context Protocol server providing AI assistants with comprehensive access 
 | **SID** | Stock Information Database (stock metadata) | None |
 | **ICES Vocab** | Species codes (WoRMS Aphia IDs) | None |
 | **ICES GIS** | Spatial layers (stat areas, rectangles, ecoregions) | None |
+| **ICES Library** | Working-group reports, ecosystem overviews, advice documents (via Figshare API) | None |
+| **Migratory fish** | Curated WG / species / ecoregion catalogue for diadromous fish | None |
 
-## Available Tools (21 total)
+## Available Tools (29 total)
 
 ### DATRAS (9 tools)
 - `datras_list_surveys` — list all survey acronyms
@@ -47,6 +49,16 @@ Model Context Protocol server providing AI assistants with comprehensive access 
 
 ### Analysis (1 tool)
 - `ices_analyse_distribution` — spatial/temporal distribution analysis
+
+### Migratory fish / WG reports / ecosystem overviews (8 tools)
+- `migratory_list_working_groups` — curated ICES WGs covering diadromous fish (WGBAST, WGEEL, WGNAS, WGDIAD, WGRECORDS, WKBALT, WKTRUTTA, WKEELMIGR, WKESDLS)
+- `migratory_latest_wg_report` — latest ICES Library entry for a given WG acronym (DOI + download URL)
+- `ices_library_search` — full-text search of the ICES Library (Figshare API) across all publication types
+- `ices_library_get_article` — full metadata for one Figshare article (authors, files, citation)
+- `ices_list_ecoregions` — 11 ICES ecoregion names (Baltic Sea, Greater North Sea, Celtic Seas, …)
+- `ices_ecosystem_overview` — find ICES ecosystem overview document for a named ecoregion + optional year
+- `migratory_species_catalog` — curated Aphia-ID catalogue of 13 diadromous fish (anadromous/catadromous/amphidromous filter)
+- `migratory_aphia_map` — {scientific_name: Aphia_ID} quick lookup for migratory fish
 
 ## Setup
 
@@ -115,3 +127,18 @@ micromamba run -n shiny python ices_mcp_server.py
 
 > "Get the ICES statistical rectangles covering the Lithuanian EEZ"
 > → `ices_get_rectangles(19.0, 55.0, 22.0, 56.5)`
+
+> "Fetch the latest Baltic Salmon assessment working group report"
+> → `migratory_latest_wg_report("WGBAST")` → returns DOI + download URL from the ICES Library
+
+> "What ICES working groups cover European eel?"
+> → `migratory_list_working_groups()` → filter for WGEEL / WKEELMIGR
+
+> "Find ICES ecosystem overview for the Baltic Sea"
+> → `ices_ecosystem_overview("Baltic Sea", 2023)` → Figshare article list
+
+> "Which ICES publications mention sea trout from 2022-2024?"
+> → `ices_library_search('"sea trout"', page_size=30)` → ranked by published date
+
+> "What's the Aphia ID for European eel?"
+> → `migratory_aphia_map()` → `{"Anguilla anguilla": 126281, ...}`
