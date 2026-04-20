@@ -36,6 +36,15 @@ from instream.calibration.multiphase import (
     MultiPhaseCalibrator,
 )
 try:
+    from instream.calibration.surrogate import (
+        SurrogateCalibrator,
+        SurrogateResult,
+        CrossValidationResult,
+    )
+    _HAS_SURROGATE = True
+except ImportError:
+    _HAS_SURROGATE = False
+try:
     from instream.calibration.sensitivity import (
         SensitivityAnalyzer,
         SensitivityResult,
@@ -73,6 +82,13 @@ __all__ = [
     "PhaseResult",
     "MultiPhaseCalibrator",
 ]
+
+if _HAS_SURROGATE:
+    __all__.extend([
+        "SurrogateCalibrator",
+        "SurrogateResult",
+        "CrossValidationResult",
+    ])
 
 if _HAS_SENSITIVITY:
     __all__.extend([
