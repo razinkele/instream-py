@@ -36,6 +36,13 @@ try:
         SensitivityResult,
         MorrisAnalyzer,
     )
+    from instream.calibration.preflight import (
+        preflight_screen,
+        format_issues,
+        PreflightIssue,
+        IssueCategory,
+        IssueSeverity,
+    )
     _HAS_SENSITIVITY = True
 except ImportError:
     # SALib optional; omit sensitivity exports when missing
@@ -60,4 +67,8 @@ __all__ = [
 ]
 
 if _HAS_SENSITIVITY:
-    __all__.extend(["SensitivityAnalyzer", "SensitivityResult", "MorrisAnalyzer"])
+    __all__.extend([
+        "SensitivityAnalyzer", "SensitivityResult", "MorrisAnalyzer",
+        "preflight_screen", "format_issues", "PreflightIssue",
+        "IssueCategory", "IssueSeverity",
+    ])
