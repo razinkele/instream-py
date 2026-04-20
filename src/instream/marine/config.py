@@ -134,6 +134,14 @@ class MarineConfig(BaseModel):
     # M74 thiamine-deficiency syndrome
     marine_mort_m74_prob: float = 0.0
 
+    # WGBAST Arc N: per-(year, stock_unit) annual post-smolt survival
+    # forcing. When set, OVERRIDES background_hazard for fish in the
+    # post-smolt window (days_since_ocean_entry < 365), keyed by smolt
+    # year (year of ocean entry). Reference: WGBAST 2026 §2 Bayesian
+    # posterior median.
+    post_smolt_survival_forcing_csv: str | None = None
+    stock_unit: str | None = "sal.27.22-31"
+
     # v0.17.0 — hatchery predator-naivety multiplier applied to cormorant
     # hazard for fish with is_hatchery=True during the post-smolt
     # vulnerability window. After the window, hatchery fish converge on

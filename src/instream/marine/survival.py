@@ -102,6 +102,11 @@ def m74_hazard(n: int, config) -> np.ndarray:
     return np.full(n, config.marine_mort_m74_prob, dtype=np.float64)
 
 
+_POST_SMOLT_CACHE: "dict" = {}
+
+POST_SMOLT_WINDOW_DAYS = 365
+
+
 def marine_survival(
     length: np.ndarray,
     zone_idx: np.ndarray,
@@ -110,6 +115,7 @@ def marine_survival(
     cormorant_zone_indices: np.ndarray,
     config,
     is_hatchery: np.ndarray | None = None,
+    current_year: int | None = None,
 ) -> np.ndarray:
     """Combined daily survival probability from sources 1..5.
 
@@ -122,6 +128,13 @@ def marine_survival(
         to the cormorant term; it naturally decays with the
         existing post-smolt decay in :func:`cormorant_hazard`, so no
         separate time gate is needed.
+    current_year : optional int (Arc N)
+        Calendar year used with ``config.post_smolt_survival_forcing_csv``
+        to override the background hazard for fish in the post-smolt
+        window (days_since_ocean_entry < POST_SMOLT_WINDOW_DAYS), keyed
+        by SMOLT year (derived as current_year - days_since // 365) so a
+        fish that emigrated in July Y and is now in January Y+1 still
+        gets Y's cohort-posterior forcing.
 
     Returns
     -------
@@ -141,6 +154,36 @@ def marine_survival(
             h_corm,
         )
     h_back = background_hazard(n, config)
+
+    # Arc N: post-smolt survival override keyed by smolt-year cohort
+    if (
+        getattr(config, "post_smolt_survival_forcing_csv", None) is not None
+        and getattr(config, "stock_unit", None) is not None
+        and current_year is not None
+    ):
+        from pathlib import Path
+        path = Path(config.post_smolt_survival_forcing_csv)
+        if path not in _POST_SMOLT_CACHE:
+            from instream.marine.survival_forcing import load_post_smolt_forcing
+            _POST_SMOLT_CACHE[path] = load_post_smolt_forcing(path)
+        from instream.marine.survival_forcing import (
+            annual_survival_for_year, daily_hazard_multiplier,
+        )
+        # Smolt year = current_year - floor(days_since_ocean_entry / 365)
+        smolt_years = current_year - (
+            np.asarray(days_since_ocean_entry) // POST_SMOLT_WINDOW_DAYS
+        )
+        post_smolt_mask = np.asarray(days_since_ocean_entry) < POST_SMOLT_WINDOW_DAYS
+        h_forced_array = np.full_like(h_back, np.nan, dtype=np.float64)
+        for sy in np.unique(smolt_years[post_smolt_mask]):
+            S_ann = annual_survival_for_year(
+                _POST_SMOLT_CACHE[path], int(sy), config.stock_unit,
+            )
+            if S_ann is not None:
+                h_forced_array[smolt_years == sy] = daily_hazard_multiplier(S_ann)
+        forced_mask = post_smolt_mask & np.isfinite(h_forced_array)
+        h_back = np.where(forced_mask, h_forced_array, h_back)
+
     h_temp = temperature_stress_hazard(temperature, config)
     h_m74 = m74_hazard(n, config)
 
@@ -196,6 +239,7 @@ def apply_marine_survival(
         cormorant_zone_indices=corm_zones,
         config=config,
         is_hatchery=trout_state.is_hatchery[idx],
+        current_year=current_date.year,
     )
 
     draws = rng.random(size=idx.shape[0])
