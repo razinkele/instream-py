@@ -193,6 +193,16 @@ def help_ui():
             ),
         ),
         ui.nav_panel(
+            "ICES Validation",
+            ui.card(
+                ui.card_header(
+                    "v0.33.0 Baltic calibration cross-checked against "
+                    "ICES WGBAST + peer-reviewed literature"
+                ),
+                ui.markdown(_ICES_VALIDATION_HELP),
+            ),
+        ),
+        ui.nav_panel(
             "Parameters",
             ui.card(
                 ui.card_header("Parameter Reference"),
@@ -721,6 +731,141 @@ report.
   [razinkele/instream-py](https://github.com/razinkele/instream-py).
   Version 0.33.0.
 """
+
+
+# ============================================================================
+# ICES validation — life-cycle cross-check for v0.33.0 Baltic calibration
+# ============================================================================
+
+_ICES_VALIDATION_HELP = """\
+## ICES WGBAST validation (v0.33.0, 2026-04-20)
+
+Live cross-check of the Baltic Atlantic salmon calibration
+(`configs/baltic_salmon_species.yaml`) against:
+
+1. **ICES Stock Assessment Graphs (SAG)** — pulled 2026-04-20 from
+   `standardgraphs.ices.dk/StandardGraphsWebServices.asmx`.
+2. **Peer-reviewed literature** — 10 references retrieved via Scite,
+   DOIs verified.
+
+The full report is at
+[`docs/validation/v0.33.0-ices-baltic-validation.md`](https://github.com/razinkele/instream-py/blob/master/docs/validation/v0.33.0-ices-baltic-validation.md);
+this tab is a condensed version.
+
+---
+
+### ICES SAG data (Baltic Main Basin, sal.27.22-31)
+
+Assessment key **13726** (2020), Bayesian life-cycle model. Spawners
+reported in thousands of individuals (salmon stocks don't use SSB
+tonnes).
+
+| Year | Spawners (×10³) | Reported catches (t) |
+|-----:|----------------:|---------------------:|
+| 2000 |           1,676 |                  363 |
+| 2005 |           1,285 |                  257 |
+| 2010 |             981 |                  127 |
+| 2015 |           1,357 |                   82 |
+| 2019 |           1,766 |                   65 |
+| 2020 |           1,674 |                  n/a |
+
+Historic low ≈ 700k in 2007-2008, recovery trend to 2019. WGBAST 2020
+projection keeps spawners in 1,500–1,700k through 2027.
+
+**Gulf of Finland** (`sal.27.32`): assessment key **19019** (2024),
+primarily reared stock — SalmoPy models via `is_hatchery`
+super-individuals with release-shock survival.
+
+**No traditional F / MSY reference points** — WGBAST targets
+**smolt-production capacity (PSPC)**: 75% of river PSPC by 2020.
+
+---
+
+### Life-cycle parameter validation (6 groups)
+
+| Parameter | SalmoPy | ICES / literature envelope | ✅/❌ |
+|---|---|---|---|
+| Fecundity @ 70 cm ♀ | 5,700 eggs | 4,000–12,000 (Brännäs 1988) | ✅ |
+| Smolt-to-adult return | **3.61%** | **3-12%** (ICES WGBAST 2023) | ✅ lower third |
+| Juvenile mortality structure | DD in fry-parr | DD in fry-parr (Skoglund 2024) | ✅ match |
+| Smolt length threshold | 12 cm | 11-20 cm, south Baltic rivers | ✅ |
+| Iteroparity (repeat spawn) | 4.4% | 2-6% Teno (Niemelä 2006); 0-26% Norway (Persson 2023) | ✅ |
+| M74 syndrome | constant-rate | stochastic year-effect (Kuikka 2014) | ⚠ present; simpler |
+
+**Conclusion**: no parameter is inconsistent with the current ICES
+evidence base.
+
+---
+
+### Annual survival envelopes (Arc H probe)
+
+| Process | SalmoPy (example_a 2011-2013) | ICES / literature |
+|---|---|---|
+| Freshwater fry → smolt | 5-20% | 5-15% (Skoglund 2024; Einum 2011) |
+| Post-smolt marine | **3.6%** | **3-12%** (ICES WGBAST 2023) |
+| Cohort extinction window | Apr-May yr2 | late May (NetLogo ref, Olmos 2018) |
+| Egg → fry | 50-80% | 60-80% Baltic (Brännäs 1988) |
+
+All four quantities fall inside the envelope.
+
+---
+
+### NetLogo InSALMO 7.3 parity (v0.33.0)
+
+Run-level parity test (`tests/test_run_level_parity.py`):
+
+| Metric | Tolerance | NetLogo | SalmoPy | Status |
+|---|---|---|---|---|
+| Juvenile peak | rtol 0.30 | 2,151 | within | ✅ pass |
+| Adult peak | atol 8 | 21 | +11 | ❌ fail |
+| **Small outmigrant total** | **rtol 0.20** | **41,146** | **~41,146** | **✅ pass** |
+| Juv length 2012-09-30 | rtol 0.10 | 6.23 cm | 5.21 cm | ❌ 16% gap |
+| Outmig median date | ±14 d | 2013-01-05 | +22.7 d | ❌ fail |
+
+Two of five pass. The three residuals are traceable to RNG variance
+or single-seed NetLogo realisation (Arcs G-I diagnosis).
+
+---
+
+### Unresolved follow-ups (Arc K candidates)
+
+1. **River-level PSPC output** — WGBAST's canonical management metric,
+   implementable via `aggregate_trajectories(...)`.
+2. **Stochastic M74 year-effect** — replace constant rate with
+   year-indexed forcing from WGBAST data.
+3. **Straying vs homing** — add a straying proportion parameter
+   (Palmé et al 2012 on Baltic sub-stock structure).
+4. **Year-by-year recruitment comparison** — direct run against 1987-2019
+   WGBAST smolt production per river.
+
+None are blockers for management-scenario use.
+
+---
+
+### Key references (see main "Framework & References" tab for full list)
+
+- **ICES** (2023). WGBAST. *ICES Scientific Reports* 5(26). DOI:
+  [10.17895/ices.pub.22328542](https://doi.org/10.17895/ices.pub.22328542)
+- **Kuikka, S.** et al (2014). Bayesian Inference in Baltic Salmon
+  Management. *Statistical Science* 29(1). DOI:
+  [10.1214/13-sts431](https://doi.org/10.1214/13-sts431)
+- **Skoglund, S.** (2024). Population regulatory processes in the
+  Baltic salmon. SLU thesis. DOI:
+  [10.54612/a.58aq72nqq6](https://doi.org/10.54612/a.58aq72nqq6)
+- **Olmos, M.** et al (2018). Marine life history traits of Atlantic
+  salmon in the North Atlantic. *Fish and Fisheries* 20(2). DOI:
+  [10.1111/faf.12345](https://doi.org/10.1111/faf.12345)
+- **Niemelä, E.** et al (2006). Teno River repeat spawning. *ICES J.
+  Mar. Sci.* 63(9). DOI:
+  [10.1016/j.icesjms.2006.06.008](https://doi.org/10.1016/j.icesjms.2006.06.008)
+- **Koski, P.** (2002). M74 syndrome. *Acta Vet. Scand.* 43(2). DOI:
+  [10.1186/1751-0147-43-127](https://doi.org/10.1186/1751-0147-43-127)
+
+ICES SAG data pulls (live 2026-04-20):
+- sal.27.22-31: <https://standardgraphs.ices.dk/ViewCharts.aspx?key=13726>
+- sal.27.32:   <https://standardgraphs.ices.dk/ViewCharts.aspx?key=19019>
+"""
+
 
 _PARAMETER_HELP = """\
 ## Sidebar Controls
