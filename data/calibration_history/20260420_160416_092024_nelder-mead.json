@@ -1,0 +1,19 @@
+{
+  "timestamp": "20260420_160416_092024",
+  "algorithm": "nelder-mead",
+  "seed": null,
+  "wall_time_s": 2575.727650500019,
+  "overrides": {
+    "species.Chinook-Spring.migrate_fitness_L9": 12.6171875,
+    "species.Chinook-Spring.outmigration_min_length": 4.746093750000001
+  },
+  "metrics": {
+    "final_score": 0.1048821824838372
+  },
+  "meta": {
+    "arc": "I",
+    "n_params_optimized": 2,
+    "end_date_override": "2012-05-15",
+    "n_evals": 59
+  }
+}

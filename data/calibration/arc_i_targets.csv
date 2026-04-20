@@ -1,0 +1,6 @@
+# Arc I targets — juv_length gap closure on a shortened example_a run.
+# Reference: NetLogo year-1 cohort reaches 6.19 cm by May 29 2012
+# (4 agents remaining). We run Python through 2012-05-15 (day ~410)
+# and score against the same cohort's terminal mean length.
+metric,reference,rtol,atol,lower,upper,weight,source
+juv_mean_length,6.19,0.10,,,,1.0,"NetLogo InSALMO 7.3 2012-05-29 last-alive mean"
