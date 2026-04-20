@@ -149,7 +149,11 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
             ))
             trout_state.life_history[fish_idx] = int(LifeStage.SMOLT)
             trout_state.zone_idx[fish_idx] = 0
-            trout_state.natal_reach_idx[fish_idx] = current_reach
+            # Arc O.1 (2026-04-21): DO NOT overwrite natal_reach_idx at
+            # smoltification. Pre-v0.38 this line assigned current_reach,
+            # destroying the birth-reach signal needed for Arc K PSPC
+            # analytics and Arc O genetic-MSA reconstruction. NetLogo
+            # InSALMO 7.3 preserves birth-reach across the full life cycle.
             trout_state.smolt_date[fish_idx] = (
                 current_date.toordinal() if current_date is not None else 0
             )

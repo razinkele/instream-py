@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "instream"
-version = "0.37.0"
+version = "0.38.0"
 description = "Python conversion of inSTREAM/inSALMO 7.4 individual-based salmonid model"
 authors = [{name = "inSTREAM Team"}]
 readme = "README.md"

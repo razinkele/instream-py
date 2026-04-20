@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0] - 2026-04-21 (Arc O: straying + spawner-origin MSA matrix)
+
+### Headline
+
+- **Bug fix**: `migrate_fish_downstream` no longer overwrites
+  `natal_reach_idx` with `current_reach` at the SMOLT transition
+  (pre-v0.38 overwrite at `src/instream/modules/migration.py:152`
+  destroyed the birth-reach signal needed for Arc K PSPC analytics
+  and Arc O genetic-MSA reconstruction).
+- **Feature**: `MarineConfig.stray_fraction` knob controls adult-return
+  homing. 0 = perfect homing (default, NetLogo InSALMO 7.3 parity);
+  1 = uniform mixing across non-natal freshwater reaches. Applied at
+  the `check_adult_return` transition from OCEAN_ADULT → RETURNING_ADULT.
+  `natal_reach_idx` is preserved (genetic/birth property) while
+  `reach_idx` (spawning location) is reassigned on stray.
+- **Output**: `write_spawner_origin_matrix(spawners, reach_names, year)`
+  writes a natal × spawning-reach matrix structurally comparable to
+  WGBAST's genetic MSA apportionment.
+
+### Added
+
+- `MarineConfig.stray_fraction: float = 0.0`
+- `check_adult_return()` accepts `config=None` kwarg; threaded from
+  `src/instream/model.py` via `marine_domain.config`.
+- `write_spawner_origin_matrix` in `src/instream/io/output.py`.
+- `tests/test_straying.py` (5 tests).
+
+### Fixed
+
+- `migrate_fish_downstream`: removed the `natal_reach_idx = current_reach`
+  overwrite at the SMOLT transition.
+- `tests/test_marine.py::_make_trout_at_mouth`: fixture now explicitly
+  sets `natal_reach_idx`; previously the test relied on the overwrite bug.
+
+### References
+
+- Östergren, J., et al. (2021). A century of genetic homogenization in
+  Baltic salmon. *Proc. R. Soc. B* 288(1949).
+  DOI 10.1098/rspb.2020.3147.
+- Säisä, M., et al. (2005). Population genetic structure in Baltic
+  salmon. *CJFAS* 62(8). DOI 10.1139/f05-094.
+
+---
+
 ## [0.37.0] - 2026-04-21 (Arc N: post-smolt survival time-varying forcing)
 
 ### Headline

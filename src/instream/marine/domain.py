@@ -336,6 +336,7 @@ def check_adult_return(
     barrier_map=None,
     reverse_reach_graph=None,
     estuary_reach: int = 0,
+    config=None,
 ) -> tuple[int, int]:
     """Check OCEAN_ADULT fish for return to natal freshwater reach.
 
@@ -397,6 +398,23 @@ def check_adult_return(
                 continue
             # DEFLECT or TRANSMIT: place at the reached location
             target_reach = last_passable
+
+        # Arc O: apply straying. With probability stray_fraction, redirect
+        # the returning adult to a random non-natal freshwater reach
+        # (uniform across candidates that have wet cells). natal_reach_idx
+        # stays unchanged (genetic/birth property); only reach_idx — the
+        # spawning location — changes.
+        if (
+            config is not None
+            and getattr(config, "stray_fraction", 0.0) > 0.0
+            and rng is not None
+        ):
+            candidates = [
+                r for r in reach_cells.keys()
+                if r != natal and reach_cells[r] is not None and len(reach_cells[r]) > 0
+            ]
+            if candidates and rng.random() < config.stray_fraction:
+                target_reach = int(rng.choice(candidates))
 
         cells = reach_cells.get(target_reach)
         if cells is None or len(cells) == 0:
