@@ -1,0 +1,40 @@
+# Arc I: candidate parameters for the juv_length parity gap.
+#
+# Hypothesis: the 16% juv_length gap (Python 5.21 cm vs NetLogo 6.23 cm)
+# is driven by size-selective migration removing the biggest fish before
+# the cohort goes extinct. These five params control the two relevant
+# mechanisms — migration threshold (migrate_fitness_L1/L9,
+# outmigration_min_length) and size-biased mortality (mort_fish_pred_L1/L9).
+#
+# Bounds are centered on the current values with ±3× factor. Morris
+# preflight will screen which of these actually influences juv_length.
+
+- pattern: "species.Chinook-Spring.migrate_fitness_L1"
+  transform: LINEAR
+  factor: 2.0
+  min_lower: 1.0
+  max_upper: 8.0
+
+- pattern: "species.Chinook-Spring.migrate_fitness_L9"
+  transform: LINEAR
+  factor: 2.0
+  min_lower: 5.0
+  max_upper: 20.0
+
+- pattern: "species.Chinook-Spring.outmigration_min_length"
+  transform: LINEAR
+  factor: 2.0
+  min_lower: 1.0
+  max_upper: 10.0
+
+- pattern: "species.Chinook-Spring.mort_fish_pred_L1"
+  transform: LINEAR
+  factor: 1.5
+  min_lower: 1.0
+  max_upper: 6.0
+
+- pattern: "species.Chinook-Spring.mort_fish_pred_L9"
+  transform: LINEAR
+  factor: 1.5
+  min_lower: 3.0
+  max_upper: 10.0
