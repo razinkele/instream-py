@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.36.0] - 2026-04-21 (Arc M: multi-river Baltic fixtures)
+
+### Headline
+
+Adds four WGBAST-assessment-ready Baltic river fixtures — Tornionjoki,
+Simojoki, Byskeälven, Mörrumsån — spanning the latitudinal smolt-age
+gradient from AU1 (65.85°N, 3–4 yr smolts at 14 cm) to Southern Baltic
+(56.17°N, 1–2 yr smolts at 11 cm). Each fixture is a
+temperature-and-flow-modified variant of the Nemunas-basin shapefile
+with WGBAST PSPC values and river_name wired for Arc K/L analytics.
+
+### Added
+
+- **`configs/example_tornionjoki.yaml`** (PSPC 2,200,000; smolt_min 14 cm)
+- **`configs/example_simojoki.yaml`** (PSPC 95,000; smolt_min 14 cm)
+- **`configs/example_byskealven.yaml`** (PSPC 180,000; smolt_min 13 cm)
+- **`configs/example_morrumsan.yaml`** (PSPC 60,000; smolt_min 11 cm)
+- **`tests/fixtures/{tornionjoki,simojoki,byskealven,morrumsan}/`**
+  (30 files each — per-reach hydrology + InitialPopulations + AdultArrivals)
+- **`scripts/_scaffold_wgbast_rivers.py`** — fixture generator
+- **`scripts/_generate_wgbast_configs.py`** — config generator
+- **`tests/test_multi_river_baltic.py`** — smoke + latitudinal-gradient tests
+
+### References
+
+- Skoglund, S. (2024). SLU PhD thesis, DOI 10.54612/a.58aq72nqq6.
+- ICES (2026). WGBAST, DOI 10.17895/ices.pub.29118545.v3.
+- Poćwierz-Kotus, A., et al. (2015). *Genetics Selection Evolution*
+  47:39, DOI 10.1186/s12711-015-0121-9.
+
+---
+
 ## [0.35.0] - 2026-04-20 (Arc L: WGBAST M74 year-effect at egg-emergence)
 
 ### Headline
