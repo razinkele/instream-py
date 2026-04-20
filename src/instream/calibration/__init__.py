@@ -44,6 +44,12 @@ try:
     _HAS_SURROGATE = True
 except ImportError:
     _HAS_SURROGATE = False
+
+from instream.calibration.ensemble import (
+    aggregate_scalars,
+    aggregate_trajectories,
+    run_replicates,
+)
 try:
     from instream.calibration.sensitivity import (
         SensitivityAnalyzer,
@@ -89,6 +95,8 @@ if _HAS_SURROGATE:
         "SurrogateResult",
         "CrossValidationResult",
     ])
+
+__all__.extend(["aggregate_scalars", "aggregate_trajectories", "run_replicates"])
 
 if _HAS_SENSITIVITY:
     __all__.extend([
