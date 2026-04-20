@@ -5,8 +5,9 @@
 [![CI](https://github.com/razinkele/instream-py/actions/workflows/ci.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
 [![docs](https://github.com/razinkele/instream-py/actions/workflows/docs.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/docs.yml)
 [![PyPI](https://img.shields.io/pypi/v/instream)](https://pypi.org/project/instream/)
-[![Tests](https://img.shields.io/badge/tests-920%2B-brightgreen)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.30.2-blue)](https://github.com/razinkele/instream-py/releases)
+[![Tests](https://img.shields.io/badge/tests-1030%2B-brightgreen)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/release-v0.33.0-blue)](https://github.com/razinkele/instream-py/releases)
+[![NetLogo parity](https://img.shields.io/badge/NetLogo%20parity-2%2F5%20pass-yellow)](docs/validation/v0.31.0-arc-D-netlogo-comparison.md)
 
 A high-performance Python conversion of the **inSTREAM/inSALMO 7.4**
 individual-based salmonid model — with 350-1290× the throughput of the
@@ -24,10 +25,12 @@ interactive Shiny web app for exploration.
 - [Features](#features)
 - [Architecture](#architecture)
 - [Performance](#performance)
+- [NetLogo Parity](#netlogo-parity)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Testing](#testing)
 - [Interactive Shiny App](#interactive-shiny-app)
+- [Calibration](#calibration)
 - [Documentation](#documentation)
 - [Citation](#citation)
 - [License](#license)
@@ -143,7 +146,8 @@ system" section.
 | **Compute backends** | NumPy (default), Numba JIT (60×+ speedup), JAX (GPU-ready) |
 | **Marine domain** | Baltic Sea zone transitions, smolt exit, adult return with SAR calibration |
 | **Fishing** | Angler harvest with size selectivity, bag limits, catch-and-release |
-| **Sensitivity analysis** | Morris method for one-at-a-time parameter screening |
+| **Sensitivity analysis** | Morris + Sobol global sensitivity via SALib, structured preflight screen |
+| **Calibration** | 8-module framework (scipy Nelder-Mead/DE, sklearn GP surrogate, multi-seed validation, Latin Hypercube, JSON history, scenario manager) |
 | **Sub-daily scheduling** | Hourly + peaking flow via the inSTREAM-SD integration |
 | **Real geography** | OSM PBF fetcher for rivers (any Geofabrik region), EMODnet bathymetry for marine cells, Marine Regions WFS for named water bodies |
 | **Interactive exploration** | Shiny web app with deck.gl maps, live population + spatial views, Create Model panel |
@@ -201,6 +205,36 @@ Benchmarked on a reference 912-day run of `example_a` (single reach, Chinook):
 For the Baltic case study (9 reaches, 1,591 cells, ~5,000 initial fish),
 a 2-week window completes in **~90 s** under Numba — a useful fast-feedback
 loop for calibration work.
+
+---
+
+## NetLogo Parity
+
+Cross-validated against NetLogo InSALMO 7.3 (seed=98, example_a
+2.5-year run). The parity test at
+`tests/test_run_level_parity.py::TestExampleARunVsNetLogo` measures
+5 scalar statistics against the cached BehaviorSpace CSV.
+
+**v0.33.0 status** (after Arcs D → I):
+
+| Metric | Tolerance | v0.30.2 | **v0.33.0** | NetLogo |
+|---|---|---|---|---|
+| Juvenile peak abundance | rtol 0.30 | pass | ✅ pass | 2,151 |
+| **Small outmigrant total** | rtol 0.20 | fail 1,943 | **✅ pass** | 41,146 |
+| Adult peak abundance | atol 8 | +9 | +11 | 21 |
+| Juv mean length 2012-09-30 | rtol 0.10 | 32% gap | 16% gap | 6.23 cm |
+| Outmigrant median date | ±14 days | pass | +22.7 days | 2013-01-05 |
+
+The headline `outmigrant_cumulative` metric passes for the first time
+since the test was written. Six sequential Arcs (D-F fixes, G-I
+diagnostics) closed the 8.6× outmigrant deficit: migration comparator
+rewrite, continuous FRY→PARR promotion, fecundity formula (length not
+weight), redd emergence spread, and an 8,640× drift-replenishment
+formula bug (`model_environment.py` was missing velocity and
+drift_regen_distance factors from NetLogo's `cell-available-drift`).
+
+See [`CHANGELOG.md`](CHANGELOG.md) under `[0.33.0]` for the full
+fix sequence.
 
 ---
 
@@ -319,6 +353,63 @@ Panels (left sidebar):
 
 ---
 
+## Calibration
+
+A first-class calibration framework adapted from
+[razinkele/osmopy](https://github.com/razinkele/osmopy) lives at
+`src/instream/calibration/`. Twelve modules, optional SALib + sklearn
+deps, 75 tests.
+
+```python
+from instream.calibration import (
+    FreeParameter, Transform, ParityTarget,
+    CalibrationPhase, MultiPhaseCalibrator,
+    preflight_screen, validate_multiseed, save_run,
+)
+
+params = [
+    FreeParameter("reaches.ExampleA.drift_conc", 1e-10, 1e-9, Transform.LOG),
+    FreeParameter("species.Chinook-Spring.cmax_A", 0.3, 1.0, Transform.LINEAR),
+]
+targets = [ParityTarget("outmigrant_total", 41146.0, rtol=0.20)]
+```
+
+The full pipeline is available:
+
+1. **`discover_parameters(cfg, rules)`** — regex auto-discovery of
+   FreeParameters from a loaded config.
+2. **`preflight_screen(params, eval_fn)`** — Morris→Sobol filter with
+   structured `PreflightIssue` records (NEGLIGIBLE / FLAT / BOUND_TIGHT /
+   BLOWUP). Drops uninfluential params before burning optimizer cycles.
+3. **`MultiPhaseCalibrator`** — scipy Nelder-Mead or
+   differential-evolution; or **`SurrogateCalibrator`** (sklearn GP +
+   Latin Hypercube) for expensive simulations.
+4. **`validate_multiseed(...)`** — mean/std/CV across seeds for
+   stochastic robustness; essential for any ABM calibration.
+5. **`aggregate_trajectories(per_seed_dfs)`** — non-parametric 95% CI
+   bands over replicates for publication plots.
+6. **`save_run(...)`** — atomic JSON persistence under
+   `data/calibration_history/`.
+7. **`ScenarioManager`** — save/fork/compare/export ZIP archives of
+   calibration scenarios.
+
+End-to-end CLI:
+
+```bash
+micromamba run -n shiny python scripts/calibrate.py \
+    --config configs/example_a.yaml \
+    --data-dir tests/fixtures/example_a \
+    --end-date 2012-05-15 \
+    --targets data/calibration/arc_i_targets.csv \
+    --rules   data/calibration/arc_i_rules.yaml \
+    --algorithm nelder-mead --max-iter 50 --multiseed 3
+```
+
+See [`src/instream/calibration/README.md`](src/instream/calibration/README.md)
+for the full API reference and workflow guide.
+
+---
+
 ## Documentation
 
 - **API reference** (Sphinx, GitHub Pages): <https://razinkele.github.io/instream-py/>
@@ -326,6 +417,8 @@ Panels (left sidebar):
 - **Calibration notes**: [`docs/calibration-notes.md`](docs/calibration-notes.md)
 - **Baltic case study workflow**: [`docs/case-studies/baltic-workflow.md`](docs/case-studies/baltic-workflow.md)
 - **NetLogo parity roadmap**: [`docs/NETLOGO_PARITY_ROADMAP.md`](docs/NETLOGO_PARITY_ROADMAP.md)
+- **NetLogo validation report (v0.31.0, Arc D)**: [`docs/validation/v0.31.0-arc-D-netlogo-comparison.md`](docs/validation/v0.31.0-arc-D-netlogo-comparison.md)
+- **Calibration framework**: [`src/instream/calibration/README.md`](src/instream/calibration/README.md)
 - **vs HexSim comparison**: [`docs/hexsim-vs-instream-comparison.md`](docs/hexsim-vs-instream-comparison.md)
 - **Release plans** (pre-execution review artifacts): [`docs/superpowers/plans/`](docs/superpowers/plans/)
 
@@ -370,7 +463,7 @@ inSTREAM reference and this Python implementation:
   author  = {Razinkovas-Baziukas, Artūras and contributors},
   year    = {2026},
   url     = {https://github.com/razinkele/instream-py},
-  version = {0.30.2}
+  version = {0.33.0}
 }
 ```
 
