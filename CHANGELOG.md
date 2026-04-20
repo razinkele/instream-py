@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.0] - 2026-04-20 (Calibration framework — osmopy port)
+
+### Added
+
+- **`src/instream/calibration/` package** — comprehensive calibration
+  framework adapted from razinkele/osmopy, now complete (8 of 8 osmopy
+  modules ported). Eight modules:
+
+  1. `problem.py` — `FreeParameter` (LINEAR/LOG transform),
+     `apply_overrides()`, `evaluate_candidate()` runs an in-process
+     `InSTREAMModel` with per-seed parameter overrides.
+  2. `targets.py` — `ParityTarget` dataclass, CSV loader.
+  3. `losses.py` — `banded_log_ratio_loss`, `rmse_loss`,
+     `relative_error_loss`, `stability_penalty`, `score_against_targets`.
+  4. `multiseed.py` — `validate_multiseed()`,
+     `rank_candidates_multiseed()` (default seeds
+     `(42, 123, 7, 999, 2024)`).
+  5. `history.py` — atomic JSON persistence at
+     `data/calibration_history/`.
+  6. `sensitivity.py` — SALib Sobol (Saltelli) and Morris analyzers.
+  7. `preflight.py` — two-stage Morris→Sobol screen with structured
+     `PreflightIssue(category, severity, auto_fixable)` taxonomy.
+  8. `multiphase.py` — scipy sequential Nelder-Mead / differential-
+     evolution phases.
+  9. `surrogate.py` — sklearn GaussianProcessRegressor (Matern ν=2.5)
+     with Latin Hypercube seeding and k-fold cross-validation.
+  10. `ensemble.py` — `aggregate_scalars()` and
+      `aggregate_trajectories()` with non-parametric 95% percentile CIs.
+  11. `configure.py` — `DiscoveryRule` + `discover_parameters()` for
+      regex auto-discovery of FreeParameters from nested dicts or
+      Pydantic/dataclass-like objects.
+  12. `scenarios.py` — `Scenario` + `ScenarioManager` with
+      save/load/fork/compare and ZIP export/import (path-traversal
+      and JSON-validation guards).
+
+- **`scripts/calibrate.py`** — end-to-end CLI wiring discovery,
+  preflight, multi-phase optimization, multi-seed validation, and
+  history persistence into one `--config … --targets …` invocation.
+- **`scripts/calib_example_a_demo.py`** — 3-point drift_conc sweep
+  demo against an Arc F baseline target.
+
+### Tests
+
+- 75 new tests across `test_calibration*.py` files (23 base + 5
+  sensitivity + 5 preflight + 7 multiphase + 7 surrogate + 10
+  ensemble + 8 configure + 10 scenarios). All green.
+
+### Dependencies
+
+- `SALib` (for `sensitivity.py` and `preflight.py`) — optional; graceful
+  import-guard in `__init__.py`.
+- `sklearn` (for `surrogate.py`) — optional, same pattern.
+
+### Out of scope for this release
+
+- No optional dep wiring in `pyproject.toml` yet — SALib and sklearn
+  are imported dynamically.
+- `scripts/calibrate.py` is a general-purpose runner, not parameterized
+  for any specific inSTREAM-py calibration target; users supply their
+  own rules.yaml + targets.csv.
+
 ## [0.31.0] - 2026-04-19 (Arc D — migration architecture rewrite)
 
 ### Changed
