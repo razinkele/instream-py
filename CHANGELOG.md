@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.35.0] - 2026-04-20 (Arc L: WGBAST M74 year-effect at egg-emergence)
+
+### Headline
+
+SalmoPy now applies the WGBAST M74 yolk-sac-fry mortality year-effect
+at the correct life-stage — a one-time binomial cull at egg→fry
+emergence, keyed by `(current_year, reach.river_name)` against the
+Vuorinen 2021 + WGBAST 2026 §3 time series. This closes a scientific
+semantics gap: pre-v0.35, M74 was modelled as a marine-stage daily
+hazard, which (per the planning-pass review) would have compounded an
+annual fraction to ~100% marine kill if activated.
+
+### Added
+
+- **`apply_m74_cull(n_fry, year, river, forcing_csv, rng) -> int`** in
+  `src/instream/modules/egg_emergence_m74.py`. Binomial cull whose
+  probability is `1 - YSFM(year, river)`. No-op when CSV is unset or
+  the (year, river) tuple is not in the series.
+- **`redd_emergence()` accepts 3 new optional kwargs**:
+  `m74_forcing_csv`, `current_year`, `river_name_by_reach_idx`. All
+  default `None` → preserves NetLogo parity on runs that don't opt in.
+- **`SimulationConfig.m74_forcing_csv: str | None`** YAML field.
+- **`ReachConfig.river_name` + `ReachParams.river_name`** (propagated
+  through `params_from_config`). Maps a reach to the WGBAST river key
+  used for the M74 lookup.
+- **`src/instream/io/m74_forcing.py`** — CSV loader with comment
+  support, returning `Dict[(year, river), ysfm_fraction]`.
+- **`data/wgbast/m74_ysfm_series.csv`** — placeholder YSFM series for
+  Simojoki + Tornionjoki 1985–2024. Flagged for replacement via Arc 0
+  PDF extraction of the Vuorinen 2021 supplementary-data series.
+
+### Changed
+
+- `configs/example_baltic.yaml` — added a commented-out opt-in to the
+  M74 forcing. Not activated by default because the placeholder CSV
+  only covers Gulf of Bothnia rivers, not the Nemunas basin.
+
+### References
+
+- Vuorinen, P. J., Rokka, M., Nikonen, S., et al. (2021). Model for
+  estimating thiamine-deficiency-related mortality of Atlantic salmon
+  offspring and variation in the Baltic salmon M74 syndrome. *Marine
+  and Freshwater Behaviour and Physiology* 54(3), 97–131.
+  DOI 10.1080/10236244.2021.1941942.
+
+---
+
 ## [0.34.0] - 2026-04-20 (Arc K: Per-reach smolt production + PSPC)
 
 ### Headline
