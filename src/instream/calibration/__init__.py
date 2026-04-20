@@ -30,6 +30,16 @@ from instream.calibration.multiseed import (
     rank_candidates_multiseed,
 )
 from instream.calibration.history import save_run, load_run, list_runs
+try:
+    from instream.calibration.sensitivity import (
+        SensitivityAnalyzer,
+        SensitivityResult,
+        MorrisAnalyzer,
+    )
+    _HAS_SENSITIVITY = True
+except ImportError:
+    # SALib optional; omit sensitivity exports when missing
+    _HAS_SENSITIVITY = False
 
 __all__ = [
     "FreeParameter",
@@ -48,3 +58,6 @@ __all__ = [
     "load_run",
     "list_runs",
 ]
+
+if _HAS_SENSITIVITY:
+    __all__.extend(["SensitivityAnalyzer", "SensitivityResult", "MorrisAnalyzer"])
