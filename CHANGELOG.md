@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0] - 2026-04-21 (Arc N: post-smolt survival time-varying forcing)
+
+### Headline
+
+`marine_survival` now accepts a `current_year` kwarg and overrides
+`background_hazard` with a per-(smolt-year, stock_unit) annual-survival
+lookup for fish in the post-smolt window (days_since_ocean_entry < 365).
+Smolt year — not calendar year — is used for lookup so a cohort
+emigrating July Y receives Y's WGBAST posterior across the full
+365-day post-smolt window, rather than a July/January cohort split.
+
+### Added
+
+- **`src/instream/marine/survival_forcing.py`** — loader + per-year
+  + stock-unit lookup + `daily_hazard_multiplier(S_annual)` that
+  inverts `(1-h)^365 = S`.
+- **`MarineConfig.post_smolt_survival_forcing_csv: str | None`** and
+  **`MarineConfig.stock_unit: str | None`** (default "sal.27.22-31").
+- **`marine_survival` extended with `current_year: int | None = None`**
+  kwarg (default None → no forcing → preserves NetLogo parity).
+- **`apply_marine_survival`** threads `current_date.year` into
+  `marine_survival`.
+- **`data/wgbast/post_smolt_survival_baltic.csv`** — preliminary
+  placeholder series 1987–2024 for sal.27.22-31 + sal.27.32, reflecting
+  WGBAST 2023 §2.5 3–12% envelope and the 2021 median 6% landmark.
+
+### Tests
+
+`tests/test_post_smolt_forcing.py` (6 tests) covers loader, multiplier,
+and end-to-end that post-smolt fish have lower survival than adults
+under an active forcing.
+
+### References
+
+- ICES (2023). WGBAST. ICES Scientific Reports 5(26).
+  DOI 10.17895/ices.pub.22328542.
+- Olmos, M. et al. (2018). Fish and Fisheries 20(2), 322–342.
+  DOI 10.1111/faf.12345.
+
+---
+
 ## [0.36.0] - 2026-04-21 (Arc M: multi-river Baltic fixtures)
 
 ### Headline

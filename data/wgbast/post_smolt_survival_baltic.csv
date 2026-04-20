@@ -1,0 +1,57 @@
+# WGBAST post-smolt survival — annual fraction for each Baltic stock unit.
+# PRELIMINARY placeholder series based on WGBAST 2023 §2.5 narrative range
+# (3–12% band, declining from mid-2000s highs to 6% median in 2021).
+# Replace via Arc 0 PDF extraction of the Bayesian posterior median from
+# WGBAST 2026 figures.
+#
+# Source template:
+#   ICES (2023). WGBAST. ICES Scientific Reports 5(26).
+#     DOI 10.17895/ices.pub.22328542
+#   ICES (2026). WGBAST. DOI 10.17895/ices.pub.29118545.v3 (narrative text).
+#   Olmos, M. et al. (2018). Fish and Fisheries 20(2), 322-342.
+#     DOI 10.1111/faf.12345 — hierarchical Bayesian declining trend.
+#
+# Schema: year, stock_unit, survival_pct, source
+year,stock_unit,survival_pct,source
+1987,sal.27.22-31,0.14,placeholder_prelim
+1988,sal.27.22-31,0.15,placeholder_prelim
+1989,sal.27.22-31,0.15,placeholder_prelim
+1990,sal.27.22-31,0.16,placeholder_prelim
+1991,sal.27.22-31,0.15,placeholder_prelim
+1992,sal.27.22-31,0.14,placeholder_prelim
+1993,sal.27.22-31,0.13,placeholder_prelim
+1994,sal.27.22-31,0.13,placeholder_prelim
+1995,sal.27.22-31,0.13,placeholder_prelim
+1996,sal.27.22-31,0.12,placeholder_prelim
+1997,sal.27.22-31,0.12,placeholder_prelim
+1998,sal.27.22-31,0.12,placeholder_prelim
+1999,sal.27.22-31,0.11,placeholder_prelim
+2000,sal.27.22-31,0.11,placeholder_prelim
+2001,sal.27.22-31,0.12,placeholder_prelim
+2002,sal.27.22-31,0.13,placeholder_prelim
+2003,sal.27.22-31,0.12,placeholder_prelim
+2004,sal.27.22-31,0.11,placeholder_prelim
+2005,sal.27.22-31,0.09,placeholder_prelim
+2006,sal.27.22-31,0.08,placeholder_prelim
+2007,sal.27.22-31,0.07,placeholder_prelim
+2008,sal.27.22-31,0.07,placeholder_prelim
+2009,sal.27.22-31,0.07,placeholder_prelim
+2010,sal.27.22-31,0.06,placeholder_prelim
+2011,sal.27.22-31,0.06,placeholder_prelim
+2012,sal.27.22-31,0.06,placeholder_prelim
+2013,sal.27.22-31,0.06,placeholder_prelim
+2014,sal.27.22-31,0.05,placeholder_prelim
+2015,sal.27.22-31,0.05,placeholder_prelim
+2016,sal.27.22-31,0.05,placeholder_prelim
+2017,sal.27.22-31,0.06,placeholder_prelim
+2018,sal.27.22-31,0.06,placeholder_prelim
+2019,sal.27.22-31,0.06,placeholder_prelim
+2020,sal.27.22-31,0.06,placeholder_prelim
+2021,sal.27.22-31,0.06,placeholder_prelim
+2022,sal.27.22-31,0.05,placeholder_prelim
+2023,sal.27.22-31,0.05,placeholder_prelim
+2024,sal.27.22-31,0.05,placeholder_prelim
+2010,sal.27.32,0.04,placeholder_prelim
+2015,sal.27.32,0.04,placeholder_prelim
+2020,sal.27.32,0.04,placeholder_prelim
+2024,sal.27.32,0.04,placeholder_prelim
