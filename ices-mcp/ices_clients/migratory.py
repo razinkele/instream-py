@@ -28,25 +28,139 @@ FIGSHARE_ARTICLE = "https://api.figshare.com/v2/articles/{id}"
 
 
 # Curated catalogue of diadromous migratory fish relevant to ICES advisory work.
-# Aphia IDs from WoRMS (verified against ices_vocab search). Habitat tags:
+# All Aphia IDs verified 2026-04-20 against
+# https://www.marinespecies.org/rest/AphiaRecordsByName/<name> (status="accepted").
+# Do not mutate without re-querying WoRMS.
+# Habitat tags:
 #   anad = anadromous (sea → river to spawn)
 #   cata = catadromous (river → sea to spawn)
 #   amph = amphidromous / facultative
 MIGRATORY_FISH: List[Dict[str, Any]] = [
     {"common": "Atlantic salmon",     "scientific": "Salmo salar",            "aphia": 127186, "habitat": "anad"},
-    {"common": "Sea trout",           "scientific": "Salmo trutta",           "aphia": 127173, "habitat": "anad"},
+    {"common": "Sea trout",           "scientific": "Salmo trutta",           "aphia": 127187, "habitat": "anad"},
     {"common": "European eel",        "scientific": "Anguilla anguilla",      "aphia": 126281, "habitat": "cata"},
-    {"common": "European smelt",      "scientific": "Osmerus eperlanus",      "aphia": 126735, "habitat": "anad"},
-    {"common": "Twaite shad",         "scientific": "Alosa fallax",           "aphia": 126413, "habitat": "anad"},
-    {"common": "Allis shad",          "scientific": "Alosa alosa",            "aphia": 126410, "habitat": "anad"},
-    {"common": "Houting",             "scientific": "Coregonus oxyrinchus",   "aphia": 126527, "habitat": "anad"},
-    {"common": "River lamprey",       "scientific": "Lampetra fluviatilis",   "aphia": 101169, "habitat": "anad"},
+    {"common": "European smelt",      "scientific": "Osmerus eperlanus",      "aphia": 126736, "habitat": "anad"},
+    {"common": "Twaite shad",         "scientific": "Alosa fallax",           "aphia": 126415, "habitat": "anad"},
+    {"common": "Allis shad",          "scientific": "Alosa alosa",            "aphia": 126413, "habitat": "anad"},
+    {"common": "Houting",             "scientific": "Coregonus oxyrinchus",   "aphia": 154238, "habitat": "anad"},
+    {"common": "River lamprey",       "scientific": "Lampetra fluviatilis",   "aphia": 101172, "habitat": "anad"},
     {"common": "Sea lamprey",         "scientific": "Petromyzon marinus",     "aphia": 101174, "habitat": "anad"},
-    {"common": "Atlantic sturgeon",   "scientific": "Acipenser oxyrinchus",   "aphia": 219088, "habitat": "anad"},
+    {"common": "Atlantic sturgeon",   "scientific": "Acipenser oxyrinchus",   "aphia": 151802, "habitat": "anad"},
     {"common": "European sturgeon",   "scientific": "Acipenser sturio",       "aphia": 126279, "habitat": "anad"},
-    {"common": "Arctic char",         "scientific": "Salvelinus alpinus",     "aphia": 127180, "habitat": "anad"},
-    {"common": "Vendace",             "scientific": "Coregonus albula",       "aphia": 127179, "habitat": "amph"},
+    {"common": "Arctic char",         "scientific": "Salvelinus alpinus",     "aphia": 127188, "habitat": "anad"},
+    {"common": "Vendace",             "scientific": "Coregonus albula",       "aphia": 127178, "habitat": "amph"},
 ]
+
+
+# ===========================================================================
+# European smelt (Osmerus eperlanus) — first-class dedicated reference
+# ===========================================================================
+SMELT_REFERENCE: Dict[str, Any] = {
+    "common_name": "European smelt",
+    "scientific_name": "Osmerus eperlanus",
+    "aphia_id": 126736,
+    "family": "Osmeridae",
+    "habitat": "anadromous (with landlocked lake populations)",
+    "ices_wgs": ["WGDIAD", "WGBAST"],
+    "ices_ecoregions": ["Baltic Sea", "Greater North Sea", "Celtic Seas"],
+    "distribution": (
+        "Estuaries and lower rivers of the NE Atlantic and Baltic Sea: "
+        "Baltic (Curonian Lagoon, Gulf of Bothnia, Gulf of Finland), "
+        "Elbe, Thames, Humber, Rhine. Landlocked lake populations across "
+        "Scandinavia, Russia, and Baltic states."
+    ),
+    "life_history": {
+        "spawning_period":  "March-April",
+        "spawning_habitat": "Freshwater / lower tidal reach, adhesive eggs on substrate",
+        "egg_duration":     "2-4 weeks (temperature-dependent)",
+        "juvenile_phase":   "Fry descend to estuary within 1-2 months post-hatch",
+        "maturation_age":   "2-4 years",
+        "max_age":          "10 years",
+        "max_length_cm":    30,
+        "spawning_length_cm": "15-25",
+    },
+    "conservation_status": (
+        "Locally threatened (UK Red List 'Vulnerable' in the Thames/Humber), "
+        "recovering in the Elbe after dredging reduction. Baltic populations "
+        "considered stable but data-poor. IUCN Least Concern globally."
+    ),
+    "ices_search_terms": ["smelt", "Osmerus eperlanus", "estuarine smelt population"],
+    "sample_references": [
+        {"doi": "10.17895/ices.pub.27150609.v1",
+         "title": "ICES ASC Theme Session: Estuarine gradients by immature anadromous fishes"},
+    ],
+}
+
+
+# ===========================================================================
+# Twaite shad (Alosa fallax) — first-class dedicated reference
+# ===========================================================================
+SHAD_REFERENCE: Dict[str, Any] = {
+    "common_name": "Twaite shad",
+    "scientific_name": "Alosa fallax",
+    "aphia_id": 126415,
+    "family": "Clupeidae",
+    "habitat": "anadromous",
+    "ices_wgs": ["WGDIAD"],
+    "ices_ecoregions": ["Greater North Sea", "Celtic Seas", "Bay of Biscay and the Iberian Coast"],
+    "distribution": (
+        "NE Atlantic coastal waters from Morocco to southern Norway + Mediterranean. "
+        "ICES-region strongholds: Severn (UK), Wye (UK), Loire + Garonne-Dordogne "
+        "(France), Elbe (Germany; re-established). Rhine population extinct 1950s."
+    ),
+    "life_history": {
+        "spawning_period":  "May-June",
+        "spawning_habitat": "Lower freshwater / tidal limit, demersal eggs on gravel",
+        "egg_duration":     "3-8 days",
+        "juvenile_phase":   "0+ fry descend to sea 4-6 weeks post-hatch; feed in estuaries then marine",
+        "maturation_age":   "3-6 years (females slightly later)",
+        "max_age":          "15 years",
+        "max_length_cm":    55,
+        "spawning_length_cm": "35-50",
+    },
+    "conservation_status": (
+        "EU Habitats Directive Annex II + V. Protected across UK, Ireland, Germany, "
+        "France. Data-poor status in most basins; recent German status report "
+        "(Hermes 2024, ICES DOI 10.17895/ices.pub.25349818) documents recovery "
+        "in the Elbe and persistent decline in smaller basins."
+    ),
+    "ices_search_terms": ["twaite shad", "Alosa fallax", "shad diadromous"],
+    "sample_references": [
+        {"doi": "10.17895/ices.pub.25349818.v1",
+         "title": "Status of the anadromous twaite shad Alosa fallax in Germany (ICES 2024)"},
+        {"doi": "10.17895/ices.pub.27879867.v1",
+         "title": "ICES ASC Theme Session E: Applied evidence for biodiversity conservation"},
+        {"doi": "10.17895/ices.pub.27169758.v1",
+         "title": "WGDIAD 2024 report"},
+    ],
+}
+
+
+# ===========================================================================
+# Allis shad (Alosa alosa) — sister species, included for completeness
+# ===========================================================================
+ALLIS_SHAD_REFERENCE: Dict[str, Any] = {
+    "common_name": "Allis shad",
+    "scientific_name": "Alosa alosa",
+    "aphia_id": 126413,
+    "family": "Clupeidae",
+    "habitat": "anadromous",
+    "ices_wgs": ["WGDIAD"],
+    "distribution": (
+        "NE Atlantic: Morocco to southern Norway. Largest stronghold "
+        "historically the Garonne-Dordogne (France); now critically depleted. "
+        "Habitats Directive Annex II + V species."
+    ),
+    "life_history": {
+        "spawning_period":  "May-July",
+        "spawning_habitat": "Freshwater, demersal eggs",
+        "maturation_age":   "4-7 years",
+        "max_age":          "8 years",
+        "max_length_cm":    70,
+        "spawning_length_cm": "40-60",
+    },
+    "conservation_status": "Critically depleted in most river basins; urgent management interest.",
+}
 
 
 # Known ICES working-group acronyms covering migratory fish.
@@ -270,3 +384,57 @@ def migratory_species_catalog(habitat: Optional[str] = None) -> List[Dict[str, A
 def migratory_aphia_ids() -> Dict[str, int]:
     """Return {scientific_name: aphia_id} for all catalogued migratory species."""
     return {s["scientific"]: s["aphia"] for s in MIGRATORY_FISH}
+
+
+# ---------------------------------------------------------------------------
+# First-class smelt + shad helpers (user-requested 2026-04-20)
+# ---------------------------------------------------------------------------
+
+
+def smelt_profile(include_library_search: bool = True) -> Dict[str, Any]:
+    """Full dossier for European smelt (*Osmerus eperlanus*).
+
+    Combines the static SMELT_REFERENCE dataset with a live ICES Library
+    search (Figshare) for the 5 most recent smelt publications.
+
+    Parameters
+    ----------
+    include_library_search : bool
+        If True, issues a live Figshare request. Disable for offline /
+        fast calls.
+    """
+    profile = dict(SMELT_REFERENCE)
+    if include_library_search:
+        try:
+            profile["recent_publications"] = search_ices_library(
+                "smelt Osmerus eperlanus", page_size=5, order="published_date",
+            )
+        except Exception as e:  # pragma: no cover — network path
+            profile["recent_publications_error"] = str(e)
+    return profile
+
+
+def shad_profile(include_library_search: bool = True) -> Dict[str, Any]:
+    """Full dossier for Twaite shad (*Alosa fallax*).
+
+    Combines SHAD_REFERENCE with a live ICES Library search for the 5
+    most recent twaite-shad publications. Also returns the Allis-shad
+    reference alongside (sister species under the same WGDIAD scope).
+
+    Parameters
+    ----------
+    include_library_search : bool
+        If True, issues a live Figshare request.
+    """
+    profile = {"twaite_shad": dict(SHAD_REFERENCE), "allis_shad": dict(ALLIS_SHAD_REFERENCE)}
+    if include_library_search:
+        try:
+            profile["recent_twaite_shad_publications"] = search_ices_library(
+                "twaite shad Alosa fallax", page_size=5, order="published_date",
+            )
+            profile["recent_allis_shad_publications"] = search_ices_library(
+                "allis shad Alosa alosa", page_size=3, order="published_date",
+            )
+        except Exception as e:  # pragma: no cover
+            profile["recent_publications_error"] = str(e)
+    return profile

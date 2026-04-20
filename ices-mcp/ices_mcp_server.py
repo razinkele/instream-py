@@ -842,6 +842,64 @@ def migratory_aphia_map() -> str:
     return json.dumps(migratory.migratory_aphia_ids(), indent=2)
 
 
+@mcp.tool()
+def smelt_profile(include_library_search: bool = True) -> str:
+    """Full European smelt (*Osmerus eperlanus*) dossier.
+
+    First-class helper for smelt-focused research. Returns the static
+    reference (Aphia 126736, WGDIAD + WGBAST, distribution, life history,
+    conservation status) plus — when `include_library_search=True` — the
+    5 most recent ICES Library publications about smelt pulled live via
+    Figshare.
+
+    Related tools:
+        migratory_species_catalog('anad')   — context within all anad fish
+        ices_library_search('smelt')         — broader library search
+    """
+    return json.dumps(
+        migratory.smelt_profile(include_library_search=include_library_search),
+        indent=2,
+        default=str,
+    )
+
+
+@mcp.tool()
+def shad_profile(include_library_search: bool = True) -> str:
+    """Full Twaite shad (*Alosa fallax*) + Allis shad (*Alosa alosa*) dossier.
+
+    First-class helper for shad-focused research. Returns:
+      - Twaite shad reference (Aphia 126415, WGDIAD, distribution, life
+        history, Habitats Directive status, sample DOIs).
+      - Allis shad reference (Aphia 126413, sister species under WGDIAD).
+      - 5 most recent ICES Library publications on twaite shad + 3 on
+        allis shad (live Figshare search) when `include_library_search`.
+
+    Key recent reference: ICES (2024) *Status of the anadromous twaite
+    shad Alosa fallax in Germany*, DOI 10.17895/ices.pub.25349818.
+    """
+    return json.dumps(
+        migratory.shad_profile(include_library_search=include_library_search),
+        indent=2,
+        default=str,
+    )
+
+
+@mcp.resource("ices://migratory/smelt")
+def smelt_resource() -> str:
+    """Static European smelt reference card (no network call)."""
+    return json.dumps(migratory.SMELT_REFERENCE, indent=2)
+
+
+@mcp.resource("ices://migratory/shad")
+def shad_resource() -> str:
+    """Static twaite + allis shad reference cards (no network call)."""
+    return json.dumps(
+        {"twaite_shad": migratory.SHAD_REFERENCE,
+         "allis_shad": migratory.ALLIS_SHAD_REFERENCE},
+        indent=2,
+    )
+
+
 @mcp.resource("ices://migratory/overview")
 def migratory_overview_resource() -> str:
     """Overview of ICES migratory-fish coverage — WGs, ecoregions, species."""
@@ -850,6 +908,10 @@ def migratory_overview_resource() -> str:
         "working_groups": migratory.list_migratory_wgs(),
         "ecoregions": migratory.list_ecoregions(),
         "species_catalogue": migratory.migratory_species_catalog(),
+        "first_class_helpers": [
+            "smelt_profile()   — European smelt full dossier + live ICES Library pull",
+            "shad_profile()    — Twaite + Allis shad full dossier",
+        ],
         "usage": {
             "find_latest_wg_report":    "migratory_latest_wg_report('WGBAST')",
             "search_library":           "ices_library_search('sea trout advice 2023')",
@@ -857,6 +919,8 @@ def migratory_overview_resource() -> str:
             "find_ecosystem_overview":  "ices_ecosystem_overview('Baltic Sea', 2023)",
             "species_by_habitat":       "migratory_species_catalog('anad')",
             "aphia_lookup":             "migratory_aphia_map()",
+            "smelt_dossier":            "smelt_profile(True)",
+            "shad_dossier":             "shad_profile(True)",
         },
     }, indent=2)
 

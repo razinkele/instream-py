@@ -14,7 +14,7 @@ Model Context Protocol server providing AI assistants with comprehensive access 
 | **ICES Library** | Working-group reports, ecosystem overviews, advice documents (via Figshare API) | None |
 | **Migratory fish** | Curated WG / species / ecoregion catalogue for diadromous fish | None |
 
-## Available Tools (29 total)
+## Available Tools (31 total)
 
 ### DATRAS (9 tools)
 - `datras_list_surveys` — list all survey acronyms
@@ -50,7 +50,7 @@ Model Context Protocol server providing AI assistants with comprehensive access 
 ### Analysis (1 tool)
 - `ices_analyse_distribution` — spatial/temporal distribution analysis
 
-### Migratory fish / WG reports / ecosystem overviews (8 tools)
+### Migratory fish / WG reports / ecosystem overviews (10 tools)
 - `migratory_list_working_groups` — curated ICES WGs covering diadromous fish (WGBAST, WGEEL, WGNAS, WGDIAD, WGRECORDS, WKBALT, WKTRUTTA, WKEELMIGR, WKESDLS)
 - `migratory_latest_wg_report` — latest ICES Library entry for a given WG acronym (DOI + download URL)
 - `ices_library_search` — full-text search of the ICES Library (Figshare API) across all publication types
@@ -59,6 +59,8 @@ Model Context Protocol server providing AI assistants with comprehensive access 
 - `ices_ecosystem_overview` — find ICES ecosystem overview document for a named ecoregion + optional year
 - `migratory_species_catalog` — curated Aphia-ID catalogue of 13 diadromous fish (anadromous/catadromous/amphidromous filter)
 - `migratory_aphia_map` — {scientific_name: Aphia_ID} quick lookup for migratory fish
+- **`smelt_profile`** — European smelt (*Osmerus eperlanus*, Aphia 126736) dossier: WGDIAD + WGBAST coverage, estuarine/lake distribution, life history, conservation status, + live ICES Library pull (5 recent pubs)
+- **`shad_profile`** — Twaite shad (*Alosa fallax*, Aphia 126415) + Allis shad (*Alosa alosa*, Aphia 126413) joint dossier: WGDIAD coverage, Habitats Directive status, recent German/UK status reports, + live ICES Library pull (5 twaite + 3 allis pubs)
 
 ## Setup
 
@@ -142,3 +144,9 @@ micromamba run -n shiny python ices_mcp_server.py
 
 > "What's the Aphia ID for European eel?"
 > → `migratory_aphia_map()` → `{"Anguilla anguilla": 126281, ...}`
+
+> "Give me everything ICES has on European smelt"
+> → `smelt_profile()` → static dossier (Aphia 126736, distribution, life history, conservation) + 5 most recent ICES Library publications pulled live via Figshare
+
+> "Give me everything on twaite and allis shad"
+> → `shad_profile()` → dossier for both species (Aphia 126415 / 126413, WGDIAD coverage, Habitats Directive status) + live ICES Library search
