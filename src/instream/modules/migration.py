@@ -37,10 +37,42 @@ def should_migrate(migration_fit, best_habitat_fit, life_history):
     return migration_fit > best_habitat_fit
 
 
+def _build_outmigrant_record(trout_state, fish_idx, current_reach,
+                             current_date, start_date, reach_names):
+    """Assemble a NetLogo InSALMO 7.3 compatible outmigrant record.
+
+    See `instream.io.output.write_outmigrants` for the 10-column schema.
+    """
+    if current_date is not None and start_date is not None:
+        timestep_int = int((current_date - start_date).days)
+    else:
+        timestep_int = -1
+    natal_idx = int(trout_state.natal_reach_idx[fish_idx])
+    if reach_names is not None and 0 <= natal_idx < len(reach_names):
+        natal_name = reach_names[natal_idx]
+    else:
+        natal_name = ""
+    fish_length = float(trout_state.length[fish_idx])
+    length_category = "Juvenile" if fish_length < 12.0 else "Smolt"
+    return {
+        "species_idx": int(trout_state.species_idx[fish_idx]),
+        "timestep": timestep_int,
+        "reach_idx": int(current_reach),
+        "natal_reach_idx": natal_idx,
+        "natal_reach_name": natal_name,
+        "age_years": float(trout_state.age[fish_idx]) / 365.25,
+        "length_category": length_category,
+        "length": fish_length,
+        "initial_length": float(trout_state.initial_length[fish_idx]),
+        "superind_rep": int(trout_state.superind_rep[fish_idx]),
+    }
+
+
 def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
                             marine_config=None, smolt_readiness_threshold=0.8,
                             smolt_min_length=12.0, current_date=None,
-                            barrier_map=None, rng=None):
+                            barrier_map=None, rng=None,
+                            start_date=None, reach_names=None):
     """Move a fish to the downstream reach, or make it an outmigrant.
 
     When *marine_config* is provided and the fish is a PARR at the river
@@ -50,6 +82,10 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
     When *barrier_map* is provided, each downstream step checks for a
     barrier on the edge. Possible outcomes: transmit (pass through),
     deflect (stay in current reach), or die.
+
+    `start_date` and `reach_names` are used to populate the NetLogo-compatible
+    outmigrant record (timestep, natal_reach_name). See
+    `instream.io.output.write_outmigrants` for the 10-column schema.
 
     Returns
     -------
@@ -91,12 +127,10 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
 
         # v0.17.0 — KELT re-entering the ocean as OCEAN_ADULT.
         if marine_config is not None and life_history == int(LifeStage.KELT):
-            outmigrants.append({
-                "species_idx": int(trout_state.species_idx[fish_idx]),
-                "length": fish_length,
-                "reach_idx": current_reach,
-                "superind_rep": int(trout_state.superind_rep[fish_idx]),
-            })
+            outmigrants.append(_build_outmigrant_record(
+                trout_state, fish_idx, current_reach,
+                current_date, start_date, reach_names,
+            ))
             trout_state.life_history[fish_idx] = int(LifeStage.OCEAN_ADULT)
             trout_state.zone_idx[fish_idx] = 0
             trout_state.cell_idx[fish_idx] = -1
@@ -109,12 +143,10 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
             and readiness >= smolt_readiness_threshold
             and fish_length >= smolt_min_length
         ):
-            outmigrants.append({
-                "species_idx": int(trout_state.species_idx[fish_idx]),
-                "length": fish_length,
-                "reach_idx": current_reach,
-                "superind_rep": int(trout_state.superind_rep[fish_idx]),
-            })
+            outmigrants.append(_build_outmigrant_record(
+                trout_state, fish_idx, current_reach,
+                current_date, start_date, reach_names,
+            ))
             trout_state.life_history[fish_idx] = int(LifeStage.SMOLT)
             trout_state.zone_idx[fish_idx] = 0
             trout_state.natal_reach_idx[fish_idx] = current_reach
@@ -131,12 +163,10 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
             # record — this is a failed attempt, not a real outmigration.
             pass
         else:
-            outmigrants.append({
-                "species_idx": int(trout_state.species_idx[fish_idx]),
-                "length": fish_length,
-                "reach_idx": current_reach,
-                "superind_rep": int(trout_state.superind_rep[fish_idx]),
-            })
+            outmigrants.append(_build_outmigrant_record(
+                trout_state, fish_idx, current_reach,
+                current_date, start_date, reach_names,
+            ))
             trout_state.alive[fish_idx] = False
     return outmigrants, smoltified
 

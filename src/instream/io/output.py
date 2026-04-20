@@ -114,20 +114,59 @@ def write_redd_snapshot(
 
 
 def write_outmigrants(
-    outmigrants, species_order, output_dir, filename="outmigrants.csv"
+    outmigrants,
+    species_order,
+    output_dir,
+    filename="outmigrants.csv",
+    reach_names=None,
+    require_natal_reach=False,
 ):
-    """Write accumulated outmigrant records."""
+    """Write accumulated outmigrant records (NetLogo InSALMO 7.3 compatible).
+
+    Schema mirrors NetLogo 7.3 `Outmigrants-<run>.csv`:
+      species, timestep, reach_idx (exit), natal_reach_idx, natal_reach_name,
+      age_years, length_category, length_cm, initial_length_cm, superind_rep
+
+    When `require_natal_reach=True`, raise ValueError on any record with
+    natal_reach_idx == -1 — used by callers that have configured PSPC
+    (Arc K.4) to surface partial wiring early.
+    """
     path = Path(output_dir) / filename
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["species", "length_cm", "reach_idx"])
+        writer.writerow([
+            "species", "timestep", "reach_idx", "natal_reach_idx",
+            "natal_reach_name", "age_years", "length_category",
+            "length_cm", "initial_length_cm", "superind_rep",
+        ])
         for om in outmigrants:
             sp = (
                 species_order[om["species_idx"]]
                 if om["species_idx"] < len(species_order)
                 else "Unknown"
             )
-            writer.writerow([sp, round(om["length"], 4), om["reach_idx"]])
+            natal_idx = int(om.get("natal_reach_idx", -1))
+            if require_natal_reach and natal_idx < 0:
+                raise ValueError(
+                    f"outmigrant record missing natal_reach_idx: {om}"
+                )
+            natal_name = om.get("natal_reach_name") or (
+                reach_names[natal_idx]
+                if reach_names is not None and 0 <= natal_idx < len(reach_names)
+                else ""
+            )
+            writer.writerow([
+                sp,
+                int(om.get("timestep", -1)),
+                int(om.get("reach_idx", -1)),
+                natal_idx,
+                natal_name,
+                round(float(om.get("age_years", 0.0)), 4),
+                om.get("length_category", ""),
+                round(float(om.get("length", 0.0)), 4),
+                round(float(om.get("initial_length", 0.0)), 4),
+                int(om.get("superind_rep", 1)),
+            ])
     return path
 
 

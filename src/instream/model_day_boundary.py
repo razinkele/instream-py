@@ -571,6 +571,8 @@ class _ModelDayBoundaryMixin:
                     current_date=current_date,
                     barrier_map=barrier_map,
                     rng=self.rng,
+                    start_date=self.time_manager.start_date,
+                    reach_names=self.reach_order,
                 )
                 self._outmigrants.extend(out)
                 continue
@@ -595,6 +597,8 @@ class _ModelDayBoundaryMixin:
                         current_date=current_date,
                         barrier_map=barrier_map,
                         rng=self.rng,
+                        start_date=self.time_manager.start_date,
+                        reach_names=self.reach_order,
                     )
                     self._outmigrants.extend(out)
                     if smoltified:
@@ -630,6 +634,8 @@ class _ModelDayBoundaryMixin:
                     current_date=current_date,
                     barrier_map=barrier_map,
                     rng=self.rng,
+                    start_date=self.time_manager.start_date,
+                    reach_names=self.reach_order,
                 )
                 self._outmigrants.extend(out)
                 if smoltified and marine_domain is not None:
@@ -653,6 +659,8 @@ class _ModelDayBoundaryMixin:
                         current_date=current_date,
                         barrier_map=barrier_map,
                         rng=self.rng,
+                        start_date=self.time_manager.start_date,
+                        reach_names=self.reach_order,
                     )
                     self._outmigrants.extend(out)
                     if smoltified and marine_domain is not None:
@@ -743,6 +751,7 @@ class _ModelDayBoundaryMixin:
             ts.alive[slots] = True
             ts.species_idx[slots] = sp_idx
             ts.length[slots] = lengths
+            ts.initial_length[slots] = lengths
             ts.weight[slots] = weights
             ts.condition[slots] = 1.0
             ts.age[slots] = 1                  # stocked as yearlings
@@ -840,6 +849,7 @@ class _ModelDayBoundaryMixin:
             ts.alive[slots] = True
             ts.species_idx[slots] = sp_idx
             ts.length[slots] = lengths
+            ts.initial_length[slots] = lengths
             ts.weight[slots] = weights
             ts.condition[slots] = 1.0
             ts.age[slots] = 3
