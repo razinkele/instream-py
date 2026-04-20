@@ -1,0 +1,34 @@
+# HELCOM grey-seal abundance — Baltic population estimate per sub-basin per year.
+# PRELIMINARY placeholder series; replace via Arc 0 PDF extraction of the
+# HELCOM Grey Seal Abundance core indicator.
+#
+# Sources:
+#   HELCOM. Grey seal abundance core indicator.
+#     https://indicators.helcom.fi/indicator/grey-seal-abundance/
+#   Harding et al. 2007 (baseline ~2,500 in 1980s, cited in Westphal 2025)
+#   Lai, Lindroos & Grønbæk 2021 (DOI 10.1007/s10640-021-00571-z)
+#     — HELCOM SEAL Expert Group 2015: 32,019 counted in 2014
+#   Westphal et al. 2025 (DOI 10.1002/aqc.70147)
+#     — ">40,000 counted grey seals in 2020, >45,000 in 2023"
+#   Carroll et al. 2024 (DOI 10.1111/1365-2656.14065)
+#     — historical low ~3,000 in 1970s
+#
+# HELCOM does NOT offer a direct CSV download — values transcribed from
+# interactive-map PDFs + core-indicator reports. Main-basin aggregate only;
+# sub-basin split will be added in Arc 0 re-extraction.
+#
+# Schema: year, sub_basin, population_estimate, method
+year,sub_basin,population_estimate,method
+1988,main_basin,2800,aerial_survey
+1990,main_basin,3500,aerial_survey
+1995,main_basin,5500,aerial_survey
+2000,main_basin,9500,aerial_survey
+2003,main_basin,15600,aerial_survey
+2005,main_basin,18500,aerial_survey
+2010,main_basin,26400,aerial_survey
+2014,main_basin,32019,aerial_survey
+2015,main_basin,32000,aerial_survey
+2018,main_basin,35000,aerial_survey
+2020,main_basin,40000,aerial_survey
+2021,main_basin,42000,aerial_survey
+2023,main_basin,45000,aerial_survey
