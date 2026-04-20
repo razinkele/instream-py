@@ -148,6 +148,16 @@ class MarineConfig(BaseModel):
     # (Ostergren 2021 archival-DNA; Saisa 2005 population-genetic FST).
     stray_fraction: float = 0.0
 
+    # WGBAST Arc P: HELCOM grey-seal abundance forcing. When set, scales
+    # the seal_hazard logistic term by a Holling Type II multiplier
+    # anchored at `seal_reference_abundance` (1.0 at reference, saturates
+    # at `seal_saturation_k_half + 1` asymptotically). Default None
+    # preserves legacy static seal_hazard calibration.
+    seal_abundance_csv: str | None = None
+    seal_reference_abundance: float = 30000.0
+    seal_sub_basin: str = "main_basin"
+    seal_saturation_k_half: float = 2.0
+
     # v0.17.0 — hatchery predator-naivety multiplier applied to cormorant
     # hazard for fish with is_hatchery=True during the post-smolt
     # vulnerability window. After the window, hatchery fish converge on

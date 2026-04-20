@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.0] - 2026-04-21 (Arc P: HELCOM grey-seal abundance scaling)
+
+### Headline
+
+`seal_hazard` now accepts a `current_year` kwarg and scales the
+length-logistic base hazard by a **Holling Type II** saturating
+multiplier anchored on the HELCOM grey-seal Baltic abundance time
+series. Ecologically defensible alternative to linear scaling, which
+would have projected marine_mort_seal_max_daily × 15 at 2021 levels
+(1988 → 2021 saw a 15× population growth). The Type II form returns
+1.0 at `seal_reference_abundance` (preserving legacy calibration) and
+asymptotes at `k+1 = 3.0` for the default `k_half = 2.0`.
+
+### Added
+
+- **`src/instream/marine/seal_forcing.py`** — loader +
+  `seal_hazard_multiplier(abundance, reference=30000, k_half=2.0)`.
+- **`MarineConfig.seal_abundance_csv`**, `seal_reference_abundance`,
+  `seal_sub_basin`, `seal_saturation_k_half` (default k_half=2.0).
+- **`seal_hazard` extended with `current_year` kwarg** (default None →
+  legacy behavior → NetLogo parity preserved).
+- **`data/helcom/grey_seal_abundance_baltic.csv`** — preliminary
+  series 1988–2023, cross-referenced to Harding 2007, Lai 2021 (32,019
+  in 2014), Westphal 2025 (40k in 2020, 45k in 2023).
+- **`tests/test_seal_forcing.py`** (5 tests).
+
+### References
+
+- HELCOM. Grey seal abundance core indicator.
+  https://indicators.helcom.fi/indicator/grey-seal-abundance/
+- Lai, T.-Y., Lindroos, M., & Grønbæk, L. (2021). *Environmental and
+  Resource Economics* 79(3), 511–549. DOI 10.1007/s10640-021-00571-z.
+- Westphal, L., von Vietinghoff, V., & Moritz, T. (2025). *Aquatic
+  Conservation* 35(5). DOI 10.1002/aqc.70147.
+
+---
+
 ## [0.38.0] - 2026-04-21 (Arc O: straying + spawner-origin MSA matrix)
 
 ### Headline

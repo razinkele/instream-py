@@ -41,14 +41,52 @@ def _logistic_hazard(
     return max_daily / (1.0 + np.exp(-k * (l - midpoint)))
 
 
-def seal_hazard(length: np.ndarray, config) -> np.ndarray:
-    """Daily seal predation hazard. Larger fish are more targeted."""
-    return _logistic_hazard(
+_SEAL_FORCING_CACHE: "dict" = {}
+
+
+def seal_hazard(
+    length: np.ndarray,
+    config,
+    current_year: int | None = None,
+) -> np.ndarray:
+    """Daily seal predation hazard. Larger fish are more targeted.
+
+    Arc P: when `config.seal_abundance_csv` is set and `current_year` is
+    provided, the base length-logistic hazard is scaled by a Holling
+    Type II multiplier anchored at `config.seal_reference_abundance`.
+    Default (no CSV, no current_year) preserves legacy static behavior.
+    """
+    base = _logistic_hazard(
         length,
         L1=config.marine_mort_seal_L1,
         L9=config.marine_mort_seal_L9,
         max_daily=config.marine_mort_seal_max_daily,
     )
+    if (
+        getattr(config, "seal_abundance_csv", None) is not None
+        and current_year is not None
+    ):
+        from pathlib import Path
+        path = Path(config.seal_abundance_csv)
+        if path not in _SEAL_FORCING_CACHE:
+            from instream.marine.seal_forcing import load_seal_abundance
+            _SEAL_FORCING_CACHE[path] = load_seal_abundance(path)
+        from instream.marine.seal_forcing import (
+            abundance_for_year, seal_hazard_multiplier,
+        )
+        abundance = abundance_for_year(
+            _SEAL_FORCING_CACHE[path],
+            current_year,
+            config.seal_sub_basin,
+        )
+        if abundance is not None:
+            mult = seal_hazard_multiplier(
+                abundance=abundance,
+                reference_abundance=config.seal_reference_abundance,
+                saturation_k_half=config.seal_saturation_k_half,
+            )
+            base = base * mult
+    return base
 
 
 def cormorant_hazard(
@@ -143,7 +181,7 @@ def marine_survival(
         Multiply with fishing-survival to obtain total survival.
     """
     n = np.asarray(length).shape[0]
-    h_seal = seal_hazard(length, config)
+    h_seal = seal_hazard(length, config, current_year=current_year)
     h_corm = cormorant_hazard(
         length, zone_idx, days_since_ocean_entry, cormorant_zone_indices, config
     )
