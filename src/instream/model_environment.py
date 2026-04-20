@@ -103,13 +103,28 @@ class _ModelEnvironmentMixin:
             )
             cs.light[cells] = cell_light
 
-        # 6. Resources: full reset on first sub-step, partial repletion otherwise
+        # 6. Resources: full reset on first sub-step, partial repletion otherwise.
+        #
+        # Arc F (2026-04-20): available_drift previously omitted velocity and
+        # drift_regen_distance, producing ~8,640x less drift per cell than
+        # NetLogo InSALMO7.3:1088 for typical example_a conditions (velocity
+        # 100 cm/s, regen_distance 1000 cm). This starved the natal cohort
+        # via cell-level food depletion. Corrected formula:
+        #   cell_available_drift = 86400 * area * depth * velocity * drift_conc
+        #                         / drift_regen_distance
+        # units: (s/day)(cm^2)(cm)(cm/s)(g/cm^3)/(cm) = g/day
         if substep == 0:
             for r_idx, rname in enumerate(self.reach_order):
                 rp = self.reach_params[rname]
                 cells = self._reach_cells[r_idx]
+                regen = max(rp.drift_regen_distance, 1.0)  # avoid /0
                 cs.available_drift[cells] = (
-                    rp.drift_conc * cs.area[cells] * cs.depth[cells]
+                    86400.0
+                    * cs.area[cells]
+                    * cs.depth[cells]
+                    * cs.velocity[cells]
+                    * rp.drift_conc
+                    / regen
                 )
                 cs.available_search[cells] = rp.search_prod * cs.area[cells]
                 cs.available_vel_shelter[cells] = (
@@ -310,14 +325,20 @@ class _ModelEnvironmentMixin:
             cells = self._reach_cells[r_idx]
             if len(cells) == 0:
                 continue
-            # Partial replenishment
-            cs.available_drift[cells] += (
-                rp.drift_conc * cs.area[cells] * cs.depth[cells] * step_length
+            # Partial replenishment (Arc F: match NetLogo InSALMO7.3:1088 formula)
+            regen = max(rp.drift_regen_distance, 1.0)
+            _daily_drift_max = (
+                86400.0
+                * cs.area[cells]
+                * cs.depth[cells]
+                * cs.velocity[cells]
+                * rp.drift_conc
+                / regen
             )
+            cs.available_drift[cells] += _daily_drift_max * step_length
             cs.available_search[cells] += rp.search_prod * cs.area[cells] * step_length
             # Cap at daily maximum
-            max_drift = rp.drift_conc * cs.area[cells] * cs.depth[cells]
-            cs.available_drift[cells] = np.minimum(cs.available_drift[cells], max_drift)
+            cs.available_drift[cells] = np.minimum(cs.available_drift[cells], _daily_drift_max)
             max_search = rp.search_prod * cs.area[cells]
             cs.available_search[cells] = np.minimum(
                 cs.available_search[cells], max_search
