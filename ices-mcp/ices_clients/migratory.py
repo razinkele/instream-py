@@ -346,11 +346,19 @@ def ecosystem_overview(ecoregion: str, year: Optional[int] = None) -> Dict[str, 
     if year is not None:
         query = f"{query} {year}"
     results = search_ices_library(query=query, page_size=10)
+    eco_lower = ecoregion.lower().strip()
+    # Accept either the full ecoregion name or all of its words individually
+    # (handles "Greater North Sea" whose Figshare title may read "North Sea
+    # Ecosystem Overview" without the "Greater" modifier).
+    eco_words = [w for w in eco_lower.split() if len(w) > 3]
     matches = [
         r for r in results
         if isinstance(r, dict)
         and "ecosystem overview" in (r.get("title") or "").lower()
-        and ecoregion.lower().split()[0] in (r.get("title") or "").lower()
+        and (
+            eco_lower in (r.get("title") or "").lower()
+            or all(w in (r.get("title") or "").lower() for w in eco_words)
+        )
     ]
     if not matches:
         return {"ecoregion": ecoregion, "query": query, "results": results[:5]}
