@@ -288,7 +288,12 @@ from instream.state.life_stage import LifeStage
 
 
 def _make_trout_at_mouth(length=15.0, readiness=0.9, life_history=LifeStage.PARR):
-    """Create a TroutState with one live PARR fish at a terminal reach."""
+    """Create a TroutState with one live PARR fish at a terminal reach.
+
+    Note (Arc O.1, 2026-04-21): natal_reach_idx must be explicitly set now
+    that migrate_fish_downstream no longer overwrites it at smoltification.
+    The fixture fish was BORN at reach 0 (same as its exit reach).
+    """
     ts = TroutState.zeros(4)
     ts.alive[0] = True
     ts.species_idx[0] = 0
@@ -297,6 +302,7 @@ def _make_trout_at_mouth(length=15.0, readiness=0.9, life_history=LifeStage.PARR
     ts.condition[0] = 1.0
     ts.life_history[0] = int(life_history)
     ts.reach_idx[0] = 0
+    ts.natal_reach_idx[0] = 0  # Arc O.1: set birth reach explicitly
     ts.cell_idx[0] = 0
     ts.smolt_readiness[0] = readiness
     return ts

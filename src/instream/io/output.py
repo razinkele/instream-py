@@ -240,6 +240,60 @@ def write_smolt_production_by_reach(
     return path
 
 
+def write_spawner_origin_matrix(
+    spawners,
+    reach_names,
+    year,
+    output_dir,
+    filename=None,
+):
+    """Write a natal × spawning reach matrix (WGBAST genetic-MSA shape).
+
+    Each cell m[natal, spawn] is the rep-weighted count of spawners whose
+    `natal_reach_idx` equals the row index and `reach_idx` (spawning
+    location) equals the column index. Under perfect homing the matrix is
+    diagonal; straying populates off-diagonals.
+
+    Parameters
+    ----------
+    spawners : list of dicts
+        Each must contain `natal_reach_idx`, `reach_idx` (spawning),
+        `superind_rep`.
+    reach_names : sequence of str
+    year : int
+    output_dir : path-like
+    filename : str, optional
+        Default "spawner_origin_matrix_{year}.csv".
+
+    Returns
+    -------
+    Path to the CSV. Row index is `natal_reach`, columns are spawning
+    reaches.
+
+    Reference: Östergren et al. 2021 (DOI 10.1098/rspb.2020.3147) archival-
+    DNA homogenization; Säisä et al. 2005 (DOI 10.1139/f05-094) population
+    genetic structure. WGBAST apportions mixed sea catches back to rivers
+    via the analogous genetic MSA matrix.
+    """
+    import pandas as pd
+
+    if filename is None:
+        filename = f"spawner_origin_matrix_{year}.csv"
+    path = Path(output_dir) / filename
+    n = len(reach_names)
+    m = [[0] * n for _ in range(n)]
+    for sp in spawners:
+        natal = int(sp.get("natal_reach_idx", -1))
+        spawn = int(sp.get("reach_idx", -1))
+        rep = int(sp.get("superind_rep", 1))
+        if 0 <= natal < n and 0 <= spawn < n:
+            m[natal][spawn] += rep
+    df = pd.DataFrame(m, index=reach_names, columns=reach_names)
+    df.index.name = "natal_reach"
+    df.to_csv(path)
+    return path
+
+
 def write_cell_snapshot(cell_state, current_date, output_dir, filename=None):
     """Write cell hydraulic and resource state."""
     if filename is None:

@@ -142,6 +142,12 @@ class MarineConfig(BaseModel):
     post_smolt_survival_forcing_csv: str | None = None
     stock_unit: str | None = "sal.27.22-31"
 
+    # WGBAST Arc O: stray-fraction knob. 0 = perfect homing (SalmoPy
+    # default, matching NetLogo InSALMO 7.3); 1 = uniform mixing across
+    # non-natal freshwater reaches. Baltic salmon typical 0.05-0.15
+    # (Ostergren 2021 archival-DNA; Saisa 2005 population-genetic FST).
+    stray_fraction: float = 0.0
+
     # v0.17.0 — hatchery predator-naivety multiplier applied to cormorant
     # hazard for fish with is_hatchery=True during the post-smolt
     # vulnerability window. After the window, hatchery fish converge on
