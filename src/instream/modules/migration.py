@@ -95,6 +95,7 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
                 "species_idx": int(trout_state.species_idx[fish_idx]),
                 "length": fish_length,
                 "reach_idx": current_reach,
+                "superind_rep": int(trout_state.superind_rep[fish_idx]),
             })
             trout_state.life_history[fish_idx] = int(LifeStage.OCEAN_ADULT)
             trout_state.zone_idx[fish_idx] = 0
@@ -112,6 +113,7 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
                 "species_idx": int(trout_state.species_idx[fish_idx]),
                 "length": fish_length,
                 "reach_idx": current_reach,
+                "superind_rep": int(trout_state.superind_rep[fish_idx]),
             })
             trout_state.life_history[fish_idx] = int(LifeStage.SMOLT)
             trout_state.zone_idx[fish_idx] = 0
@@ -133,6 +135,7 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
                 "species_idx": int(trout_state.species_idx[fish_idx]),
                 "length": fish_length,
                 "reach_idx": current_reach,
+                "superind_rep": int(trout_state.superind_rep[fish_idx]),
             })
             trout_state.alive[fish_idx] = False
     return outmigrants, smoltified
