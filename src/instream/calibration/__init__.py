@@ -30,6 +30,11 @@ from instream.calibration.multiseed import (
     rank_candidates_multiseed,
 )
 from instream.calibration.history import save_run, load_run, list_runs
+from instream.calibration.multiphase import (
+    CalibrationPhase,
+    PhaseResult,
+    MultiPhaseCalibrator,
+)
 try:
     from instream.calibration.sensitivity import (
         SensitivityAnalyzer,
@@ -64,6 +69,9 @@ __all__ = [
     "save_run",
     "load_run",
     "list_runs",
+    "CalibrationPhase",
+    "PhaseResult",
+    "MultiPhaseCalibrator",
 ]
 
 if _HAS_SENSITIVITY:
