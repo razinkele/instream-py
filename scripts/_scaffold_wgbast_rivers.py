@@ -1,6 +1,6 @@
 """Scaffold WGBAST-assessment-ready Baltic river fixtures from example_baltic.
 
-Generates tests/fixtures/{tornionjoki,simojoki,byskealven,morrumsan}/ by:
+Generates tests/fixtures/example_{tornionjoki,simojoki,byskealven,morrumsan}/ by:
   1. Copying the example_baltic fixture directory verbatim (keeps Shapefile
      and all 9 Nemunas-basin reach hydrology CSVs).
   2. Rewriting each reach's TimeSeriesInputs.csv with a per-river
@@ -25,25 +25,25 @@ TEMPLATE = ROOT / "tests" / "fixtures" / "example_baltic"
 
 
 RIVERS = {
-    "tornionjoki": {
+    "example_tornionjoki": {
         "stem": "TornionjokiExample",
         "temperature_offset_c": -6.0,   # Gulf of Bothnia ~6C colder than Nemunas
         "mean_flow_multiplier": 0.8,    # Torne ~400 m3/s vs Nemunas ~500
         "river_name": "Tornionjoki",
     },
-    "simojoki": {
+    "example_simojoki": {
         "stem": "SimojokiExample",
         "temperature_offset_c": -5.5,
         "mean_flow_multiplier": 0.09,   # Simo ~45 m3/s
         "river_name": "Simojoki",
     },
-    "byskealven": {
+    "example_byskealven": {
         "stem": "ByskealvenExample",
         "temperature_offset_c": -3.5,
         "mean_flow_multiplier": 0.08,   # ~40 m3/s
         "river_name": "Byskealven",
     },
-    "morrumsan": {
+    "example_morrumsan": {
         "stem": "MorrumsanExample",
         "temperature_offset_c": +3.0,   # southern warmer
         "mean_flow_multiplier": 0.05,   # ~25 m3/s

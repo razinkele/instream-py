@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.5] - 2026-04-21 (WGBAST river fixture rename: example_ prefix)
+
+### Fixed
+
+- **4 WGBAST river fixtures now loadable in the Shiny app**: renamed
+  `tests/fixtures/{tornionjoki,simojoki,byskealven,morrumsan}/` →
+  `tests/fixtures/example_{tornionjoki,…}/`. `_resolve_data_dir` in
+  `app/app.py` uses `config_stem = Path(config_path).stem` and expects
+  `tests/fixtures/<stem>/` — the old names lacked the `example_`
+  prefix so the app would fall through to the config file's parent
+  directory (empty) and fail to find the shapefile. Tests passed
+  because they explicitly passed `data_dir=` to `InSTREAMModel`.
+- Scaffolding scripts `_scaffold_wgbast_rivers.py` and
+  `_generate_wgbast_configs.py` updated to use the prefixed keys so
+  future regenerations don't recreate the old naming.
+- Smoke test updated to point at new fixture dir names (4/4 pass).
+
+---
+
 ## [0.41.4] - 2026-04-21 (Setup map: auto-center + example_a load fix)
 
 ### Fixed

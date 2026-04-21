@@ -29,7 +29,7 @@ TEMPLATE_CFG = ROOT / "configs" / "example_baltic.yaml"
 # river total (Torne 2.2M / Simo 95k / Byske 180k / Mörrum 60k). Non-natal
 # reaches (lagoon, coast) get None.
 RIVER_SPECS = {
-    "tornionjoki": {
+    "example_tornionjoki": {
         "stem": "TornionjokiExample",
         "latitude": 65.85,
         "river_name": "Tornionjoki",
@@ -51,7 +51,7 @@ RIVER_SPECS = {
             "BalticCoast": None,
         },
     },
-    "simojoki": {
+    "example_simojoki": {
         "stem": "SimojokiExample",
         "latitude": 65.60,
         "river_name": "Simojoki",
@@ -69,7 +69,7 @@ RIVER_SPECS = {
             "BalticCoast": None,
         },
     },
-    "byskealven": {
+    "example_byskealven": {
         "stem": "ByskealvenExample",
         "latitude": 64.98,
         "river_name": "Byskealven",
@@ -87,7 +87,7 @@ RIVER_SPECS = {
             "BalticCoast": None,
         },
     },
-    "morrumsan": {
+    "example_morrumsan": {
         "stem": "MorrumsanExample",
         "latitude": 56.17,
         "river_name": "Morrumsan",

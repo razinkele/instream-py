@@ -15,10 +15,10 @@ import pandas as pd
 
 
 CONFIGS = [
-    ("configs/example_tornionjoki.yaml", "tornionjoki"),
-    ("configs/example_simojoki.yaml", "simojoki"),
-    ("configs/example_byskealven.yaml", "byskealven"),
-    ("configs/example_morrumsan.yaml", "morrumsan"),
+    ("configs/example_tornionjoki.yaml", "example_tornionjoki"),
+    ("configs/example_simojoki.yaml", "example_simojoki"),
+    ("configs/example_byskealven.yaml", "example_byskealven"),
+    ("configs/example_morrumsan.yaml", "example_morrumsan"),
 ]
 
 
@@ -60,10 +60,10 @@ def test_fixture_loads_and_runs_3_days(config_path, fixture_dir, tmp_path):
 
 @pytest.mark.slow
 @pytest.mark.parametrize("config_path,fixture_dir,expected_modal_age", [
-    ("configs/example_tornionjoki.yaml", "tornionjoki", 4),
-    ("configs/example_simojoki.yaml", "simojoki", 3),
-    ("configs/example_byskealven.yaml", "byskealven", 2),
-    ("configs/example_morrumsan.yaml", "morrumsan", 2),
+    ("configs/example_tornionjoki.yaml", "example_tornionjoki", 4),
+    ("configs/example_simojoki.yaml", "example_simojoki", 3),
+    ("configs/example_byskealven.yaml", "example_byskealven", 2),
+    ("configs/example_morrumsan.yaml", "example_morrumsan", 2),
 ])
 def test_latitudinal_smolt_age_gradient(
     config_path, fixture_dir, expected_modal_age, tmp_path
