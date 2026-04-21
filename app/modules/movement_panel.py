@@ -81,22 +81,87 @@ def _fit_bounds_zoom(bounds, map_width_px=800, map_height_px=600):
     return max(8, min(20, zoom))
 
 
+_MOVEMENT_CSS = """
+.movement-map-controls {
+    padding: 0.3rem 0.75rem 0 0.75rem;
+}
+.movement-map-controls .movement-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.2rem;
+    flex-wrap: wrap;
+}
+.movement-map-controls .movement-row > label {
+    margin: 0;
+    font-weight: 500;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    line-height: 1.8;
+}
+.movement-map-controls .form-group,
+.movement-map-controls .shiny-input-container {
+    margin: 0 !important;
+}
+.movement-map-controls .shiny-label-null {
+    display: none;
+}
+.movement-map-controls select.form-select {
+    height: 31px;
+    padding-top: 0.1rem;
+    padding-bottom: 0.1rem;
+    font-size: 0.9rem;
+    min-width: 160px;
+}
+.movement-map-controls .irs {
+    min-width: 220px;
+    margin: 0;
+}
+.movement-map-controls .layer-description {
+    color: #5a6268;
+    font-style: italic;
+    font-size: 0.82rem;
+    margin-left: 0.1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+"""
+
+_COLOR_MODE_DESCRIPTIONS = {
+    "species": "Trails colour-keyed by species (e.g. Atlantic salmon vs. brown trout).",
+    "activity": "Trails colour-keyed by current activity (drift / search / hide / guard / hold).",
+    "life_history": "Trails colour-keyed by life stage (fry / parr / smolt / adult / kelt).",
+}
+
+
 @module.ui
 def movement_ui():
     return ui.card(
-        ui.card_header("Live Movement Map"),
-        ui.layout_columns(
-            ui.input_select(
-                "color_mode",
-                "Color by:",
-                choices={"species": "Species", "activity": "Activity"},
+        ui.tags.style(_MOVEMENT_CSS),
+        ui.card_header("Live Movement Map",
+                       style="padding:0.3rem 0.75rem; font-size:0.95rem;"),
+        ui.div(
+            ui.div(
+                ui.tags.label("Color by:"),
+                ui.input_select(
+                    "color_mode", None,
+                    choices={
+                        "species": "Species",
+                        "activity": "Activity",
+                        "life_history": "Life Stage",
+                    },
+                ),
+                ui.output_ui("color_mode_description"),
+                ui.tags.label("Trail:", style="margin-left:1rem;"),
+                ui.input_slider(
+                    "trail_length", None,
+                    min=1, max=90, value=5, step=1, width="240px",
+                ),
+                class_="movement-row",
             ),
-            ui.input_slider(
-                "trail_length",
-                "Trail length (days):",
-                min=1, max=90, value=5, step=1,
-            ),
-            col_widths=(4, 4),
+            class_="movement-map-controls",
         ),
         ui.output_ui("map_container"),
         ui.output_ui("status_text"),
@@ -150,13 +215,29 @@ def movement_server(input, output, session, dashboard_data_rv):
 
     @output
     @render.ui
+    def color_mode_description():
+        """Inline blurb right of the Color-by dropdown; matches Setup UX."""
+        key = input.color_mode() or "species"
+        text = _COLOR_MODE_DESCRIPTIONS.get(key, "")
+        return ui.tags.span(text, class_="layer-description")
+
+    @output
+    @render.ui
     def status_text():
         data = dashboard_data_rv()
         if not data:
-            return ui.p("Idle", style="color:#888;text-align:center;")
+            return ui.p(
+                "Idle — click 'Run Simulation' in the sidebar to populate "
+                "fish-movement trails here.",
+                style=(
+                    "color:#888; text-align:center; font-style:italic; "
+                    "padding:0.6rem 0;"
+                ),
+            )
         snapshots = [d for d in data if d.get("type") == "snapshot"]
         if not snapshots:
-            return ui.p("Waiting for data...", style="color:#888;text-align:center;")
+            return ui.p("Waiting for data…",
+                        style="color:#888;text-align:center;")
         return ui.p(
             "Day {} — {} fish tracked".format(
                 snapshots[-1]["date"], len(_trajectory_history)

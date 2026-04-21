@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.13] - 2026-04-21 (Movement panel: UX consistent with Setup)
+
+### Changed
+
+- **Movement panel controls tightened** to match Setup's baseline-
+  aligned single-row layout. Color-by dropdown, trail-length slider
+  now share one row with compact labels (72px, line-height 1.8),
+  no Bootstrap form-group margin, hidden `.shiny-label-null`
+  placeholders, 31 px select height matching buttons.
+- **Color-by got a third option**: `life_history` (fry / parr / smolt
+  / adult / kelt) alongside the existing `species` and `activity`.
+- **Inline description right of Color-by**, identical pattern to
+  Setup. Updates reactively when the user switches:
+  - Species → "Trails colour-keyed by species (e.g. Atlantic salmon vs. brown trout)."
+  - Activity → "Trails colour-keyed by current activity (drift / search / hide / guard / hold)."
+  - Life Stage → "Trails colour-keyed by life stage (fry / parr / smolt / adult / kelt)."
+- **Idle state is actionable**: replaced the bare "Idle" text with a
+  prompt that points the user at the sidebar Run button:
+  *"Idle — click 'Run Simulation' in the sidebar to populate
+  fish-movement trails here."*
+
+---
+
 ## [0.41.12] - 2026-04-21 (Nav: swap Setup and Create Model positions)
 
 ### Changed
