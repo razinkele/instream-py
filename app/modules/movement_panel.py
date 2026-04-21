@@ -88,11 +88,11 @@ _MOVEMENT_CSS = """
 .movement-map-controls .movement-row {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.5rem;
     margin-bottom: 0.2rem;
-    flex-wrap: wrap;
 }
 .movement-map-controls .movement-row > label {
+    width: 72px;
     margin: 0;
     font-weight: 500;
     font-size: 0.9rem;
@@ -143,6 +143,7 @@ def movement_ui():
         ui.card_header("Live Movement Map",
                        style="padding:0.3rem 0.75rem; font-size:0.95rem;"),
         ui.div(
+            # Row 1: Color-by + description
             ui.div(
                 ui.tags.label("Color by:"),
                 ui.input_select(
@@ -152,12 +153,21 @@ def movement_ui():
                         "activity": "Activity",
                         "life_history": "Life Stage",
                     },
+                    width="200px",
                 ),
                 ui.output_ui("color_mode_description"),
-                ui.tags.label("Trail:", style="margin-left:1rem;"),
+                class_="movement-row",
+            ),
+            # Row 2: Trail length slider
+            ui.div(
+                ui.tags.label("Trail:"),
                 ui.input_slider(
                     "trail_length", None,
-                    min=1, max=90, value=5, step=1, width="240px",
+                    min=1, max=90, value=5, step=1, width="300px",
+                ),
+                ui.tags.span(
+                    "How many past days of trajectory to keep visible.",
+                    class_="layer-description",
                 ),
                 class_="movement-row",
             ),
