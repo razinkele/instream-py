@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.10] - 2026-04-21 (Setup UX: inline layer descriptions + tight layout)
+
+### Added
+
+- **Inline explanatory blurb** right of the "Color by" dropdown that
+  updates as the user switches variables:
+  - Reach → "Each reach is painted in a distinct colour for topology inspection."
+  - Spawning Habitat → "Fraction of the cell usable for spawning (0–1). Darker = more spawn habitat."
+  - Cell Area (m²) → "Cell area in m². Darker cells are larger; used for density normalisation."
+  - Hiding Places → "Count of small-fish hiding places per cell. Darker = more escape cover."
+  - Velocity Shelter → "Fraction of the cell with velocity shelter (0–1). Darker = more shelter."
+  - Distance to Escape (cm) → "Distance (cm) from the cell to the nearest lateral escape point."
+
+### Changed
+
+- **Tightened Setup control rows**: two-row flex layout with
+  fixed-width (70px) labels so "Config:" and "Color by:" align
+  vertically. Reduced gaps (0.4rem) and bottom margins (0.25rem).
+  Card header padding trimmed to 0.4rem × 0.75rem. Inline label +
+  select + button on a single row each.
+
+---
+
 ## [0.41.9] - 2026-04-21 (Fix: setup panel used snake_case deck.gl accessors)
 
 ### Fixed

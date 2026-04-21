@@ -62,12 +62,23 @@ def _discover_configs() -> dict[str, str]:
 _SETUP_CONFIG_CHOICES = _discover_configs()
 
 LAYER_CHOICES = {
-    "reach": "Reach (color by reach)",
+    "reach": "Reach",
     "frac_spawn": "Spawning Habitat",
     "area": "Cell Area (m²)",
     "num_hiding": "Hiding Places",
     "frac_vel_shelter": "Velocity Shelter",
     "dist_escape": "Distance to Escape (cm)",
+}
+
+# Inline explanatory blurb shown to the right of the Color-by dropdown.
+# Keep short — one sentence, ≤90 chars — so it fits the row without wrapping.
+LAYER_DESCRIPTIONS = {
+    "reach": "Each reach is painted in a distinct colour for topology inspection.",
+    "frac_spawn": "Fraction of the cell usable for spawning (0–1). Darker = more spawn habitat.",
+    "area": "Cell area in m². Darker cells are larger; used for density normalisation.",
+    "num_hiding": "Count of small-fish hiding places per cell. Darker = more escape cover.",
+    "frac_vel_shelter": "Fraction of the cell with velocity shelter (0–1). Darker = more shelter.",
+    "dist_escape": "Distance (cm) from the cell to the nearest lateral escape point.",
 }
 
 REACH_COLORS = [
@@ -121,40 +132,43 @@ def setup_ui():
             },
         },
     )
+    # Tight control row styling — fixed-width labels so "Config:" and
+    # "Color by:" align vertically; reduced gaps; single-row horizontal flex.
+    _LABEL_STYLE = (
+        "width:70px; margin:0; font-weight:500; font-size:0.9rem; "
+        "flex-shrink:0;"
+    )
+    _ROW_STYLE = (
+        "display:flex; align-items:center; gap:0.4rem; margin-bottom:0.25rem;"
+    )
     return ui.card(
-        ui.card_header("Setup Review"),
-        # Inline config picker — mirrors the sidebar Configuration selector
-        # so users can load a different config without hunting for the
-        # sidebar (which can be collapsed). Loading here sets the Setup
-        # panel's local state *and* updates the sidebar dropdown so the
-        # Run Simulation button picks up the same choice.
+        ui.card_header("Setup Review", style="padding:0.4rem 0.75rem;"),
+        # Inline config picker — mirrors the sidebar Configuration selector.
+        # Loading here sets the Setup panel's local state *and* updates the
+        # sidebar dropdown so Run Simulation picks up the same choice.
         ui.div(
-            ui.tags.span("Config:", style="font-weight:500; margin-right:0.5rem;"),
-            ui.div(
-                ui.input_select(
-                    "setup_config", None,
-                    choices=_SETUP_CONFIG_CHOICES,
-                    width="300px",
-                ),
-                style="display:inline-block; vertical-align:middle;",
+            ui.tags.label("Config:", style=_LABEL_STYLE),
+            ui.input_select(
+                "setup_config", None,
+                choices=_SETUP_CONFIG_CHOICES,
+                width="260px",
             ),
             ui.input_action_button(
                 "setup_load_btn", "Load",
                 class_="btn btn-sm btn-primary",
-                style="margin-left:0.5rem;",
             ),
-            style="display:flex; align-items:center; margin-bottom:0.5rem; "
-                  "gap:0.3rem;",
+            style=_ROW_STYLE,
         ),
         ui.div(
-            ui.tags.span("Color by:", style="font-weight:500; margin-right:0.5rem;"),
-            ui.div(
-                ui.input_select("layer_var", None,
-                                choices=LAYER_CHOICES, selected="reach",
-                                width="200px"),
-                style="display:inline-block; vertical-align:middle;",
+            ui.tags.label("Color by:", style=_LABEL_STYLE),
+            ui.input_select(
+                "layer_var", None,
+                choices=LAYER_CHOICES,
+                selected="reach",
+                width="260px",
             ),
-            style="display:flex; align-items:center; margin-bottom:0.5rem;",
+            ui.output_ui("layer_description"),  # Inline blurb per variable
+            style=_ROW_STYLE,
         ),
         _widget.ui(height="550px"),
         ui.output_ui("setup_summary"),
@@ -360,6 +374,23 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
             if "SilentException" in type(e).__name__:
                 return
             logger.exception("Error updating setup layer")
+
+    @render.ui
+    def layer_description():
+        """Inline explanatory blurb shown to the right of the Color-by dropdown.
+
+        Reads `input.layer_var()` reactively so the text updates the moment
+        the user switches the dropdown, without re-running the map layer.
+        """
+        key = input.layer_var() or "reach"
+        text = LAYER_DESCRIPTIONS.get(key, "")
+        return ui.tags.small(
+            text,
+            style=(
+                "color:#5a6268; font-style:italic; margin-left:0.25rem; "
+                "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+            ),
+        )
 
     @render.ui
     def setup_summary():
