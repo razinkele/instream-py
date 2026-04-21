@@ -343,17 +343,14 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
             # so the view stays put.
             current_config = _loaded_config()
             if _centered_for_config() != current_config:
-                bounds = gdf.total_bounds
-                center_lon = (bounds[0] + bounds[2]) / 2
-                center_lat = (bounds[1] + bounds[3]) / 2
-                span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
-                zoom = max(1, min(18, 14 - math.log2(max(span, 0.001))))
-                await _widget.set_view_state(session, {
-                    "longitude": center_lon,
-                    "latitude": center_lat,
-                    "zoom": zoom,
-                    "transitionDuration": 1000,
-                })
+                # gdf.total_bounds: (minx, miny, maxx, maxy)
+                minx, miny, maxx, maxy = gdf.total_bounds
+                await _widget.fit_bounds(
+                    session,
+                    bounds=[[minx, miny], [maxx, maxy]],
+                    padding=50,
+                    duration=1000,
+                )
                 _centered_for_config.set(current_config)
         except Exception as e:
             if "SilentException" in type(e).__name__:

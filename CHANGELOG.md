@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.7] - 2026-04-21 (Fix: replace non-existent set_view_state with fit_bounds)
+
+### Fixed
+
+- **`MapWidget.set_view_state()` does not exist**, was a v0.41.4
+  fabrication. Every attempt to fly the setup map to a loaded config's
+  bounds raised `AttributeError: 'MapWidget' object has no attribute
+  'set_view_state'`, logged silently in the shiny-server log and
+  swallowed by the catch-all `except Exception` — which is why the
+  map never appeared to re-center despite the surrounding logic being
+  correct. Replaced with `MapWidget.fit_bounds(session, bounds=[[minx,
+  miny], [maxx, maxy]], padding=50, duration=1000)` which is the real
+  shiny_deckgl API. Auto-computes zoom from the bounds rectangle.
+
+---
+
 ## [0.41.6] - 2026-04-21 (Fix: setup-panel initial view-state actually updated)
 
 ### Fixed
