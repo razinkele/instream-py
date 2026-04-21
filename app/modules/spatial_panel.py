@@ -134,7 +134,7 @@ def spatial_server(input, output, session, results_rv):
             controls=[
                 {"type": "navigation", "position": "top-right"},
                 {"type": "fullscreen", "position": "top-right"},
-                legend_control(position="bottom-left", show_default=True, show_checkbox=True),
+                legend_control(position="bottom-left", show_default=False, show_checkbox=True),
             ],
             tooltip={
                 "html": "<b>{cell_id}</b><br/>{_tooltip_var}: {_tooltip_val}",

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.3] - 2026-04-21 (Map rendering cleanup)
+
+### Fixed
+
+- **Setup / Spatial / Movement panels**: disabled default legend
+  content (`show_default=False`) across all three deck.gl map panels.
+  The basemap-labels-only legend overlay was unhelpful clutter; user-
+  added layer legends still work via `show_checkbox=True`.
+- **Baltic grid coloring**: expanded `REACH_COLORS` palette from 8 to
+  12 colors. The 9-reach `example_baltic` and 4 new WGBAST-river
+  fixtures (also 9 reaches) previously wrapped via modulo, giving the
+  9th reach (BalticCoast) the same color as the 1st reach (Atmata).
+  Added olive, cyan, light-blue, and salmon to the palette.
+- **Removed stale Baltic water-polygon overlay**: deleted
+  `app/data/water_polygons.geojson` (2 KB pre-v0.30.1 hand-traced
+  Curonian Lagoon + 3 Nemunas branches + Baltic Sea trapezoid). It
+  loaded on EVERY setup_panel view regardless of the selected config,
+  superimposing obsolete geometry on the real OSM-sourced Baltic reach
+  polygons and appearing far off-map for California (`example_a`) and
+  northern/southern Baltic WGBAST fixtures. The real per-fixture
+  shapefile already represents water geometry correctly.
+  `setup_panel._water_layer()` is kept as a None-returning stub so
+  callers don't break; can be removed in a future cleanup.
+
+---
+
 ## [0.41.2] - 2026-04-21 (Full WGBAST doc coverage)
 
 ### Documentation

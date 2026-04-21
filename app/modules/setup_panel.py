@@ -18,30 +18,20 @@ from shiny_deckgl import MapWidget, geojson_layer
 from shiny_deckgl.controls import legend_control
 from simulation import _value_to_rgba
 
-# Water polygons for basemap context
-_WATER_PATH = Path(__file__).parent.parent / "data" / "water_polygons.geojson"
-_WATER_COLORS = {"sea": [173, 216, 230, 100], "lagoon": [135, 206, 235, 120], "river": [100, 149, 237, 130]}
+# v0.41.3 (2026-04-21): removed the hand-traced Baltic-specific
+# `app/data/water_polygons.geojson` overlay. It was a pre-v0.30.1 v1
+# fallback (Curonian Lagoon trapezoid + 3 Nemunas branches + Baltic Sea
+# rectangle, ~2 KB) that loaded on EVERY setup_panel view regardless of
+# the selected config. For Baltic fixtures it superimposed obsolete
+# geometry on the real OSM-sourced reach polygons; for California
+# (example_a), Torne (AU 1), Byske, and Mörrum it appeared far off-map
+# creating visual clutter. The real per-fixture shapefile already
+# represents water geometry correctly.
 
 
 def _water_layer():
-    """Build a GeoJSON layer for water polygons if available."""
-    if not _WATER_PATH.exists():
-        return None
-    gdf = gpd.read_file(str(_WATER_PATH))
-    geojson = gdf.__geo_interface__
-    for feat in geojson["features"]:
-        wtype = feat["properties"].get("type", "water")
-        feat["properties"]["_fill"] = _WATER_COLORS.get(wtype, [173, 216, 230, 100])
-    return geojson_layer(
-        id="water-background",
-        data=geojson,
-        get_fill_color="@@=properties._fill",
-        get_line_color=[100, 140, 180, 80],
-        get_line_width=1,
-        stroked=True,
-        filled=True,
-        pickable=False,
-    )
+    """Placeholder retained so callers don't break; always returns None."""
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +71,18 @@ LAYER_CHOICES = {
 }
 
 REACH_COLORS = [
-    [31, 119, 180, 180],
-    [255, 127, 14, 180],
-    [44, 160, 44, 180],
-    [214, 39, 40, 180],
-    [148, 103, 189, 180],
-    [140, 86, 75, 180],
-    [227, 119, 194, 180],
-    [127, 127, 127, 180],
+    [31, 119, 180, 180],    # blue
+    [255, 127, 14, 180],    # orange
+    [44, 160, 44, 180],     # green
+    [214, 39, 40, 180],     # red
+    [148, 103, 189, 180],   # purple
+    [140, 86, 75, 180],     # brown
+    [227, 119, 194, 180],   # pink
+    [127, 127, 127, 180],   # grey
+    [188, 189, 34, 180],    # olive (added for 9-reach example_baltic)
+    [23, 190, 207, 180],    # cyan
+    [174, 199, 232, 180],   # light-blue
+    [255, 152, 150, 180],   # salmon
 ]
 
 
@@ -112,7 +106,7 @@ def setup_ui():
         controls=[
             {"type": "navigation", "position": "top-right"},
             {"type": "fullscreen", "position": "top-right"},
-            legend_control(position="bottom-left", show_default=True, show_checkbox=True),
+            legend_control(position="bottom-left", show_default=False, show_checkbox=True),
         ],
         tooltip={
             "html": ("<b>{cell_id}</b><br/>Reach: {reach}<br/>"
