@@ -183,9 +183,13 @@ def _build_layer(gdf, layer_var):
         c = colors[i]
         feat["properties"]["_fill"] = c if isinstance(c, list) else c.tolist()
 
-    # Use unique layer ID per variable so deck.gl creates a fresh layer
+    # Use a STABLE layer id so recolors via layer_var changes patch the
+    # existing layer's data in-place rather than creating sibling layers
+    # with different ids (which deck.gl accumulates → old layer stays
+    # visible on top of the new one and the color change never appears).
+    # Matches spatial_panel's pattern.
     return geojson_layer(
-        id=f"setup-cells-{layer_var}",
+        id="setup-cells",
         data=geojson,
         get_fill_color="@@=properties._fill",
         get_line_color=[60, 60, 60, 100],

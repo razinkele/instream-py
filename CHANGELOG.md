@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.8] - 2026-04-21 (Fix: setup "Color by" dropdown had no effect)
+
+### Fixed
+
+- **Setup panel's "Color by" dropdown appeared dead**: switching the
+  variable (reach/frac_spawn/area/etc.) didn't change the cell colors.
+  Root cause: `_build_layer` generated a dynamic layer id
+  `f"setup-cells-{layer_var}"` per variable. When the widget called
+  `update(session, [new_layer])`, deck.gl treated each variable's layer
+  as a distinct layer by id and kept the old one stacked underneath
+  rather than replacing it. Fix: use a stable layer id `"setup-cells"`
+  so same-id replacement patches the layer's data in place (matching
+  the pattern `spatial_panel::_recolor_cells` uses via `partial_update`).
+
+---
+
 ## [0.41.7] - 2026-04-21 (Fix: replace non-existent set_view_state with fit_bounds)
 
 ### Fixed
