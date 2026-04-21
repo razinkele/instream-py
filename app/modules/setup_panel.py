@@ -183,21 +183,21 @@ def _build_layer(gdf, layer_var):
         c = colors[i]
         feat["properties"]["_fill"] = c if isinstance(c, list) else c.tolist()
 
-    # Use a STABLE layer id so recolors via layer_var changes patch the
-    # existing layer's data in-place rather than creating sibling layers
-    # with different ids (which deck.gl accumulates → old layer stays
-    # visible on top of the new one and the color change never appears).
-    # Matches spatial_panel's pattern.
+    # Stable layer id so recolors via layer_var changes patch data in-place.
+    # Kwargs MUST be camelCase — geojson_layer passes them through to deck.gl
+    # verbatim, and deck.gl's JS side expects `getFillColor` not
+    # `get_fill_color` (silently ignores unrecognized keys). Matches
+    # spatial_panel's working pattern.
     return geojson_layer(
-        id="setup-cells",
-        data=geojson,
-        get_fill_color="@@=properties._fill",
-        get_line_color=[60, 60, 60, 100],
-        get_line_width=1,
+        "setup-cells",
+        geojson,
+        getFillColor="@@=d.properties._fill",
+        getLineColor=[60, 60, 60, 100],
+        getLineWidth=1,
         stroked=True,
         filled=True,
         pickable=True,
-        auto_highlight=True,
+        autoHighlight=True,
     )
 
 

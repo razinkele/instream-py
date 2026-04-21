@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.9] - 2026-04-21 (Fix: setup panel used snake_case deck.gl accessors)
+
+### Fixed
+
+- **Root cause of "Color by" dropdown doing nothing AND 9-reach Baltic
+  rendering in uniform blue**: `setup_panel::_build_layer` used
+  `get_fill_color`, `get_line_color`, `get_line_width`,
+  `auto_highlight` — snake_case kwargs. `geojson_layer(**kwargs)`
+  passes them through verbatim, but deck.gl's JavaScript side expects
+  camelCase (`getFillColor`, `getLineColor`, `getLineWidth`,
+  `autoHighlight`) and **silently ignores unrecognized keys**. So every
+  color accessor was dropped client-side; the map rendered with
+  deck.gl's default fill regardless of what Python computed. Switched
+  to camelCase + added the `d.` prefix on the property accessor
+  (`"@@=d.properties._fill"`), matching spatial_panel's working
+  pattern.
+
+- The previous two "fixes" (v0.41.3 REACH_COLORS expansion, v0.41.8
+  stable layer id) were prerequisites but insufficient — the colors
+  being computed correctly in Python didn't matter when the kwargs
+  that told deck.gl to USE them were being dropped.
+
+Lesson: remember `feedback_deckgl_camelcase.md` from auto-memory.
+
+---
+
 ## [0.41.8] - 2026-04-21 (Fix: setup "Color by" dropdown had no effect)
 
 ### Fixed
