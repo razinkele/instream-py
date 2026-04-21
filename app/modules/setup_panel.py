@@ -132,43 +132,94 @@ def setup_ui():
             },
         },
     )
-    # Tight control row styling — fixed-width labels so "Config:" and
-    # "Color by:" align vertically; reduced gaps; single-row horizontal flex.
-    _LABEL_STYLE = (
-        "width:70px; margin:0; font-weight:500; font-size:0.9rem; "
-        "flex-shrink:0;"
-    )
-    _ROW_STYLE = (
-        "display:flex; align-items:center; gap:0.4rem; margin-bottom:0.25rem;"
-    )
+    # Tight control row styling. Shiny's input_select wraps the <select>
+    # in a .form-group.shiny-input-container with Bootstrap's default
+    # margin-bottom:1rem + an empty <label> that still consumes baseline
+    # height. Neutralise both so label/select/button sit on a single
+    # baseline with no visible whitespace between rows. Scoped to
+    # .setup-map-controls so it doesn't bleed into the sidebar.
+    _SETUP_CSS = """
+    .setup-map-controls {
+        padding: 0.3rem 0.75rem 0 0.75rem;
+    }
+    .setup-map-controls .setup-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.2rem;
+    }
+    .setup-map-controls .setup-row > label {
+        width: 72px;
+        margin: 0;
+        font-weight: 500;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+        line-height: 1.8;
+    }
+    /* Kill Bootstrap's default form-group bottom margin + hide Shiny's
+       empty `label=None` placeholder so the <select> sits flush. */
+    .setup-map-controls .form-group,
+    .setup-map-controls .shiny-input-container {
+        margin: 0 !important;
+    }
+    .setup-map-controls .shiny-label-null {
+        display: none;
+    }
+    /* Match select height to .btn-sm so they visually align on one line. */
+    .setup-map-controls select.form-select {
+        height: 31px;
+        padding-top: 0.1rem;
+        padding-bottom: 0.1rem;
+        font-size: 0.9rem;
+    }
+    .setup-map-controls .btn-sm {
+        font-size: 0.85rem;
+        padding: 0.2rem 0.6rem;
+    }
+    .setup-map-controls .layer-description {
+        color: #5a6268;
+        font-style: italic;
+        font-size: 0.82rem;
+        margin-left: 0.2rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;  /* let ellipsis trigger inside flex */
+    }
+    """
+
     return ui.card(
-        ui.card_header("Setup Review", style="padding:0.4rem 0.75rem;"),
-        # Inline config picker — mirrors the sidebar Configuration selector.
-        # Loading here sets the Setup panel's local state *and* updates the
-        # sidebar dropdown so Run Simulation picks up the same choice.
+        ui.tags.style(_SETUP_CSS),
+        ui.card_header("Setup Review",
+                       style="padding:0.3rem 0.75rem; font-size:0.95rem;"),
         ui.div(
-            ui.tags.label("Config:", style=_LABEL_STYLE),
-            ui.input_select(
-                "setup_config", None,
-                choices=_SETUP_CONFIG_CHOICES,
-                width="260px",
+            # Row 1: Config + Load
+            ui.div(
+                ui.tags.label("Config:"),
+                ui.input_select(
+                    "setup_config", None,
+                    choices=_SETUP_CONFIG_CHOICES,
+                    width="260px",
+                ),
+                ui.input_action_button(
+                    "setup_load_btn", "Load",
+                    class_="btn btn-sm btn-primary",
+                ),
+                class_="setup-row",
             ),
-            ui.input_action_button(
-                "setup_load_btn", "Load",
-                class_="btn btn-sm btn-primary",
+            # Row 2: Color by + description
+            ui.div(
+                ui.tags.label("Color by:"),
+                ui.input_select(
+                    "layer_var", None,
+                    choices=LAYER_CHOICES,
+                    selected="reach",
+                    width="260px",
+                ),
+                ui.output_ui("layer_description"),
+                class_="setup-row",
             ),
-            style=_ROW_STYLE,
-        ),
-        ui.div(
-            ui.tags.label("Color by:", style=_LABEL_STYLE),
-            ui.input_select(
-                "layer_var", None,
-                choices=LAYER_CHOICES,
-                selected="reach",
-                width="260px",
-            ),
-            ui.output_ui("layer_description"),  # Inline blurb per variable
-            style=_ROW_STYLE,
+            class_="setup-map-controls",
         ),
         _widget.ui(height="550px"),
         ui.output_ui("setup_summary"),
@@ -377,20 +428,16 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
 
     @render.ui
     def layer_description():
-        """Inline explanatory blurb shown to the right of the Color-by dropdown.
+        """Inline explanatory blurb right of the Color-by dropdown.
 
-        Reads `input.layer_var()` reactively so the text updates the moment
-        the user switches the dropdown, without re-running the map layer.
+        Styled via `.setup-map-controls .layer-description` CSS in the
+        scoped block (see setup_ui) so it ellipses + italicises without
+        inline style. Reads input.layer_var() reactively so the text
+        updates instantly when the user switches the dropdown.
         """
         key = input.layer_var() or "reach"
         text = LAYER_DESCRIPTIONS.get(key, "")
-        return ui.tags.small(
-            text,
-            style=(
-                "color:#5a6268; font-style:italic; margin-left:0.25rem; "
-                "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
-            ),
-        )
+        return ui.tags.span(text, class_="layer-description")
 
     @render.ui
     def setup_summary():

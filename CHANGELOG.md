@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.11] - 2026-04-21 (Setup UX: control-row vertical alignment)
+
+### Fixed
+
+- **Labels / dropdowns / buttons didn't baseline-align** in the Setup
+  map's control rows. Root cause: Shiny's `input_select` wraps the
+  `<select>` in a `div.form-group.shiny-input-container` that inherits
+  Bootstrap's default `margin-bottom:1rem` + includes an empty
+  `<label class="shiny-label-null">` that still consumed baseline
+  height. My previous flex+gap styles were overridden by those wrapper
+  margins. Added a scoped CSS block (`.setup-map-controls`) that:
+  - Zeroes out `.form-group` / `.shiny-input-container` margins
+  - Hides `.shiny-label-null` empty-label placeholders
+  - Matches `select.form-select` height (31 px) to `.btn-sm` height
+  - Fixed 72 px label width with `line-height: 1.8` so text sits on
+    the select's vertical centre
+  - Narrows the card header to 0.3 × 0.75 rem padding, 0.95 rem font
+  - Ellipsis-clips the inline layer description so the whole row
+    stays on one line without wrapping
+- Result: `Config:`, dropdown, `Load` button all share one baseline.
+  Same for `Color by:`, dropdown, description. Row vertical padding
+  is 0.2 rem → the whole control block is ~70 px tall total.
+
+---
+
 ## [0.41.10] - 2026-04-21 (Setup UX: inline layer descriptions + tight layout)
 
 ### Added
