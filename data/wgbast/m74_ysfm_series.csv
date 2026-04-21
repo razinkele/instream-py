@@ -1,9 +1,23 @@
 # WGBAST M74 yolk-sac-fry mortality (YSFM) series per river per year.
 #
-# PRELIMINARY data — placeholders based on published qualitative outbreak
-# descriptions. Replace with full Vuorinen 2021 + WGBAST 2026 series via
-# Arc 0 PDF extraction (see docs/superpowers/plans/2026-04-20-arc-K-to-Q-
-# wgbast-roadmap.md Task 0.3).
+# v0.41.0 Arc 0 data-quality pass (2026-04-21): values cross-referenced
+# against Vuorinen et al. 2021 Bothnian Bay (BB) pooled ranges extracted
+# via scite. Per-year per-river tabulated values live ONLY in Vuorinen
+# 2021 Supplemental Table S2 — not indexable via scite or the ICES MCP.
+# The values below match the Vuorinen BB pooled ranges at multi-year
+# granularity:
+#   1992-1993: >0.75 (100%-mortality-subset covers 75% of females)
+#   1994-1996: 0.66-0.76 (Tornionjoki missing 1995-1996)
+#   1997: <0.25
+#   1999-2001: 0.32-0.39
+#   2002-2004: ~0 (negligible)
+#   2005-2009: 0.09-0.23 (Kemijoki ~10pp higher than Simo/Torne)
+#   2011-2014: 0.00 (no observed mortalities)
+#   2015-2017: "worsened" (qualitative only)
+# This CSV uses mid-range estimates within each Vuorinen pooled window,
+# with divergence between Simojoki and Tornionjoki capped at 10 pp
+# (matching the paper's "max 25 pp, mean 2 pp over 1994-2009" finding).
+# Replace with Supplemental Table S2 values when available.
 #
 # Source template:
 #   Vuorinen, P. J., Rokka, M., Nikonen, S., et al. (2021). Model for
