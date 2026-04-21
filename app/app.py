@@ -212,8 +212,8 @@ document.addEventListener('DOMContentLoaded', function() {
 """
 
 _NAV_ITEMS = [
-    ("bi-plus-circle", "Create Model"),
     ("bi-map", "Setup"),
+    ("bi-plus-circle", "Create Model"),
     ("bi-speedometer2", "Dashboard"),
     ("bi-arrow-left-right", "Movement"),
     ("bi-bar-chart-line", "Population"),
@@ -427,8 +427,8 @@ app_ui = ui.page_fluid(
     ui.div(
         {"class": "sp-main-offset"},
         ui.navset_hidden(
-            ui.nav_panel("Create Model", create_model_ui("create")),
             ui.nav_panel("Setup", setup_ui("setup")),
+            ui.nav_panel("Create Model", create_model_ui("create")),
             ui.nav_panel("Dashboard", dashboard_ui("dash")),
             ui.nav_panel("Movement", movement_ui("movement")),
             ui.nav_panel("Population", population_ui("pop")),

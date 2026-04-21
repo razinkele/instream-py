@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.12] - 2026-04-21 (Nav: swap Setup and Create Model positions)
+
+### Changed
+
+- Sidebar nav order now: **Setup** → Create Model → Dashboard → ...
+  Setup becomes the default landing tab (it was always the first-active
+  one — matches the existing "active if i == 0" rule in
+  `_sidebar_nav_links`). Reflects typical user flow: load an existing
+  fixture and inspect reaches first, before building a new one.
+
+---
+
 ## [0.41.11] - 2026-04-21 (Setup UX: control-row vertical alignment)
 
 ### Fixed
