@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.1] - 2026-04-21 (Docs + Shiny help expansion)
+
+### Documentation
+
+- **README.md**: added WGBAST-comparability stack section covering Arcs
+  K→Q + Arc 0, minimal opt-in YAML example, pointer to canonical docs.
+  Added 4 WGBAST Baltic fixtures to the Case Studies section.
+- **app/modules/help_panel.py**: new "WGBAST Roadmap (v0.34-v0.41)"
+  tab in the Shiny app. Covers all 8 releases, the opt-in contract,
+  placeholder-CSV caveats, and a full worked YAML example for a
+  WGBAST-comparable Torne run.
+
+### References
+
+See `docs/validation/wgbast-roadmap-complete.md` and
+`docs/releases/v0.34-to-v0.41-wgbast-summary.md`.
+
+---
+
 ## [0.41.0] - 2026-04-21 (Arc 0: data-quality pass)
 
 ### Headline

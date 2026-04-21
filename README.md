@@ -132,6 +132,69 @@ for a new salmon-bearing system (Daugava, Vistula, Scottish coast, Norwegian
 fjord, etc.) — see the workflow doc's "Adapting to a different salmon
 system" section.
 
+### WGBAST-comparability case studies (v0.36.0+)
+
+4 new Baltic river fixtures spanning the WGBAST latitudinal smolt-age gradient:
+
+- [`configs/example_tornionjoki.yaml`](configs/example_tornionjoki.yaml)
+  — AU 1, Torne 65.85°N, PSPC 2,200,000 smolts/yr, smolt_min 14 cm
+- [`configs/example_simojoki.yaml`](configs/example_simojoki.yaml)
+  — AU 1, Simo 65.60°N, PSPC 95,000, trap-counted monitoring river
+- [`configs/example_byskealven.yaml`](configs/example_byskealven.yaml)
+  — AU 2, Byske 64.98°N, PSPC 180,000, smolt_min 13 cm
+- [`configs/example_morrumsan.yaml`](configs/example_morrumsan.yaml)
+  — Southern, Mörrum 56.17°N, PSPC 60,000, smolt_min 11 cm
+
+Each fixture is latitude-and-discharge calibrated vs the Nemunas template
+and wired for Arc K (PSPC output) + Arc L (M74 year-effect). See the
+**WGBAST roadmap** section below for the full feature set.
+
+---
+
+## WGBAST-comparability stack (v0.34.0 → v0.41.0)
+
+8 releases added WGBAST-assessment-comparable outputs and forcings. Every
+knob is **opt-in with None/0.0 defaults** — runs that don't opt in behave
+identically to v0.33.0 and preserve NetLogo InSALMO 7.3 parity.
+
+| Arc | Version | What it adds |
+|:---:|:-------:|:-------------|
+| **K** | 0.34.0 | Per-reach smolt production + % PSPC achieved CSV |
+| **L** | 0.35.0 | WGBAST M74 yolk-sac-fry year-forcing at egg-emergence |
+| **M** | 0.36.0 | 4 WGBAST river fixtures (Torne/Simo/Byske/Mörrum) |
+| **N** | 0.37.0 | Post-smolt survival per-(smolt-year, stock-unit) forcing |
+| **O** | 0.38.0 | Straying/homing knob + spawner-origin MSA matrix |
+| **P** | 0.39.0 | HELCOM grey-seal Holling II abundance scaling |
+| **Q** | 0.40.0 | Bayesian SMC wrapper (prior + likelihoods + sampler) |
+| **0** | 0.41.0 | Arc 0 data-quality pass (literature-traced CSVs) |
+
+**Minimal WGBAST-comparable config slice:**
+
+```yaml
+simulation:
+  m74_forcing_csv: "data/wgbast/m74_ysfm_series.csv"              # Arc L
+
+marine:
+  post_smolt_survival_forcing_csv: "data/wgbast/post_smolt_survival_baltic.csv"
+  stock_unit: "sal.27.22-31"                                      # Arc N
+  seal_abundance_csv: "data/helcom/grey_seal_abundance_baltic.csv" # Arc P
+  stray_fraction: 0.10                                            # Arc O
+
+reaches:
+  Nemunas:
+    river_name: "Tornionjoki"                                     # Arc L key
+    pspc_smolts_per_year: 880000                                  # Arc K
+```
+
+Run → emits `smolt_production_by_reach_{year}.csv` and
+`spawner_origin_matrix_{year}.csv` in addition to standard outputs.
+
+**Canonical docs:**
+- [`docs/validation/wgbast-roadmap-complete.md`](docs/validation/wgbast-roadmap-complete.md)
+  — cross-arc summary with full reference list
+- [`docs/releases/v0.34-to-v0.41-wgbast-summary.md`](docs/releases/v0.34-to-v0.41-wgbast-summary.md)
+  — user-facing release notes
+
 ---
 
 ## Features

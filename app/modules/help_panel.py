@@ -203,6 +203,15 @@ def help_ui():
             ),
         ),
         ui.nav_panel(
+            "WGBAST Roadmap (v0.34-v0.41)",
+            ui.card(
+                ui.card_header(
+                    "Arcs K-Q + Arc 0: full WGBAST-comparability stack"
+                ),
+                ui.markdown(_WGBAST_ROADMAP_HELP),
+            ),
+        ),
+        ui.nav_panel(
             "Parameters",
             ui.card(
                 ui.card_header("Parameter Reference"),
@@ -864,6 +873,201 @@ None are blockers for management-scenario use.
 ICES SAG data pulls (live 2026-04-20):
 - sal.27.22-31: <https://standardgraphs.ices.dk/ViewCharts.aspx?key=13726>
 - sal.27.32:   <https://standardgraphs.ices.dk/ViewCharts.aspx?key=19019>
+"""
+
+
+_WGBAST_ROADMAP_HELP = """\
+## WGBAST-comparability roadmap (v0.34.0 → v0.41.0)
+
+Eight releases across 2026-04-20 to 2026-04-21 made SalmoPy's outputs
+and forcings directly comparable to the ICES Working Group on Baltic
+Salmon and Sea Trout (WGBAST) assessment. **Every knob is opt-in with
+None/0.0 defaults** — runs that don't opt in behave identically to the
+v0.33.0 baseline and preserve NetLogo InSALMO 7.3 parity.
+
+### The eight releases
+
+| Arc | Version | Capability | Key file |
+|:---:|:-------:|:-----------|:---------|
+| **K** | 0.34.0 | Per-reach smolt production + % PSPC achieved (CSV) | `io/output.py::write_smolt_production_by_reach` |
+| **L** | 0.35.0 | WGBAST M74 YSFM year-forcing at egg-emergence | `modules/egg_emergence_m74.py::apply_m74_cull` |
+| **M** | 0.36.0 | 4 Baltic river fixtures (Torne/Simo/Byske/Mörrum) | `configs/example_{tornionjoki,simojoki,byskealven,morrumsan}.yaml` |
+| **N** | 0.37.0 | Post-smolt survival time-varying forcing | `marine/survival_forcing.py`, `marine/survival.py::marine_survival(current_year=)` |
+| **O** | 0.38.0 | Straying + spawner-origin MSA matrix + natal-reach bug fix | `marine/config.py::stray_fraction`, `io/output.py::write_spawner_origin_matrix` |
+| **P** | 0.39.0 | HELCOM grey-seal Holling II abundance scaling | `marine/seal_forcing.py`, `marine/survival.py::seal_hazard(current_year=)` |
+| **Q** | 0.40.0 | Bayesian SMC wrapper (prior + likelihoods + sampler) | `bayesian/{prior,observation_model,smc}.py` |
+| **0** | 0.41.0 | Arc 0 data-quality pass (literature-traced CSV upgrades) | `data/helcom/grey_seal_abundance_baltic.csv` |
+
+### What each arc emits
+
+**Arc K — PSPC output.** End-of-run writes
+`smolt_production_by_reach_{year}.csv` with columns `year`, `reach_idx`,
+`reach_name`, `smolts_produced`, `pspc_smolts_per_year`,
+`pspc_achieved_pct` — directly comparable to WGBAST's 75 % PSPC
+management target. Activate by setting `reach.pspc_smolts_per_year` on
+any reach. `outmigrants.csv` widens from 3 to 10 NetLogo-compat columns
+(species, timestep, reach_idx, natal_reach_idx, natal_reach_name,
+age_years, length_category, length_cm, initial_length_cm, superind_rep).
+
+**Arc L — M74 year-effect.** Applies the Vuorinen 2021 + WGBAST 2026
+yolk-sac-fry mortality fraction as a one-time binomial cull at
+egg→fry emergence. Keyed by `(year, river_name)`. Activate via
+`simulation.m74_forcing_csv: "data/wgbast/m74_ysfm_series.csv"` and
+set `reach.river_name` on WGBAST-comparable reaches (e.g. "Tornionjoki",
+"Simojoki" — the two rivers in the shipped placeholder series).
+
+**Critical life-stage correction:** the first-draft plan wired M74 as
+a marine-stage daily hazard; a 0.50 annual fraction applied daily would
+compound to 0.5^365 ≈ 10⁻¹¹⁰ marine survival (i.e. all marine fish die).
+M74 is a freshwater yolk-sac pre-swim-up hazard; moving it to
+egg-emergence preserves correct life-stage semantics.
+
+**Arc M — Multi-river Baltic fixtures.** 4 new configs at latitudes
+spanning 56.17°N (Mörrum) to 65.85°N (Torne) with:
+- Per-river temperature offsets: −6.0 °C (Torne/Simo) to +3.0 °C (Mörrum)
+- Per-river flow scaling: 0.05× (Mörrum 25 m³/s) to 0.8× (Torne 400 m³/s)
+- PSPC totals matching WGBAST 2026 §3: Torne 2.2 M, Simo 95 k,
+  Byske 180 k, Mörrum 60 k
+- `smolt_min_length` per AU: 14 cm (AU 1) → 11 cm (Southern),
+  per Skoglund 2024 Paper III latitudinal gradient
+
+Generated via `scripts/_scaffold_wgbast_rivers.py` +
+`scripts/_generate_wgbast_configs.py` from the Nemunas-basin template.
+
+**Arc N — Post-smolt survival forcing.** `marine_survival(current_year=)`
+overrides `background_hazard` for fish in the post-smolt window
+(`days_since_ocean_entry < 365`) with a per-(smolt-year, stock-unit)
+annual-survival lookup. Activate via
+`marine.post_smolt_survival_forcing_csv` and `marine.stock_unit`.
+
+**Semantic subtlety:** smolt year (year of ocean entry), not calendar
+year, is the lookup key. A fish emigrating July Y crossing into Y+1
+still receives Y's WGBAST cohort posterior across its full 365-day
+post-smolt window, avoiding July/January cohort splits.
+
+**Arc O — Straying + MSA matrix.**
+
+1. **Bug fix**: removed `natal_reach_idx = current_reach` overwrite at
+   the SMOLT transition (pre-v0.38 this destroyed the birth-reach
+   signal that Arc K PSPC analytics and Arc O MSA reconstruction
+   depend on).
+2. **Feature**: `marine.stray_fraction` applied at adult return; with
+   probability `stray_fraction`, a returner's spawning `reach_idx` is
+   reassigned to a random non-natal freshwater reach while
+   `natal_reach_idx` stays fixed (genetic/birth property).
+3. **Output**: `write_spawner_origin_matrix` emits a natal × spawning
+   matrix directly comparable to WGBAST's genetic mixed-stock analysis.
+
+**Arc P — HELCOM grey-seal Holling II.** `seal_hazard(current_year=)`
+scales the length-logistic base by a Holling Type II saturating
+multiplier anchored at `seal_reference_abundance`:
+
+$$\\text{mult}(r) = \\frac{r / (1 + r/k)}{1 / (1 + 1/k)} \\quad \\text{where } r = \\frac{\\text{abundance}}{\\text{reference}}$$
+
+With default `k_half = 2.0`: mult(1) = 1.0 (legacy calibration
+preserved), mult(2) = 1.5, mult(10) = 2.5, mult(∞) = 3.0 (asymptote).
+Linear scaling across the 15× abundance span 1988 (2.8 k seals) →
+2021 (42 k seals) would have projected marine salmon extinction;
+Type II matches real predator functional responses.
+
+**Arc Q — Bayesian life-cycle wrapper.** New `instream.bayesian`
+subpackage wraps the existing calibration framework (Sobol + Morris +
+Nelder-Mead + GP surrogate, 13 modules) in a posterior-inference
+shell comparable to WGBAST's own Bayesian model (Kuikka et al. 2014).
+
+- `Prior` dataclass with `sample(rng, n)`; `BALTIC_SALMON_PRIORS`
+  defaults for post_smolt_survival, m74_baseline, stray_fraction,
+  fecundity_mult.
+- Poisson smolt-trap likelihood: `lambda = simulated * trap_efficiency`
+- Negative-binomial spawner-counter likelihood (default `k = 50` ≈
+  CV 15 % at µ=100, per Orell & Erkinaro 2007).
+- `run_smc` sampler: ABC-SMC with tempered log-likelihood,
+  ESS-triggered resampling, returns `(particles, weights,
+  log_marginal_likelihood, param_names)`.
+
+**Arc 0 — Data-quality pass.** Literature-traced CSV upgrades. HELCOM
+grey-seal series now anchored to Harding & Härkönen 1999 (1988 = 3.5 k,
+not 2.8 k), Lai 2021 (2014 = 32,019 exact), Westphal 2025 (2020 = 40 k,
+2023 = 45 k). Pre-2000 values flagged as bounty-statistics backcasts,
+not aerial counts (coordinated aerial moult surveys began 2000).
+
+### Enabling a full WGBAST-comparable Baltic run
+
+```yaml
+# configs/example_tornionjoki.yaml (Arc M fixture; v0.36.0+)
+simulation:
+  start_date: "2011-04-01"
+  end_date: "2016-03-31"
+  seed: 42
+  m74_forcing_csv: "data/wgbast/m74_ysfm_series.csv"    # Arc L (v0.35.0)
+
+marine:
+  post_smolt_survival_forcing_csv: "data/wgbast/post_smolt_survival_baltic.csv"
+  stock_unit: "sal.27.22-31"                             # Arc N (v0.37.0)
+  seal_abundance_csv: "data/helcom/grey_seal_abundance_baltic.csv"
+  seal_reference_abundance: 30000.0                      # Arc P (v0.39.0)
+  stray_fraction: 0.10                                   # Arc O (v0.38.0)
+
+reaches:
+  Nemunas:
+    river_name: "Tornionjoki"               # Arc L key
+    pspc_smolts_per_year: 880000            # Arc K (v0.34.0)
+    # ... other reach params
+```
+
+Run → emits `smolt_production_by_reach_2015.csv` (Arc K PSPC) +
+`spawner_origin_matrix_2015.csv` (Arc O MSA) + standard outputs.
+
+### Architecture contract: opt-in defaults
+
+| Arc | Default-off knob | Effect when unset |
+|-----|------------------|-------------------|
+| L | `simulation.m74_forcing_csv = None` | No M74 cull (NetLogo parity) |
+| N | `marine.post_smolt_survival_forcing_csv = None`, `current_year = None` | Legacy `marine_mort_base` |
+| O | `marine.stray_fraction = 0.0` | Perfect homing (NetLogo parity) |
+| P | `marine.seal_abundance_csv = None` | Legacy static seal_hazard |
+
+Runs of `configs/example_a.yaml` or `configs/example_b.yaml` (which
+leave these fields unset) produce bit-identical outputs to v0.33.0
+within the seed-determinism guarantee — the
+`tests/test_run_level_parity.py::TestExampleARunVsNetLogo` metrics
+remained stable across all 8 releases.
+
+### Known placeholder data (future Arc 0 refinement)
+
+Four CSVs ship with values traced to accessible peer-reviewed
+literature but would benefit from direct WGBAST/HELCOM PDF table
+extraction:
+
+- `data/wgbast/m74_ysfm_series.csv` ← Vuorinen 2021 Supp Table S2
+- `data/wgbast/post_smolt_survival_baltic.csv` ← WGBAST 2026
+  Annex Table 2.5.x.x posterior medians
+- `data/wgbast/observations/smolt_trap_counts.csv` ← WGBAST 2026 §3
+  trap-count tables
+- `data/helcom/grey_seal_abundance_baltic.csv` ← HELCOM core-indicator
+  report annual tables (v0.41.0 substantively improved 3 values)
+
+All replacements are drop-in CSV edits — no code changes required.
+
+### Cumulative test coverage
+
+Across Arcs K→Q + Arc 0: ~40 new tests, zero regressions to
+pre-existing suites. All 7 parity-preserving opt-in defaults are
+tested: `test_pspc_output`, `test_m74_forcing`,
+`test_egg_emergence_m74`, `test_multi_river_baltic`,
+`test_post_smolt_forcing`, `test_straying`, `test_seal_forcing`,
+`test_bayesian`.
+
+### Canonical references
+
+- `docs/validation/wgbast-roadmap-complete.md` — cross-arc summary
+  with full reference list
+- `docs/releases/v0.34-to-v0.41-wgbast-summary.md` — user-facing
+  release notes
+- `docs/superpowers/plans/2026-04-20-arc-K-to-Q-wgbast-roadmap.md`
+  — 8-iteration-reviewed original plan
+- `docs/superpowers/plans/2026-04-20-arc-M-to-Q-expanded.md` —
+  Arcs M-Q full TDD-detail expansion
 """
 
 
