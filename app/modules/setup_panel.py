@@ -206,12 +206,18 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
     load_btn_rv : reactive callable
         Returns the load button click count (triggers config loading).
     """
+    # Start centered on a neutral global view; the first config load will
+    # re-center on that config's bounds.
     _widget = MapWidget(
         "setup_map",
-        view_state={"longitude": 21.1, "latitude": 55.7, "zoom": 6},
+        view_state={"longitude": 0.0, "latitude": 30.0, "zoom": 1.5},
         style=BASEMAP_LIGHT,
     )
-    _layer_sent = reactive.value(False)
+    # Track which config the map is currently centered on. When this
+    # differs from `_loaded_config`, `_update_layer` re-fits view bounds.
+    # Color-variable changes never reset this, so layer recoloring alone
+    # doesn't trigger a re-fit.
+    _centered_for_config = reactive.value(None)
     _loaded_config = reactive.value(None)
 
     @reactive.effect
@@ -221,7 +227,6 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
         config_path = config_file_rv()
         if config_path:
             _loaded_config.set(config_path)
-            _layer_sent.set(False)
 
     @reactive.effect
     @reactive.event(input.setup_load_btn)
@@ -237,7 +242,6 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
         if not config_path:
             return
         _loaded_config.set(config_path)
-        _layer_sent.set(False)
         try:
             # session here is the module session; its `parent` is the root
             # ShinySession whose inputs include the sidebar's `config_file`.
@@ -264,10 +268,23 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
 
         from app import _resolve_data_dir
         data_dir = Path(_resolve_data_dir(config_path))
-        mesh_path = data_dir / mesh_file
-        if not mesh_path.exists():
-            mesh_path = data_dir / Path(mesh_file).name
-        if not mesh_path.exists():
+        mesh_name = Path(mesh_file).name
+        candidates = [
+            data_dir / mesh_file,             # exact path from config
+            data_dir / mesh_name,             # flat fallback
+            data_dir / "Shapefile" / mesh_name,  # server layout (ExampleA)
+        ]
+        # Final fallback: search anywhere under data_dir
+        mesh_path = next((p for p in candidates if p.exists()), None)
+        if mesh_path is None:
+            matches = list(data_dir.rglob(mesh_name))
+            if matches:
+                mesh_path = matches[0]
+        if mesh_path is None:
+            logger.warning(
+                "Could not find mesh %r under %s; tried: %s",
+                mesh_name, data_dir, [str(p) for p in candidates],
+            )
             return None
 
         gdf = gpd.read_file(str(mesh_path))
@@ -300,20 +317,15 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
 
     @reactive.effect
     async def _update_layer():
-        """Push layers when config or color variable changes."""
+        """Push layers when config or color variable changes. Always
+        re-centers the map when the loaded config changes (not when the
+        color variable changes)."""
         gdf = _load_gdf()
         if gdf is None:
             return
         try:
             layer_var = input.layer_var()
             layer = _build_layer(gdf, layer_var)
-
-            # Fly to the data bounds
-            bounds = gdf.total_bounds
-            center_lon = (bounds[0] + bounds[2]) / 2
-            center_lat = (bounds[1] + bounds[3]) / 2
-            span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
-            zoom = max(1, min(18, 14 - math.log2(max(span, 0.001))))
 
             # Build layer list: water background + grid cells
             layers = []
@@ -322,17 +334,25 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
                 layers.append(wl)
             layers.append(layer)
 
-            if not _layer_sent():
-                await _widget.update(session, layers, animate=False)
+            await _widget.update(session, layers, animate=False)
+
+            # Re-fit view bounds ONLY when the loaded config changed.
+            # Recoloring via `layer_var` leaves `_loaded_config` unchanged,
+            # so the view stays put.
+            current_config = _loaded_config()
+            if _centered_for_config() != current_config:
+                bounds = gdf.total_bounds
+                center_lon = (bounds[0] + bounds[2]) / 2
+                center_lat = (bounds[1] + bounds[3]) / 2
+                span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
+                zoom = max(1, min(18, 14 - math.log2(max(span, 0.001))))
                 await _widget.set_view_state(session, {
                     "longitude": center_lon,
                     "latitude": center_lat,
                     "zoom": zoom,
                     "transitionDuration": 1000,
                 })
-                _layer_sent.set(True)
-            else:
-                await _widget.update(session, layers)
+                _centered_for_config.set(current_config)
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return

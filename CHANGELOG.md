@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.4] - 2026-04-21 (Setup map: auto-center + example_a load fix)
+
+### Fixed
+
+- **example_a didn't load on the setup map**: `_load_gdf` only tried
+  two candidate paths for the shapefile (exact from config, flat
+  fallback). On the server, example_a's shapefile lives at
+  `data/fixtures/example_a/Shapefile/ExampleA.shp` but the config
+  declares `mesh_file: "Example-Project-A_1Reach-1Species/Shapefile/
+  ExampleA.shp"` — neither candidate matched. Added two more fallbacks:
+  `data_dir/Shapefile/<basename>` (server layout) and a full
+  `data_dir.rglob(<basename>)` search as last resort. Logs a warning
+  with the tried paths when all fall through.
+- **Map didn't re-center when switching examples**: replaced the
+  single `_layer_sent` boolean with `_centered_for_config` tracking
+  which config the view bounds match. Every config change (load click
+  or picker change) re-fits the view. Recoloring via the layer
+  variable select no longer triggers a re-fit (wanted).
+- **Neutral initial view**: the map now starts at (0°E, 30°N, zoom
+  1.5) — a world view — instead of the Curonian Lagoon. First config
+  load will fly to its real bounds regardless of which example is
+  selected.
+
+---
+
 ## [0.41.3] - 2026-04-21 (Map rendering cleanup)
 
 ### Fixed
