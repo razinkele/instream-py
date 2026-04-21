@@ -1,0 +1,25 @@
+# WGBAST smolt-trap counts for WGBAST-monitored Baltic rivers.
+# PRELIMINARY placeholder series; replace via Arc 0 PDF extraction of
+# WGBAST 2026 §3 Table.
+#
+# Sources:
+#   ICES (2026). WGBAST. DOI 10.17895/ices.pub.29118545.v3, §3 smolt trap table.
+#   Jokikokko et al. (2005) Simojoki trap-counted series 1990-2003.
+#
+# trap_efficiency = posterior mean probability that a smolt descending the river
+# is captured by the trap (WGBAST calibration via mark-recapture).
+#
+# Schema: year, river, smolts_counted, trap_efficiency, source
+year,river,smolts_counted,trap_efficiency,source
+2010,Simojoki,4200,0.62,placeholder_prelim
+2011,Simojoki,5800,0.63,placeholder_prelim
+2012,Simojoki,7100,0.65,placeholder_prelim
+2013,Simojoki,6500,0.64,placeholder_prelim
+2014,Simojoki,6800,0.65,placeholder_prelim
+2015,Simojoki,7200,0.66,placeholder_prelim
+2010,Tornionjoki,78000,0.18,placeholder_prelim
+2011,Tornionjoki,95000,0.19,placeholder_prelim
+2012,Tornionjoki,118000,0.20,placeholder_prelim
+2013,Tornionjoki,135000,0.20,placeholder_prelim
+2014,Tornionjoki,142000,0.21,placeholder_prelim
+2015,Tornionjoki,155000,0.22,placeholder_prelim

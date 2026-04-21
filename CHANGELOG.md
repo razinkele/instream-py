@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.0] - 2026-04-21 (Arc Q: Bayesian life-cycle wrapper)
+
+### Headline
+
+New `instream.bayesian` subpackage: wraps the existing calibration
+framework in a Bayesian posterior-inference shell comparable to the
+WGBAST Bayesian model (Kuikka et al. 2014 DOI 10.1214/13-sts431).
+`run_smc` drives ABC-SMC with tempered log-likelihood; the toy
+posterior-recovery test confirms the sampler concentrates near a
+known true value from a uniform prior under Gaussian observation noise.
+
+This completes the 5-arc WGBAST-comparability roadmap (K → Q). SalmoPy
+now has: (K) per-reach PSPC output, (L) M74 year-effect, (M) 4 WGBAST
+Baltic river fixtures, (N) post-smolt survival forcing, (O) straying
++ spawner-origin MSA matrix, (P) HELCOM grey-seal abundance scaling,
+(Q) Bayesian wrapper. Every arc preserves NetLogo InSALMO 7.3 parity
+when its opt-in knobs default to None/0.0.
+
+### Added
+
+- **`src/instream/bayesian/__init__.py`** — public API
+- **`src/instream/bayesian/prior.py`** — `Prior` dataclass +
+  `BALTIC_SALMON_PRIORS` (post_smolt_survival, m74_baseline,
+  stray_fraction, fecundity_mult) widened from WGBAST envelopes for
+  SMC tail coverage.
+- **`src/instream/bayesian/observation_model.py`** — Poisson
+  smolt-trap + negative-binomial spawner-counter likelihoods
+  (default `overdispersion_k=50` ≈ CV 15% at mu=100, matches Orell
+  & Erkinaro 2007 video-counter inter-observer agreement).
+- **`src/instream/bayesian/smc.py`** — ABC-SMC with tempered likelihood,
+  ESS-triggered resampling, returns posterior particles + weights +
+  log-marginal-likelihood.
+- **`data/wgbast/observations/smolt_trap_counts.csv`** — preliminary
+  series for Simojoki + Tornionjoki 2010–2015.
+- **`tests/test_bayesian.py`** (8 tests including SMC posterior-recovery).
+
+### References
+
+- Kuikka, S., Vanhatalo, J., Pulkkinen, H., et al. (2014). Experiences
+  in Bayesian Inference in Baltic Salmon Management. *Statistical
+  Science* 29(1). DOI 10.1214/13-sts431.
+- Sisson, S., Fan, Y., & Tanaka, M. (2007). Sequential Monte Carlo
+  without likelihoods. *PNAS* 104(6), 1760-1765.
+  DOI 10.1073/pnas.0607208104.
+- Orell, P. & Erkinaro, J. (2007). Inter-observer variability in
+  counting Atlantic salmon in a northern European river. ICES CM
+  2007/Q:16.
+
+---
+
 ## [0.39.0] - 2026-04-21 (Arc P: HELCOM grey-seal abundance scaling)
 
 ### Headline
