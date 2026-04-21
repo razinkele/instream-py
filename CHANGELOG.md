@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.6] - 2026-04-21 (Fix: setup-panel initial view-state actually updated)
+
+### Fixed
+
+- **Setup panel still opened on Curonian Lagoon**: v0.41.4 added a
+  neutral world-view initial `view_state` but accidentally edited the
+  server-time MapWidget (line 213) instead of the UI-time one (line 96).
+  The UI-time widget is what ships to the browser; only it controls
+  what the user sees on page load. Fixed the UI-time widget to start
+  at (0, 30, zoom 1.5). Server-side `set_view_state` calls can now
+  fly from the neutral view to the loaded fixture's bounds.
+
+---
+
 ## [0.41.5] - 2026-04-21 (WGBAST river fixture rename: example_ prefix)
 
 ### Fixed

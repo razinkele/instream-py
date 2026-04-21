@@ -92,13 +92,15 @@ REACH_COLORS = [
 
 @module.ui
 def setup_ui():
-    # Create widget at UI build time (not in a render function)
+    # Create widget at UI build time (not in a render function).
+    # Initial view is a neutral global position; the first config load
+    # will call set_view_state to fly to the loaded fixture's bounds.
     _widget = MapWidget(
         "setup_map",
         view_state={
-            "longitude": 21.1,
-            "latitude": 55.7,
-            "zoom": 6,
+            "longitude": 0.0,
+            "latitude": 30.0,
+            "zoom": 1.5,
             "pitch": 0,
             "bearing": 0,
         },
