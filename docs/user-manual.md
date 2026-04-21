@@ -632,3 +632,121 @@ cs = model.fem_space.cell_state
 print(f"Depth range: {cs.depth.min():.1f} - {cs.depth.max():.1f} cm")
 print(f"Velocity range: {cs.velocity.min():.1f} - {cs.velocity.max():.1f} cm/s")
 ```
+
+---
+
+## 7. WGBAST-comparable workflow (v0.34.0+)
+
+Since v0.34.0 SalmoPy can produce outputs directly comparable to the
+ICES Working Group on Baltic Salmon and Sea Trout (WGBAST) assessment.
+Every feature below is **opt-in** — runs that don't opt in preserve
+NetLogo InSALMO 7.3 parity. See `docs/validation/wgbast-roadmap-complete.md`
+for the cross-arc overview.
+
+### 7.1 Minimal WGBAST-comparable config
+
+```yaml
+# Arc K — per-reach PSPC output (always on when any reach has PSPC)
+reaches:
+  Nemunas:
+    river_name: "Tornionjoki"            # Arc L key for M74 lookup
+    pspc_smolts_per_year: 880000         # WGBAST PSPC target for this reach
+
+# Arc L — WGBAST M74 year-forcing at egg-emergence
+simulation:
+  m74_forcing_csv: "data/wgbast/m74_ysfm_series.csv"
+
+# Arc N — Post-smolt survival time-varying forcing
+marine:
+  post_smolt_survival_forcing_csv: "data/wgbast/post_smolt_survival_baltic.csv"
+  stock_unit: "sal.27.22-31"
+
+# Arc O — Straying + spawner-origin MSA matrix
+  stray_fraction: 0.10                   # 10% stray (Säisä 2005 / Östergren 2021)
+
+# Arc P — HELCOM grey-seal Holling II scaling
+  seal_abundance_csv: "data/helcom/grey_seal_abundance_baltic.csv"
+  seal_reference_abundance: 30000.0
+  seal_saturation_k_half: 2.0
+```
+
+Default values for any unset field preserve v0.33.0 / NetLogo behavior.
+
+### 7.2 Output artifacts produced
+
+When the above flags are active, end-of-run writes these in addition to
+the standard outputs:
+
+| File | Arc | Description |
+|------|-----|-------------|
+| `smolt_production_by_reach_{year}.csv` | K | Per-reach PSPC achievement table |
+| `outmigrants.csv` (widened) | K | 10-column NetLogo-compat schema |
+| `spawner_origin_matrix_{year}.csv` | O | Natal × spawning matrix (MSA shape) |
+
+### 7.3 Analyzing WGBAST outputs
+
+```python
+import pandas as pd
+
+# Load PSPC achievement
+pspc = pd.read_csv("out/smolt_production_by_reach_2015.csv")
+print(pspc[["reach_name", "smolts_produced", "pspc_achieved_pct"]])
+# Compare against WGBAST 75% management target:
+below_target = pspc[pspc["pspc_achieved_pct"] < 75.0]
+
+# Load spawner-origin matrix (natal rows, spawning cols)
+msa = pd.read_csv("out/spawner_origin_matrix_2015.csv", index_col=0)
+print(f"Diagonal fraction: {msa.values.diagonal().sum() / msa.values.sum():.1%}")
+# Compare against Säisä 2005 Baltic FST envelope
+```
+
+### 7.4 Pre-built WGBAST river fixtures
+
+v0.36.0 ships 4 Baltic river fixtures at the WGBAST latitudinal
+smolt-age gradient:
+
+| River | Fixture | AU | Latitude | PSPC | smolt_min |
+|-------|---------|-----|----------|------|-----------|
+| Tornionjoki | `configs/example_tornionjoki.yaml` | 1 | 65.85°N | 2.2 M | 14 cm |
+| Simojoki | `configs/example_simojoki.yaml` | 1 | 65.60°N | 95 k | 14 cm |
+| Byskeälven | `configs/example_byskealven.yaml` | 2 | 64.98°N | 180 k | 13 cm |
+| Mörrumsån | `configs/example_morrumsan.yaml` | Southern | 56.17°N | 60 k | 11 cm |
+
+Each has latitude-appropriate temperature and flow forcing + WGBAST
+PSPC values baked in. Use as templates for other WGBAST assessment rivers.
+
+### 7.5 Bayesian posterior inference (Arc Q)
+
+v0.40.0 ships `instream.bayesian` — a Sequential Monte Carlo posterior
+sampler analogous to WGBAST's own Bayesian framework. Quickstart:
+
+```python
+from instream.bayesian import (
+    BALTIC_SALMON_PRIORS, log_likelihood_smolt_trap, run_smc,
+)
+import numpy as np
+
+def run_my_model(params, seed):
+    # ... run SalmoPy with parameter overrides, return metric dict
+    return {"total_smolts": simulated_smolt_count}
+
+observations = [{
+    "metric_name": "total_smolts",
+    "observed": 7100,                       # from smolt_trap_counts.csv
+    "ll_fn": log_likelihood_smolt_trap,
+    "ll_kwargs": {"trap_efficiency": 0.65},
+}]
+
+posterior = run_smc(
+    priors=BALTIC_SALMON_PRIORS,
+    run_model_fn=run_my_model,
+    observations=observations,
+    n_particles=500,
+    rng=np.random.default_rng(42),
+)
+# posterior["particles"] shape: (500, 4) — columns match param_names
+# posterior["weights"] shape: (500,)
+```
+
+See `tests/test_bayesian.py` for a self-contained posterior-recovery
+demonstration.

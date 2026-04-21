@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.2] - 2026-04-21 (Full WGBAST doc coverage)
+
+### Documentation
+
+- **`docs/api-reference.md`**: new "WGBAST Roadmap APIs" section
+  documenting every public API added by Arcs K→Q (PSPC writer,
+  M74 forcing loader + cull, post-smolt forcing loader + daily-hazard
+  multiplier, spawner-origin matrix writer, seal forcing loader +
+  Holling II multiplier, `Prior`, `run_smc`, observation likelihoods).
+  Cross-arc config-field summary table + shipped CSV inventory.
+- **`docs/user-manual.md`**: new "7. WGBAST-comparable workflow" chapter
+  covering (7.1) minimal config snippet, (7.2) output artifacts,
+  (7.3) PSPC + MSA matrix analysis recipes, (7.4) pre-built river
+  fixtures, (7.5) Bayesian posterior inference quickstart.
+
+All content cross-links to `docs/validation/wgbast-roadmap-complete.md`
+(cross-arc summary) and `docs/releases/v0.34-to-v0.41-wgbast-summary.md`
+(release notes).
+
+---
+
 ## [0.41.1] - 2026-04-21 (Docs + Shiny help expansion)
 
 ### Documentation

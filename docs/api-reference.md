@@ -893,3 +893,204 @@ Return neighbor indices for given cell (padded with -1).
 def update_hydraulics(self, flow: float, backend) -> None
 ```
 Update depth and velocity for all cells at the given flow by interpolating hydraulic tables via the compute backend.
+
+---
+
+## WGBAST Roadmap APIs (v0.34.0 → v0.41.0)
+
+Public APIs added by Arcs K through Q. All are **opt-in** — they activate
+only when their corresponding config fields or kwargs are set; defaults
+preserve v0.33.0 behavior and NetLogo InSALMO 7.3 parity.
+
+### Arc K — PSPC output
+
+```python
+def write_smolt_production_by_reach(
+    outmigrants,
+    reach_names,
+    reach_pspc,
+    year,
+    output_dir,
+    filename=None,
+) -> Path
+```
+Located in `instream.io.output`. Groups outmigrant records by
+`natal_reach_idx` and emits a per-year CSV with columns `year`,
+`reach_idx`, `reach_name`, `smolts_produced`, `pspc_smolts_per_year`,
+`pspc_achieved_pct`. Non-natal reaches (PSPC is None) emit blank
+pct/pspc but still report `smolts_produced`.
+
+Activated automatically by `write_outputs()` when any
+`ReachConfig.pspc_smolts_per_year` is set. Default filename:
+`smolt_production_by_reach_{year}.csv`.
+
+### Arc L — M74 YSFM forcing
+
+```python
+def load_m74_forcing(path: Path | str) -> Dict[Tuple[int, str], float]
+def ysfm_for_year_river(series, year: int, river: str) -> float
+```
+Located in `instream.io.m74_forcing`. Loads per-(year, river) YSFM
+fractions; returns 0.0 for unknown tuples (fail-safe).
+
+```python
+def apply_m74_cull(
+    n_fry: int, year: int, river: str,
+    forcing_csv: Path | str | None,
+    rng: np.random.Generator,
+) -> int
+```
+Located in `instream.modules.egg_emergence_m74`. Binomial
+`p_survive = 1 - ysfm_fraction`; no-op when `forcing_csv` is None.
+Applied at egg→fry emergence via `redd_emergence(..., m74_forcing_csv,
+current_year, river_name_by_reach_idx)`.
+
+### Arc N — Post-smolt survival forcing
+
+```python
+def load_post_smolt_forcing(path) -> Dict[Tuple[int, str], float]
+def annual_survival_for_year(series, year, stock_unit) -> Optional[float]
+def daily_hazard_multiplier(annual_survival, days_per_year=365) -> float
+```
+Located in `instream.marine.survival_forcing`. `daily_hazard_multiplier`
+inverts `(1 - h)^365 = S_annual` exactly.
+
+`marine_survival` accepts a new `current_year: int | None = None`
+kwarg. When `MarineConfig.post_smolt_survival_forcing_csv` is set AND
+`current_year` is provided, fish with `days_since_ocean_entry < 365`
+have `background_hazard` replaced by the per-(smolt-year, stock-unit)
+value. Smolt year is derived as
+`current_year - (days_since_ocean_entry // 365)`.
+
+### Arc O — Straying + MSA matrix
+
+```python
+# MarineConfig additions
+stray_fraction: float = 0.0  # 0 = perfect homing
+```
+
+`check_adult_return` accepts a new `config=None` kwarg. When
+`config.stray_fraction > 0`, a returning adult's spawning `reach_idx`
+is reassigned (with prob `stray_fraction`) to a random non-natal
+freshwater reach. `natal_reach_idx` stays fixed (genetic property).
+
+```python
+def write_spawner_origin_matrix(
+    spawners, reach_names, year, output_dir, filename=None,
+) -> Path
+```
+Located in `instream.io.output`. Emits a natal × spawning-reach matrix
+(rep-weighted). Row index `natal_reach`; columns are spawning reaches.
+Diagonal under perfect homing; off-diagonals populate with straying.
+
+### Arc P — HELCOM grey-seal scaling
+
+```python
+def load_seal_abundance(path) -> Dict[Tuple[int, str], float]
+def abundance_for_year(series, year, sub_basin) -> Optional[float]
+def seal_hazard_multiplier(
+    abundance: float,
+    reference_abundance: float = 30000.0,
+    saturation_k_half: float = 2.0,
+) -> float
+```
+Located in `instream.marine.seal_forcing`. Holling Type II saturating
+multiplier anchored at `reference` so `mult(reference) = 1.0`.
+Asymptotes at `k_half + 1 = 3.0` for default `k_half = 2.0`.
+
+`seal_hazard` accepts a new `current_year: int | None = None` kwarg.
+When `MarineConfig.seal_abundance_csv` is set AND `current_year` is
+provided, the length-logistic base hazard is multiplied by the HELCOM
+abundance-driven Type II factor.
+
+### Arc Q — Bayesian wrapper
+
+`instream.bayesian` public API:
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Prior:
+    name: str
+    lower: float
+    upper: float
+    shape: str = "uniform"  # {"uniform", "log_uniform", "beta"}
+
+    def sample(self, rng: np.random.Generator, n: int = 1) -> np.ndarray
+```
+
+```python
+BALTIC_SALMON_PRIORS: List[Prior]
+```
+Default Baltic salmon prior set: `post_smolt_survival` U(0.02, 0.18),
+`m74_baseline` U(0, 0.30), `stray_fraction` U(0, 0.25),
+`fecundity_mult` U(500, 900).
+
+```python
+def log_likelihood_smolt_trap(
+    simulated_smolts: float,
+    observed_count: int,
+    trap_efficiency: float,
+) -> float
+
+def log_likelihood_spawner_counter(
+    simulated_spawners: float,
+    observed_count: int,
+    detection_probability: float,
+    overdispersion_k: float = 50.0,
+) -> float
+```
+Poisson + negative-binomial likelihoods. NB default `k=50` matches
+Orell & Erkinaro 2007 video-counter inter-observer agreement
+(CV ≈ 15 % at µ=100).
+
+```python
+def run_smc(
+    priors: Sequence[Prior],
+    run_model_fn: Callable[[Dict[str, float], int], Dict],
+    observations: List[Dict],
+    n_particles: int = 500,
+    n_temperature_steps: int = 10,
+    rng: np.random.Generator | None = None,
+) -> Dict
+```
+ABC-SMC with tempered log-likelihood and ESS-triggered resampling.
+Returns a dict with keys `particles`, `weights`,
+`log_marginal_likelihood`, `param_names`.
+
+Each observation dict must contain `metric_name`, `observed`, `ll_fn`,
+and optionally `ll_kwargs`. See `tests/test_bayesian.py` for a
+self-contained example.
+
+### Config fields added across Arcs K-Q
+
+| Config class | Field | Arc | Default |
+|--------------|-------|-----|---------|
+| `ReachConfig` | `pspc_smolts_per_year: float \| None` | K | None |
+| `ReachConfig` | `river_name: str \| None` | L | None |
+| `ReachParams` | `river_name: str \| None` | L | None |
+| `SimulationConfig` | `m74_forcing_csv: str \| None` | L | None |
+| `MarineConfig` | `post_smolt_survival_forcing_csv: str \| None` | N | None |
+| `MarineConfig` | `stock_unit: str \| None` | N | `"sal.27.22-31"` |
+| `MarineConfig` | `stray_fraction: float` | O | 0.0 |
+| `MarineConfig` | `seal_abundance_csv: str \| None` | P | None |
+| `MarineConfig` | `seal_reference_abundance: float` | P | 30000.0 |
+| `MarineConfig` | `seal_sub_basin: str` | P | `"main_basin"` |
+| `MarineConfig` | `seal_saturation_k_half: float` | P | 2.0 |
+
+### Shipped forcing CSVs
+
+All under `data/wgbast/` or `data/helcom/`. Schema:
+`Dict[Tuple[int, str], float]` in-memory, comment-tolerant CSV on disk.
+
+| File | Arc | Keys |
+|------|-----|------|
+| `data/wgbast/m74_ysfm_series.csv` | L | (year, river) |
+| `data/wgbast/post_smolt_survival_baltic.csv` | N | (year, stock_unit) |
+| `data/wgbast/observations/smolt_trap_counts.csv` | Q | (year, river) |
+| `data/helcom/grey_seal_abundance_baltic.csv` | P | (year, sub_basin) |
+
+See `docs/validation/wgbast-roadmap-complete.md` for the cross-arc
+narrative and `docs/releases/v0.34-to-v0.41-wgbast-summary.md` for
+user-facing release notes.
