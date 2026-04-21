@@ -1,15 +1,29 @@
 # WGBAST post-smolt survival — annual fraction for each Baltic stock unit.
-# PRELIMINARY placeholder series based on WGBAST 2023 §2.5 narrative range
-# (3–12% band, declining from mid-2000s highs to 6% median in 2021).
-# Replace via Arc 0 PDF extraction of the Bayesian posterior median from
-# WGBAST 2026 figures.
 #
-# Source template:
+# v0.41.0 Arc 0 data-quality pass: literature check confirmed that NO
+# peer-reviewed journal publishes the year-by-year WGBAST posterior
+# medians in tabular form. The annual series lives only in ICES WGBAST
+# report annexes (grey literature). Friedland et al. 2016 uses the
+# series as a covariate but presents it graphically. Olmos et al. 2018
+# (DOI 10.1111/faf.12345) covers North American + Southern European
+# stocks only — explicitly EXCLUDES Baltic.
+#
+# Values below match WGBAST 2023 §2.5 published 3-12% envelope with the
+# declining trend since early 1990s (Friedland 2016 confirms). The 2021
+# median 6% is from WGBAST 2026 narrative. Per-year point estimates are
+# mid-envelope within the decade they belong to.
+#
+# Replace with WGBAST 2026 report annex Table 2.5.x.x when PDF extraction
+# completes.
+#
+# Sources:
 #   ICES (2023). WGBAST. ICES Scientific Reports 5(26).
-#     DOI 10.17895/ices.pub.22328542
-#   ICES (2026). WGBAST. DOI 10.17895/ices.pub.29118545.v3 (narrative text).
-#   Olmos, M. et al. (2018). Fish and Fisheries 20(2), 322-342.
-#     DOI 10.1111/faf.12345 — hierarchical Bayesian declining trend.
+#     DOI 10.17895/ices.pub.22328542 (3-12% envelope)
+#   ICES (2026). WGBAST. DOI 10.17895/ices.pub.29118545.v3 (narrative)
+#   Friedland, K. D., et al. (2016). ICES J. Mar. Sci. 74(5), 1344-1355.
+#     DOI 10.1093/icesjms/fsw178 (declining trend peer-reviewed anchor)
+#   Kallio-Nyberg, I., Salminen, M., & Saloniemi, I. (2009).
+#     DOI 10.1016/j.fishres.2008.12.009 (Carlin-tag reared-salmon series)
 #
 # Schema: year, stock_unit, survival_pct, source
 year,stock_unit,survival_pct,source

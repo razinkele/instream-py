@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0] - 2026-04-21 (Arc 0: data-quality pass)
+
+### Headline
+
+Upgrades 3 placeholder CSVs from K→Q roadmap with literature-traced
+values from accessible peer-reviewed sources. The full per-year tables
+for M74 YSFM (Vuorinen 2021 Supp Table S2) and WGBAST post-smolt
+survival (WGBAST report annex) remain PDF-only; scite and the ICES
+MCP cannot index supplemental-table data. This release tightens what
+can be tightened without PDF extraction.
+
+### Changed
+
+- **`data/helcom/grey_seal_abundance_baltic.csv`**: substantively
+  upgraded. 1988 baseline raised from 2,800 → 3,500 (Harding &
+  Härkönen 1999 bounty-statistics backcast). Pre-2000 values flagged
+  as `min_pop_bounty_backcast` / `interpolation_8pct_growth` rather
+  than implying aerial counts (coordinated aerial moult surveys began
+  2000). 2014 = 32,019 (Lai 2021 HELCOM SEAL 2015). 2020 = 40,000 and
+  2023 = 45,000 (Westphal 2025).
+- **`data/wgbast/m74_ysfm_series.csv`**: header enriched with Vuorinen
+  2021 Bothnian Bay pooled-range anchors (1992-1993 > 0.75, 1994-1996
+  0.66-0.76, 1999-2001 0.32-0.39, 2002-2004 ~0, 2005-2009 0.09-0.23,
+  2011-2014 0.00, 2015-2017 worsened). Values confirmed consistent
+  with pooled ranges. Per-year per-river refinement requires Supp
+  Table S2 PDF.
+- **`data/wgbast/post_smolt_survival_baltic.csv`**: header upgraded
+  with Friedland et al. 2016 (DOI 10.1093/icesjms/fsw178) as the
+  peer-reviewed declining-trend anchor. Olmos 2018 explicitly excludes
+  Baltic; removed from source list. Kallio-Nyberg 2009 (DOI
+  10.1016/j.fishres.2008.12.009) noted as supplementary reared-salmon
+  Carlin-tag source.
+
+### Documentation
+
+- `docs/validation/wgbast-roadmap-complete.md` cross-arc summary
+  (added 1270ec8 in the tail of v0.40.0).
+
+### References added this release
+
+- Friedland, K. D., Dannewitz, J., Romakkaniemi, A., et al. (2016).
+  Post-smolt survival of Baltic salmon. *ICES J. Mar. Sci.* 74(5).
+  DOI 10.1093/icesjms/fsw178.
+- Harding, K. C., Härkönen, T., Helander, B., & Karlsson, O. (2007).
+  NAMMCO Sci. Publ. 6, 33-56. DOI 10.7557/3.2720.
+- Kallio-Nyberg, I., Salminen, M., & Saloniemi, I. (2009). *Fisheries
+  Research* 96(2-3), 289-295.
+  DOI 10.1016/j.fishres.2008.12.009.
+- Galatius, A., et al. (2020). *Wildlife Biology* 2020(4).
+  DOI 10.2981/wlb.00711.
+
+---
+
 ## [0.40.0] - 2026-04-21 (Arc Q: Bayesian life-cycle wrapper)
 
 ### Headline

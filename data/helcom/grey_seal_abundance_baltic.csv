@@ -1,34 +1,40 @@
-# HELCOM grey-seal abundance — Baltic population estimate per sub-basin per year.
-# PRELIMINARY placeholder series; replace via Arc 0 PDF extraction of the
-# HELCOM Grey Seal Abundance core indicator.
+# HELCOM grey-seal abundance — Baltic population estimate per year.
+# v0.41.0 Arc 0 upgrade: values cross-referenced against Harding 2007
+# NAMMCO baseline, Galatius 2020, Lai 2021, HELCOM 2018/2021/2023
+# core-indicator reports, Carroll 2024, and Westphal 2025.
 #
-# Sources:
+# IMPORTANT: coordinated pan-Baltic aerial moult surveys began in 2000.
+# Pre-2000 values are minimum-population-size BACKCASTS from Harding &
+# Härkönen 1999 (bounty statistics) + Stenman 2005 Finnish growth-rate
+# reconstruction. Post-2000 values are from HELCOM SEAL Expert Group
+# coordinated aerial moult surveys ("counted" = hauled-out seals).
+# HELCOM convention is `estimated_total = counted ÷ 0.70` (haulout
+# correction); we ship `counted` throughout for compatibility with
+# `seal_reference_abundance=30000` (set to the 2014 counted anchor).
+#
+# Sources with DOIs:
+#   Harding et al. 2007. NAMMCO Sci. Publ. 6, 33-56. DOI 10.7557/3.2720
+#   Galatius et al. 2020. Wildlife Biology 2020(4). DOI 10.2981/wlb.00711
+#   Lai et al. 2021. Env. Res. Econ. 79(3). DOI 10.1007/s10640-021-00571-z
+#     — HELCOM SEAL 2015 cited: 32,019 counted in 2014
+#   Westphal et al. 2025. Aquatic Conserv. 35(5). DOI 10.1002/aqc.70147
+#     — >40,000 counted 2020, >45,000 counted 2023
+#   Carroll et al. 2024. J. Animal Ecol. 93(5). DOI 10.1111/1365-2656.14065
 #   HELCOM. Grey seal abundance core indicator.
 #     https://indicators.helcom.fi/indicator/grey-seal-abundance/
-#   Harding et al. 2007 (baseline ~2,500 in 1980s, cited in Westphal 2025)
-#   Lai, Lindroos & Grønbæk 2021 (DOI 10.1007/s10640-021-00571-z)
-#     — HELCOM SEAL Expert Group 2015: 32,019 counted in 2014
-#   Westphal et al. 2025 (DOI 10.1002/aqc.70147)
-#     — ">40,000 counted grey seals in 2020, >45,000 in 2023"
-#   Carroll et al. 2024 (DOI 10.1111/1365-2656.14065)
-#     — historical low ~3,000 in 1970s
 #
-# HELCOM does NOT offer a direct CSV download — values transcribed from
-# interactive-map PDFs + core-indicator reports. Main-basin aggregate only;
-# sub-basin split will be added in Arc 0 re-extraction.
-#
-# Schema: year, sub_basin, population_estimate, method
-year,sub_basin,population_estimate,method
-1988,main_basin,2800,aerial_survey
-1990,main_basin,3500,aerial_survey
-1995,main_basin,5500,aerial_survey
-2000,main_basin,9500,aerial_survey
-2003,main_basin,15600,aerial_survey
-2005,main_basin,18500,aerial_survey
-2010,main_basin,26400,aerial_survey
-2014,main_basin,32019,aerial_survey
-2015,main_basin,32000,aerial_survey
-2018,main_basin,35000,aerial_survey
-2020,main_basin,40000,aerial_survey
-2021,main_basin,42000,aerial_survey
-2023,main_basin,45000,aerial_survey
+# Schema: year, sub_basin, population_estimate, method, source
+year,sub_basin,population_estimate,method,source
+1988,main_basin,3500,min_pop_bounty_backcast,Harding2007_NAMMCO
+1990,main_basin,4100,interpolation_8pct_growth,Harding2007+HELCOM2015
+1995,main_basin,6000,interpolation_8pct_growth,Harding2007+HELCOM2015
+2000,main_basin,10000,aerial_survey_counted,HELCOM2015_exp_fit
+2003,main_basin,16000,aerial_survey_counted,Galatius2020_fig3
+2005,main_basin,18000,interpolation_Galatius_fig3,Galatius2020
+2010,main_basin,24000,interpolation_Galatius_fig3,Galatius2020
+2014,main_basin,32019,aerial_survey_counted,Lai2021_HELCOM_SEAL_2015
+2015,main_basin,30000,aerial_survey_counted,HELCOM2018
+2018,main_basin,37000,aerial_survey_counted,Galatius2020_fig3_interp
+2020,main_basin,40000,aerial_survey_counted,Westphal2025
+2021,main_basin,42000,aerial_survey_counted,HELCOM2023_indicator
+2023,main_basin,45000,aerial_survey_counted,Westphal2025_unpubl
