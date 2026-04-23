@@ -139,15 +139,18 @@ class FEMMesh:
         vel_flows : ndarray, shape (num_vel_flows,)
         vel_values : ndarray, shape (num_cells, num_vel_flows)
         """
+        # v0.43.5 Task E2: copy arrays so downstream mutations of
+        # cell_state don't corrupt FEMMesh's internal state. Symmetric
+        # with PolygonMesh.to_cell_state which already copies.
         return CellState(
-            area=self._areas,
-            centroid_x=self._centroids_x,
-            centroid_y=self._centroids_y,
-            reach_idx=self._reach_idx,
-            num_hiding_places=self._num_hiding,
-            dist_escape=self._dist_escape,
-            frac_vel_shelter=self._frac_vel_shelter,
-            frac_spawn=self._frac_spawn,
+            area=self._areas.copy(),
+            centroid_x=self._centroids_x.copy(),
+            centroid_y=self._centroids_y.copy(),
+            reach_idx=self._reach_idx.copy(),
+            num_hiding_places=self._num_hiding.copy(),
+            dist_escape=self._dist_escape.copy(),
+            frac_vel_shelter=self._frac_vel_shelter.copy(),
+            frac_spawn=self._frac_spawn.copy(),
             depth=np.zeros(self._n_cells, dtype=np.float64),
             velocity=np.zeros(self._n_cells, dtype=np.float64),
             light=np.zeros(self._n_cells, dtype=np.float64),
