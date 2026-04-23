@@ -36,9 +36,9 @@ def _water_layer():
         feat["properties"]["_fill"] = _WATER_COLORS.get(wtype, [173, 216, 230, 80])
     return geojson_layer(
         id="water-bg", data=geojson,
-        get_fill_color="@@=properties._fill",
-        get_line_color=[100, 140, 180, 60],
-        get_line_width=1, stroked=True, filled=True, pickable=False,
+        getFillColor="@@=properties._fill",
+        getLineColor=[100, 140, 180, 60],
+        getLineWidth=1, stroked=True, filled=True, pickable=False,
     )
 
 # OpenStreetMap-based basemap with terrain, roads, labels — highly visible
