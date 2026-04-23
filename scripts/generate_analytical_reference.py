@@ -4,6 +4,16 @@ import math
 import numpy as np
 from pathlib import Path
 
+try:
+    import salmopy  # noqa: F401
+except ImportError as _exc:
+    raise SystemExit(
+        f"salmopy not importable: {_exc}\n"
+        "This script requires salmopy to be installed in the active "
+        "environment (e.g. `micromamba run -n shiny python scripts/generate_analytical_reference.py`)."
+    )
+
+
 REF_DIR = Path(__file__).parent.parent / "tests" / "fixtures" / "reference"
 REF_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -92,7 +102,6 @@ def generate_depth_velocity_reference():
     """Tests 2-3: Cell depths and velocities at various flows."""
     import sys
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from salmopy.io.hydraulics_reader import read_depth_table, read_velocity_table
 
     data_dir = Path(__file__).parent.parent / "tests" / "fixtures" / "example_a"
@@ -128,7 +137,6 @@ def generate_cstepmax_reference():
     """
     import sys
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from salmopy.model import SalmopyModel
     from salmopy.modules.growth import cmax_temp_function, c_stepmax
 
@@ -182,7 +190,6 @@ def generate_growth_report_reference():
     """
     import sys
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from salmopy.modules.growth import growth_rate_for
 
     lengths = [5.0, 10.0, 15.0, 20.0, 25.0]
@@ -268,7 +275,6 @@ def generate_survival_reference():
     """
     import sys
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from salmopy.modules.survival import (
         survival_high_temperature,
         survival_stranding,
@@ -364,7 +370,6 @@ def generate_redd_survival_reference():
     """
     import sys
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from salmopy.modules.survival import (
         redd_survival_lo_temp,
         redd_survival_hi_temp,
@@ -410,7 +415,6 @@ def generate_spawn_cell_reference():
     """
     import sys
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from salmopy.modules.spawning import spawn_suitability
 
     depths = np.arange(0.0, 250.0, 10.0)
@@ -446,7 +450,6 @@ def generate_fitness_golden():
     """
     import sys
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from salmopy.model import SalmopyModel
 
     CONFIGS = Path(__file__).parent.parent / "configs"
