@@ -49,20 +49,15 @@ class TestProtocolCompliance:
 
 class TestGrowthDelegation:
     def test_returns_vector(self, cfg):
+        # v0.43.5 Task B3: Protocol signature now takes `config` instead
+        # of unpacked kwargs, aligned with marine_survival.
         backend = NumpyMarineBackend()
         delta = backend.marine_growth(
             weights=np.array([500.0, 1000.0]),
             temperatures=np.array([12.0, 12.0]),
             prey_indices=np.array([1.0, 1.0]),
             conditions=np.array([1.0, 1.0]),
-            cmax_A=cfg.marine_cmax_A,
-            cmax_B=cfg.marine_cmax_B,
-            cmax_topt=cfg.marine_cmax_topt,
-            cmax_tmax=cfg.marine_cmax_tmax,
-            resp_A=cfg.marine_resp_A,
-            resp_B=cfg.marine_resp_B,
-            resp_Q10=cfg.marine_resp_Q10,
-            growth_efficiency=cfg.marine_growth_efficiency,
+            config=cfg,
         )
         assert delta.shape == (2,)
         assert np.all(delta > 0)

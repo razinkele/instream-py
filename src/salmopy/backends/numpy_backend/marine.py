@@ -30,14 +30,22 @@ class NumpyMarineBackend:
         temperatures: np.ndarray,
         prey_indices: np.ndarray,
         conditions: np.ndarray,
-        **species_params: Any,
+        config: Any,
     ) -> np.ndarray:
         return _growth(
             weights=weights,
             temperatures=temperatures,
             prey_indices=prey_indices,
             conditions=conditions,
-            **species_params,
+            cmax_A=config.marine_cmax_A,
+            cmax_B=config.marine_cmax_B,
+            cmax_topt=config.marine_cmax_topt,
+            cmax_tmax=config.marine_cmax_tmax,
+            resp_A=config.marine_resp_A,
+            resp_B=config.marine_resp_B,
+            resp_Q10=config.marine_resp_Q10,
+            resp_ref_temp=config.marine_resp_ref_temp,
+            growth_efficiency=config.marine_growth_efficiency,
         )
 
     # -- survival ---------------------------------------------------------

@@ -23,9 +23,16 @@ class MarineBackend(Protocol):
         temperatures: np.ndarray,
         prey_indices: np.ndarray,
         conditions: np.ndarray,
-        **species_params: Any,
+        config: Any,
     ) -> np.ndarray:
-        """Return daily weight delta in grams for each fish."""
+        """Return daily weight delta in grams for each fish.
+
+        Parameters
+        ----------
+        config : Any
+            Marine-config bag (species-aware growth parameters). Treated
+            opaquely by the Protocol; each backend unpacks its required fields.
+        """
         ...
 
     def marine_survival(

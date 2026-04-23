@@ -6,6 +6,17 @@ from salmopy.backends._interface import MarineBackend
 from salmopy.backends.numpy_backend.marine import NumpyMarineBackend
 
 
+def test_marine_growth_protocol_matches_implementation():
+    """v0.43.5 Task B3: marine_growth Protocol must match numpy impl,
+    same invariant as marine_survival (Phase 2 Task 2.1)."""
+    proto_params = list(inspect.signature(MarineBackend.marine_growth).parameters)
+    impl_params = list(inspect.signature(NumpyMarineBackend.marine_growth).parameters)
+    assert proto_params == impl_params, (
+        f"MarineBackend.marine_growth signature drifts from NumpyMarineBackend:\n"
+        f"  Protocol: {proto_params}\n  Impl:     {impl_params}"
+    )
+
+
 def test_marine_survival_protocol_matches_implementation():
     proto_sig = inspect.signature(MarineBackend.marine_survival)
     impl_sig = inspect.signature(NumpyMarineBackend.marine_survival)
