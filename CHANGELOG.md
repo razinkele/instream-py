@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.0] - 2026-04-23 (Phase 2: Scientific/numerical hardening)
+
+### Changed — BREAKING
+
+- **`MarineBackend.marine_survival` Protocol signature changed** from `**species_params` to `config: Any` (minor-version bump). Downstream users implementing the Protocol externally must update their `marine_survival(...)` signature.
+- **New `resp_ref_temp` field on `SpeciesParams` and `SpeciesConfig`** (default 15.0 degC). Respiration Q10 exponent now anchors on this instead of `cmax_topt`. Users with non-default `cmax_topt` (e.g., Arctic species at 12.0) will see corrected respiration values.
+
+### Fixed
+
+- **`backends/_interface.py`**: `MarineBackend.marine_survival` Protocol signature aligned with numpy implementation. Structural subtyping no longer masks silent kwarg-binding drift.
+- **`backends/jax_backend`**: `growth_rate` now raises `NotImplementedError` on multi-species input (was silently using species-0's `cmax_temp_table` for all fish).
+- **`backends/numba_backend/fitness.py`**: shelter eligibility threshold scales by `superind_rep` at both Pass-1 sites (lines 286, 319) to match the Pass-2 depletion charge. Super-individuals no longer over-deplete shared shelter.
+- **`bayesian/smc.py`**: log-marginal-likelihood accumulator uses log-sum-exp instead of `.mean()`, eliminating a spurious `-log(N)` per temperature step (N=64 over 4 steps produced `-16.64` instead of `0` for flat likelihood).
+- **`calibration/losses.py`**: `rmse_loss` now returns `NaN` (not `0.0`) when no finite pairs remain. Optimizers no longer rank crashed (all-NaN) runs as optimal.
+- **`marine/survival.py`**: post-smolt forced-hazard write mask narrowed to `post_smolt_mask & (smolt_years == sy)` — defense-in-depth behind the existing downstream guard.
+- **`marine/growth.py`**: respiration Q10 anchors on new `resp_ref_temp` (default 15 degC) instead of `cmax_topt`. Fixes silent respiration over-estimation for species with non-standard consumption optima.
+
+### Added
+
+- `tests/test_backend_protocol_hardening.py` — Protocol/impl signature parity + JAX multi-species guard.
+- `tests/test_shelter_consistency_hardening.py` — shelter eligibility rep-scale invariant.
+- `tests/test_batch_select_habitat_parity.py` — batch kernel coverage (output invariants + end-to-end smoke).
+- `tests/test_smc_hardening.py` — SMC log-marginal flat-likelihood zero-evidence test.
+- `tests/test_calibration_losses_hardening.py` — rmse_loss NaN semantics.
+- `tests/test_post_smolt_mask_hardening.py` — structural guard for the narrowed mask.
+- `tests/test_marine_growth_q10_hardening.py` — Q10 reference temp invariants.
+- `tests/test_expected_fitness_dedup.py` — Hypothesis property tests on `habitat_fitness.expected_fitness`.
+
+### Internal
+
+- `behavior.py` imports `expected_fitness` from `habitat_fitness` as a single-source-of-truth signal. The inline batch/scalar-fallback implementations are numerically equivalent to the canonical function and will be refactored to delegate in a follow-up patch.
+
 ## [0.42.0] - 2026-04-23 (Rebrand: inSTREAM → Salmopy)
 
 ### Changed — BREAKING
