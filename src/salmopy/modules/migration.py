@@ -133,6 +133,14 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
             ))
             trout_state.life_history[fish_idx] = int(LifeStage.OCEAN_ADULT)
             trout_state.zone_idx[fish_idx] = 0
+            # v0.43.5 Task B1: refresh smolt_date so days_since_ocean_entry
+            # starts at 0 for re-entering kelts. Previously the original
+            # (years-ago) smolt_date persisted, making days_since_ocean_entry
+            # thousands of days — the fish immediately bypassed the
+            # estuary-stress zone on the next daily_step.
+            trout_state.smolt_date[fish_idx] = (
+                current_date.toordinal() if current_date is not None else 0
+            )
             trout_state.cell_idx[fish_idx] = -1
             trout_state.reach_idx[fish_idx] = -1
             return outmigrants, False

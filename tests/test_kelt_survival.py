@@ -156,7 +156,13 @@ class TestKeltReentry:
         assert ts.life_history[0] == int(LifeStage.OCEAN_ADULT)
         assert ts.zone_idx[0] == 0
         assert ts.sea_winters[0] == 2, "sea_winters must be preserved"
-        assert ts.smolt_date[0] == 734000, "smolt_date must be preserved"
+        # v0.43.5: smolt_date REFRESHES to current day on kelt re-entry so
+        # days_since_ocean_entry starts at 0; previously the stale value
+        # persisted and fish immediately bypassed the estuary-stress zone.
+        assert ts.smolt_date[0] == date.toordinal(), (
+            f"smolt_date must refresh on kelt re-entry; got {ts.smolt_date[0]}, "
+            f"expected {date.toordinal()}"
+        )
         assert smoltified is False, "KELT re-entry is not a smoltification"
 
     def test_kelt_without_marine_config_falls_through(self):
