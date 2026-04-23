@@ -1,8 +1,50 @@
-"""Output writers for inSTREAM simulation results."""
+"""Output writers for Salmopy simulation results."""
 
 import csv
+import os
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 import numpy as np
+
+
+@contextmanager
+def _atomic_write_csv(path):
+    """Yield a writable file handle whose contents are atomically renamed
+    to `path` on successful close. A killed process never leaves a
+    half-written CSV visible to readers.
+
+    Uses tempfile.NamedTemporaryFile in the same directory so os.replace
+    is a same-volume rename (atomic on POSIX and Windows).
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w",
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+        newline="",
+        encoding="utf-8",
+    )
+    try:
+        yield tmp
+        tmp.flush()
+        try:
+            os.fsync(tmp.fileno())
+        except OSError:
+            # fsync not supported (e.g., some virtual filesystems)
+            pass
+        tmp.close()
+        os.replace(tmp.name, str(path))
+    except Exception:
+        tmp.close()
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
 
 
 def write_population_census(records, output_dir, filename="population_census.csv"):
@@ -10,7 +52,7 @@ def write_population_census(records, output_dir, filename="population_census.csv
     if not records:
         return
     path = Path(output_dir) / filename
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.DictWriter(f, fieldnames=records[0].keys())
         writer.writeheader()
         writer.writerows(records)
@@ -25,7 +67,7 @@ def write_fish_snapshot(
         filename = "fish_snapshot_{}.csv".format(current_date)
     path = Path(output_dir) / filename
     alive = trout_state.alive_indices()
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -72,7 +114,7 @@ def write_redd_snapshot(
         filename = "redd_snapshot_{}.csv".format(current_date)
     path = Path(output_dir) / filename
     alive_redds = np.where(redd_state.alive)[0]
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -132,7 +174,7 @@ def write_outmigrants(
     (Arc K.4) to surface partial wiring early.
     """
     path = Path(output_dir) / filename
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow([
             "species", "timestep", "reach_idx", "natal_reach_idx",
@@ -222,7 +264,7 @@ def write_smolt_production_by_reach(
         if 0 <= r < len(counts):
             counts[r] += int(om.get("superind_rep", 1))
 
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow([
             "year", "reach_idx", "reach_name",
@@ -290,7 +332,8 @@ def write_spawner_origin_matrix(
             m[natal][spawn] += rep
     df = pd.DataFrame(m, index=reach_names, columns=reach_names)
     df.index.name = "natal_reach"
-    df.to_csv(path)
+    with _atomic_write_csv(path) as f:
+        df.to_csv(f, index=False)
     return path
 
 
@@ -300,7 +343,7 @@ def write_cell_snapshot(cell_state, current_date, output_dir, filename=None):
         filename = "cell_snapshot_{}.csv".format(current_date)
     path = Path(output_dir) / filename
     n = cell_state.area.shape[0]
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -344,7 +387,7 @@ def write_habitat_summary(cell_state, reach_idx_map, output_dir, date_str):
     vel_labels = ["0-5", "5-15", "15-30", "30-60", "60-100", "100+"]
 
     path = Path(output_dir) / f"habitat-summary-{date_str}.csv"
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow(
             ["reach", "depth_class", "velocity_class", "total_area_cm2", "num_cells"]
@@ -382,7 +425,7 @@ def write_growth_report(trout_state, species_order, output_dir, date_str):
     date_str : str
     """
     path = Path(output_dir) / f"growth-report-{date_str}.csv"
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -421,7 +464,7 @@ def write_growth_report(trout_state, species_order, output_dir, date_str):
 def write_summary(model, output_dir, filename="simulation_summary.csv"):
     """Write end-of-simulation summary."""
     path = Path(output_dir) / filename
-    with open(path, "w", newline="") as f:
+    with _atomic_write_csv(path) as f:
         writer = csv.writer(f)
         writer.writerow(["metric", "value"])
         writer.writerow(["final_date", str(model.time_manager._current_date.date())])
