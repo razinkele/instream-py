@@ -959,14 +959,9 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             if b_shelter[fi_local]:
                 trout_state.in_shelter[i] = True
 
-            # Arc D: expected_fitness port of NetLogo InSALMO 7.3
-            # fitness-for (nlogo:2798-2840). daily_survival is the
-            # non_starve*s_cond product at the chosen cell; we use
-            # mean_starv_survival=1.0 as a per-tick proxy (condition
-            # survival is already folded into non_starve). The length
-            # penalty applies when expected-length-at-horizon falls
-            # below species fitness_length.
-            ds = float(b_non_starves[fi_local])
+            # Arc D: delegate to canonical expected_fitness (v0.43.6).
+            # mean_starv_survival=1.0 per-tick proxy (condition survival
+            # is already folded into non_starve).
             if _sp_fit_horizon is not None:
                 sp_i = int(trout_state.species_idx[i])
                 horizon = float(_sp_fit_horizon[sp_i])
@@ -974,20 +969,16 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             else:
                 horizon = 60.0
                 fit_len = 15.0
-            if horizon <= 0.0:
-                base = 0.0
-            else:
-                # Clamp to avoid negative-base pow issues
-                ds_c = max(0.0, min(1.0, ds))
-                base = ds_c ** horizon
-                if fit_len > 0.0:
-                    L_now = float(trout_state.length[i])
-                    if L_now < fit_len:
-                        L_at_h = L_now + float(b_growths[fi_local]) * horizon
-                        if L_at_h < fit_len:
-                            base *= max(0.0, L_at_h) / fit_len
+            base = expected_fitness(
+                daily_survival=float(b_non_starves[fi_local]),
+                mean_starv_survival=1.0,
+                length=float(trout_state.length[i]),
+                daily_growth=float(b_growths[fi_local]),
+                time_horizon=int(horizon),
+                fitness_length=fit_len,
+            )
             if hasattr(trout_state, "best_habitat_fitness"):
-                trout_state.best_habitat_fitness[i] = max(0.0, min(1.0, base))
+                trout_state.best_habitat_fitness[i] = base
 
     elif len(normal_fish) > 0:
         # === FALLBACK: per-fish Python/Numba scalar path ===
@@ -1447,7 +1438,7 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             trout_state.reach_idx[i] = cs.reach_idx[best_c]
             trout_state.last_growth_rate[i] = best_growth
 
-            # Arc D: expected_fitness post-pass (same formula as batch path)
+            # Arc D: delegate to canonical expected_fitness (v0.43.6)
             sp_i = int(trout_state.species_idx[i])
             if _sp is not None and "fitness_horizon" in _sp:
                 _fh = float(_sp["fitness_horizon"][sp_i])
@@ -1455,17 +1446,16 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
             else:
                 _fh = 60.0
                 _fitL = 15.0
-            if _fh <= 0.0:
-                _ehab = 0.0
-            else:
-                _dsc = max(0.0, min(1.0, best_non_starve))
-                _ehab = _dsc ** _fh
-                if _fitL > 0.0 and _fl < _fitL:
-                    _L_at_h = _fl + best_growth * _fh
-                    if _L_at_h < _fitL:
-                        _ehab *= max(0.0, _L_at_h) / _fitL
+            _ehab = expected_fitness(
+                daily_survival=float(best_non_starve),
+                mean_starv_survival=1.0,
+                length=float(_fl),
+                daily_growth=float(best_growth),
+                time_horizon=int(_fh),
+                fitness_length=_fitL,
+            )
             if hasattr(trout_state, "best_habitat_fitness"):
-                trout_state.best_habitat_fitness[i] = max(0.0, min(1.0, _ehab))
+                trout_state.best_habitat_fitness[i] = _ehab
 
             if best_a == 0:
                 intake = drift_intake(
