@@ -117,31 +117,31 @@ def page(shared_page: Page) -> Page:
     return shared_page
 
 
-_sim_ran = False
-
-
 @pytest.fixture(scope="session")
 def sim_page(shared_page: Page) -> Page:
-    """Run simulation once and return the page with results."""
-    global _sim_ran
-    if not _sim_ran:
-        pg = shared_page
-        # Use Shiny JS API to set date values (plain fill doesn't trigger Shiny binding)
-        pg.evaluate("""() => {
-            Shiny.setInputValue('start_date', '2011-04-01');
-            Shiny.setInputValue('end_date', '2011-04-15');
-        }""")
-        time.sleep(1)
-        pg.locator("#run_btn").click()
-        pg.wait_for_function(
-            """() => {
-                const el = document.querySelector('#progress_text');
-                return el && el.textContent.includes('Complete');
-            }""",
-            timeout=300_000,
-        )
-        time.sleep(3)
-        _sim_ran = True
+    """Run simulation once per session and return the page with results.
+
+    The pytest session scope guarantees this fixture body runs exactly
+    once — no module-level guard flag needed. (Phase 4: the previous
+    `_sim_ran` global was redundant and would have leaked state under
+    pytest-xdist + --import-mode=importlib.)
+    """
+    pg = shared_page
+    # Use Shiny JS API to set date values (plain fill doesn't trigger Shiny binding)
+    pg.evaluate("""() => {
+        Shiny.setInputValue('start_date', '2011-04-01');
+        Shiny.setInputValue('end_date', '2011-04-15');
+    }""")
+    time.sleep(1)
+    pg.locator("#run_btn").click()
+    pg.wait_for_function(
+        """() => {
+            const el = document.querySelector('#progress_text');
+            return el && el.textContent.includes('Complete');
+        }""",
+        timeout=300_000,
+    )
+    time.sleep(3)
     return shared_page
 
 
