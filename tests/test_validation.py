@@ -828,7 +828,7 @@ class TestReddSurvivalMatchesNetLogoCSV:
 
             # NetLogo formula: mortality_rate = (1 - s_daily) * eggs * step_length
             # s_daily is the logistic value (step_length=1.0)
-            s_lo_daily = redd_survival_lo_temp(temp, lo_T1, lo_T9, step_length=1.0)
+            s_lo_daily = redd_survival_lo_temp(temp, lo_T1, lo_T9)
             expected_died_lo = (1.0 - s_lo_daily) * initial_eggs * step_length
 
             # Poisson tolerance: allow 4-sigma deviation or minimum 2 eggs
@@ -840,7 +840,7 @@ class TestReddSurvivalMatchesNetLogoCSV:
             # High-temp: applied to eggs remaining after lo-T deaths
             remaining_after_lo = initial_eggs - nl_died_lo
             if remaining_after_lo > 0:
-                s_hi_daily = redd_survival_hi_temp(temp, hi_T1, hi_T9, step_length=1.0)
+                s_hi_daily = redd_survival_hi_temp(temp, hi_T1, hi_T9)
                 expected_died_hi = (1.0 - s_hi_daily) * remaining_after_lo * step_length
                 tol_hi = max(2.0, 4.0 * math.sqrt(max(expected_died_hi, 1.0)))
                 total_hi += 1

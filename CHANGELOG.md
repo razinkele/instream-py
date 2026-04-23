@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.9] - 2026-04-23 (Phase 9c: docs + final test call-site fix)
+
+### Fixed
+
+- **`tests/test_validation.py`** lines 831, 843: removed stale `step_length=1.0` kwargs from `redd_survival_lo_temp` / `redd_survival_hi_temp` calls. Phase 7 (v0.43.5) dropped the parameter from the function signatures but missed these two call sites — the full-suite master regression (1418s) surfaced the `TypeError`.
+- **`docs/source/conf.py`** + **`docs/source/api.rst`**: rebrand leftovers from Phase 1 (v0.42.0). `project = "inSTREAM-py"` → `"Salmopy"`, all `instream.<mod>` automodule refs → `salmopy.<mod>`. Docs build had been failing with `ModuleNotFoundError: No module named 'instream'` since the rebrand.
+- **`docs/source/conf.py` `nitpick_ignore`**: extended with ~15 common docstring-placeholder types (`shape`, `optional`, `sequence`, `callable`, etc.) to silence autodoc cross-reference warnings that Sphinx's `-W` treats as errors. Docs now build cleanly.
+
+### Master regression result (post-v0.43.9)
+
+Full `pytest -m "not slow"` on master completes in 23m38s: **1066 passed, 7 skipped, 63 deselected, 1 xfailed, 0 failed**.
+
 ## [0.43.8] - 2026-04-23 (Phase 9b: CI hotfix — shiny-deckgl not on PyPI)
 
 v0.43.7 tried to pull `[frontend]` into `[dev]` to give CI access to shiny. But `shiny-deckgl>=1.9` is a local/custom package not published to PyPI, so CI installs failed with "Could not find a version that satisfies the requirement shiny-deckgl".

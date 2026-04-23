@@ -4,7 +4,7 @@ API Reference
 Model
 -----
 
-.. automodule:: instream.model
+.. automodule:: salmopy.model
    :members:
    :undoc-members:
    :show-inheritance:
@@ -15,7 +15,7 @@ State
 Trout State
 ~~~~~~~~~~~
 
-.. automodule:: instream.state.trout_state
+.. automodule:: salmopy.state.trout_state
    :members:
    :undoc-members:
    :show-inheritance:
@@ -23,7 +23,7 @@ Trout State
 Redd State
 ~~~~~~~~~~
 
-.. automodule:: instream.state.redd_state
+.. automodule:: salmopy.state.redd_state
    :members:
    :undoc-members:
    :show-inheritance:
@@ -31,7 +31,7 @@ Redd State
 Cell State
 ~~~~~~~~~~
 
-.. automodule:: instream.state.cell_state
+.. automodule:: salmopy.state.cell_state
    :members:
    :undoc-members:
    :show-inheritance:
@@ -39,7 +39,7 @@ Cell State
 Reach State
 ~~~~~~~~~~~
 
-.. automodule:: instream.state.reach_state
+.. automodule:: salmopy.state.reach_state
    :members:
    :undoc-members:
    :show-inheritance:
@@ -47,7 +47,7 @@ Reach State
 Parameters
 ~~~~~~~~~~
 
-.. automodule:: instream.state.params
+.. automodule:: salmopy.state.params
    :members:
    :undoc-members:
    :show-inheritance:
@@ -58,7 +58,7 @@ Modules
 Growth
 ~~~~~~
 
-.. automodule:: instream.modules.growth
+.. automodule:: salmopy.modules.growth
    :members:
    :undoc-members:
    :show-inheritance:
@@ -66,7 +66,7 @@ Growth
 Survival
 ~~~~~~~~
 
-.. automodule:: instream.modules.survival
+.. automodule:: salmopy.modules.survival
    :members:
    :undoc-members:
    :show-inheritance:
@@ -74,7 +74,7 @@ Survival
 Behavior
 ~~~~~~~~
 
-.. automodule:: instream.modules.behavior
+.. automodule:: salmopy.modules.behavior
    :members:
    :undoc-members:
    :show-inheritance:
@@ -82,7 +82,7 @@ Behavior
 Spawning
 ~~~~~~~~
 
-.. automodule:: instream.modules.spawning
+.. automodule:: salmopy.modules.spawning
    :members:
    :undoc-members:
    :show-inheritance:
@@ -90,7 +90,7 @@ Spawning
 Migration
 ~~~~~~~~~
 
-.. automodule:: instream.modules.migration
+.. automodule:: salmopy.modules.migration
    :members:
    :undoc-members:
    :show-inheritance:
@@ -98,7 +98,7 @@ Migration
 Harvest
 ~~~~~~~
 
-.. automodule:: instream.modules.harvest
+.. automodule:: salmopy.modules.harvest
    :members:
    :undoc-members:
    :show-inheritance:
@@ -106,7 +106,7 @@ Harvest
 Life Stage
 ~~~~~~~~~~
 
-.. automodule:: instream.state.life_stage
+.. automodule:: salmopy.state.life_stage
    :members:
    :undoc-members:
    :show-inheritance:
@@ -117,7 +117,7 @@ Marine
 Marine Domain
 ~~~~~~~~~~~~~
 
-.. automodule:: instream.marine.domain
+.. automodule:: salmopy.marine.domain
    :members:
    :undoc-members:
    :show-inheritance:
@@ -125,7 +125,7 @@ Marine Domain
 Marine Config
 ~~~~~~~~~~~~~
 
-.. automodule:: instream.marine.config
+.. automodule:: salmopy.marine.config
    :members:
    :undoc-members:
    :show-inheritance:
@@ -133,7 +133,7 @@ Marine Config
 Marine Growth (bioenergetics)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. automodule:: instream.marine.growth
+.. automodule:: salmopy.marine.growth
    :members:
    :undoc-members:
    :show-inheritance:
@@ -141,7 +141,7 @@ Marine Growth (bioenergetics)
 Marine Survival (5 mortality sources)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. automodule:: instream.marine.survival
+.. automodule:: salmopy.marine.survival
    :members:
    :undoc-members:
    :show-inheritance:
@@ -149,7 +149,7 @@ Marine Survival (5 mortality sources)
 Marine Fishing (gear selectivity, harvest, bycatch)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. automodule:: instream.marine.fishing
+.. automodule:: salmopy.marine.fishing
    :members:
    :undoc-members:
    :show-inheritance:
@@ -160,7 +160,7 @@ I/O
 Configuration
 ~~~~~~~~~~~~~
 
-.. automodule:: instream.io.config
+.. automodule:: salmopy.io.config
    :members:
    :undoc-members:
    :show-inheritance:
@@ -168,7 +168,7 @@ Configuration
 Backends
 --------
 
-.. automodule:: instream.backends
+.. automodule:: salmopy.backends
    :members:
    :undoc-members:
    :show-inheritance:
