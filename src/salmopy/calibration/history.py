@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -31,7 +31,10 @@ def save_run(
     Atomic write via tempfile + rename to avoid partial writes.
     """
     history_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    # v0.43.5: UTC-aware timestamps (was naive local time; inconsistent
+    # with scenarios.py which already used UTC, causing sort-by-timestamp
+    # inversions across DST transitions).
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
     out_path = history_dir / f"{ts}_{algorithm}.json"
 
     record = {
