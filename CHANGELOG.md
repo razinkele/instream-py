@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.3] - 2026-04-23 (Phase 5: Documentation sync)
+
+### Changed
+
+- **`docs/api-reference.md`**: version header `0.1.0` → `0.43.3` (40 versions stale); `life_history` enum table regenerated from `salmopy.state.life_stage.LifeStage` (was pre-v0.13.0 names: `resident/anad_juve/anad_adult` → now `FRY/PARR/SPAWNER/SMOLT/OCEAN_JUVENILE/OCEAN_ADULT/RETURNING_ADULT/KELT`).
+- **`docs/user-manual.md`**: version header `0.1.0` → `0.43.3`.
+- **`docs/NETLOGO_PARITY_ROADMAP.md`**: replaced with a short redirect page. Original (2026-03-22, v0.2.0, claiming 0/11 validation tests active) archived under `docs/releases/archive-2026-03-22-netlogo-parity-roadmap.md`.
+- **`scripts/release.py`**: extended the README regex to also update the shields.io `release-v*-blue` badge URL. Previously stuck at `v0.33.0` for 8+ minor versions.
+
 ## [0.43.2] - 2026-04-23 (Phase 4: CI + test-suite hardening)
 
 ### Changed (CI)
