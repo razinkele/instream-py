@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.2] - 2026-04-23 (Phase 4: CI + test-suite hardening)
+
+### Changed (CI)
+
+- **`.github/workflows/ci.yml`** main `test` job now uses `-m "not slow"` (previously ran all tests, duplicating the `test-slow` job). Coverage gate added on the 3.12 shard: `--cov=salmopy --cov-fail-under=80`.
+- Both `test` and `test-slow` jobs now ignore `tests/e2e` for Protocol consistency.
+
+### Added
+
+- **`tests/conftest.py` `pytest_configure` hook** emits a `UserWarning` when `tests/fixtures/reference/` is empty. ~11 validation tests previously skipped silently, letting the suite report 100% green with zero NetLogo oracle coverage. Set `CI_NO_ORACLE=1` to silence.
+- **`tests/test_invariants_hardening.py`**: Hypothesis property test enforcing `rmse_loss` NaN-iff-no-finite-pairs semantics; should_migrate monotonicity test (skipped — signature mismatch pending diagnosis).
+
+### Fixed
+
+- **`tests/test_validation.py:1006`**: xfail for stale Arc D fitness-report golden flipped `strict=False` → `strict=True`. Surprise passes now fail the suite, signaling the xfail can be removed.
+- **`tests/test_e2e_spatial.py`**: removed redundant `_sim_ran` module global (session-scoped fixture already guarantees once-per-session; global was an xdist state-leak hazard).
+- **`tests/test_backend_parity.py`**: `rng` fixture scope `"module"` → function. Module scope meant test order affected parity numerics.
+
 ## [0.43.1] - 2026-04-23 (Phase 3: Frontend regression sweep)
 
 ### Fixed
