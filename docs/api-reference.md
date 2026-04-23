@@ -1,6 +1,6 @@
-# inSTREAM-py API Reference
+# Salmopy API Reference
 
-Version 0.1.0
+Version 0.43.3 (formerly published as `inSTREAM-py`; renamed v0.42.0)
 
 ---
 
@@ -83,7 +83,7 @@ Structure-of-Arrays holding all trout agent data. All arrays have shape `(capaci
 | `activity` | `int32` | Current activity: 0=drift, 1=search, 2=hide, 3=guard, 4=hold |
 | `sex` | `int32` | Sex: 0=female, 1=male |
 | `superind_rep` | `int32` | Number of individuals this super-individual represents |
-| `life_history` | `int32` | Life history type: 0=resident, 1=anad_juve, 2=anad_adult |
+| `life_history` | `int32` | Life stage: 0=FRY, 1=PARR, 2=SPAWNER, 3=SMOLT, 4=OCEAN_JUVENILE, 5=OCEAN_ADULT, 6=RETURNING_ADULT, 7=KELT (see `salmopy.state.life_stage.LifeStage`) |
 | `in_shelter` | `bool` | Whether fish is using velocity shelter |
 | `spawned_this_season` | `bool` | Whether fish has spawned this season |
 | `last_growth_rate` | `float64` | Growth rate from most recent habitat selection (g/d) |

@@ -1,6 +1,6 @@
-# inSTREAM-py User Manual
+# Salmopy User Manual
 
-Version 0.1.0
+Version 0.43.3 (formerly published as `inSTREAM-py`; renamed v0.42.0)
 
 ---
 

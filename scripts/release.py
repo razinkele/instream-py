@@ -171,6 +171,15 @@ def update_readme_metrics(
         count=1,
     )
 
+    # Update version in shields.io release badge URL.
+    # Previous release scripts missed this and the badge sat at v0.33.0
+    # for 8 minor versions (Phase 5 fix, 2026-04-23).
+    content = re.sub(
+        r"release-v\d+\.\d+\.\d+-blue",
+        f"release-v{new_version}-blue",
+        content,
+    )
+
     # Update test count in metrics table
     content = re.sub(
         r"(\|\s*Tests\s*\|\s*)\d+",
