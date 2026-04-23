@@ -218,7 +218,7 @@ def marine_survival(
                 _POST_SMOLT_CACHE[path], int(sy), config.stock_unit,
             )
             if S_ann is not None:
-                h_forced_array[smolt_years == sy] = daily_hazard_multiplier(S_ann)
+                h_forced_array[post_smolt_mask & (smolt_years == sy)] = daily_hazard_multiplier(S_ann)
         forced_mask = post_smolt_mask & np.isfinite(h_forced_array)
         h_back = np.where(forced_mask, h_forced_array, h_back)
 
