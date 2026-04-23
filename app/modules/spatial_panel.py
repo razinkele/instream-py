@@ -342,14 +342,20 @@ def _build_redds_layer(results, visible: bool = True):
 
     # Centroids from polygons in a geographic CRS (EPSG:4326 / WGS84)
     # trigger a shapely UserWarning because degrees aren't equal-area.
-    # For the Baltic bbox the positional error is < 10 m — far below
-    # scatterplot-dot accuracy — but reprojecting to UTM 34N for the
-    # centroid calculation silences the warning AND gives a
-    # geometrically-correct result. Then we pull lon/lat back out.
+    # Reproject to the mesh's local UTM for centroid computation (silences
+    # the warning AND gives geometrically-correct centroids), then pull
+    # lon/lat back out. Auto-detects the right UTM zone so non-Baltic
+    # deploys don't silently use UTM 34N.
+    try:
+        target_crs = cells.estimate_utm_crs()
+    except Exception:
+        # Fallback: Baltic UTM 34N (legacy behavior) if auto-detect fails
+        target_crs = 32634
+    cells_geo = cells if (cells.crs is not None) else cells.set_crs(4326, allow_override=True)
     cells_utm = (
-        cells.to_crs(epsg=4326).to_crs(epsg=32634)
-        if cells.crs is None or cells.crs.to_epsg() != 32634
-        else cells
+        cells_geo.to_crs(target_crs)
+        if cells_geo.crs.to_epsg() != getattr(target_crs, "to_epsg", lambda: target_crs)()
+        else cells_geo
     )
     centroids_utm = cells_utm.geometry.centroid
     centroids = centroids_utm.to_crs(epsg=4326)
