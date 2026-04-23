@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.15] - 2026-04-23 (Phase 9i: CI — docs deploy gated on vars.ENABLE_PAGES_DEPLOY)
+
+### Changed (CI)
+
+- **`.github/workflows/docs.yml` deploy job**: now gated on `vars.ENABLE_PAGES_DEPLOY == 'true'`. The docs **build** (sphinx + upload artifact) continues to run on every master push and is the actual correctness gate; the deploy only happens when the repo has explicitly opted in by setting the repo variable AND enabling GitHub Pages at settings → Pages. This removes the 404 "Pages not enabled" failure from the default CI view.
+- **To enable Pages deploy going forward**: (1) Settings → Pages → Source: GitHub Actions; (2) Settings → Secrets and variables → Actions → Variables → add `ENABLE_PAGES_DEPLOY=true`.
+
 ## [0.43.14] - 2026-04-23 (Phase 9h: CI — Baltic fixture allow-remap)
 
 ### Fixed

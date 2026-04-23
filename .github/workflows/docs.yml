@@ -43,6 +43,13 @@ jobs:
   deploy:
     needs: build-docs
     runs-on: ubuntu-latest
+    # v0.43.15: deploy only fires when the repo-level
+    # ENABLE_PAGES_DEPLOY variable is set to "true". GitHub Pages must
+    # be enabled at repo settings for deploy to succeed; skipping by
+    # default keeps the workflow green for contributors who don't need
+    # the published HTML (the artifact from build-docs is still
+    # available for manual download).
+    if: vars.ENABLE_PAGES_DEPLOY == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
