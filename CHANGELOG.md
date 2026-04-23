@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.4] - 2026-04-23 (Phase 6: Medium/low hygiene batch)
+
+### Fixed
+
+- **`io/m74_forcing.py`**: column-missing validation uses `raise ValueError` instead of `assert` (was silently disabled under `python -O`).
+- **`io/population_reader.py`**: diagnostic raise on malformed row (includes path + line number). Previously an `IndexError` with no context.
+- **`model_init.py`**: pre-check unknown reach names in the shapefile vs config, with a diff message listing both sets. Previously raised bare `KeyError` on case/whitespace drift.
+- **`scripts/release.py`**: `git_push` detects current branch via `git rev-parse --abbrev-ref HEAD`. Was hardcoded `origin master` — would have broken silently if the repo ever renamed its default branch.
+
+### Changed
+
+- **`.gitignore`** extended with `scripts/_arc_*.csv`, `scripts/_probe_*.csv` (diagnostic probe outputs) and IDE/editor cache dirs.
+
+### Not in scope (deferred)
+
+Original Phase 6 roadmap listed 19 hygiene items; this release picked the 5 highest-impact defensive-programming wins. Remaining items (atomic output writes, unit/probability validators on all `SpeciesConfig` fields, marine kelt `smolt_date` refresh on ocean re-entry, calibration warm-restart fix, `SurrogateCalibrator` LHS search, etc.) deferred to a future pass.
+
 ## [0.43.3] - 2026-04-23 (Phase 5: Documentation sync)
 
 ### Changed
