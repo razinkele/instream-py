@@ -39,14 +39,16 @@ def test_requests_declared_in_core_dependencies():
     assert any(d.lower().startswith("requests") for d in core)
 
 
-def test_dev_extra_includes_frontend():
-    """v0.43.7: several tests import from app/modules which require shiny.
-    [dev] must pull [frontend] transitively so CI installs include it."""
+def test_dev_extra_does_not_include_frontend():
+    """v0.43.7: [frontend] depends on shiny-deckgl which is not on PyPI.
+    [dev] MUST NOT transitively pull it — tests that need shiny must
+    skip via pytest.importorskip('shiny') at module-top."""
     data = _load_pyproject()
     dev = data["project"]["optional-dependencies"].get("dev", [])
-    assert any("salmopy[frontend]" in d for d in dev), (
-        "[dev] extra must include 'salmopy[frontend]' so CI dev installs "
-        "can collect app-dependent tests."
+    assert not any("salmopy[frontend]" in d for d in dev), (
+        "[dev] must not pull [frontend] — shiny-deckgl is not on PyPI, "
+        "so a clean pip install -e .[dev] would fail. Instead, shiny-"
+        "dependent tests should use pytest.importorskip('shiny')."
     )
 
 

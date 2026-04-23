@@ -2,6 +2,8 @@
 import pytest
 from pathlib import Path
 
+pytest.importorskip("shiny")
+
 PBF = Path("app/data/osm/lithuania-latest.osm.pbf")
 
 

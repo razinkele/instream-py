@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "salmopy"
-version = "0.43.7"
+version = "0.43.8"
 description = "Python conversion of inSTREAM/inSALMO 7.4 individual-based salmonid model"
 authors = [{name = "Salmopy Team"}]
 readme = "README.md"
@@ -55,7 +55,9 @@ dev = [
     "hypothesis>=6.0",
     "salmopy[numba]",
     "salmopy[calibration]",
-    "salmopy[frontend]",
+    # [frontend] deliberately NOT included: shiny-deckgl is a local/custom
+    # package not on PyPI. Tests that import from app/modules skip via
+    # pytest.importorskip("shiny") at their module-top.
 ]
 docs = [
     "sphinx",

@@ -2,6 +2,9 @@
 
 import sys
 from pathlib import Path
+import pytest
+
+pytest.importorskip("shiny")
 
 import geopandas as gpd
 import yaml

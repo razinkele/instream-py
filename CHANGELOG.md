@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.8] - 2026-04-23 (Phase 9b: CI hotfix — shiny-deckgl not on PyPI)
+
+v0.43.7 tried to pull `[frontend]` into `[dev]` to give CI access to shiny. But `shiny-deckgl>=1.9` is a local/custom package not published to PyPI, so CI installs failed with "Could not find a version that satisfies the requirement shiny-deckgl".
+
+### Fixed
+
+- **`pyproject.toml` `[dev]`**: reverted the `salmopy[frontend]` inclusion. `shiny-deckgl` is not distributable from PyPI.
+- **8 shiny-dependent test files**: added `pytest.importorskip("shiny")` at module-top so they skip gracefully when shiny is not installed instead of failing collection.
+
+### Added
+
+- `scripts/_add_importorskip_shiny.py` — one-shot script that applied the shiny skip guards (kept as committed artifact for reproducibility).
+- `tests/test_dependency_manifest.py::test_dev_extra_does_not_include_frontend` — invariant prevents re-adding `[frontend]` to `[dev]`.
+
 ## [0.43.7] - 2026-04-23 (Phase 9: Hotfix — unit bug + CI green)
 
 Post-Phase-8 review surfaced two defects introduced in v0.43.6 plus three dependency-manifest gaps that had been failing CI on origin since master was pushed.

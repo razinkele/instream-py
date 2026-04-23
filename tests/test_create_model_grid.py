@@ -1,6 +1,9 @@
 """Tests for create_model_grid hexagon generation."""
 import sys
 import os
+import pytest
+
+pytest.importorskip("shiny")
 
 # create_model_grid uses bare `from modules.xxx import ...` which resolves
 # relative to the app/ directory — add it to sys.path before importing.

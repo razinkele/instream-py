@@ -2,9 +2,12 @@
 from pathlib import Path
 import sys
 
+import pytest
+
+pytest.importorskip("shiny")
+
 import geopandas as gpd
 import numpy as np
-import pytest
 from shapely.geometry import Point, Polygon
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
