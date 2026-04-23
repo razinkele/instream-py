@@ -216,7 +216,15 @@ class JaxBackend:
         step_length = params["step_length"]
         cmax_A = jnp.asarray(params["cmax_As"])
         cmax_B = jnp.asarray(params["cmax_Bs"])
-        # Known single-species limitation: use first table
+        # JAX backend currently only supports single-species cmax temperature
+        # tables. Raise instead of silently using species 0 for all fish.
+        if len(params["cmax_temp_table_xs"]) > 1:
+            raise NotImplementedError(
+                "JaxBackend.growth_rate does not yet support multi-species "
+                "cmax_temp_table dispatch. Use the numpy backend for Baltic "
+                "multi-river runs, or extend JaxBackend to index by "
+                "species_idxs."
+            )
         cmax_temp_table_x = jnp.asarray(params["cmax_temp_table_xs"][0])
         cmax_temp_table_y = jnp.asarray(params["cmax_temp_table_ys"][0])
         react_dist_A = jnp.asarray(params["react_dist_As"])
