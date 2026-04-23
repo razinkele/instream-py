@@ -42,8 +42,11 @@ def all_backends():
     return _get_backends()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def rng():
+    """Fresh RNG per test so RNG-state consumed by one test doesn't leak
+    into the next. Previously scope='module' which meant test order
+    affected numerical results — a latent flakiness source."""
     return np.random.default_rng(12345)
 
 
