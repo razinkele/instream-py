@@ -345,6 +345,7 @@ class _ModelInitMixin:
             self.trout_state.length[idx:end] = lengths
             self.trout_state.initial_length[idx:end] = lengths
             self.trout_state.weight[idx:end] = weights
+            self.trout_state.max_lifetime_weight[idx:end] = weights
             self.trout_state.condition[idx:end] = 1.0
             self.trout_state.superind_rep[idx:end] = 1
             self.trout_state.sex[idx:end] = rng_pop.integers(

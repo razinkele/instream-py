@@ -4,6 +4,7 @@ import pytest
 from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 
 
 class TestReadInitialPopulations:
@@ -125,3 +126,26 @@ class TestRandomTriangular:
         rng = np.random.default_rng(42)
         values = random_triangular(1.0, 2.0, 3.0, 50, rng)
         assert len(values) == 50
+
+
+class TestInitialPopulationMaxLifetimeWeight:
+    """Regression: initial population must have max_lifetime_weight > 0 so
+    survival_mass_floor correctly applies starvation mortality."""
+
+    def test_max_lifetime_weight_matches_initial_weight(self):
+        from instream.model import InSTREAMModel
+
+        model = InSTREAMModel(
+            config_path=str(CONFIGS_DIR / "example_a.yaml"),
+            data_dir=str(FIXTURES_DIR / "example_a"),
+        )
+        alive = model.trout_state.alive
+        n_alive = int(alive.sum())
+        assert n_alive > 0, "fixture must seed some alive fish"
+        mlw = model.trout_state.max_lifetime_weight[:n_alive]
+        w = model.trout_state.weight[:n_alive]
+        assert (mlw > 0).all(), (
+            f"max_lifetime_weight has zeros at indices "
+            f"{np.where(mlw == 0)[0].tolist()[:5]}; starvation logic disabled"
+        )
+        np.testing.assert_array_equal(mlw, w)
