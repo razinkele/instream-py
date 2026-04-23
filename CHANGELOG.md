@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.14] - 2026-04-23 (Phase 9h: CI — Baltic fixture allow-remap)
+
+### Fixed
+
+- **`configs/example_calibration_baltic.yaml`**: added `simulation.allow_unknown_species_remap: true`. Phase 6's `model_init.py` strict reach/species-name pre-check (v0.43.4) surfaced that this test config pairs the Baltic-species schema with the Chinook-Spring `ExampleA-InitialPopulations.csv` fixture. The calibration tests seed PARR directly and are cohort-scale insensitive to the initial-population remap — the warn+remap fallback is the correct choice here. `TestICESCalibrationBaltic::test_kelt_counter_wired` and `::test_repeat_spawner_fraction_baltic` now collect cleanly.
+
 ## [0.43.13] - 2026-04-23 (Phase 9g: CI — lint advisory)
 
 v0.43.12 confirmed test (3.11/3.12/3.13) all pass ✅ but lint kept surfacing new rule-code categories per iteration (F821 TYPE_CHECKING, E741 ambiguous `l`, E702 semicolons, E712 == True/False). Each cycle is ~1h. Pre-existing style smells are pragmatically out of scope for this sprint.

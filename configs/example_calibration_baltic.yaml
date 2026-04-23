@@ -10,6 +10,12 @@ simulation:
   census_years_to_skip: 0
   population_file: "Example-Project-A_1Reach-1Species/ExampleA-InitialPopulations.csv"
   adult_arrival_file: "Example-Project-A_1Reach-1Species/ExampleA-AdultArrivals.csv"
+  # v0.43.14: population file lists 'Chinook-Spring' but this Baltic-salmon
+  # config declares only 'BalticAtlanticSalmon'. The calibration tests seed
+  # PARR directly (bypassing the population file) and are cohort-scale
+  # insensitive to the initial-population mismatch. Explicitly allow the
+  # legacy warn+remap fallback so model init doesn't raise here.
+  allow_unknown_species_remap: true
 
 performance:
   backend: "numpy"
