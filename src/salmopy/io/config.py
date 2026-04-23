@@ -298,6 +298,27 @@ class SpeciesConfig(BaseModel, extra="allow"):
     spawn_depth_table: Dict[float, float] = {}
     spawn_vel_table: Dict[float, float] = {}
 
+    @field_validator(
+        "spawn_prob",
+        "spawn_egg_viability",
+        "mort_strand_survival_when_dry",
+        mode="after",
+    )
+    @classmethod
+    def _check_probability_bounds(cls, v: float, info) -> float:
+        """v0.43.5 Task A2: probability fields must lie in [0, 1].
+
+        Length-field validators were considered but dropped: several length
+        fields use negative sentinel values (e.g. -9.0) to mean "no minimum
+        constraint" in NetLogo-heritage configs.
+        """
+        if not (0.0 <= v <= 1.0):
+            raise ValueError(
+                f"{info.field_name} is a probability and must lie in [0, 1]; "
+                f"got {v!r}."
+            )
+        return v
+
     @model_validator(mode="after")
     def _reconcile_defense_area_semantics(self) -> "SpeciesConfig":
         """Reconcile the three spawn-defense fields.
