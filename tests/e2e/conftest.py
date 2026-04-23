@@ -16,6 +16,12 @@ import pytest
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
+# Safety net: any scratch/_debug_*.py scripts accidentally placed in
+# tests/e2e/ are collected by pytest even with a leading underscore (they
+# just yield zero tests). Explicitly ignore scratch filenames to keep
+# collection output clean.
+collect_ignore_glob = ["_debug_*.py", "_scratch_*.py"]
+
 
 def _base_url() -> str:
     url = os.environ.get("E2E_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
