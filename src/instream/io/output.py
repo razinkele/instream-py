@@ -220,7 +220,7 @@ def write_smolt_production_by_reach(
     for om in outmigrants:
         r = int(om.get("natal_reach_idx", -1))
         if 0 <= r < len(counts):
-            counts[r] += 1
+            counts[r] += int(om.get("superind_rep", 1))
 
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)

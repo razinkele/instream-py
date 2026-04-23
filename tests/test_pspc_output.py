@@ -111,6 +111,43 @@ def test_end_to_end_pspc_on_tiny_baltic(tmp_path):
     )
 
 
+def test_smolt_production_by_reach_weights_by_superind_rep(tmp_path):
+    """Regression for output.py:219-223: PSPC must weight each outmigrant
+    by superind_rep. Each outmigrant dict represents a super-individual."""
+    outmigrants = [
+        {"species_idx": 0, "natal_reach_idx": 0, "superind_rep": 100},
+        {"species_idx": 0, "natal_reach_idx": 0, "superind_rep": 50},
+        {"species_idx": 0, "natal_reach_idx": 1, "superind_rep": 10},
+    ]
+    reach_names = ["Reach_A", "Reach_B"]
+    reach_pspc = [1000.0, 100.0]
+    path = write_smolt_production_by_reach(
+        outmigrants, reach_names, reach_pspc, year=2025, output_dir=tmp_path
+    )
+    df = pd.read_csv(path)
+    row_a = df[df["reach_idx"] == 0].iloc[0]
+    assert row_a["smolts_produced"] == 150, (
+        f"Expected rep-weighted count 150 (=100+50), got {row_a['smolts_produced']}"
+    )
+    row_b = df[df["reach_idx"] == 1].iloc[0]
+    assert row_b["smolts_produced"] == 10
+
+
+def test_smolt_production_missing_superind_rep_defaults_to_one(tmp_path):
+    """Legacy outmigrant dicts without superind_rep still count as 1 (current test compat)."""
+    outmigrants = [
+        {"species_idx": 0, "natal_reach_idx": 0, "length": 12.0, "reach_idx": 0},
+        {"species_idx": 0, "natal_reach_idx": 0, "length": 11.0, "reach_idx": 0},
+    ]
+    reach_names = ["Only"]
+    reach_pspc = [100.0]
+    path = write_smolt_production_by_reach(
+        outmigrants, reach_names, reach_pspc, year=2025, output_dir=tmp_path
+    )
+    df = pd.read_csv(path)
+    assert df.iloc[0]["smolts_produced"] == 2
+
+
 def test_smolt_production_csv_handles_none_pspc(tmp_path):
     """Reaches with pspc_smolts_per_year=None emit empty pct (NaN after CSV read)."""
     outmigrants = [
