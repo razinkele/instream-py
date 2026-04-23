@@ -19,14 +19,15 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "mesa>=3.1",
-    "numpy>=1.24",
-    "scipy>=1.11",
-    "pandas>=2.0",
     "geopandas>=0.14",
-    "shapely>=2.0",
+    "mesa>=3.1",
+    "meshio>=5.3",
+    "numpy>=1.24",
+    "pandas>=2.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
+    "scipy>=1.11",
+    "shapely>=2.0",
 ]
 
 [project.urls]
