@@ -9,7 +9,7 @@ SALib = pytest.importorskip("SALib")
 
 class TestSensitivityAnalyzer:
     def test_sample_shape(self):
-        from instream.calibration import FreeParameter, Transform, SensitivityAnalyzer
+        from salmopy.calibration import FreeParameter, Transform, SensitivityAnalyzer
 
         params = [
             FreeParameter("a", 0.0, 1.0, Transform.LINEAR),
@@ -30,7 +30,7 @@ class TestSensitivityAnalyzer:
         """Monotone linear response → S1 close to 1 for influential param,
         ~0 for irrelevant one."""
         import numpy as np
-        from instream.calibration import FreeParameter, Transform, SensitivityAnalyzer
+        from salmopy.calibration import FreeParameter, Transform, SensitivityAnalyzer
 
         params = [
             FreeParameter("influential", 0.0, 1.0, Transform.LINEAR),
@@ -49,7 +49,7 @@ class TestSensitivityAnalyzer:
 
     def test_summary_renders(self):
         import numpy as np
-        from instream.calibration import FreeParameter, Transform, SensitivityAnalyzer
+        from salmopy.calibration import FreeParameter, Transform, SensitivityAnalyzer
 
         params = [FreeParameter("x", 0.0, 1.0, Transform.LINEAR)]
         sa = SensitivityAnalyzer(params, n_base=16, seed=42)
@@ -63,7 +63,7 @@ class TestSensitivityAnalyzer:
 
 class TestMorrisAnalyzer:
     def test_sample_shape(self):
-        from instream.calibration import FreeParameter, Transform, MorrisAnalyzer
+        from salmopy.calibration import FreeParameter, Transform, MorrisAnalyzer
 
         params = [
             FreeParameter("a", 0.0, 1.0, Transform.LINEAR),
@@ -76,7 +76,7 @@ class TestMorrisAnalyzer:
 
     def test_analyze_detects_influential(self):
         import numpy as np
-        from instream.calibration import FreeParameter, Transform, MorrisAnalyzer
+        from salmopy.calibration import FreeParameter, Transform, MorrisAnalyzer
 
         params = [
             FreeParameter("influential", 0.0, 1.0, Transform.LINEAR),

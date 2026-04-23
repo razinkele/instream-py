@@ -18,15 +18,15 @@ import time
 import numpy as np
 import pandas as pd
 
-from instream.calibration import (
+from salmopy.calibration import (
     DiscoveryRule,
     Transform,
     discover_parameters,
     evaluate_candidate,
     MorrisAnalyzer,
 )
-from instream.calibration.configure import _walk  # for debug
-from instream.state.life_stage import LifeStage
+from salmopy.calibration.configure import _walk  # for debug
+from salmopy.state.life_stage import LifeStage
 
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -47,7 +47,7 @@ def juv_mean_length_at_end(model) -> dict:
 
 
 def main() -> int:
-    from instream.io.config import load_config
+    from salmopy.io.config import load_config
     import yaml
 
     # Load rules + discover params

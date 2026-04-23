@@ -8,7 +8,7 @@ class TestPreflightScreen:
     def test_detects_negligible_param(self):
         """A param with no effect on Y should be flagged NEGLIGIBLE."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             preflight_screen,
@@ -34,7 +34,7 @@ class TestPreflightScreen:
     def test_detects_all_negligible(self):
         """When Y is constant, ALL_NEGLIGIBLE should fire."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             preflight_screen,
@@ -58,7 +58,7 @@ class TestPreflightScreen:
     def test_detects_blowup(self):
         """eval_fn returning >50% inf should trigger BLOWUP error."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             preflight_screen,
@@ -79,7 +79,7 @@ class TestPreflightScreen:
         assert blowup[0].severity == IssueSeverity.ERROR
 
     def test_format_issues_renders(self):
-        from instream.calibration import (
+        from salmopy.calibration import (
             format_issues,
             PreflightIssue,
             IssueCategory,
@@ -98,6 +98,6 @@ class TestPreflightScreen:
         assert "test message" in txt
 
     def test_format_issues_empty(self):
-        from instream.calibration import format_issues
+        from salmopy.calibration import format_issues
 
         assert "No preflight issues" in format_issues([])

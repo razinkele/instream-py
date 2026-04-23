@@ -1,4 +1,4 @@
-"""Deep line-level profiling of inSTREAM-py hotspots.
+"""Deep line-level profiling of Salmopy-py hotspots.
 
 Instruments the actual hot functions to measure time per operation category,
 not just per function. Identifies the specific optimization targets.
@@ -24,9 +24,9 @@ def profile_habitat_selection_breakdown():
     print("DEEP PROFILE: Habitat Selection Breakdown")
     print("=" * 70)
 
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
-    model = InSTREAMModel(str(CONFIG_PATH), data_dir=str(DATA_DIR))
+    model = SalmopyModel(str(CONFIG_PATH), data_dir=str(DATA_DIR))
 
     # Warm up 2 steps
     model.step()
@@ -37,7 +37,7 @@ def profile_habitat_selection_breakdown():
     print(f"\nFish alive: {n_alive}, Cells: {n_cells}")
 
     # Now manually instrument one habitat selection call
-    from instream.modules.behavior import (
+    from salmopy.modules.behavior import (
         build_candidate_mask,
         fitness_for,
     )
@@ -211,19 +211,19 @@ def profile_fitness_for_internals():
     print("DEEP PROFILE: fitness_for Internals")
     print("=" * 70)
 
-    from instream.modules.growth import (
+    from salmopy.modules.growth import (
         growth_rate_for,
         max_swim_speed,
         cmax_temp_function,
     )
-    from instream.modules.survival import (
+    from salmopy.modules.survival import (
         survival_high_temperature,
         survival_stranding,
         survival_condition,
         survival_fish_predation,
         survival_terrestrial_predation,
     )
-    from instream.modules.behavior import evaluate_logistic
+    from salmopy.modules.behavior import evaluate_logistic
 
     # Typical parameter values
     table_x = np.array([0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0])
@@ -736,7 +736,7 @@ def profile_overhead_sources():
     )
 
     # 5. survival_condition: np.clip overhead
-    from instream.modules.survival import survival_condition
+    from salmopy.modules.survival import survival_condition
 
     t0 = time.perf_counter()
     for _ in range(n):

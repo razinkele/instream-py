@@ -7,8 +7,8 @@ class TestUpdateReachState:
     """Test reach state update from time-series conditions."""
 
     def test_sets_flow(self):
-        from instream.state.reach_state import ReachState
-        from instream.modules.reach import update_reach_state
+        from salmopy.state.reach_state import ReachState
+        from salmopy.modules.reach import update_reach_state
         rs = ReachState.zeros(1, num_species=1)
         conditions = {"ExampleA": {"flow": 5.66, "temperature": 15.0, "turbidity": 2.0}}
         update_reach_state(rs, conditions, reach_names=["ExampleA"],
@@ -16,8 +16,8 @@ class TestUpdateReachState:
         np.testing.assert_allclose(rs.flow[0], 5.66)
 
     def test_sets_temperature(self):
-        from instream.state.reach_state import ReachState
-        from instream.modules.reach import update_reach_state
+        from salmopy.state.reach_state import ReachState
+        from salmopy.modules.reach import update_reach_state
         rs = ReachState.zeros(1, num_species=1)
         conditions = {"ExampleA": {"flow": 5.66, "temperature": 15.0, "turbidity": 2.0}}
         update_reach_state(rs, conditions, reach_names=["ExampleA"],
@@ -25,8 +25,8 @@ class TestUpdateReachState:
         np.testing.assert_allclose(rs.temperature[0], 15.0)
 
     def test_sets_turbidity(self):
-        from instream.state.reach_state import ReachState
-        from instream.modules.reach import update_reach_state
+        from salmopy.state.reach_state import ReachState
+        from salmopy.modules.reach import update_reach_state
         rs = ReachState.zeros(1, num_species=1)
         conditions = {"ExampleA": {"flow": 5.66, "temperature": 15.0, "turbidity": 2.0}}
         update_reach_state(rs, conditions, reach_names=["ExampleA"],
@@ -35,10 +35,10 @@ class TestUpdateReachState:
 
     def test_computes_cmax_temp_func(self):
         """CMax temperature function: interpolation of T -> multiplier."""
-        from instream.state.reach_state import ReachState
-        from instream.state.params import SpeciesParams
-        from instream.backends import get_backend
-        from instream.modules.reach import update_reach_state
+        from salmopy.state.reach_state import ReachState
+        from salmopy.state.params import SpeciesParams
+        from salmopy.backends import get_backend
+        from salmopy.modules.reach import update_reach_state
 
         sp = SpeciesParams(
             name="Chinook-Spring",
@@ -57,10 +57,10 @@ class TestUpdateReachState:
 
     def test_computes_max_swim_temp_term(self):
         """max_swim_temp_term = C*T^2 + D*T + E."""
-        from instream.state.reach_state import ReachState
-        from instream.state.params import SpeciesParams
-        from instream.backends import get_backend
-        from instream.modules.reach import update_reach_state
+        from salmopy.state.reach_state import ReachState
+        from salmopy.state.params import SpeciesParams
+        from salmopy.backends import get_backend
+        from salmopy.modules.reach import update_reach_state
 
         sp = SpeciesParams(
             name="Test",
@@ -79,10 +79,10 @@ class TestUpdateReachState:
 
     def test_computes_resp_temp_term(self):
         """resp_temp_term = exp(C * T^2)."""
-        from instream.state.reach_state import ReachState
-        from instream.state.params import SpeciesParams
-        from instream.backends import get_backend
-        from instream.modules.reach import update_reach_state
+        from salmopy.state.reach_state import ReachState
+        from salmopy.state.params import SpeciesParams
+        from salmopy.backends import get_backend
+        from salmopy.modules.reach import update_reach_state
 
         sp = SpeciesParams(
             name="Test",
@@ -101,8 +101,8 @@ class TestUpdateReachState:
 
     def test_multiple_reaches(self):
         """Multiple reaches get different conditions."""
-        from instream.state.reach_state import ReachState
-        from instream.modules.reach import update_reach_state
+        from salmopy.state.reach_state import ReachState
+        from salmopy.modules.reach import update_reach_state
         rs = ReachState.zeros(2, num_species=1)
         conditions = {
             "Upper": {"flow": 3.0, "temperature": 10.0, "turbidity": 1.0},
@@ -117,8 +117,8 @@ class TestUpdateReachState:
 
 def test_max_swim_temp_term_never_negative():
     import numpy as np
-    from instream.state.reach_state import ReachState
-    from instream.modules.reach import update_reach_state
+    from salmopy.state.reach_state import ReachState
+    from salmopy.modules.reach import update_reach_state
     # Create minimal setup
     rs = ReachState.zeros(1, 1)
     # Use a mock backend and params that produce negative temp term

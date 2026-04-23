@@ -49,8 +49,8 @@ def main() -> None:
         gdf.to_file(str(SHP))
 
         # Now run the sim
-        from instream.model import InSTREAMModel  # noqa: E402
-        model = InSTREAMModel(
+        from salmopy.model import SalmopyModel  # noqa: E402
+        model = SalmopyModel(
             str(PROJECT / "configs" / "example_baltic.yaml"),
             data_dir=str(PROJECT / "tests" / "fixtures" / "example_baltic"),
         )
@@ -63,7 +63,7 @@ def main() -> None:
             if d in redd_milestones:
                 n_redds = model.redd_state.num_alive()
                 alive = model.trout_state.num_alive()
-                from instream.state.life_stage import LifeStage
+                from salmopy.state.life_stage import LifeStage
                 alive_idx = model.trout_state.alive_indices()
                 if len(alive_idx) > 0:
                     spawners = int(np.sum(

@@ -97,7 +97,7 @@ def set_version(new_version):
             f'\\1"{new_version}"',
         ),
         (
-            PROJECT_ROOT / "src" / "instream" / "__init__.py",
+            PROJECT_ROOT / "src" / "salmopy" / "__init__.py",
             r'__version__\s*=\s*"[^"]+"',
             f'__version__ = "{new_version}"',
         ),
@@ -310,7 +310,7 @@ def git_push(dry_run=False):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Release inSTREAM-py")
+    parser = argparse.ArgumentParser(description="Release Salmopy-py")
     parser.add_argument(
         "part", choices=["major", "minor", "patch"], help="Version part to bump"
     )

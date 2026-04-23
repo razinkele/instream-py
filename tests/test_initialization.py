@@ -9,13 +9,13 @@ CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 
 class TestReadInitialPopulations:
     def test_returns_list_of_dicts(self):
-        from instream.io.population_reader import read_initial_populations
+        from salmopy.io.population_reader import read_initial_populations
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         assert isinstance(pops, list)
         assert len(pops) == 3  # 3 age classes
 
     def test_first_row_values(self):
-        from instream.io.population_reader import read_initial_populations
+        from salmopy.io.population_reader import read_initial_populations
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         p = pops[0]
         assert p["species"] == "Chinook-Spring"
@@ -27,7 +27,7 @@ class TestReadInitialPopulations:
         assert p["length_max"] == pytest.approx(7.0)
 
     def test_total_fish_count(self):
-        from instream.io.population_reader import read_initial_populations
+        from salmopy.io.population_reader import read_initial_populations
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         total = sum(p["number"] for p in pops)
         assert total == 360
@@ -35,14 +35,14 @@ class TestReadInitialPopulations:
 
 class TestBuildTroutState:
     def test_count(self):
-        from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+        from salmopy.io.population_reader import read_initial_populations, build_initial_trout_state
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         ts = build_initial_trout_state(pops, capacity=500, weight_A=0.0041, weight_B=3.49,
                                        species_index=0, seed=42)
         assert ts.num_alive() == 360
 
     def test_age_distribution(self):
-        from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+        from salmopy.io.population_reader import read_initial_populations, build_initial_trout_state
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         ts = build_initial_trout_state(pops, capacity=500, weight_A=0.0041, weight_B=3.49,
                                        species_index=0, seed=42)
@@ -53,7 +53,7 @@ class TestBuildTroutState:
         assert np.sum(ages == 2) == 10
 
     def test_lengths_in_range(self):
-        from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+        from salmopy.io.population_reader import read_initial_populations, build_initial_trout_state
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         ts = build_initial_trout_state(pops, capacity=500, weight_A=0.0041, weight_B=3.49,
                                        species_index=0, seed=42)
@@ -68,7 +68,7 @@ class TestBuildTroutState:
         assert np.all(ts.length[age1] <= 15.0)
 
     def test_weights_from_length(self):
-        from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+        from salmopy.io.population_reader import read_initial_populations, build_initial_trout_state
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         ts = build_initial_trout_state(pops, capacity=500, weight_A=0.0041, weight_B=3.49,
                                        species_index=0, seed=42)
@@ -77,7 +77,7 @@ class TestBuildTroutState:
         np.testing.assert_allclose(ts.weight[alive], expected_weights, rtol=1e-10)
 
     def test_condition_is_one(self):
-        from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+        from salmopy.io.population_reader import read_initial_populations, build_initial_trout_state
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         ts = build_initial_trout_state(pops, capacity=500, weight_A=0.0041, weight_B=3.49,
                                        species_index=0, seed=42)
@@ -85,7 +85,7 @@ class TestBuildTroutState:
         np.testing.assert_allclose(ts.condition[alive], 1.0)
 
     def test_species_index(self):
-        from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+        from salmopy.io.population_reader import read_initial_populations, build_initial_trout_state
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         ts = build_initial_trout_state(pops, capacity=500, weight_A=0.0041, weight_B=3.49,
                                        species_index=0, seed=42)
@@ -93,7 +93,7 @@ class TestBuildTroutState:
         assert np.all(ts.species_idx[alive] == 0)
 
     def test_deterministic_with_seed(self):
-        from instream.io.population_reader import read_initial_populations, build_initial_trout_state
+        from salmopy.io.population_reader import read_initial_populations, build_initial_trout_state
         pops = read_initial_populations(FIXTURES_DIR / "example_a" / "ExampleA-InitialPopulations.csv")
         ts1 = build_initial_trout_state(pops, capacity=500, weight_A=0.0041, weight_B=3.49,
                                         species_index=0, seed=42)
@@ -105,14 +105,14 @@ class TestBuildTroutState:
 
 class TestRandomTriangular:
     def test_within_bounds(self):
-        from instream.io.population_reader import random_triangular
+        from salmopy.io.population_reader import random_triangular
         rng = np.random.default_rng(42)
         values = random_triangular(3.0, 5.0, 8.0, 1000, rng)
         assert np.all(values >= 3.0)
         assert np.all(values <= 8.0)
 
     def test_mode_near_peak(self):
-        from instream.io.population_reader import random_triangular
+        from salmopy.io.population_reader import random_triangular
         rng = np.random.default_rng(42)
         values = random_triangular(3.0, 5.0, 8.0, 10000, rng)
         # Mode should be near 5.0 — histogram peak
@@ -122,7 +122,7 @@ class TestRandomTriangular:
         assert abs(peak_center - 5.0) < 1.0
 
     def test_returns_correct_size(self):
-        from instream.io.population_reader import random_triangular
+        from salmopy.io.population_reader import random_triangular
         rng = np.random.default_rng(42)
         values = random_triangular(1.0, 2.0, 3.0, 50, rng)
         assert len(values) == 50
@@ -133,9 +133,9 @@ class TestInitialPopulationMaxLifetimeWeight:
     survival_mass_floor correctly applies starvation mortality."""
 
     def test_max_lifetime_weight_matches_initial_weight(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        model = InSTREAMModel(
+        model = SalmopyModel(
             config_path=str(CONFIGS_DIR / "example_a.yaml"),
             data_dir=str(FIXTURES_DIR / "example_a"),
         )

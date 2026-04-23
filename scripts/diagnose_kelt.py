@@ -7,9 +7,9 @@ from pathlib import Path
 import datetime
 import numpy as np
 
-from instream.model import InSTREAMModel
-from instream.state.life_stage import LifeStage
-from instream.modules import spawning as spawning_mod
+from salmopy.model import SalmopyModel
+from salmopy.state.life_stage import LifeStage
+from salmopy.modules import spawning as spawning_mod
 
 CONFIGS = Path(__file__).parent.parent / "configs"
 FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures"
@@ -42,11 +42,11 @@ def instrumented_kelt(trout_state, kelt_survival_prob, min_kelt_condition, rng):
 
 spawning_mod.apply_post_spawn_kelt_survival = instrumented_kelt
 # Also patch the already-bound import in model_day_boundary
-import instream.model_day_boundary as mdb
+import salmopy.model_day_boundary as mdb
 if hasattr(mdb, "apply_post_spawn_kelt_survival"):
     mdb.apply_post_spawn_kelt_survival = instrumented_kelt
 
-m = InSTREAMModel(
+m = SalmopyModel(
     CONFIGS / "example_calibration_baltic.yaml",
     data_dir=FIXTURES / "example_a",
     end_date_override="2018-03-31",

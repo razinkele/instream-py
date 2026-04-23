@@ -8,7 +8,7 @@ class TestHydraulicsInterp:
 
     def test_single_flow_single_cell(self):
         """Interpolate depth at a flow that's exactly in the table."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_flows = np.array([1.0, 2.0, 3.0])
         depth_values = np.array([[10.0, 20.0, 30.0]])  # 1 cell
@@ -19,7 +19,7 @@ class TestHydraulicsInterp:
 
     def test_interpolation_between_flows(self):
         """Midpoint between two tabulated flows gives linear interpolation."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_flows = np.array([1.0, 3.0])
         depth_values = np.array([[10.0, 30.0]])  # 1 cell
@@ -30,7 +30,7 @@ class TestHydraulicsInterp:
 
     def test_zero_flow_returns_zero_depth(self):
         """At zero flow, depth and velocity should be zero (clamped)."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_flows = np.array([1.0, 2.0, 3.0])
         depth_values = np.array([[10.0, 20.0, 30.0]])
@@ -41,7 +41,7 @@ class TestHydraulicsInterp:
 
     def test_multiple_cells(self):
         """Interpolation works for multiple cells simultaneously."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_flows = np.array([1.0, 2.0])
         depth_values = np.array([
@@ -60,7 +60,7 @@ class TestHydraulicsInterp:
 
     def test_dry_cell_velocity_is_zero(self):
         """If interpolated depth is zero or negative, velocity must be zero."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_flows = np.array([1.0, 2.0])
         # Cell that goes dry at low flow (negative extrapolation clamped to 0)
@@ -75,26 +75,26 @@ class TestLogistic:
     """Test logistic function evaluation."""
 
     def test_at_L1_returns_0_1(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         result = b.evaluate_logistic(np.array([3.0]), L1=3.0, L9=6.0)
         np.testing.assert_allclose(result, [0.1], atol=0.01)
 
     def test_at_L9_returns_0_9(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         result = b.evaluate_logistic(np.array([6.0]), L1=3.0, L9=6.0)
         np.testing.assert_allclose(result, [0.9], atol=0.01)
 
     def test_at_midpoint_returns_0_5(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         result = b.evaluate_logistic(np.array([4.5]), L1=3.0, L9=6.0)
         np.testing.assert_allclose(result, [0.5], atol=0.01)
 
     def test_monotonically_increasing(self):
         """When L1 < L9, function should increase."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         x = np.linspace(0, 10, 50)
         result = b.evaluate_logistic(x, L1=3.0, L9=6.0)
@@ -102,14 +102,14 @@ class TestLogistic:
 
     def test_monotonically_decreasing_when_inverted(self):
         """When L1 > L9, function should decrease."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         x = np.linspace(0, 10, 50)
         result = b.evaluate_logistic(x, L1=6.0, L9=3.0)
         assert np.all(np.diff(result) <= 0)
 
     def test_vectorized(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         x = np.array([3.0, 4.5, 6.0])
         result = b.evaluate_logistic(x, L1=3.0, L9=6.0)
@@ -117,7 +117,7 @@ class TestLogistic:
         np.testing.assert_allclose(result, [0.1, 0.5, 0.9], atol=0.01)
 
     def test_scalar_input(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         result = b.evaluate_logistic(np.array([4.5]), L1=3.0, L9=6.0)
         assert result.shape == (1,)
@@ -127,7 +127,7 @@ class TestInterp1d:
     """Test generic 1D interpolation wrapper."""
 
     def test_at_table_points_exact(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_x = np.array([0.0, 10.0, 20.0, 30.0])
         table_y = np.array([0.05, 0.5, 1.0, 0.0])
@@ -135,7 +135,7 @@ class TestInterp1d:
         np.testing.assert_allclose(result, [0.05, 0.5, 1.0, 0.0])
 
     def test_between_points_linear(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_x = np.array([0.0, 10.0])
         table_y = np.array([0.0, 1.0])
@@ -144,7 +144,7 @@ class TestInterp1d:
 
     def test_clamp_below_table(self):
         """Values below table range should clamp to first value."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_x = np.array([10.0, 20.0])
         table_y = np.array([1.0, 2.0])
@@ -153,7 +153,7 @@ class TestInterp1d:
 
     def test_clamp_above_table(self):
         """Values above table range should clamp to last value."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
         b = NumpyBackend()
         table_x = np.array([10.0, 20.0])
         table_y = np.array([1.0, 2.0])

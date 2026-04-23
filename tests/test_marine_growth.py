@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from instream.marine.growth import marine_growth, _cmax_temperature_response
+from salmopy.marine.growth import marine_growth, _cmax_temperature_response
 
 
 # ---------------------------------------------------------------------------

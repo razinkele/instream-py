@@ -1,6 +1,6 @@
 """Tests for fitness-based outmigration probability (Task 9)."""
 
-from instream.modules.migration import outmigration_probability
+from salmopy.modules.migration import outmigration_probability
 
 
 def test_poor_fitness_increases_migration():

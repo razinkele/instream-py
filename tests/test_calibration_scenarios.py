@@ -6,7 +6,7 @@ from pathlib import Path
 
 class TestScenarioRoundtrip:
     def test_save_and_load(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         mgr = ScenarioManager(tmp_path)
         sc = Scenario(
@@ -23,7 +23,7 @@ class TestScenarioRoundtrip:
         assert loaded.created  # auto-stamped
 
     def test_list_and_delete(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         mgr = ScenarioManager(tmp_path)
         mgr.save(Scenario(name="a"))
@@ -35,7 +35,7 @@ class TestScenarioRoundtrip:
 
 class TestScenarioValidation:
     def test_rejects_bad_name(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         mgr = ScenarioManager(tmp_path)
         with pytest.raises(ValueError):
@@ -46,7 +46,7 @@ class TestScenarioValidation:
             mgr.save(Scenario(name="a" * 100))
 
     def test_accepts_safe_name(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         mgr = ScenarioManager(tmp_path)
         mgr.save(Scenario(name="arc-f_baseline v1.0"))
@@ -55,7 +55,7 @@ class TestScenarioValidation:
 
 class TestFork:
     def test_fork_inherits_and_overrides(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         mgr = ScenarioManager(tmp_path)
         mgr.save(Scenario(
@@ -78,7 +78,7 @@ class TestFork:
 
 class TestCompare:
     def test_compare_diff(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         mgr = ScenarioManager(tmp_path)
         mgr.save(Scenario(name="a", overrides={"x": 1.0, "y": 2.0, "z": 3.0}))
@@ -91,7 +91,7 @@ class TestCompare:
 
 class TestZipRoundtrip:
     def test_export_and_import(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         src_dir = tmp_path / "src"
         mgr_src = ScenarioManager(src_dir)
@@ -110,7 +110,7 @@ class TestZipRoundtrip:
         assert loaded_alpha.overrides == {"a": 1.0}
 
     def test_import_skips_existing_without_overwrite(self, tmp_path):
-        from instream.calibration import Scenario, ScenarioManager
+        from salmopy.calibration import Scenario, ScenarioManager
 
         src = ScenarioManager(tmp_path / "src")
         src.save(Scenario(name="alpha", overrides={"a": 1.0}))
@@ -130,7 +130,7 @@ class TestZipRoundtrip:
 
     def test_import_rejects_path_traversal(self, tmp_path):
         import zipfile
-        from instream.calibration import ScenarioManager
+        from salmopy.calibration import ScenarioManager
 
         zip_path = tmp_path / "evil.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
@@ -142,7 +142,7 @@ class TestZipRoundtrip:
 
     def test_import_rejects_malformed_json(self, tmp_path):
         import zipfile
-        from instream.calibration import ScenarioManager
+        from salmopy.calibration import ScenarioManager
 
         zip_path = tmp_path / "bad.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:

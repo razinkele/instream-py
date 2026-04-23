@@ -1,4 +1,4 @@
-"""Tests for the main InSTREAMModel simulation."""
+"""Tests for the main SalmopyModel simulation."""
 
 import numpy as np
 import pytest
@@ -10,35 +10,35 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 class TestModelInit:
     def test_initializes_from_config(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        model = InSTREAMModel(
+        model = SalmopyModel(
             CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
         )
         assert model is not None
 
     def test_has_trout_state(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        model = InSTREAMModel(
+        model = SalmopyModel(
             CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
         )
         assert model.trout_state is not None
         assert model.trout_state.num_alive() > 0
 
     def test_has_cell_state(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        model = InSTREAMModel(
+        model = SalmopyModel(
             CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
         )
         assert model.fem_space is not None
         assert model.fem_space.num_cells > 0
 
     def test_has_time_manager(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        model = InSTREAMModel(
+        model = SalmopyModel(
             CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
         )
         assert model.time_manager is not None
@@ -47,9 +47,9 @@ class TestModelInit:
 class TestModelStep:
     @pytest.fixture
     def model(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        return InSTREAMModel(
+        return SalmopyModel(
             CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
         )
 
@@ -84,9 +84,9 @@ class TestModelStep:
 
 @pytest.fixture
 def example_a_model():
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
-    return InSTREAMModel(
+    return SalmopyModel(
         CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
     )
 
@@ -126,9 +126,9 @@ def test_spawned_this_season_resets_at_season_start(example_a_model):
 
 
 def test_model_has_reach_graph():
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
     )
     assert hasattr(model, "_reach_graph")
@@ -137,9 +137,9 @@ def test_model_has_reach_graph():
 
 
 def test_model_has_census_records_after_run():
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS_DIR / "example_a.yaml",
         data_dir=FIXTURES_DIR / "example_a",
         end_date_override="2011-07-01",
@@ -153,9 +153,9 @@ def test_model_has_census_records_after_run():
 
 
 def test_model_has_adult_arrivals_stub():
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
     )
     assert hasattr(model, "_do_adult_arrivals")
@@ -166,9 +166,9 @@ def test_model_has_adult_arrivals_stub():
 class TestModelRun:
     def test_short_run_completes(self):
         """Run for 30 days without crash."""
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        model = InSTREAMModel(
+        model = SalmopyModel(
             CONFIGS_DIR / "example_a.yaml",
             data_dir=FIXTURES_DIR / "example_a",
             end_date_override="2011-05-01",
@@ -180,9 +180,9 @@ class TestModelRun:
 
 def test_hydraulic_table_cell_count_mismatch():
     """Model should raise if hydraulic table rows don't match cell count for a reach."""
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
     )
     rname = model.reach_order[0]
@@ -195,9 +195,9 @@ def test_hydraulic_table_cell_count_mismatch():
 
 
 def test_apply_accumulated_growth_deterministic():
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS_DIR / "example_a.yaml", data_dir=FIXTURES_DIR / "example_a"
     )
     model.step()
@@ -214,12 +214,12 @@ def test_apply_accumulated_growth_deterministic():
 
 def test_multi_reach_model_loads():
     """Example B should load with 3 reaches."""
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     CONFIGS = Path(__file__).parent.parent / "configs"
     FIXTURES = Path(__file__).parent / "fixtures" / "example_b"
     try:
-        model = InSTREAMModel(CONFIGS / "example_b.yaml", data_dir=FIXTURES)
+        model = SalmopyModel(CONFIGS / "example_b.yaml", data_dir=FIXTURES)
         assert len(model.reach_order) == 3
         print("Multi-reach model loaded:", model.fem_space.num_cells, "cells")
     except Exception as e:
@@ -229,13 +229,13 @@ def test_multi_reach_model_loads():
 def test_adult_arrives_as_returning_adult():
     """Anadromous adults should arrive as RETURNING_ADULT, not SPAWNER."""
     from pathlib import Path
-    from instream.model import InSTREAMModel
-    from instream.state.life_stage import LifeStage
+    from salmopy.model import SalmopyModel
+    from salmopy.state.life_stage import LifeStage
 
     PROJECT = Path(__file__).resolve().parent.parent
     config = str(PROJECT / "configs" / "example_baltic.yaml")
     data = str(PROJECT / "tests" / "fixtures" / "example_baltic")
-    model = InSTREAMModel(config, data_dir=data)
+    model = SalmopyModel(config, data_dir=data)
 
     # Run until adults start arriving (May-June, ~45-90 days from April 1)
     for _ in range(90):

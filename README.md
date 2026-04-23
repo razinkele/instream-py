@@ -1,12 +1,15 @@
-# inSTREAM-py
+# Salmopy
+
+> Previously distributed as `inSTREAM-py`. Renamed to `salmopy` in v0.42.0.
+> The GitHub repository URL (`razinkele/instream-py`) is unchanged for link stability.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-green)](LICENSE)
 [![CI](https://github.com/razinkele/instream-py/actions/workflows/ci.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
 [![docs](https://github.com/razinkele/instream-py/actions/workflows/docs.yml/badge.svg)](https://github.com/razinkele/instream-py/actions/workflows/docs.yml)
-[![PyPI](https://img.shields.io/pypi/v/instream)](https://pypi.org/project/instream/)
+[![PyPI](https://img.shields.io/pypi/v/salmopy)](https://pypi.org/project/salmopy/)
 [![Tests](https://img.shields.io/badge/tests-1030%2B-brightgreen)](https://github.com/razinkele/instream-py/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.33.0-blue)](https://github.com/razinkele/instream-py/releases)
+[![Release](https://img.shields.io/badge/release-v0.42.0-blue)](https://github.com/razinkele/instream-py/releases)
 [![NetLogo parity](https://img.shields.io/badge/NetLogo%20parity-2%2F5%20pass-yellow)](docs/validation/v0.31.0-arc-D-netlogo-comparison.md)
 
 A high-performance Python conversion of the **inSTREAM/inSALMO 7.4**
@@ -496,7 +499,7 @@ sphinx-build -b html docs/source docs/_build/html
 
 ## Citation
 
-If you use inSTREAM-py in your research, please cite both the original
+If you use Salmopy in your research, please cite both the original
 inSTREAM reference and this Python implementation:
 
 ```bibtex
@@ -520,13 +523,13 @@ inSTREAM reference and this Python implementation:
   number    = {63}
 }
 
-@software{instream_py,
-  title   = {inSTREAM-py: High-performance Python individual-based
-             salmonid model},
+@software{salmopy,
+  title   = {Salmopy: High-performance Python individual-based
+             salmonid model (formerly inSTREAM-py)},
   author  = {Razinkovas-Baziukas, Artūras and contributors},
   year    = {2026},
   url     = {https://github.com/razinkele/instream-py},
-  version = {0.33.0}
+  version = {0.42.0}
 }
 ```
 

@@ -2,11 +2,11 @@
 import numpy as np
 from hypothesis import given, strategies as st, assume
 
-from instream.modules.survival import (
+from salmopy.modules.survival import (
     survival_high_temperature, survival_stranding, survival_condition,
 )
-from instream.modules.growth import apply_growth, drift_intake
-from instream.modules.behavior import evaluate_logistic
+from salmopy.modules.growth import apply_growth, drift_intake
+from salmopy.modules.behavior import evaluate_logistic
 
 reasonable_float = st.floats(min_value=-100, max_value=100, allow_nan=False, allow_infinity=False)
 positive_float = st.floats(min_value=0.01, max_value=1000, allow_nan=False, allow_infinity=False)

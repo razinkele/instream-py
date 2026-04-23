@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
-from instream.io.config import load_config
-from instream.io.output import write_outmigrants, write_smolt_production_by_reach
+from salmopy.io.config import load_config
+from salmopy.io.output import write_outmigrants, write_smolt_production_by_reach
 
 
 def test_outmigrants_csv_10col_netlogo_compat(tmp_path: Path):
@@ -78,7 +78,7 @@ def test_end_to_end_pspc_on_tiny_baltic(tmp_path):
     import shutil
     import yaml
     import pandas as pd
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     # Copy YAML shortening end_date, keep data_dir pointing at the fixture.
     with open("configs/example_baltic.yaml") as f:
@@ -89,7 +89,7 @@ def test_end_to_end_pspc_on_tiny_baltic(tmp_path):
     with open(cfg_path, "w") as f:
         yaml.safe_dump(cfg_dict, f)
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         config_path=str(cfg_path),
         data_dir="tests/fixtures/example_baltic",
         output_dir=str(tmp_path),

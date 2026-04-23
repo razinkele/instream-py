@@ -119,7 +119,7 @@ class TestUpdateReadme:
     def test_updates_version_and_tests(self, tmp_path):
         readme = tmp_path / "README.md"
         readme.write_text(
-            "# inSTREAM-py\n\n"
+            "# Salmopy-py\n\n"
             "**v0.7.0** -- InSTREAM-SD complete.\n\n"
             "| Tests           | 455                            |\n"
             "| Step time       | 48 ms (Example A, Numba JIT)   |\n"

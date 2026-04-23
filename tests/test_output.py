@@ -2,7 +2,7 @@
 
 
 def test_write_population_census(tmp_path):
-    from instream.io.output import write_population_census
+    from salmopy.io.output import write_population_census
 
     records = [
         {
@@ -27,15 +27,15 @@ def test_write_population_census(tmp_path):
 
 
 def test_write_population_census_empty(tmp_path):
-    from instream.io.output import write_population_census
+    from salmopy.io.output import write_population_census
 
     result = write_population_census([], tmp_path)
     assert result is None
 
 
 def test_write_fish_snapshot(tmp_path):
-    from instream.state.trout_state import TroutState
-    from instream.io.output import write_fish_snapshot
+    from salmopy.state.trout_state import TroutState
+    from salmopy.io.output import write_fish_snapshot
 
     ts = TroutState.zeros(10)
     ts.alive[:3] = True
@@ -49,8 +49,8 @@ def test_write_fish_snapshot(tmp_path):
 
 
 def test_write_redd_snapshot(tmp_path):
-    from instream.state.redd_state import ReddState
-    from instream.io.output import write_redd_snapshot
+    from salmopy.state.redd_state import ReddState
+    from salmopy.io.output import write_redd_snapshot
 
     rs = ReddState.zeros(5)
     rs.alive[0] = True
@@ -63,7 +63,7 @@ def test_write_redd_snapshot(tmp_path):
 
 
 def test_write_outmigrants(tmp_path):
-    from instream.io.output import write_outmigrants
+    from salmopy.io.output import write_outmigrants
 
     outmigrants = [
         {"species_idx": 0, "length": 12.5, "reach_idx": 0},
@@ -76,7 +76,7 @@ def test_write_outmigrants(tmp_path):
 
 
 def test_write_outmigrants_empty(tmp_path):
-    from instream.io.output import write_outmigrants
+    from salmopy.io.output import write_outmigrants
 
     path = write_outmigrants([], ["Rainbow"], tmp_path)
     assert path.exists()
@@ -89,7 +89,7 @@ import numpy as np
 
 class TestWriteHabitatSummary:
     def test_writes_csv_with_correct_columns(self, tmp_path):
-        from instream.io.output import write_habitat_summary
+        from salmopy.io.output import write_habitat_summary
 
         cs = type(
             "CS",
@@ -115,8 +115,8 @@ class TestWriteHabitatSummary:
 
 class TestWriteGrowthReport:
     def test_writes_per_species_stats(self, tmp_path):
-        from instream.io.output import write_growth_report
-        from instream.state.trout_state import TroutState
+        from salmopy.io.output import write_growth_report
+        from salmopy.state.trout_state import TroutState
 
         ts = TroutState.zeros(5)
         ts.alive[0] = True

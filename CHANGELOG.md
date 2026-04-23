@@ -5,7 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.41.15] - 2026-04-23 (Critical correctness patch)
+## [0.42.0] - 2026-04-23 (Rebrand: inSTREAM → Salmopy)
+
+### Changed — BREAKING
+
+- **Package renamed from `instream` to `salmopy`.** All imports change:
+  `from instream.X import Y` → `from salmopy.X import Y`. The CLI entry
+  point `instream` becomes `salmopy`. PyPI project name changes from
+  `instream` to `salmopy`. The GitHub repository URL (`razinkele/instream-py`)
+  is unchanged for external link stability.
+- **`InSTREAMModel` class renamed to `SalmopyModel`.** Any external caller
+  doing `from instream.model import InSTREAMModel` must update to
+  `from salmopy.model import SalmopyModel`.
+- Upstream model references (`inSTREAM/inSALMO 7.4`, the NetLogo model this
+  project ports) remain unchanged — they refer to the external reference
+  implementation, not the brand of this Python port.
+
+### Folded into this release
+
+All fixes originally scheduled as v0.41.15 (Phase 1 of the 2026-04-23 deep
+review) are included. See the [0.41.15] entry below for the full list of
+9 critical-correctness fixes (behavior.py Numba indentation, PSPC rep-
+weighting, RETURNING_ADULT bulk promotion, spawn_defense_area_m
+propagation, meshio core dependency, [calibration] extra, marine
+except-pass removal, movement_panel deck.gl camelCase, max_lifetime_weight
+init).
+
+### Migration notes
+
+```python
+# Before v0.42.0:
+from instream.model import InSTREAMModel
+model = InSTREAMModel(config_path="...", data_dir="...")
+
+# v0.42.0+:
+from salmopy.model import SalmopyModel
+model = SalmopyModel(config_path="...", data_dir="...")
+```
+
+Install: `pip install salmopy` (was `pip install instream`).
+
+## [0.41.15] - 2026-04-23 (Critical correctness patch — superseded by 0.42.0 rebrand)
 
 ### Fixed — critical correctness patch
 

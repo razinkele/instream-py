@@ -3,8 +3,8 @@ import mesa
 import numpy as np
 import pytest
 
-from instream.state.trout_state import TroutState
-from instream.state.redd_state import ReddState
+from salmopy.state.trout_state import TroutState
+from salmopy.state.redd_state import ReddState
 
 
 class MockTroutModel(mesa.Model):
@@ -23,7 +23,7 @@ class MockReddModel(mesa.Model):
 
 class TestTroutAgent:
     def test_has_length_property(self):
-        from instream.agents.trout import TroutAgent
+        from salmopy.agents.trout import TroutAgent
         ts = TroutState.zeros(10)
         ts.alive[0] = True
         ts.length[0] = 12.5
@@ -31,7 +31,7 @@ class TestTroutAgent:
         assert agent.length == pytest.approx(12.5)
 
     def test_has_weight_property(self):
-        from instream.agents.trout import TroutAgent
+        from salmopy.agents.trout import TroutAgent
         ts = TroutState.zeros(10)
         ts.alive[0] = True
         ts.weight[0] = 8.3
@@ -39,7 +39,7 @@ class TestTroutAgent:
         assert agent.weight == pytest.approx(8.3)
 
     def test_idx_matches_state(self):
-        from instream.agents.trout import TroutAgent
+        from salmopy.agents.trout import TroutAgent
         ts = TroutState.zeros(10)
         ts.alive[3] = True
         ts.length[3] = 15.0
@@ -48,7 +48,7 @@ class TestTroutAgent:
         assert agent.length == pytest.approx(15.0)
 
     def test_step_is_noop(self):
-        from instream.agents.trout import TroutAgent
+        from salmopy.agents.trout import TroutAgent
         ts = TroutState.zeros(5)
         ts.alive[0] = True
         agent = TroutAgent(MockTroutModel(ts), idx=0)
@@ -57,7 +57,7 @@ class TestTroutAgent:
 
 class TestReddAgent:
     def test_has_egg_count(self):
-        from instream.agents.redd import ReddAgent
+        from salmopy.agents.redd import ReddAgent
         rs = ReddState.zeros(10)
         rs.alive[0] = True
         rs.num_eggs[0] = 250

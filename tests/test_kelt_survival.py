@@ -11,10 +11,10 @@ import datetime
 import numpy as np
 import pytest
 
-from instream.state.life_stage import LifeStage
-from instream.state.trout_state import TroutState
-from instream.marine.config import MarineConfig, ZoneConfig
-from instream.marine.domain import MarineDomain, ZoneState
+from salmopy.state.life_stage import LifeStage
+from salmopy.state.trout_state import TroutState
+from salmopy.marine.config import MarineConfig, ZoneConfig
+from salmopy.marine.domain import MarineDomain, ZoneState
 
 
 class TestLifeStageKelt:
@@ -44,7 +44,7 @@ class TestPostSpawnKeltSurvival:
         return ts
 
     def test_low_condition_never_becomes_kelt(self):
-        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        from salmopy.modules.spawning import apply_post_spawn_kelt_survival
         ts = self._setup(condition=0.3)
         n = apply_post_spawn_kelt_survival(
             ts, kelt_survival_prob=1.0, min_kelt_condition=0.5,
@@ -54,7 +54,7 @@ class TestPostSpawnKeltSurvival:
         assert not np.any(ts.life_history == int(LifeStage.KELT))
 
     def test_high_condition_prob_1_all_promoted(self):
-        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        from salmopy.modules.spawning import apply_post_spawn_kelt_survival
         ts = self._setup(condition=0.9)
         n = apply_post_spawn_kelt_survival(
             ts, kelt_survival_prob=1.0, min_kelt_condition=0.5,
@@ -65,7 +65,7 @@ class TestPostSpawnKeltSurvival:
         assert np.all(ts.alive)
 
     def test_prob_0_never_promoted(self):
-        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        from salmopy.modules.spawning import apply_post_spawn_kelt_survival
         ts = self._setup(condition=0.9)
         n = apply_post_spawn_kelt_survival(
             ts, kelt_survival_prob=0.0, min_kelt_condition=0.5,
@@ -75,7 +75,7 @@ class TestPostSpawnKeltSurvival:
         assert not np.any(ts.life_history == int(LifeStage.KELT))
 
     def test_only_affects_spawned_spawners(self):
-        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        from salmopy.modules.spawning import apply_post_spawn_kelt_survival
         ts = TroutState.zeros(5)
         ts.alive[:] = True
         ts.life_history[0] = int(LifeStage.FRY)
@@ -95,7 +95,7 @@ class TestPostSpawnKeltSurvival:
 
     def test_non_spawned_spawner_ignored(self):
         """A SPAWNER that has not yet spawned this season cannot become kelt."""
-        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        from salmopy.modules.spawning import apply_post_spawn_kelt_survival
         ts = self._setup(condition=0.9, spawned=False)
         n = apply_post_spawn_kelt_survival(
             ts, kelt_survival_prob=1.0, min_kelt_condition=0.5,
@@ -105,7 +105,7 @@ class TestPostSpawnKeltSurvival:
 
     def test_condition_depletes_multiplicatively(self):
         """Kelts must have their condition halved (capped below 0.3)."""
-        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        from salmopy.modules.spawning import apply_post_spawn_kelt_survival
         ts = self._setup(condition=0.8)
         apply_post_spawn_kelt_survival(
             ts, kelt_survival_prob=1.0, min_kelt_condition=0.5,
@@ -116,7 +116,7 @@ class TestPostSpawnKeltSurvival:
 
     def test_condition_floor_0_3(self):
         """Extremely depleted kelts hit the 0.3 floor, not 0."""
-        from instream.modules.spawning import apply_post_spawn_kelt_survival
+        from salmopy.modules.spawning import apply_post_spawn_kelt_survival
         ts = self._setup(condition=0.5)  # just above eligibility
         apply_post_spawn_kelt_survival(
             ts, kelt_survival_prob=1.0, min_kelt_condition=0.5,
@@ -131,7 +131,7 @@ class TestKeltReentry:
     preserved sea_winters and smolt_date (InSALMON extension)."""
 
     def test_kelt_at_mouth_reenters_as_ocean_adult(self):
-        from instream.modules.migration import migrate_fish_downstream
+        from salmopy.modules.migration import migrate_fish_downstream
         ts = TroutState.zeros(3)
         ts.alive[0] = True
         ts.reach_idx[0] = 0
@@ -163,7 +163,7 @@ class TestKeltReentry:
         """If there is no marine config, a KELT at the river mouth is
         killed the same way any non-smoltifiable fish is killed — we do
         not add special handling for the no-marine case."""
-        from instream.modules.migration import migrate_fish_downstream
+        from salmopy.modules.migration import migrate_fish_downstream
         ts = TroutState.zeros(3)
         ts.alive[0] = True
         ts.reach_idx[0] = 0

@@ -15,7 +15,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 def _run_example_a(days=None):
     """Run Example A simulation, return model."""
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
     import datetime
 
     end_date = None
@@ -23,7 +23,7 @@ def _run_example_a(days=None):
         start = datetime.date(2011, 4, 1)
         end_date = (start + datetime.timedelta(days=days)).isoformat()
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS / "example_a.yaml",
         data_dir=FIXTURES / "example_a",
         end_date_override=end_date,
@@ -34,13 +34,13 @@ def _run_example_a(days=None):
 
 def _run_example_b(days=365):
     """Run Example B (3 reaches, 3 species) simulation."""
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
     import datetime
 
     start = datetime.date(2011, 4, 1)
     end_date = (start + datetime.timedelta(days=days)).isoformat()
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS / "example_b.yaml",
         data_dir=FIXTURES / "example_b",
         end_date_override=end_date,
@@ -214,7 +214,7 @@ class TestSubDailyPopulationStability:
     @pytest.fixture(scope="class")
     def model(self, tmp_path_factory):
         import yaml
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         tmp_path = tmp_path_factory.mktemp("subdaily_bv")
         timeseries_csv = self.FIXTURES_SD / "hourly_example_a.csv"
@@ -225,7 +225,7 @@ class TestSubDailyPopulationStability:
             config["reaches"][rname]["time_series_input_file"] = str(timeseries_csv)
         out = tmp_path / "subdaily_bv_config.yaml"
         out.write_text(yaml.dump(config, default_flow_style=False))
-        m = InSTREAMModel(str(out), data_dir=str(self.FIXTURES_A))
+        m = SalmopyModel(str(out), data_dir=str(self.FIXTURES_A))
         # Run two full days of hourly steps (48 sub-steps)
         steps = 0
         while not m.time_manager.is_done() and steps < 48:
@@ -264,13 +264,13 @@ class TestHarvestBehavior:
     """Verify harvest module produces realistic catch."""
 
     def test_harvest_callable(self):
-        from instream.modules.harvest import compute_harvest
+        from salmopy.modules.harvest import compute_harvest
         assert callable(compute_harvest)
 
     def test_harvest_reduces_eligible_population(self):
         """Harvest with high angler pressure should kill eligible fish."""
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(0)
         ts = TroutState.zeros(20)
@@ -286,8 +286,8 @@ class TestHarvestBehavior:
 
     def test_harvest_records_respect_min_length(self):
         """Harvested fish must all be >= min_length."""
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(1)
         ts = TroutState.zeros(30)
@@ -306,8 +306,8 @@ class TestHarvestBehavior:
 
     def test_harvest_within_bag_limit(self):
         """Total harvest must not exceed the bag limit."""
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(2)
         ts = TroutState.zeros(50)
@@ -325,8 +325,8 @@ class TestHarvestBehavior:
 
     def test_no_harvest_when_population_undersized(self):
         """No fish should be harvested when all are below minimum length."""
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(3)
         ts = TroutState.zeros(10)

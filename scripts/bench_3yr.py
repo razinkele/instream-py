@@ -2,14 +2,14 @@
 import time, sys
 from pathlib import Path
 import numpy as np
-from instream.model import InSTREAMModel
-from instream.state.life_stage import LifeStage
+from salmopy.model import SalmopyModel
+from salmopy.state.life_stage import LifeStage
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 2
 
 times = []
 for run in range(N):
-    m = InSTREAMModel(
+    m = SalmopyModel(
         Path("configs/example_calibration_baltic.yaml"),
         data_dir=Path("tests/fixtures/example_a"),
         end_date_override="2014-03-31",

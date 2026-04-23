@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import numpy as np
 
-from instream.marine.seal_forcing import (
+from salmopy.marine.seal_forcing import (
     load_seal_abundance,
     abundance_for_year,
     seal_hazard_multiplier,
@@ -60,8 +60,8 @@ def test_loader_handles_commented_csv():
 
 def test_seal_hazard_scales_with_year(tmp_path):
     """Arc P integration: seal_hazard scales via HELCOM abundance."""
-    from instream.marine.config import MarineConfig, ZoneConfig
-    from instream.marine.survival import seal_hazard
+    from salmopy.marine.config import MarineConfig, ZoneConfig
+    from salmopy.marine.survival import seal_hazard
 
     csv = tmp_path / "seal.csv"
     csv.write_text(

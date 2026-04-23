@@ -1,4 +1,4 @@
-"""Comprehensive inSTREAM-py performance benchmark.
+"""Comprehensive Salmopy-py performance benchmark.
 
 Profiles individual operations and full model steps,
 compares numpy vs numba backends where applicable.
@@ -38,7 +38,7 @@ def fmt(med, mn, mx):
 def bench_hydraulics():
     """Benchmark hydraulic interpolation (vectorized searchsorted+lerp)."""
     print("\n=== Hydraulic Interpolation ===")
-    from instream.backends.numpy_backend import NumpyBackend
+    from salmopy.backends.numpy_backend import NumpyBackend
 
     backend = NumpyBackend()
     rng = np.random.default_rng(42)
@@ -52,7 +52,7 @@ def bench_hydraulics():
 
     # Numba backend
     try:
-        from instream.backends.numba_backend import NumbaBackend
+        from salmopy.backends.numba_backend import NumbaBackend
         backend_nb = NumbaBackend()
         for n_cells in [100, 500, 1373]:
             depths = rng.random((n_cells, 10)) * 100
@@ -66,7 +66,7 @@ def bench_hydraulics():
 def bench_light():
     """Benchmark light computation."""
     print("\n=== Light Computation ===")
-    from instream.backends.numpy_backend import NumpyBackend
+    from salmopy.backends.numpy_backend import NumpyBackend
 
     backend = NumpyBackend()
 
@@ -84,8 +84,8 @@ def bench_light():
 def bench_logistic():
     """Benchmark logistic function (scalar and vectorized)."""
     print("\n=== Logistic Function ===")
-    from instream.modules.behavior import evaluate_logistic, evaluate_logistic_array
-    from instream.backends.numpy_backend import NumpyBackend
+    from salmopy.modules.behavior import evaluate_logistic, evaluate_logistic_array
+    from salmopy.backends.numpy_backend import NumpyBackend
 
     backend = NumpyBackend()
 
@@ -106,7 +106,7 @@ def bench_logistic():
 def bench_growth_functions():
     """Benchmark individual growth functions."""
     print("\n=== Growth Functions (scalar) ===")
-    from instream.modules.growth import (
+    from salmopy.modules.growth import (
         cmax_temp_function, drift_intake, search_intake, respiration, growth_rate_for
     )
 
@@ -139,7 +139,7 @@ def bench_growth_functions():
 def bench_survival_functions():
     """Benchmark survival functions."""
     print("\n=== Survival Functions (scalar) ===")
-    from instream.modules.survival import (
+    from salmopy.modules.survival import (
         survival_high_temperature, survival_condition,
         survival_fish_predation, survival_terrestrial_predation,
     )
@@ -164,7 +164,7 @@ def bench_survival_functions():
 def bench_full_model():
     """Benchmark full model initialization and stepping."""
     print("\n=== Full Model (Example A) ===")
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     if not CONFIG_PATH.exists():
         print("  SKIP: config not found at", CONFIG_PATH)
@@ -172,7 +172,7 @@ def bench_full_model():
 
     # Initialization
     t0 = time.perf_counter()
-    model = InSTREAMModel(str(CONFIG_PATH), data_dir=str(DATA_DIR))
+    model = SalmopyModel(str(CONFIG_PATH), data_dir=str(DATA_DIR))
     init_time = (time.perf_counter() - t0) * 1000
     print(f"  Initialization:           {init_time:8.0f} ms")
     print(f"  Fish alive:               {model.trout_state.num_alive()}")
@@ -220,13 +220,13 @@ def bench_profile_step():
     import cProfile
     import pstats
     import io
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     if not CONFIG_PATH.exists():
         print("  SKIP: config not found")
         return
 
-    model = InSTREAMModel(str(CONFIG_PATH), data_dir=str(DATA_DIR))
+    model = SalmopyModel(str(CONFIG_PATH), data_dir=str(DATA_DIR))
     # Warm up
     for _ in range(3):
         model.step()
@@ -283,7 +283,7 @@ Notes:
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("inSTREAM-py Performance Benchmark")
+    print("Salmopy-py Performance Benchmark")
     print("=" * 70)
     print(f"Platform: {sys.platform}")
     print(f"Python: {sys.version.split()[0]}")

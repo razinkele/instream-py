@@ -11,39 +11,39 @@ class TestEvaluateLogistic:
     """Test standalone logistic function for survival/movement."""
 
     def test_at_L1_returns_0_1(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         result = evaluate_logistic(3.0, L1=3.0, L9=6.0)
         np.testing.assert_allclose(result, 0.1, atol=0.01)
 
     def test_at_L9_returns_0_9(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         result = evaluate_logistic(6.0, L1=3.0, L9=6.0)
         np.testing.assert_allclose(result, 0.9, atol=0.01)
 
     def test_at_midpoint_returns_0_5(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         result = evaluate_logistic(4.5, L1=3.0, L9=6.0)
         np.testing.assert_allclose(result, 0.5, atol=0.01)
 
     def test_monotonically_increasing(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         x = np.linspace(0, 10, 50)
         results = np.array([evaluate_logistic(xi, L1=3.0, L9=6.0) for xi in x])
         assert np.all(np.diff(results) >= 0)
 
     def test_inverted_when_L1_gt_L9(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         x = np.linspace(0, 10, 50)
         results = np.array([evaluate_logistic(xi, L1=6.0, L9=3.0) for xi in x])
         assert np.all(np.diff(results) <= 0)
 
     def test_vectorized_array(self):
-        from instream.modules.behavior import evaluate_logistic_array
+        from salmopy.modules.behavior import evaluate_logistic_array
 
         x = np.array([3.0, 4.5, 6.0])
         results = evaluate_logistic_array(x, L1=3.0, L9=6.0)
@@ -55,7 +55,7 @@ class TestMovementRadius:
     """Test movement radius calculation."""
 
     def test_large_fish_has_larger_radius(self):
-        from instream.modules.behavior import movement_radius
+        from salmopy.modules.behavior import movement_radius
 
         r_small = movement_radius(
             length=5.0, move_radius_max=20000, move_radius_L1=7, move_radius_L9=20
@@ -66,7 +66,7 @@ class TestMovementRadius:
         assert r_large > r_small
 
     def test_radius_bounded_by_max(self):
-        from instream.modules.behavior import movement_radius
+        from salmopy.modules.behavior import movement_radius
 
         r = movement_radius(
             length=100.0, move_radius_max=20000, move_radius_L1=7, move_radius_L9=20
@@ -74,7 +74,7 @@ class TestMovementRadius:
         assert r <= 20000
 
     def test_radius_positive(self):
-        from instream.modules.behavior import movement_radius
+        from salmopy.modules.behavior import movement_radius
 
         r = movement_radius(
             length=3.0, move_radius_max=20000, move_radius_L1=7, move_radius_L9=20
@@ -88,9 +88,9 @@ class TestCandidateMask:
     @pytest.fixture
     def simple_setup(self):
         """Create a simple 5-cell setup for testing."""
-        from instream.state.cell_state import CellState
-        from instream.state.trout_state import TroutState
-        from instream.space.fem_space import FEMSpace
+        from salmopy.state.cell_state import CellState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.space.fem_space import FEMSpace
 
         cs = CellState.zeros(5, num_flows=2)
         # Place cells in a line: 0, 100, 200, 300, 400 meters apart
@@ -121,7 +121,7 @@ class TestCandidateMask:
         return space, ts
 
     def test_mask_shape(self, simple_setup):
-        from instream.modules.behavior import build_candidate_mask
+        from salmopy.modules.behavior import build_candidate_mask
 
         space, ts = simple_setup
         mask = build_candidate_mask(
@@ -130,7 +130,7 @@ class TestCandidateMask:
         assert mask.shape == (3, 5)  # (N_MAX, num_cells)
 
     def test_dead_fish_no_candidates(self, simple_setup):
-        from instream.modules.behavior import build_candidate_mask
+        from salmopy.modules.behavior import build_candidate_mask
 
         space, ts = simple_setup
         mask = build_candidate_mask(
@@ -139,7 +139,7 @@ class TestCandidateMask:
         assert not np.any(mask[2])  # dead fish has no candidates
 
     def test_fish_includes_current_cell(self, simple_setup):
-        from instream.modules.behavior import build_candidate_mask
+        from salmopy.modules.behavior import build_candidate_mask
 
         space, ts = simple_setup
         mask = build_candidate_mask(
@@ -149,7 +149,7 @@ class TestCandidateMask:
         assert mask[0, 0]
 
     def test_dry_cells_excluded(self, simple_setup):
-        from instream.modules.behavior import build_candidate_mask
+        from salmopy.modules.behavior import build_candidate_mask
 
         space, ts = simple_setup
         mask = build_candidate_mask(
@@ -160,7 +160,7 @@ class TestCandidateMask:
         assert not mask[1, 2]
 
     def test_includes_neighbors(self, simple_setup):
-        from instream.modules.behavior import build_candidate_mask
+        from salmopy.modules.behavior import build_candidate_mask
 
         space, ts = simple_setup
         # Use very small radius so only neighbors are included
@@ -175,7 +175,7 @@ class TestFitness:
     """Test fitness calculation (simplified — growth-only for Phase 4)."""
 
     def test_wet_cell_higher_than_dry(self):
-        from instream.modules.behavior import fitness_for
+        from salmopy.modules.behavior import fitness_for
 
         # Wet cell with food should have positive fitness
         f_wet = fitness_for(
@@ -268,7 +268,7 @@ class TestFitness:
         assert f_wet > f_dry
 
     def test_hide_fitness_is_negative(self):
-        from instream.modules.behavior import fitness_for
+        from salmopy.modules.behavior import fitness_for
 
         f = fitness_for(
             activity="hide",
@@ -316,7 +316,7 @@ class TestFitness:
         assert f < 0  # hide = only respiration cost
 
     def test_returns_zero_when_velocity_exceeds_max(self):
-        from instream.modules.behavior import fitness_for
+        from salmopy.modules.behavior import fitness_for
 
         f = fitness_for(
             activity="search",
@@ -368,7 +368,7 @@ class TestDepletion:
     """Test sequential resource depletion."""
 
     def test_drift_decreases(self):
-        from instream.modules.behavior import deplete_resources
+        from salmopy.modules.behavior import deplete_resources
 
         available_drift = np.array([100.0, 200.0])
         available_search = np.array([100.0, 200.0])
@@ -395,7 +395,7 @@ class TestDepletion:
         assert available_drift[0] < 100.0
 
     def test_second_fish_gets_less(self):
-        from instream.modules.behavior import deplete_resources
+        from salmopy.modules.behavior import deplete_resources
 
         available_drift = np.array([50.0])
         available_search = np.array([100.0])
@@ -423,7 +423,7 @@ class TestDepletion:
         assert available_drift[0] == pytest.approx(0.0, abs=1e-10)
 
     def test_never_negative(self):
-        from instream.modules.behavior import deplete_resources
+        from salmopy.modules.behavior import deplete_resources
 
         available_drift = np.array([5.0])
         available_search = np.array([100.0])
@@ -450,7 +450,7 @@ class TestDepletion:
         assert available_drift[0] >= 0.0
 
     def test_hiding_integer_depletion(self):
-        from instream.modules.behavior import deplete_resources
+        from salmopy.modules.behavior import deplete_resources
 
         available_drift = np.array([100.0])
         available_search = np.array([100.0])
@@ -477,7 +477,7 @@ class TestDepletion:
         assert available_hiding[0] == 2  # 3 - 1 = 2
 
     def test_shelter_depleted_for_drift(self):
-        from instream.modules.behavior import deplete_resources
+        from salmopy.modules.behavior import deplete_resources
 
         available_drift = np.array([100.0])
         available_search = np.array([100.0])
@@ -510,9 +510,9 @@ class TestHabitatSelection:
     @pytest.fixture
     def simple_model(self):
         """Create minimal model state for habitat selection testing."""
-        from instream.state.cell_state import CellState
-        from instream.state.trout_state import TroutState
-        from instream.space.fem_space import FEMSpace
+        from salmopy.state.cell_state import CellState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.space.fem_space import FEMSpace
 
         cs = CellState.zeros(3, num_flows=2)
         cs.centroid_x[:] = np.array([0, 100, 200], dtype=np.float64)
@@ -546,7 +546,7 @@ class TestHabitatSelection:
         return space, ts
 
     def test_all_alive_fish_get_assigned(self, simple_model):
-        from instream.modules.behavior import select_habitat_and_activity
+        from salmopy.modules.behavior import select_habitat_and_activity
 
         space, ts = simple_model
         params = dict(
@@ -591,7 +591,7 @@ class TestHabitatSelection:
             assert ts.activity[i] in (0, 1, 2)
 
     def test_resources_decrease(self, simple_model):
-        from instream.modules.behavior import select_habitat_and_activity
+        from salmopy.modules.behavior import select_habitat_and_activity
 
         space, ts = simple_model
         initial_drift = space.cell_state.available_drift.copy()
@@ -638,10 +638,10 @@ class TestHabitatSelection:
 
     def test_sequential_depletion_large_fish_first(self):
         """Larger fish depletes resources first, smaller fish sees reduced availability."""
-        from instream.modules.behavior import select_habitat_and_activity
-        from instream.state.cell_state import CellState
-        from instream.state.trout_state import TroutState
-        from instream.space.fem_space import FEMSpace
+        from salmopy.modules.behavior import select_habitat_and_activity
+        from salmopy.state.cell_state import CellState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.space.fem_space import FEMSpace
 
         # Single cell with very limited drift food
         cs = CellState.zeros(1, num_flows=2)
@@ -716,9 +716,9 @@ class TestGrowthRateStored:
     @pytest.fixture
     def simple_model(self):
         """Create minimal model state for growth rate storage testing."""
-        from instream.state.cell_state import CellState
-        from instream.state.trout_state import TroutState
-        from instream.space.fem_space import FEMSpace
+        from salmopy.state.cell_state import CellState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.space.fem_space import FEMSpace
 
         cs = CellState.zeros(3, num_flows=2)
         cs.centroid_x[:] = np.array([0, 100, 200], dtype=np.float64)
@@ -753,7 +753,7 @@ class TestGrowthRateStored:
 
     def test_trout_state_has_last_growth_rate_field(self):
         """TroutState should have a last_growth_rate field initialized to zero."""
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         ts = TroutState.zeros(10)
         assert hasattr(ts, "last_growth_rate"), (
@@ -764,7 +764,7 @@ class TestGrowthRateStored:
 
     def test_habitat_selection_populates_last_growth_rate(self, simple_model):
         """After habitat selection, alive fish should have last_growth_rate set."""
-        from instream.modules.behavior import select_habitat_and_activity
+        from salmopy.modules.behavior import select_habitat_and_activity
 
         space, ts = simple_model
         params = dict(
@@ -816,7 +816,7 @@ class TestFitnessSurvivalIntegration:
 
     def test_fitness_includes_survival_penalty(self):
         """Fitness in a dangerous cell should be lower than a safe cell."""
-        from instream.modules.behavior import fitness_for
+        from salmopy.modules.behavior import fitness_for
 
         # Both cells have same growth parameters but different predation risk
         common = dict(
@@ -873,7 +873,7 @@ class TestFitnessSurvivalIntegration:
 
     def test_fitness_with_default_survival_params_close_to_growth_only(self):
         """With default survival params (benign conditions), fitness ~ growth * step_length."""
-        from instream.modules.behavior import fitness_for
+        from salmopy.modules.behavior import fitness_for
 
         kwargs = dict(
             activity="drift",
@@ -930,9 +930,9 @@ class TestSparseCandidates:
     @pytest.fixture
     def simple_setup(self):
         """Create a simple 5-cell setup for testing."""
-        from instream.state.cell_state import CellState
-        from instream.state.trout_state import TroutState
-        from instream.space.fem_space import FEMSpace
+        from salmopy.state.cell_state import CellState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.space.fem_space import FEMSpace
 
         cs = CellState.zeros(5, num_flows=2)
         cs.centroid_x[:] = np.array([0, 100, 200, 300, 400], dtype=np.float64)
@@ -962,7 +962,7 @@ class TestSparseCandidates:
 
     def test_sparse_candidates_match_dense(self, simple_setup):
         """Sparse candidate lists must have same candidates as dense mask."""
-        from instream.modules.behavior import (
+        from salmopy.modules.behavior import (
             build_candidate_lists,
             build_candidate_mask,
         )
@@ -981,7 +981,7 @@ class TestSparseCandidates:
 
     def test_dead_fish_gets_none(self, simple_setup):
         """Dead fish should get None in sparse list."""
-        from instream.modules.behavior import build_candidate_lists
+        from salmopy.modules.behavior import build_candidate_lists
 
         space, ts = simple_setup
         sparse = build_candidate_lists(
@@ -991,7 +991,7 @@ class TestSparseCandidates:
 
     def test_sparse_dtype_int32(self, simple_setup):
         """Sparse candidate arrays should be int32."""
-        from instream.modules.behavior import build_candidate_lists
+        from salmopy.modules.behavior import build_candidate_lists
 
         space, ts = simple_setup
         sparse = build_candidate_lists(
@@ -1008,9 +1008,9 @@ class TestNumbaCandidates:
     @pytest.fixture
     def simple_setup(self):
         """Create a simple 5-cell setup for testing."""
-        from instream.state.cell_state import CellState
-        from instream.state.trout_state import TroutState
-        from instream.space.fem_space import FEMSpace
+        from salmopy.state.cell_state import CellState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.space.fem_space import FEMSpace
 
         cs = CellState.zeros(5, num_flows=2)
         cs.centroid_x[:] = np.array([0, 100, 200, 300, 400], dtype=np.float64)
@@ -1041,7 +1041,7 @@ class TestNumbaCandidates:
     def test_numba_candidates_match_kdtree(self, simple_setup):
         """Numba brute-force must find same cells as KD-tree."""
         pytest.importorskip("numba")
-        from instream.modules.behavior import (
+        from salmopy.modules.behavior import (
             build_candidate_lists,
             build_candidate_mask,
         )
@@ -1063,7 +1063,7 @@ class TestNumbaCandidates:
     def test_numba_all_candidates_wet(self, simple_setup):
         """All candidates from numba should be wet cells."""
         pytest.importorskip("numba")
-        from instream.modules.behavior import build_candidate_lists
+        from salmopy.modules.behavior import build_candidate_lists
 
         space, ts = simple_setup
         sparse = build_candidate_lists(
@@ -1078,7 +1078,7 @@ class TestNumbaCandidates:
 class TestFitnessMemory:
     def test_memory_updates_with_fraction(self):
         """Fitness memory should be EMA: new = frac * old + (1-frac) * current."""
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         ts = TroutState.zeros(2)
         ts.alive[0] = True
@@ -1092,7 +1092,7 @@ class TestFitnessMemory:
 
     def test_memory_converges_to_steady_state(self):
         """After many updates with constant fitness, memory converges."""
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         ts = TroutState.zeros(1)
         ts.alive[0] = True
@@ -1145,26 +1145,26 @@ class TestLogisticDegenerateCase:
     """When L1 == L9, logistic should act as step function."""
 
     def test_scalar_logistic_degenerate_above(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         result = evaluate_logistic(15.0, 10.0, 10.0)
         assert result == pytest.approx(0.9)
 
     def test_scalar_logistic_degenerate_below(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         result = evaluate_logistic(5.0, 10.0, 10.0)
         assert result == pytest.approx(0.1)
 
     def test_scalar_logistic_degenerate_at(self):
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         result = evaluate_logistic(10.0, 10.0, 10.0)
         assert result == pytest.approx(0.9)
 
     def test_numba_logistic_degenerate(self):
         try:
-            from instream.backends.numba_backend.fitness import _logistic
+            from salmopy.backends.numba_backend.fitness import _logistic
         except ImportError:
             pytest.skip("Numba not installed")
         assert _logistic(15.0, 10.0, 10.0) == pytest.approx(0.9)
@@ -1178,16 +1178,16 @@ class TestBatchVsScalarHabitatSelection:
     def test_batch_matches_scalar(self):
         """Run habitat selection with batch disabled vs enabled, compare outputs."""
         try:
-            import instream.modules.behavior as bmod
+            import salmopy.modules.behavior as bmod
         except ImportError:
             pytest.skip("behavior module not available")
 
         if not bmod._HAS_NUMBA_BATCH:
             pytest.skip("Numba batch not available")
 
-        from instream.state.cell_state import CellState
-        from instream.state.trout_state import TroutState
-        from instream.space.fem_space import FEMSpace
+        from salmopy.state.cell_state import CellState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.space.fem_space import FEMSpace
         import copy
 
         cs = CellState.zeros(5, num_flows=2)
@@ -1291,10 +1291,10 @@ class TestBatchVsScalarHabitatSelection:
 def test_candidate_lists_respect_reach_connectivity():
     """Candidates must be restricted to current reach + connected reaches."""
     import numpy as np
-    from instream.modules.behavior import build_candidate_lists
-    from instream.state.cell_state import CellState
-    from instream.state.trout_state import TroutState
-    from instream.space.fem_space import FEMSpace
+    from salmopy.modules.behavior import build_candidate_lists
+    from salmopy.state.cell_state import CellState
+    from salmopy.state.trout_state import TroutState
+    from salmopy.space.fem_space import FEMSpace
 
     cs = CellState.zeros(10, num_flows=2)
     cs.centroid_x[:] = np.arange(10, dtype=np.float64) * 100

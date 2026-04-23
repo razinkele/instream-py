@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import numpy as np
 
-from instream.bayesian import (
+from salmopy.bayesian import (
     Prior,
     BALTIC_SALMON_PRIORS,
     log_likelihood_smolt_trap,

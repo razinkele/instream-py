@@ -1,6 +1,6 @@
 """Tests for Arc L: WGBAST M74 YSFM forcing loader."""
 from pathlib import Path
-from instream.io.m74_forcing import load_m74_forcing, ysfm_for_year_river
+from salmopy.io.m74_forcing import load_m74_forcing, ysfm_for_year_river
 
 
 def test_load_m74_forcing(tmp_path: Path):

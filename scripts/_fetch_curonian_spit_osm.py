@@ -23,7 +23,7 @@ PARAMS = {
     "polygon_geojson": "1",
     "limit": "1",
 }
-HEADERS = {"User-Agent": "inSTREAM-py/0.30.0 (research)"}
+HEADERS = {"User-Agent": "Salmopy-py/0.30.0 (research)"}
 
 
 def main() -> None:

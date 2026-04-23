@@ -7,12 +7,12 @@ from pathlib import Path
 class TestRestorationEvents:
     def test_restoration_changes_cell_properties(self):
         """Restoration event should modify cell state on the target date."""
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         fixtures = Path(__file__).parent / "fixtures" / "example_a"
         config_path = Path(__file__).parent.parent / "configs" / "example_a.yaml"
 
-        model = InSTREAMModel(str(config_path), data_dir=str(fixtures))
+        model = SalmopyModel(str(config_path), data_dir=str(fixtures))
         cs = model.fem_space.cell_state
 
         # Record original values
@@ -38,12 +38,12 @@ class TestRestorationEvents:
 
     def test_restoration_no_effect_wrong_date(self):
         """Restoration event on a different date should have no effect."""
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         fixtures = Path(__file__).parent / "fixtures" / "example_a"
         config_path = Path(__file__).parent.parent / "configs" / "example_a.yaml"
 
-        model = InSTREAMModel(str(config_path), data_dir=str(fixtures))
+        model = SalmopyModel(str(config_path), data_dir=str(fixtures))
         cs = model.fem_space.cell_state
 
         original = cs.frac_vel_shelter[0].copy()
@@ -60,12 +60,12 @@ class TestRestorationEvents:
 
     def test_restoration_all_cells_in_reach(self):
         """cells='all' should modify all cells in the reach."""
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         fixtures = Path(__file__).parent / "fixtures" / "example_a"
         config_path = Path(__file__).parent.parent / "configs" / "example_a.yaml"
 
-        model = InSTREAMModel(str(config_path), data_dir=str(fixtures))
+        model = SalmopyModel(str(config_path), data_dir=str(fixtures))
         cs = model.fem_space.cell_state
 
         date_str = model.time_manager.current_date.strftime("%Y-%m-%d")

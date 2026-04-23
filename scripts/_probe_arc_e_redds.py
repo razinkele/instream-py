@@ -24,7 +24,7 @@ import datetime
 
 import numpy as np
 
-from instream.model import InSTREAMModel
+from salmopy.model import SalmopyModel
 
 PROJECT = Path(__file__).resolve().parent.parent
 CONFIGS = PROJECT / "configs"
@@ -34,7 +34,7 @@ FIXTURES = PROJECT / "tests" / "fixtures"
 def main() -> None:
     start = datetime.date(2011, 4, 1)
     end = (start + datetime.timedelta(days=450)).isoformat()
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS / "example_a.yaml",
         data_dir=FIXTURES / "example_a",
         end_date_override=end,

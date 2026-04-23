@@ -3,7 +3,7 @@ import mesa
 import numpy as np
 import pytest
 
-from instream.state.trout_state import TroutState
+from salmopy.state.trout_state import TroutState
 
 
 class MockModel(mesa.Model):
@@ -18,7 +18,7 @@ class MockModel(mesa.Model):
 
 class TestSyncMesaFromState:
     def test_creates_agents_for_alive_fish(self):
-        from instream.sync import sync_trout_agents
+        from salmopy.sync import sync_trout_agents
         ts = TroutState.zeros(10)
         ts.alive[0] = True
         ts.alive[3] = True
@@ -29,7 +29,7 @@ class TestSyncMesaFromState:
         assert set(model._trout_agents.keys()) == {0, 3, 7}
 
     def test_removes_dead_agents(self):
-        from instream.sync import sync_trout_agents
+        from salmopy.sync import sync_trout_agents
         ts = TroutState.zeros(10)
         ts.alive[0] = True
         ts.alive[1] = True
@@ -43,7 +43,7 @@ class TestSyncMesaFromState:
         assert 0 not in model._trout_agents
 
     def test_adds_born_agents(self):
-        from instream.sync import sync_trout_agents
+        from salmopy.sync import sync_trout_agents
         ts = TroutState.zeros(10)
         ts.alive[0] = True
         model = MockModel(ts)
@@ -56,7 +56,7 @@ class TestSyncMesaFromState:
         assert 5 in model._trout_agents
 
     def test_idempotent(self):
-        from instream.sync import sync_trout_agents
+        from salmopy.sync import sync_trout_agents
         ts = TroutState.zeros(10)
         ts.alive[0] = True
         model = MockModel(ts)
@@ -65,7 +65,7 @@ class TestSyncMesaFromState:
         assert len(model._trout_agents) == 1
 
     def test_handles_no_changes(self):
-        from instream.sync import sync_trout_agents
+        from salmopy.sync import sync_trout_agents
         ts = TroutState.zeros(10)
         model = MockModel(ts)
         sync_trout_agents(model)  # no alive fish

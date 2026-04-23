@@ -8,12 +8,12 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from instream.io.config import (
+from salmopy.io.config import (
     BarrierDirectionConfig,
     SimulationConfig,
     SpeciesConfig,
 )
-from instream.modules.growth_math import safe_cmax_interp
+from salmopy.modules.growth_math import safe_cmax_interp
 
 
 # -----------------------------------------------------------------------
@@ -97,7 +97,7 @@ class TestP35aSpawnDefenseUnits:
         assert math.isclose(sp.spawn_defense_area, 25.0)
 
     def test_select_spawn_cell_uses_meters(self):
-        from instream.modules.spawning import select_spawn_cell
+        from salmopy.modules.spawning import select_spawn_cell
 
         scores = np.array([0.8, 0.9, 0.7])
         candidates = np.array([10, 20, 30])
@@ -167,7 +167,7 @@ class TestP36SafeCmaxInterp:
         assert math.isclose(got, 0.5)
 
     def test_matches_cmax_temp_function(self):
-        from instream.modules.growth import cmax_temp_function
+        from salmopy.modules.growth import cmax_temp_function
 
         xs = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0]
         ys = [0.0, 0.2, 0.6, 1.0, 0.6, 0.0]
@@ -179,7 +179,7 @@ class TestP36SafeCmaxInterp:
             )
 
     def test_cmax_temp_function_empty_raises(self):
-        from instream.modules.growth import cmax_temp_function
+        from salmopy.modules.growth import cmax_temp_function
 
         with pytest.raises(ValueError):
             cmax_temp_function(10.0, [], [])

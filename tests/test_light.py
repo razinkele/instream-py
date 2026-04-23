@@ -5,7 +5,7 @@ import pytest
 
 
 def _get_backend(name):
-    from instream.backends import get_backend
+    from salmopy.backends import get_backend
 
     return get_backend(name)
 
@@ -187,7 +187,7 @@ class TestDailyIntegralIrradiance:
 
     def test_irradiance_less_than_noon_peak(self):
         """Daily-integrated irradiance must be less than noon-peak."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         backend = NumpyBackend()
         _dl, _tl, irr = backend.compute_light(172, 45.0, 1.0, 1.0, 0.0, 6.0)
@@ -197,7 +197,7 @@ class TestDailyIntegralIrradiance:
         )
 
     def test_irradiance_zero_at_polar_winter(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         backend = NumpyBackend()
         _dl, _tl, irr = backend.compute_light(355, 80.0, 1.0, 1.0, 0.0, 6.0)
@@ -205,7 +205,7 @@ class TestDailyIntegralIrradiance:
 
     def test_irradiance_equator_equinox(self):
         """At equator on equinox: I = (S0/pi) * sin(pi/2) = S0/pi ~ 433."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         backend = NumpyBackend()
         _dl, _tl, irr = backend.compute_light(80, 0.0, 1.0, 1.0, 0.0, 6.0)
@@ -216,8 +216,8 @@ class TestDailyIntegralIrradiance:
 
     def test_irradiance_backend_parity_numba(self):
         pytest.importorskip("numba")
-        from instream.backends.numpy_backend import NumpyBackend
-        from instream.backends.numba_backend import NumbaBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numba_backend import NumbaBackend
 
         np_b = NumpyBackend()
         nb_b = NumbaBackend()
@@ -268,7 +268,7 @@ class TestTurbidityConstant:
     """Test the additive turbidity constant in Beer-Lambert attenuation."""
 
     def test_turbidity_constant_increases_attenuation(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         backend = NumpyBackend()
         depths = np.array([50.0, 100.0])
@@ -281,7 +281,7 @@ class TestTurbidityConstant:
         np.testing.assert_array_less(light_with_const, light_no_const)
 
     def test_zero_constant_unchanged(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         backend = NumpyBackend()
         depths = np.array([0.0, 50.0, 100.0])

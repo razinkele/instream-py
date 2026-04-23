@@ -19,9 +19,9 @@ import numpy as np
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT / "src"))
 
-from instream.model import InSTREAMModel  # noqa: E402
-from instream.state.life_stage import LifeStage  # noqa: E402
-from instream.modules.spawning import ready_to_spawn  # noqa: E402
+from salmopy.model import SalmopyModel  # noqa: E402
+from salmopy.state.life_stage import LifeStage  # noqa: E402
+from salmopy.modules.spawning import ready_to_spawn  # noqa: E402
 
 CONFIG = str(PROJECT / "configs" / "example_baltic.yaml")
 DATA_DIR = str(PROJECT / "tests" / "fixtures" / "example_baltic")
@@ -29,7 +29,7 @@ DATA_DIR = str(PROJECT / "tests" / "fixtures" / "example_baltic")
 
 def main() -> None:
     print("Building model...")
-    model = InSTREAMModel(CONFIG, data_dir=DATA_DIR)
+    model = SalmopyModel(CONFIG, data_dir=DATA_DIR)
 
     # Skip to day 210 (mid-Oct = peak spawn window for Baltic salmon).
     print("Stepping 210 days to peak spawn window...")

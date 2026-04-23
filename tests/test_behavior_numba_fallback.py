@@ -11,13 +11,13 @@ CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 
 
 def test_numba_path_does_not_invoke_python_fallback(monkeypatch):
-    from instream.modules import behavior
+    from salmopy.modules import behavior
 
     if not behavior._HAS_NUMBA_SPATIAL:
         pytest.skip("numba not installed")
 
-    from instream.model import InSTREAMModel
-    model = InSTREAMModel(
+    from salmopy.model import SalmopyModel
+    model = SalmopyModel(
         config_path=str(CONFIGS_DIR / "example_a.yaml"),
         data_dir=str(FIXTURES_DIR / "example_a"),
     )

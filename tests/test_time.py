@@ -13,8 +13,8 @@ class TestTimeManager:
 
     @pytest.fixture
     def time_manager(self):
-        from instream.io.timeseries import read_time_series
-        from instream.io.time_manager import TimeManager
+        from salmopy.io.timeseries import read_time_series
+        from salmopy.io.time_manager import TimeManager
 
         df = read_time_series(
             FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv"
@@ -43,8 +43,8 @@ class TestTimeManager:
         assert time_manager.julian_date == 91
 
     def test_julian_date_jan_1(self):
-        from instream.io.timeseries import read_time_series
-        from instream.io.time_manager import TimeManager
+        from salmopy.io.timeseries import read_time_series
+        from salmopy.io.time_manager import TimeManager
 
         df = read_time_series(
             FIXTURES_DIR / "example_a" / "ExampleA-TimeSeriesInputs.csv"
@@ -93,7 +93,7 @@ class TestCensus:
     """Test census day detection."""
 
     def test_is_census_on_census_day(self):
-        from instream.io.time_manager import is_census
+        from salmopy.io.time_manager import is_census
 
         dt = pd.Timestamp("2011-06-15")
         assert is_census(
@@ -104,7 +104,7 @@ class TestCensus:
         )
 
     def test_is_census_on_second_census_day(self):
-        from instream.io.time_manager import is_census
+        from salmopy.io.time_manager import is_census
 
         dt = pd.Timestamp("2011-09-30")
         assert is_census(
@@ -115,7 +115,7 @@ class TestCensus:
         )
 
     def test_not_census_on_regular_day(self):
-        from instream.io.time_manager import is_census
+        from salmopy.io.time_manager import is_census
 
         dt = pd.Timestamp("2011-07-04")
         assert not is_census(
@@ -126,7 +126,7 @@ class TestCensus:
         )
 
     def test_census_skips_early_years(self):
-        from instream.io.time_manager import is_census
+        from salmopy.io.time_manager import is_census
 
         dt = pd.Timestamp("2011-06-15")
         # Skip 1 year from start (2011-04-01), so first census allowed in 2012
@@ -138,7 +138,7 @@ class TestCensus:
         )
 
     def test_census_after_skip_years(self):
-        from instream.io.time_manager import is_census
+        from salmopy.io.time_manager import is_census
 
         dt = pd.Timestamp("2012-06-15")
         assert is_census(
@@ -153,28 +153,28 @@ class TestDetectFrequency:
     """Test auto-detection of time-series frequency."""
 
     def test_daily_returns_1(self):
-        from instream.io.time_manager import detect_frequency
+        from salmopy.io.time_manager import detect_frequency
 
         dates = pd.date_range("2011-04-01", periods=10, freq="D")
         df = pd.DataFrame({"flow": range(10)}, index=dates)
         assert detect_frequency(df) == 1
 
     def test_hourly_returns_24(self):
-        from instream.io.time_manager import detect_frequency
+        from salmopy.io.time_manager import detect_frequency
 
         dates = pd.date_range("2011-04-01", periods=48, freq="h")
         df = pd.DataFrame({"flow": range(48)}, index=dates)
         assert detect_frequency(df) == 24
 
     def test_6hourly_returns_4(self):
-        from instream.io.time_manager import detect_frequency
+        from salmopy.io.time_manager import detect_frequency
 
         dates = pd.date_range("2011-04-01", periods=20, freq="6h")
         df = pd.DataFrame({"flow": range(20)}, index=dates)
         assert detect_frequency(df) == 4
 
     def test_single_row_returns_1(self):
-        from instream.io.time_manager import detect_frequency
+        from salmopy.io.time_manager import detect_frequency
 
         dates = pd.date_range("2011-04-01", periods=1, freq="D")
         df = pd.DataFrame({"flow": [1.0]}, index=dates)
@@ -186,7 +186,7 @@ class TestSubDailyAdvance:
 
     def _make_hourly_tm(self, hours=48):
         """Helper: create a TimeManager with hourly data for 2 days."""
-        from instream.io.time_manager import TimeManager
+        from salmopy.io.time_manager import TimeManager
 
         dates = pd.date_range("2011-04-01", periods=hours, freq="h")
         df = pd.DataFrame(
@@ -236,7 +236,7 @@ class TestSubDailyAdvance:
 
     def test_daily_backward_compatible(self):
         """Daily input should behave exactly as before."""
-        from instream.io.time_manager import TimeManager
+        from salmopy.io.time_manager import TimeManager
 
         dates = pd.date_range("2011-04-01", periods=10, freq="D")
         df = pd.DataFrame({"flow": np.arange(10, dtype=float)}, index=dates)
@@ -270,7 +270,7 @@ class TestSubDailyAdvance:
 
     def test_is_done_subdaily(self):
         """is_done should be True when row pointers exceed data length."""
-        from instream.io.time_manager import TimeManager
+        from salmopy.io.time_manager import TimeManager
 
         # Only 4 rows of 6-hourly data (1 day)
         dates = pd.date_range("2011-04-01", periods=4, freq="6h")
@@ -290,14 +290,14 @@ class TestYearShuffler:
     """Test year shuffler for stochastic input year resampling."""
 
     def test_produces_valid_mapping(self):
-        from instream.io.time_manager import YearShuffler
+        from salmopy.io.time_manager import YearShuffler
 
         ys = YearShuffler(available_years=[2010, 2011, 2012], seed=42)
         mapped = ys.get_year(2011)
         assert mapped in [2010, 2011, 2012]
 
     def test_deterministic_with_seed(self):
-        from instream.io.time_manager import YearShuffler
+        from salmopy.io.time_manager import YearShuffler
 
         ys1 = YearShuffler(available_years=[2010, 2011, 2012], seed=42)
         ys2 = YearShuffler(available_years=[2010, 2011, 2012], seed=42)
@@ -305,7 +305,7 @@ class TestYearShuffler:
             assert ys1.get_year(y) == ys2.get_year(y)
 
     def test_different_seeds_different_mapping(self):
-        from instream.io.time_manager import YearShuffler
+        from salmopy.io.time_manager import YearShuffler
 
         ys1 = YearShuffler(available_years=[2010, 2011, 2012], seed=1)
         ys2 = YearShuffler(available_years=[2010, 2011, 2012], seed=999)
@@ -316,7 +316,7 @@ class TestYearShuffler:
 
 class TestYearShufflerWiring:
     def test_shuffler_remaps_years(self):
-        from instream.io.time_manager import YearShuffler
+        from salmopy.io.time_manager import YearShuffler
 
         shuffler = YearShuffler([2011, 2012, 2013], seed=42)
         mapped = [shuffler.get_year(y) for y in [2011, 2012, 2013]]
@@ -325,7 +325,7 @@ class TestYearShufflerWiring:
             assert m in [2011, 2012, 2013]
 
     def test_shuffler_consistent_with_same_seed(self):
-        from instream.io.time_manager import YearShuffler
+        from salmopy.io.time_manager import YearShuffler
 
         s1 = YearShuffler([2011, 2012, 2013], seed=99)
         s2 = YearShuffler([2011, 2012, 2013], seed=99)
@@ -333,7 +333,7 @@ class TestYearShufflerWiring:
             assert s1.get_year(y) == s2.get_year(y)
 
     def test_shuffler_always_returns_available_year(self):
-        from instream.io.time_manager import YearShuffler
+        from salmopy.io.time_manager import YearShuffler
 
         available = [2011, 2012, 2013]
         shuffler = YearShuffler(available, seed=7)

@@ -40,13 +40,13 @@ class TestICESCalibration:
 
     @pytest.fixture(scope="class")
     def model(self):
-        from instream.model import InSTREAMModel
-        from instream.state.life_stage import LifeStage
+        from salmopy.model import SalmopyModel
+        from salmopy.state.life_stage import LifeStage
 
         # end_date_override is defense-in-depth against a missing or
         # mis-edited example_calibration.yaml. If the YAML's end_date
         # is already 2016-03-31 this override is a no-op.
-        m = InSTREAMModel(
+        m = SalmopyModel(
             CONFIGS / "example_calibration.yaml",
             data_dir=FIXTURES / "example_a",
             end_date_override="2016-03-31",
@@ -230,10 +230,10 @@ class TestICESCalibrationBaltic:
 
     @pytest.fixture(scope="class")
     def model(self):
-        from instream.model import InSTREAMModel
-        from instream.state.life_stage import LifeStage
+        from salmopy.model import SalmopyModel
+        from salmopy.state.life_stage import LifeStage
 
-        m = InSTREAMModel(
+        m = SalmopyModel(
             CONFIGS / "example_calibration_baltic.yaml",
             data_dir=FIXTURES / "example_a",
             end_date_override="2018-03-31",

@@ -5,12 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from instream.state.trout_state import TroutState
-from instream.state.redd_state import ReddState
-from instream.modules.spawning import redd_emergence
-from instream.io.config import HatcheryStockingConfig
-from instream.marine.config import MarineConfig, ZoneConfig
-from instream.marine.survival import marine_survival
+from salmopy.state.trout_state import TroutState
+from salmopy.state.redd_state import ReddState
+from salmopy.modules.spawning import redd_emergence
+from salmopy.io.config import HatcheryStockingConfig
+from salmopy.marine.config import MarineConfig, ZoneConfig
+from salmopy.marine.survival import marine_survival
 
 
 class TestIsHatcheryField:

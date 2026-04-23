@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from instream.calibration import (
+from salmopy.calibration import (
     DiscoveryRule,
     Transform,
     discover_parameters,
@@ -34,8 +34,8 @@ from instream.calibration import (
     save_run,
     validate_multiseed,
 )
-from instream.calibration.losses import score_against_targets
-from instream.state.life_stage import LifeStage
+from salmopy.calibration.losses import score_against_targets
+from salmopy.state.life_stage import LifeStage
 
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -77,7 +77,7 @@ def main() -> int:
     print(f"\nOptimizing top-{args.top} params: {top_params}")
 
     # Rebuild FreeParameter list from the rules file (for bounds)
-    from instream.io.config import load_config
+    from salmopy.io.config import load_config
 
     with open(PROJECT / "data" / "calibration" / "arc_i_rules.yaml") as f:
         rules_data = yaml.safe_load(f)

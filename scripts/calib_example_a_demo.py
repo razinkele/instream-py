@@ -16,15 +16,15 @@ from pathlib import Path
 import datetime
 import time
 
-from instream.calibration import (
+from salmopy.calibration import (
     FreeParameter,
     Transform,
     ParityTarget,
     evaluate_candidate,
     save_run,
 )
-from instream.calibration.losses import score_against_targets
-from instream.state.life_stage import LifeStage
+from salmopy.calibration.losses import score_against_targets
+from salmopy.state.life_stage import LifeStage
 
 PROJECT = Path(__file__).resolve().parent.parent
 CONFIGS = PROJECT / "configs"

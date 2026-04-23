@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from instream.state.life_stage import LifeStage
+from salmopy.state.life_stage import LifeStage
 
 
 def _make_trout_state(n_fish=1, n_cells=4):
@@ -171,7 +171,7 @@ def _reach_arrays():
 class TestAdultHolding:
     def test_returning_adult_gets_hold_activity(self):
         """Fish with life_history=RETURNING_ADULT should use hold activity."""
-        from instream.modules.behavior import select_habitat_and_activity
+        from salmopy.modules.behavior import select_habitat_and_activity
 
         ts = _make_trout_state(n_fish=1, n_cells=4)
         ts.life_history[0] = int(LifeStage.RETURNING_ADULT)
@@ -200,7 +200,7 @@ class TestAdultHolding:
 
     def test_returning_adult_picks_lowest_velocity_cell(self):
         """Returning adult should select the cell with the lowest velocity."""
-        from instream.modules.behavior import select_habitat_and_activity
+        from salmopy.modules.behavior import select_habitat_and_activity
 
         velocities = np.array([1.0, 0.5, 0.1, 0.8], dtype=np.float64)
         ts = _make_trout_state(n_fish=1, n_cells=4)
@@ -231,7 +231,7 @@ class TestAdultHolding:
 
     def test_returning_adult_has_negative_growth(self):
         """Returning adult should have negative growth rate (respiration only)."""
-        from instream.modules.behavior import select_habitat_and_activity
+        from salmopy.modules.behavior import select_habitat_and_activity
 
         ts = _make_trout_state(n_fish=1, n_cells=4)
         ts.life_history[0] = int(LifeStage.RETURNING_ADULT)
@@ -262,7 +262,7 @@ class TestAdultHolding:
 
     def test_non_returning_adult_does_not_hold(self):
         """Fish with life_history != RETURNING_ADULT should NOT get hold activity."""
-        from instream.modules.behavior import select_habitat_and_activity
+        from salmopy.modules.behavior import select_habitat_and_activity
 
         ts = _make_trout_state(n_fish=1, n_cells=4)
         ts.life_history[0] = int(LifeStage.FRY)

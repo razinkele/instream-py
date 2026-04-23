@@ -74,7 +74,7 @@ class TestCellDepthsMatchNetLogo:
 
         ref_path = require_reference("cell-depth-test-out.csv")
         ref = pd.read_csv(ref_path)
-        from instream.io.hydraulics_reader import read_depth_table
+        from salmopy.io.hydraulics_reader import read_depth_table
 
         data_dir = FIXTURES_DIR / "example_a"
         d_flows, d_vals = read_depth_table(data_dir / "ExampleA-Depths.csv")
@@ -101,7 +101,7 @@ class TestCellVelocitiesMatchNetLogo:
 
         ref_path = require_reference("cell-vel-test-out.csv")
         ref = pd.read_csv(ref_path)
-        from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+        from salmopy.io.hydraulics_reader import read_depth_table, read_velocity_table
 
         data_dir = FIXTURES_DIR / "example_a"
         d_flows, d_vals = read_depth_table(data_dir / "ExampleA-Depths.csv")
@@ -132,7 +132,7 @@ class TestDayLengthMatchesNetLogo:
 
         ref_path = require_reference("test-day-length.csv")
         ref = pd.read_csv(ref_path)
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         backend = NumpyBackend()
         mismatches = 0
@@ -159,7 +159,7 @@ class TestGrowthReportMatchesNetLogo:
 
         ref_path = require_reference("GrowthReportOut.csv")
         ref = pd.read_csv(ref_path)
-        from instream.modules.growth import growth_rate_for
+        from salmopy.modules.growth import growth_rate_for
 
         # Example A Chinook-Spring params (same as generator)
         table_x = [0, 2, 10, 22, 23, 25, 30]
@@ -235,7 +235,7 @@ class TestCStepMaxMatchesNetLogo:
 
         ref_path = require_reference("CStepmaxOut.csv")
         ref = pd.read_csv(ref_path)
-        from instream.modules.growth import cmax_temp_function, c_stepmax
+        from salmopy.modules.growth import cmax_temp_function, c_stepmax
 
         # Example A Chinook-Spring params
         table_x = [0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0]
@@ -273,7 +273,7 @@ class TestInterpolationMatchesNetLogo:
 
         ref_path = require_reference("CMaxTempFunctTestOut.csv")
         ref = pd.read_csv(ref_path)
-        from instream.modules.growth import cmax_temp_function
+        from salmopy.modules.growth import cmax_temp_function
 
         table_x = [0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0]
         table_y = [0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0]
@@ -299,7 +299,7 @@ class TestSurvivalMatchesNetLogo:
 
         ref_path = require_reference("survival-test-out.csv")
         ref = pd.read_csv(ref_path)
-        from instream.modules.survival import (
+        from salmopy.modules.survival import (
             survival_high_temperature,
             survival_stranding,
             survival_condition,
@@ -404,7 +404,7 @@ class TestReddSurvivalMatchesNetLogo:
 
         ref_path = require_reference("Redd-survive-test-out.csv")
         ref = pd.read_csv(ref_path)
-        from instream.modules.survival import (
+        from salmopy.modules.survival import (
             redd_survival_lo_temp,
             redd_survival_hi_temp,
             redd_survival_dewatering,
@@ -459,7 +459,7 @@ class TestSpawnCellMatchesNetLogo:
 
         ref_path = require_reference("Spawn-cell-test-out.csv")
         ref = pd.read_csv(ref_path)
-        from instream.modules.spawning import spawn_suitability
+        from salmopy.modules.spawning import spawn_suitability
 
         # Example A Chinook-Spring spawn tables
         depth_xs = np.array([0.0, 12.0, 27.0, 33.5, 204.0])
@@ -518,7 +518,7 @@ class TestGrowthReportMatchesNetLogoCSV:
 
         ref_path = require_reference("GrowthReportOut-netlogo.csv")
         ref = pd.read_csv(ref_path, skiprows=2)
-        from instream.modules.growth import (
+        from salmopy.modules.growth import (
             cmax_temp_function,
             max_swim_speed,
             drift_swim_speed,
@@ -670,7 +670,7 @@ class TestSurvivalMatchesNetLogoCSV:
 
         ref_path = require_reference("survival-test-out-netlogo.csv")
         ref = pd.read_csv(ref_path, skiprows=1)
-        from instream.modules.survival import (
+        from salmopy.modules.survival import (
             survival_high_temperature,
             survival_stranding,
             survival_condition,
@@ -806,7 +806,7 @@ class TestReddSurvivalMatchesNetLogoCSV:
 
         ref_path = require_reference("Redd-survive-test-out-netlogo.csv")
         ref = pd.read_csv(ref_path, skiprows=2)
-        from instream.modules.survival import redd_survival_lo_temp, redd_survival_hi_temp
+        from salmopy.modules.survival import redd_survival_lo_temp, redd_survival_hi_temp
 
         # Example A Chinook-Spring redd params
         lo_T1 = 1.7
@@ -875,7 +875,7 @@ class TestSpawnCellMatchesNetLogoCSV:
 
         ref_path = require_reference("Spawn-cell-test-out-netlogo.csv")
         ref = pd.read_csv(ref_path, skiprows=1)
-        from instream.modules.spawning import spawn_suitability
+        from salmopy.modules.spawning import spawn_suitability
 
         # Example A Chinook-Spring spawn tables
         depth_xs = np.array([0.0, 12.0, 27.0, 33.5, 204.0])
@@ -944,7 +944,7 @@ class TestCStepMaxMatchesNetLogoCSV:
         ref = pd.DataFrame(rows, columns=col_names)
         for col in col_names[3:]:
             ref[col] = pd.to_numeric(ref[col])
-        from instream.modules.growth import cmax_temp_function, c_stepmax
+        from salmopy.modules.growth import cmax_temp_function, c_stepmax
 
         # Example A Chinook-Spring params
         table_x = [0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0]
@@ -1013,10 +1013,10 @@ class TestFitnessReport:
 
         ref_path = require_reference("fitness-golden.csv")
         ref = pd.read_csv(ref_path)
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         CONFIGS = FIXTURES_DIR.parent.parent / "configs"
-        model = InSTREAMModel(
+        model = SalmopyModel(
             CONFIGS / "example_a.yaml",
             data_dir=FIXTURES_DIR / "example_a",
         )

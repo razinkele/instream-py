@@ -26,7 +26,7 @@ CONFIGS = [
 def test_fixture_loads_and_runs_3_days(config_path, fixture_dir, tmp_path):
     """Arc M.1-M.3 smoke: fixture loads, runs 3 days, emits outputs
     including per-reach PSPC CSV."""
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
@@ -37,7 +37,7 @@ def test_fixture_loads_and_runs_3_days(config_path, fixture_dir, tmp_path):
     with open(cfg_path, "w") as f:
         yaml.safe_dump(cfg, f)
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         config_path=str(cfg_path),
         data_dir=f"tests/fixtures/{fixture_dir}",
         output_dir=str(tmp_path),
@@ -74,7 +74,7 @@ def test_latitudinal_smolt_age_gradient(
     AU2 (Byske) → 2 yr smolts at 13-15 cm
     Southern (Morrum) → 1-2 yr smolts at 11-15 cm
     """
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
@@ -85,7 +85,7 @@ def test_latitudinal_smolt_age_gradient(
     with open(cfg_path, "w") as f:
         yaml.safe_dump(cfg, f)
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         config_path=str(cfg_path),
         data_dir=f"tests/fixtures/{fixture_dir}",
         output_dir=str(tmp_path),

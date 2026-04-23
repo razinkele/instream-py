@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import numpy as np
 
-from instream.marine.survival_forcing import (
+from salmopy.marine.survival_forcing import (
     load_post_smolt_forcing,
     annual_survival_for_year,
     daily_hazard_multiplier,
@@ -53,7 +53,7 @@ def test_loader_handles_commented_csv():
 
 def _minimal_marine_config(**overrides):
     """Build a minimal MarineConfig for hazard-only tests."""
-    from instream.marine.config import MarineConfig, ZoneConfig
+    from salmopy.marine.config import MarineConfig, ZoneConfig
     base = dict(
         zones=[ZoneConfig(name="Estuary", area_km2=80)],
         marine_mort_base=0.001,
@@ -65,7 +65,7 @@ def _minimal_marine_config(**overrides):
 def test_marine_survival_respects_post_smolt_forcing(tmp_path):
     """Setting post_smolt_survival_forcing_csv overrides background_hazard
     for fish in the post-smolt window (days_since_ocean_entry < 365)."""
-    from instream.marine.survival import marine_survival
+    from salmopy.marine.survival import marine_survival
 
     csv = tmp_path / "ps.csv"
     csv.write_text(
@@ -95,7 +95,7 @@ def test_marine_survival_respects_post_smolt_forcing(tmp_path):
 
 def test_marine_survival_no_forcing_when_kwarg_missing():
     """Default call (no current_year) preserves existing behavior."""
-    from instream.marine.survival import marine_survival
+    from salmopy.marine.survival import marine_survival
 
     cfg = _minimal_marine_config()
     length = np.array([20.0, 20.0])

@@ -5,8 +5,8 @@ import numpy as np
 
 class TestComputeHarvest:
     def test_harvest_kills_eligible_fish(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(42)
         ts = TroutState.zeros(10)
@@ -25,8 +25,8 @@ class TestComputeHarvest:
         assert np.sum(~ts.alive[:10]) > 0
 
     def test_bag_limit_caps_harvest(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(42)
         ts = TroutState.zeros(20)
@@ -40,8 +40,8 @@ class TestComputeHarvest:
         assert len(records) <= 3
 
     def test_no_harvest_when_zero_anglers(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(42)
         ts = TroutState.zeros(5)
@@ -55,8 +55,8 @@ class TestComputeHarvest:
         assert np.all(ts.alive[:5])
 
     def test_no_harvest_when_all_undersized(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(42)
         ts = TroutState.zeros(5)
@@ -69,8 +69,8 @@ class TestComputeHarvest:
         assert len(records) == 0
 
     def test_harvest_records_contain_species_info(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.harvest import compute_harvest
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.harvest import compute_harvest
 
         rng = np.random.default_rng(42)
         ts = TroutState.zeros(5)

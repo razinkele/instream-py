@@ -36,8 +36,8 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT / "src"))
 
-from instream.model import InSTREAMModel  # noqa: E402
-from instream.state.life_stage import LifeStage  # noqa: E402
+from salmopy.model import SalmopyModel  # noqa: E402
+from salmopy.state.life_stage import LifeStage  # noqa: E402
 
 CONFIG = str(PROJECT / "configs" / "example_baltic.yaml")
 DATA_DIR = str(PROJECT / "tests" / "fixtures" / "example_baltic")
@@ -45,7 +45,7 @@ DATA_DIR = str(PROJECT / "tests" / "fixtures" / "example_baltic")
 STAGE_NAMES = {int(s): s.name for s in LifeStage}
 
 
-def _stage_histogram(model: InSTREAMModel) -> dict[str, int]:
+def _stage_histogram(model: SalmopyModel) -> dict[str, int]:
     """Count living trout by life-history stage. Also includes live redds
     (as REDD) and total eggs across them (as EGGS) — these live in a
     separate state container from trout_state, so they'd otherwise be
@@ -82,17 +82,17 @@ def _format_stage_row(counts: dict[str, int]) -> str:
 def _get_version() -> str:
     """Best-effort package version; falls back to 'unknown' if unreadable."""
     try:
-        from instream import __version__  # type: ignore[import-not-found]
+        from salmopy import __version__  # type: ignore[import-not-found]
         return str(__version__)
     except Exception:
         return "unknown"
 
 
 def main(days: int = 14, out_path: str | None = None) -> dict:
-    print(f"Building InSTREAMModel from {CONFIG}")
+    print(f"Building SalmopyModel from {CONFIG}")
     print(f"  data dir: {DATA_DIR}")
     t0 = time.perf_counter()
-    model = InSTREAMModel(CONFIG, data_dir=DATA_DIR)
+    model = SalmopyModel(CONFIG, data_dir=DATA_DIR)
     t_build = time.perf_counter() - t0
     initial_alive = model.trout_state.num_alive()
     print(f"  model built in {t_build:.1f}s; "

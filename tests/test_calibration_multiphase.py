@@ -6,7 +6,7 @@ class TestSinglePhase:
     def test_nelder_mead_finds_optimum(self):
         """Minimize (x - 3)^2 + (y - 7)^2 on [0,10]×[0,10] with
         Nelder-Mead; should converge near (3, 7)."""
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             CalibrationPhase,
@@ -34,7 +34,7 @@ class TestSinglePhase:
 
     def test_de_finds_optimum(self):
         """differential-evolution on the same paraboloid."""
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             CalibrationPhase,
@@ -59,7 +59,7 @@ class TestSinglePhase:
 
     def test_log_transform_roundtrip(self):
         """A LOG parameter should hit the correct physical value at optimum."""
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             CalibrationPhase,
@@ -81,7 +81,7 @@ class TestSinglePhase:
 
     def test_eval_error_treated_as_inf(self):
         """Exceptions / inf in eval_fn should not crash the calibrator."""
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             CalibrationPhase,
@@ -110,7 +110,7 @@ class TestSinglePhase:
 class TestSequentialPhases:
     def test_second_phase_sees_first_phase_fix(self):
         """Two-phase: phase 1 optimizes x, phase 2 sees x as fixed."""
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             CalibrationPhase,
@@ -144,7 +144,7 @@ class TestSequentialPhases:
         assert abs(cal.fixed_params["x"] - 3.0) < 0.1
 
     def test_initial_fixed_respected(self):
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             CalibrationPhase,
@@ -171,7 +171,7 @@ class TestSequentialPhases:
 
 class TestUnknownAlgorithm:
     def test_raises_value_error(self):
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             CalibrationPhase,

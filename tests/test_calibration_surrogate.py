@@ -6,7 +6,7 @@ sklearn = pytest.importorskip("sklearn")
 
 class TestLatinHypercubeSampling:
     def test_shape_and_bounds(self):
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             SurrogateCalibrator,
@@ -30,7 +30,7 @@ class TestGPFitAndPredict:
         """Surrogate on a noise-free linear response should predict
         within 5% of the true value on held-out points."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             SurrogateCalibrator,
@@ -50,7 +50,7 @@ class TestGPFitAndPredict:
     def test_multi_obj_fit(self):
         """Two-column Y: fits two GPs independently."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             SurrogateCalibrator,
@@ -70,7 +70,7 @@ class TestGPFitAndPredict:
 
     def test_predict_before_fit_raises(self):
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             SurrogateCalibrator,
@@ -87,7 +87,7 @@ class TestFindOptimum:
         """For y = (x-3)^2, surrogate + Monte-Carlo search should land
         near x=3."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             SurrogateCalibrator,
@@ -104,7 +104,7 @@ class TestFindOptimum:
     def test_pareto_returns_non_dominated(self):
         """For conflicting objectives, pareto strategy returns a set."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             SurrogateCalibrator,
@@ -126,7 +126,7 @@ class TestCrossValidation:
     def test_cv_returns_sane_r2(self):
         """On a clean linear response, 5-fold CV R^2 should be high."""
         import numpy as np
-        from instream.calibration import (
+        from salmopy.calibration import (
             FreeParameter,
             Transform,
             SurrogateCalibrator,

@@ -25,8 +25,8 @@ import datetime
 import numpy as np
 import pandas as pd
 
-from instream.model import InSTREAMModel
-from instream.state.life_stage import LifeStage
+from salmopy.model import SalmopyModel
+from salmopy.state.life_stage import LifeStage
 
 PROJECT = Path(__file__).resolve().parent.parent
 CONFIGS = PROJECT / "configs"
@@ -61,7 +61,7 @@ def run_python_probe(n_days: int = 600) -> pd.DataFrame:
     """Run example_a daily mode and emit daily CH-S juvenile mean length."""
     start = datetime.date(2011, 4, 1)
     end = (start + datetime.timedelta(days=n_days)).isoformat()
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS / "example_a.yaml",
         data_dir=FIXTURES / "example_a",
         end_date_override=end,

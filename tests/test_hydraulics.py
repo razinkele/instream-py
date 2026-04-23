@@ -4,7 +4,7 @@ import pytest
 
 
 def _get_backend(name):
-    from instream.backends import get_backend
+    from salmopy.backends import get_backend
     return get_backend(name)
 
 

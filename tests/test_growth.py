@@ -7,7 +7,7 @@ class TestCMaxTemp:
     """Test CMax temperature function (interpolation table lookup)."""
 
     def test_at_table_point_zero(self):
-        from instream.modules.growth import cmax_temp_function
+        from salmopy.modules.growth import cmax_temp_function
 
         table_x = np.array([0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0])
         table_y = np.array([0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0])
@@ -15,7 +15,7 @@ class TestCMaxTemp:
         np.testing.assert_allclose(result, 0.05)
 
     def test_at_table_point_22(self):
-        from instream.modules.growth import cmax_temp_function
+        from salmopy.modules.growth import cmax_temp_function
 
         table_x = np.array([0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0])
         table_y = np.array([0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0])
@@ -23,7 +23,7 @@ class TestCMaxTemp:
         np.testing.assert_allclose(result, 1.0)
 
     def test_interpolation_at_16(self):
-        from instream.modules.growth import cmax_temp_function
+        from salmopy.modules.growth import cmax_temp_function
 
         table_x = np.array([0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0])
         table_y = np.array([0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0])
@@ -36,7 +36,7 @@ class TestCStepMax:
     """Test maximum consumption for a time step."""
 
     def test_positive_at_moderate_temp(self):
-        from instream.modules.growth import c_stepmax
+        from salmopy.modules.growth import c_stepmax
 
         # cmax_wt_term = cmax_A * weight^cmax_B = 0.628 * 10^0.7 ≈ 3.147
         cmax_wt_term = 0.628 * (10.0**0.7)
@@ -48,7 +48,7 @@ class TestCStepMax:
         np.testing.assert_allclose(result, expected, rtol=1e-10)
 
     def test_zero_when_fully_consumed(self):
-        from instream.modules.growth import c_stepmax
+        from salmopy.modules.growth import c_stepmax
 
         cmax_wt_term = 0.628 * (10.0**0.7)
         cmax_temp = 0.5
@@ -59,7 +59,7 @@ class TestCStepMax:
         assert result == 0.0
 
     def test_decreases_with_prior_consumption(self):
-        from instream.modules.growth import c_stepmax
+        from salmopy.modules.growth import c_stepmax
 
         cmax_wt_term = 0.628 * (10.0**0.7)
         cmax_temp = 0.5
@@ -68,7 +68,7 @@ class TestCStepMax:
         assert r1 > r2
 
     def test_scales_with_step_length(self):
-        from instream.modules.growth import c_stepmax
+        from salmopy.modules.growth import c_stepmax
 
         cmax_wt_term = 0.628 * (10.0**0.7)
         cmax_temp = 0.5
@@ -83,7 +83,7 @@ class TestSwimSpeed:
     """Test swim speed calculations."""
 
     def test_max_swim_speed_formula(self):
-        from instream.modules.growth import max_swim_speed
+        from salmopy.modules.growth import max_swim_speed
 
         # max_speed_len_term = A * length + B = 2.8 * 10 + 21 = 49
         # max_swim_temp_term = C*T² + D*T + E = -0.0029*225 + 0.084*15 + 0.37 = 0.9775
@@ -93,7 +93,7 @@ class TestSwimSpeed:
         np.testing.assert_allclose(result, len_term * temp_term, rtol=1e-10)
 
     def test_increases_with_length(self):
-        from instream.modules.growth import max_swim_speed
+        from salmopy.modules.growth import max_swim_speed
 
         temp_term = 1.0
         r_small = max_swim_speed(2.8 * 5 + 21, temp_term)
@@ -101,7 +101,7 @@ class TestSwimSpeed:
         assert r_large > r_small
 
     def test_drift_speed_with_shelter(self):
-        from instream.modules.growth import drift_swim_speed
+        from salmopy.modules.growth import drift_swim_speed
 
         # Fish length 5, shelter available (100 > 5²=25 → use shelter)
         speed = drift_swim_speed(
@@ -114,7 +114,7 @@ class TestSwimSpeed:
         np.testing.assert_allclose(speed, 15.0)
 
     def test_drift_speed_without_shelter(self):
-        from instream.modules.growth import drift_swim_speed
+        from salmopy.modules.growth import drift_swim_speed
 
         speed = drift_swim_speed(
             velocity=50.0,
@@ -126,7 +126,7 @@ class TestSwimSpeed:
         np.testing.assert_allclose(speed, 50.0)
 
     def test_drift_speed_less_than_or_equal_max(self):
-        from instream.modules.growth import drift_swim_speed
+        from salmopy.modules.growth import drift_swim_speed
 
         speed = drift_swim_speed(
             velocity=50.0,
@@ -141,7 +141,7 @@ class TestDriftIntake:
     """Test drift feeding intake calculation."""
 
     def test_basic_drift_intake_positive(self):
-        from instream.modules.growth import drift_intake
+        from salmopy.modules.growth import drift_intake
 
         result = drift_intake(
             length=10.0,
@@ -168,7 +168,7 @@ class TestDriftIntake:
         assert result > 0.0
 
     def test_limited_by_cstepmax(self):
-        from instream.modules.growth import drift_intake
+        from salmopy.modules.growth import drift_intake
 
         result = drift_intake(
             length=10.0,
@@ -195,7 +195,7 @@ class TestDriftIntake:
         assert result <= 0.001
 
     def test_zero_in_dry_cell(self):
-        from instream.modules.growth import drift_intake
+        from salmopy.modules.growth import drift_intake
 
         result = drift_intake(
             length=10.0,
@@ -222,7 +222,7 @@ class TestDriftIntake:
         assert result == 0.0
 
     def test_decreases_in_turbid_water(self):
-        from instream.modules.growth import drift_intake
+        from salmopy.modules.growth import drift_intake
 
         kwargs = dict(
             length=10.0,
@@ -250,7 +250,7 @@ class TestDriftIntake:
         assert r_clear > r_turbid
 
     def test_decreases_in_low_light(self):
-        from instream.modules.growth import drift_intake
+        from salmopy.modules.growth import drift_intake
 
         kwargs = dict(
             length=10.0,
@@ -278,7 +278,7 @@ class TestDriftIntake:
         assert r_bright > r_dark
 
     def test_limited_by_available_drift(self):
-        from instream.modules.growth import drift_intake
+        from salmopy.modules.growth import drift_intake
 
         result = drift_intake(
             length=10.0,
@@ -309,7 +309,7 @@ class TestSearchIntake:
     """Test search feeding intake."""
 
     def test_positive_when_velocity_below_max(self):
-        from instream.modules.growth import search_intake
+        from salmopy.modules.growth import search_intake
 
         result = search_intake(
             velocity=20.0,
@@ -323,7 +323,7 @@ class TestSearchIntake:
         assert result > 0.0
 
     def test_zero_when_velocity_exceeds_max(self):
-        from instream.modules.growth import search_intake
+        from salmopy.modules.growth import search_intake
 
         result = search_intake(
             velocity=60.0,
@@ -337,7 +337,7 @@ class TestSearchIntake:
         assert result == 0.0
 
     def test_limited_by_cstepmax(self):
-        from instream.modules.growth import search_intake
+        from salmopy.modules.growth import search_intake
 
         result = search_intake(
             velocity=10.0,
@@ -351,7 +351,7 @@ class TestSearchIntake:
         assert result <= 0.0001
 
     def test_limited_by_available_search(self):
-        from instream.modules.growth import search_intake
+        from salmopy.modules.growth import search_intake
 
         result = search_intake(
             velocity=10.0,
@@ -369,7 +369,7 @@ class TestRespiration:
     """Test respiration calculation."""
 
     def test_positive(self):
-        from instream.modules.growth import respiration
+        from salmopy.modules.growth import respiration
 
         result = respiration(
             resp_std_wt_term=36 * 10**0.783,  # resp_A * weight^resp_B
@@ -381,7 +381,7 @@ class TestRespiration:
         assert result > 0.0
 
     def test_increases_with_swim_speed(self):
-        from instream.modules.growth import respiration
+        from salmopy.modules.growth import respiration
 
         kwargs = dict(
             resp_std_wt_term=36 * 10**0.783,
@@ -395,7 +395,7 @@ class TestRespiration:
 
     def test_hide_is_minimal(self):
         """Swim speed = 0 -> minimal respiration (standard only)."""
-        from instream.modules.growth import respiration
+        from salmopy.modules.growth import respiration
 
         kwargs = dict(
             resp_std_wt_term=36 * 10**0.783,
@@ -409,7 +409,7 @@ class TestRespiration:
 
     def test_overflow_guard(self):
         """Very high swim speed ratio -> capped at large value."""
-        from instream.modules.growth import respiration
+        from salmopy.modules.growth import respiration
 
         result = respiration(
             resp_std_wt_term=100.0,
@@ -422,7 +422,7 @@ class TestRespiration:
 
     def test_formula_exact(self):
         """Verify exact formula: resp_standard * exp(resp_D * (speed/max_speed)^2)."""
-        from instream.modules.growth import respiration
+        from salmopy.modules.growth import respiration
 
         std = 36 * 10**0.783
         temp = np.exp(0.002 * 15**2)
@@ -438,7 +438,7 @@ class TestGrowthRate:
     """Test combined growth rate for all activities."""
 
     def test_growth_drift_is_intake_minus_respiration(self):
-        from instream.modules.growth import growth_rate_for
+        from salmopy.modules.growth import growth_rate_for
 
         result = growth_rate_for(
             activity="drift",
@@ -488,7 +488,7 @@ class TestGrowthRate:
         assert isinstance(result, float)
 
     def test_growth_hide_is_negative(self):
-        from instream.modules.growth import growth_rate_for
+        from salmopy.modules.growth import growth_rate_for
 
         result = growth_rate_for(
             activity="hide",
@@ -537,7 +537,7 @@ class TestGrowthRate:
 
     def test_growth_drift_vs_hide(self):
         """Drift should typically yield more growth than hiding."""
-        from instream.modules.growth import growth_rate_for
+        from salmopy.modules.growth import growth_rate_for
 
         kwargs = dict(
             length=10.0,
@@ -590,7 +590,7 @@ class TestGrow:
     """Test weight/length/condition update."""
 
     def test_positive_growth_increases_weight(self):
-        from instream.modules.growth import apply_growth
+        from salmopy.modules.growth import apply_growth
 
         new_w, new_l, new_k = apply_growth(
             weight=10.0,
@@ -603,7 +603,7 @@ class TestGrow:
         assert new_w > 10.0
 
     def test_negative_growth_decreases_weight(self):
-        from instream.modules.growth import apply_growth
+        from salmopy.modules.growth import apply_growth
 
         new_w, new_l, new_k = apply_growth(
             weight=10.0,
@@ -616,7 +616,7 @@ class TestGrow:
         assert new_w < 10.0
 
     def test_weight_never_negative(self):
-        from instream.modules.growth import apply_growth
+        from salmopy.modules.growth import apply_growth
 
         new_w, _, _ = apply_growth(
             weight=0.1,
@@ -629,7 +629,7 @@ class TestGrow:
         assert new_w >= 0.0
 
     def test_condition_drops_with_weight_loss(self):
-        from instream.modules.growth import apply_growth
+        from salmopy.modules.growth import apply_growth
 
         _, _, new_k = apply_growth(
             weight=10.0,
@@ -642,7 +642,7 @@ class TestGrow:
         assert new_k < 1.0
 
     def test_length_increases_when_weight_exceeds_healthy(self):
-        from instream.modules.growth import apply_growth
+        from salmopy.modules.growth import apply_growth
 
         healthy_w = 0.0041 * 10.0**3.49
         new_w, new_l, new_k = apply_growth(
@@ -657,7 +657,7 @@ class TestGrow:
         np.testing.assert_allclose(new_k, 1.0)
 
     def test_length_never_decreases(self):
-        from instream.modules.growth import apply_growth
+        from salmopy.modules.growth import apply_growth
 
         _, new_l, _ = apply_growth(
             weight=10.0,
@@ -670,14 +670,14 @@ class TestGrow:
         assert new_l >= 10.0
 
     def test_weight_from_length_and_condition(self):
-        from instream.modules.growth import weight_from_length_and_condition
+        from salmopy.modules.growth import weight_from_length_and_condition
 
         w = weight_from_length_and_condition(10.0, 1.0, 0.0041, 3.49)
         expected = 0.0041 * 10.0**3.49
         np.testing.assert_allclose(w, expected, rtol=1e-10)
 
     def test_length_for_weight(self):
-        from instream.modules.growth import length_for_weight
+        from salmopy.modules.growth import length_for_weight
 
         w = 0.0041 * 10.0**3.49
         l = length_for_weight(w, 0.0041, 3.49)
@@ -688,8 +688,8 @@ class TestSuperindividual:
     """Test superindividual splitting."""
 
     def test_split_when_above_threshold(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(10)
         ts.alive[0] = True
@@ -705,8 +705,8 @@ class TestSuperindividual:
         assert ts.superind_rep[ts.alive_indices()[1]] == 5
 
     def test_no_split_below_threshold(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(10)
         ts.alive[0] = True
@@ -716,8 +716,8 @@ class TestSuperindividual:
         assert ts.num_alive() == 1
 
     def test_no_split_when_rep_is_one(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(10)
         ts.alive[0] = True
@@ -727,8 +727,8 @@ class TestSuperindividual:
         assert ts.num_alive() == 1
 
     def test_split_preserves_total_rep(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(10)
         ts.alive[0] = True
@@ -740,8 +740,8 @@ class TestSuperindividual:
         assert total == 10
 
     def test_no_split_when_full(self):
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(2)
         ts.alive[0] = True
@@ -755,8 +755,8 @@ class TestSuperindividual:
 
     def test_odd_rep_splits_correctly(self):
         """Rep=7 should split to 4+3 (integer division)."""
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(10)
         ts.alive[0] = True
@@ -769,8 +769,8 @@ class TestSuperindividual:
 
     def test_split_copies_memory_arrays(self):
         """Split must copy growth/consumption/survival memory."""
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(10, max_steps_per_day=4)
         ts.alive[0] = True
@@ -792,7 +792,7 @@ class TestSuperindividual:
 
 
 def test_drift_intake_equal_capture_R1_R9():
-    from instream.modules.growth import drift_intake
+    from salmopy.modules.growth import drift_intake
 
     result = drift_intake(
         length=10.0,
@@ -824,7 +824,7 @@ def test_drift_intake_equal_capture_R1_R9():
 def test_cmax_temp_bisect_matches_np_interp():
     """bisect-based interp must match np.interp exactly."""
     import numpy as np
-    from instream.modules.growth import cmax_temp_function
+    from salmopy.modules.growth import cmax_temp_function
 
     table_x = np.array([0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0])
     table_y = np.array([0.0, 0.2, 0.5, 0.8, 1.0, 0.7, 0.1])
@@ -835,7 +835,7 @@ def test_cmax_temp_bisect_matches_np_interp():
 
     def test_capture_success_decreasing_with_velocity_ratio(self):
         """High velocity ratio → low capture success (R1=1.3 > R9=0.4)."""
-        from instream.modules.growth import drift_intake
+        from salmopy.modules.growth import drift_intake
 
         kwargs = dict(
             length=10.0,
@@ -867,8 +867,8 @@ def test_cmax_temp_bisect_matches_np_interp():
 class TestSplitSuperindividualPerSpecies:
     def test_small_species_splits_at_own_threshold(self):
         """Each species should use its own superind_max_length, not global max."""
-        from instream.state.trout_state import TroutState
-        from instream.modules.growth import split_superindividuals
+        from salmopy.state.trout_state import TroutState
+        from salmopy.modules.growth import split_superindividuals
 
         ts = TroutState.zeros(4)
         ts.alive[0] = True
@@ -903,7 +903,7 @@ class TestNatalParrGrowthRate:
     def test_small_parr_has_positive_daily_growth(self):
         """A 4.5 cm PARR should have positive net growth at 10°C
         with moderate drift food availability."""
-        from instream.modules.growth import growth_rate_for
+        from salmopy.modules.growth import growth_rate_for
 
         growth = growth_rate_for(
             activity=0,  # drift feeding
@@ -958,7 +958,7 @@ class TestNatalParrGrowthRate:
         a 4.5 cm PARR to at least 8 cm. Real Atlantic salmon parr grow
         4-8 cm/year in temperate rivers.
         """
-        from instream.modules.growth import growth_rate_for, apply_growth
+        from salmopy.modules.growth import growth_rate_for, apply_growth
 
         length = 4.5
         weight_A, weight_B = 0.0077, 3.05
@@ -1022,7 +1022,7 @@ class TestNatalParrGrowthRate:
 
 def test_apply_growth_vectorized_matches_scalar():
     """Vectorized apply_growth must match scalar version exactly."""
-    from instream.modules.growth import apply_growth, apply_growth_vectorized
+    from salmopy.modules.growth import apply_growth, apply_growth_vectorized
 
     rng = np.random.default_rng(42)
     n = 100

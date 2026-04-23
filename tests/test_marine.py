@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from instream.marine.config import MarineConfig, ZoneConfig, ZoneDriverData
+from salmopy.marine.config import MarineConfig, ZoneConfig, ZoneDriverData
 
 
 # ---------------------------------------------------------------------------
@@ -72,12 +72,12 @@ class TestMarineConfig:
 
     def test_model_config_marine_optional(self):
         """ModelConfig.marine is None by default."""
-        from instream.io.config import ModelConfig, SimulationConfig
+        from salmopy.io.config import ModelConfig, SimulationConfig
         mc = ModelConfig(simulation=SimulationConfig(start_date="2020-01-01", end_date="2020-12-31"))
         assert mc.marine is None
 
     def test_model_config_with_marine(self):
-        from instream.io.config import ModelConfig, SimulationConfig
+        from salmopy.io.config import ModelConfig, SimulationConfig
         cfg = _make_marine_config(num_zones=2)
         mc = ModelConfig(
             simulation=SimulationConfig(start_date="2020-01-01", end_date="2020-12-31"),
@@ -91,7 +91,7 @@ class TestMarineConfig:
 # Task 3 — ZoneState + StaticDriver
 # ===================================================================
 
-from instream.marine.domain import ZoneState, StaticDriver
+from salmopy.marine.domain import ZoneState, StaticDriver
 
 
 class TestZoneState:
@@ -153,7 +153,7 @@ class TestStaticDriver:
 # Task 4 — MarineDomain
 # ===================================================================
 
-from instream.marine.domain import MarineDomain
+from salmopy.marine.domain import MarineDomain
 
 
 def _make_mock_trout_state(n: int = 10):
@@ -282,9 +282,9 @@ class TestMarineDomain:
 # Task 6 — Smolt Transition at River Mouth
 # ===================================================================
 
-from instream.modules.migration import migrate_fish_downstream
-from instream.state.trout_state import TroutState
-from instream.state.life_stage import LifeStage
+from salmopy.modules.migration import migrate_fish_downstream
+from salmopy.state.trout_state import TroutState
+from salmopy.state.life_stage import LifeStage
 
 
 def _make_trout_at_mouth(length=15.0, readiness=0.9, life_history=LifeStage.PARR):
@@ -379,7 +379,7 @@ class TestSmoltTransitionAtRiverMouth:
 # Task 7 — Smolt Readiness Accumulation
 # ===================================================================
 
-from instream.marine.domain import accumulate_smolt_readiness
+from salmopy.marine.domain import accumulate_smolt_readiness
 
 
 class TestSmoltReadiness:
@@ -443,7 +443,7 @@ class TestSmoltReadiness:
 # Task 8 — Adult Return
 # ===================================================================
 
-from instream.marine.domain import check_adult_return
+from salmopy.marine.domain import check_adult_return
 
 
 class TestAdultReturn:
@@ -529,8 +529,8 @@ def test_smolt_readiness_accumulates_regardless_of_length():
     """Undersized parr must accumulate readiness (physiological smoltification
     begins before migratory size is reached)."""
     import numpy as np
-    from instream.marine.domain import accumulate_smolt_readiness
-    from instream.state.life_stage import LifeStage
+    from salmopy.marine.domain import accumulate_smolt_readiness
+    from salmopy.state.life_stage import LifeStage
 
     n = 5
     readiness = np.zeros(n, dtype=np.float64)
@@ -555,8 +555,8 @@ def test_smolt_readiness_accumulates_regardless_of_length():
 def test_smolt_readiness_builds_across_years():
     """Readiness must build over 2-3 springs with winter decay."""
     import numpy as np
-    from instream.marine.domain import accumulate_smolt_readiness
-    from instream.state.life_stage import LifeStage
+    from salmopy.marine.domain import accumulate_smolt_readiness
+    from salmopy.state.life_stage import LifeStage
 
     readiness = np.zeros(1, dtype=np.float64)
     life_history = np.array([int(LifeStage.PARR)], dtype=np.int8)
@@ -596,6 +596,6 @@ def test_smolt_readiness_builds_across_years():
 
 def test_smolt_emigration_requires_both_length_and_readiness():
     """Smoltification at river mouth requires length >= min AND readiness >= 0.8."""
-    from instream.state.life_stage import LifeStage
+    from salmopy.state.life_stage import LifeStage
     assert int(LifeStage.PARR) == 1
     assert int(LifeStage.SMOLT) == 3

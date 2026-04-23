@@ -16,8 +16,8 @@ import datetime
 import numpy as np
 import pandas as pd
 
-from instream.model import InSTREAMModel
-from instream.state.life_stage import LifeStage
+from salmopy.model import SalmopyModel
+from salmopy.state.life_stage import LifeStage
 
 PROJECT = Path(__file__).resolve().parent.parent
 CONFIGS = PROJECT / "configs"
@@ -30,7 +30,7 @@ def main() -> None:
     # Run past natal emergence (2012-01-20) + 300 days = through Nov 2012
     start = datetime.date(2011, 4, 1)
     end = (start + datetime.timedelta(days=600)).isoformat()
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS / "example_a.yaml",
         data_dir=FIXTURES / "example_a",
         end_date_override=end,

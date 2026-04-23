@@ -93,7 +93,7 @@ def generate_depth_velocity_reference():
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+    from salmopy.io.hydraulics_reader import read_depth_table, read_velocity_table
 
     data_dir = Path(__file__).parent.parent / "tests" / "fixtures" / "example_a"
     d_flows, d_vals = read_depth_table(data_dir / "ExampleA-Depths.csv")
@@ -129,12 +129,12 @@ def generate_cstepmax_reference():
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from instream.model import InSTREAMModel
-    from instream.modules.growth import cmax_temp_function, c_stepmax
+    from salmopy.model import SalmopyModel
+    from salmopy.modules.growth import cmax_temp_function, c_stepmax
 
     CONFIGS = Path(__file__).parent.parent / "configs"
     FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "example_a"
-    model = InSTREAMModel(CONFIGS / "example_a.yaml", data_dir=FIXTURES)
+    model = SalmopyModel(CONFIGS / "example_a.yaml", data_dir=FIXTURES)
 
     # Run 5 steps to get fish into various states
     for _ in range(5):
@@ -183,7 +183,7 @@ def generate_growth_report_reference():
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from instream.modules.growth import growth_rate_for
+    from salmopy.modules.growth import growth_rate_for
 
     lengths = [5.0, 10.0, 15.0, 20.0, 25.0]
     depths = [10.0, 30.0, 50.0, 100.0]
@@ -269,7 +269,7 @@ def generate_survival_reference():
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from instream.modules.survival import (
+    from salmopy.modules.survival import (
         survival_high_temperature,
         survival_stranding,
         survival_condition,
@@ -365,7 +365,7 @@ def generate_redd_survival_reference():
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from instream.modules.survival import (
+    from salmopy.modules.survival import (
         redd_survival_lo_temp,
         redd_survival_hi_temp,
         redd_survival_dewatering,
@@ -411,7 +411,7 @@ def generate_spawn_cell_reference():
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from instream.modules.spawning import spawn_suitability
+    from salmopy.modules.spawning import spawn_suitability
 
     depths = np.arange(0.0, 250.0, 10.0)
     velocities = np.arange(0.0, 200.0, 10.0)
@@ -447,11 +447,11 @@ def generate_fitness_golden():
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     CONFIGS = Path(__file__).parent.parent / "configs"
     FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "example_a"
-    model = InSTREAMModel(CONFIGS / "example_a.yaml", data_dir=FIXTURES)
+    model = SalmopyModel(CONFIGS / "example_a.yaml", data_dir=FIXTURES)
     model.step()
     model.step()
 

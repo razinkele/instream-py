@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from instream.marine.config import MarineConfig, ZoneConfig
-from instream.marine.survival import (
+from salmopy.marine.config import MarineConfig, ZoneConfig
+from salmopy.marine.survival import (
     _logistic_hazard,
     seal_hazard,
     cormorant_hazard,

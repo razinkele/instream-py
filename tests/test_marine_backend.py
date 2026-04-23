@@ -6,9 +6,9 @@ import datetime
 import numpy as np
 import pytest
 
-from instream.backends._interface import MarineBackend
-from instream.backends.numpy_backend.marine import NumpyMarineBackend
-from instream.marine.config import (
+from salmopy.backends._interface import MarineBackend
+from salmopy.backends.numpy_backend.marine import NumpyMarineBackend
+from salmopy.marine.config import (
     GearConfig,
     MarineConfig,
     MarineFishingConfig,

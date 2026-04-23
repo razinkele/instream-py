@@ -12,10 +12,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from instream.state.trout_state import TroutState
-from instream.state.redd_state import ReddState
-from instream.state.life_stage import LifeStage
-from instream.modules.spawning import redd_emergence
+from salmopy.state.trout_state import TroutState
+from salmopy.state.redd_state import ReddState
+from salmopy.state.life_stage import LifeStage
+from salmopy.modules.spawning import redd_emergence
 
 
 def _make_redd_with_ghost_slots(capacity: int = 10) -> tuple[TroutState, ReddState]:

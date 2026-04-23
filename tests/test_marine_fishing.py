@@ -6,8 +6,8 @@ import datetime
 import numpy as np
 import pytest
 
-from instream.marine.config import GearConfig, MarineFishingConfig
-from instream.marine.fishing import (
+from salmopy.marine.config import GearConfig, MarineFishingConfig
+from salmopy.marine.fishing import (
     logistic_selectivity,
     normal_selectivity,
     gear_selectivity,

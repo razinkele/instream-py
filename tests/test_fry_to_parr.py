@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from instream.state.trout_state import TroutState
-from instream.state.life_stage import LifeStage
+from salmopy.state.trout_state import TroutState
+from salmopy.state.life_stage import LifeStage
 
 
 class _StubTimeManager:
@@ -36,7 +36,7 @@ class _StubModel:
 
 
 def _bind_method(self):
-    import instream.model_day_boundary as mdb
+    import salmopy.model_day_boundary as mdb
     return mdb._ModelDayBoundaryMixin._increment_age_if_new_year(self)
 
 

@@ -113,13 +113,13 @@ def _run_python_example_a() -> dict:
                  juve_mean_length, small_outmigrants_today)
       'total_small_outmigrants': cumulative at run end
     """
-    from instream.model import InSTREAMModel
-    from instream.state.life_stage import LifeStage
+    from salmopy.model import SalmopyModel
+    from salmopy.state.life_stage import LifeStage
 
     CONFIGS = PROJECT / "configs"
     FIXTURES = PROJECT / "tests" / "fixtures"
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         CONFIGS / "example_a.yaml", data_dir=FIXTURES / "example_a",
     )
 

@@ -1,7 +1,7 @@
 """Tests for Arc L: apply_m74_cull at egg-emergence."""
 from pathlib import Path
 import numpy as np
-from instream.modules.egg_emergence_m74 import apply_m74_cull
+from salmopy.modules.egg_emergence_m74 import apply_m74_cull
 
 
 def test_m74_cull_scales_by_forcing_fraction(tmp_path: Path):
@@ -67,9 +67,9 @@ def test_redd_emergence_respects_m74_forcing(tmp_path: Path):
     fewer alive fry than the baseline.
     """
     import numpy as np
-    from instream.modules.spawning import redd_emergence
-    from instream.state.trout_state import TroutState
-    from instream.state.redd_state import ReddState
+    from salmopy.modules.spawning import redd_emergence
+    from salmopy.state.trout_state import TroutState
+    from salmopy.state.redd_state import ReddState
 
     def make_states(n_eggs: int):
         cap = n_eggs + 100

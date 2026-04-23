@@ -1,5 +1,5 @@
 """Quick diagnostic: growth_rate_for at realistic available_drift levels."""
-from instream.modules.growth import growth_rate_for
+from salmopy.modules.growth import growth_rate_for
 import numpy as np
 
 kwargs = dict(

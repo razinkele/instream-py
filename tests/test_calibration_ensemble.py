@@ -4,14 +4,14 @@ import pytest
 
 class TestAggregateScalars:
     def test_empty_returns_empty_frame(self):
-        from instream.calibration import aggregate_scalars
+        from salmopy.calibration import aggregate_scalars
 
         df = aggregate_scalars([])
         assert len(df) == 0
         assert "mean" in df.columns
 
     def test_single_metric_across_seeds(self):
-        from instream.calibration import aggregate_scalars
+        from salmopy.calibration import aggregate_scalars
 
         per_seed = [{"x": v} for v in [1.0, 2.0, 3.0, 4.0, 5.0]]
         df = aggregate_scalars(per_seed, percentiles=(2.5, 97.5))
@@ -24,7 +24,7 @@ class TestAggregateScalars:
         assert int(row["n"]) == 5
 
     def test_multi_metric(self):
-        from instream.calibration import aggregate_scalars
+        from salmopy.calibration import aggregate_scalars
 
         per_seed = [
             {"a": 10.0, "b": 20.0},
@@ -39,7 +39,7 @@ class TestAggregateScalars:
 
     def test_nan_values_skipped(self):
         import math
-        from instream.calibration import aggregate_scalars
+        from salmopy.calibration import aggregate_scalars
 
         per_seed = [
             {"x": 1.0},
@@ -53,7 +53,7 @@ class TestAggregateScalars:
         assert df.loc["x", "mean"] == pytest.approx(2.0)
 
     def test_missing_metric_in_some_seeds(self):
-        from instream.calibration import aggregate_scalars
+        from salmopy.calibration import aggregate_scalars
 
         per_seed = [
             {"a": 1.0, "b": 10.0},
@@ -67,14 +67,14 @@ class TestAggregateScalars:
 
 class TestAggregateTrajectories:
     def test_empty_returns_empty_frame(self):
-        from instream.calibration import aggregate_trajectories
+        from salmopy.calibration import aggregate_trajectories
 
         df = aggregate_trajectories([])
         assert df.empty
 
     def test_three_replicates_same_grid(self):
         import pandas as pd
-        from instream.calibration import aggregate_trajectories
+        from salmopy.calibration import aggregate_trajectories
 
         # Three seeds sharing dates 1,2,3 with value col 'pop'
         per_seed = [
@@ -91,7 +91,7 @@ class TestAggregateTrajectories:
 
     def test_value_cols_filter(self):
         import pandas as pd
-        from instream.calibration import aggregate_trajectories
+        from salmopy.calibration import aggregate_trajectories
 
         per_seed = [
             pd.DataFrame({"date": [1, 2], "a": [1, 2], "b": [10, 20]}),
@@ -105,7 +105,7 @@ class TestAggregateTrajectories:
     def test_intersection_of_time_grids(self):
         """If replicates have different time ranges, aggregate on intersection."""
         import pandas as pd
-        from instream.calibration import aggregate_trajectories
+        from salmopy.calibration import aggregate_trajectories
 
         per_seed = [
             pd.DataFrame({"date": [1, 2, 3, 4], "x": [10, 20, 30, 40]}),
@@ -118,7 +118,7 @@ class TestAggregateTrajectories:
 
 class TestRunReplicates:
     def test_sequential_execution(self):
-        from instream.calibration import run_replicates
+        from salmopy.calibration import run_replicates
 
         def eval_fn(seed: int) -> dict:
             return {"x": float(seed * 10)}

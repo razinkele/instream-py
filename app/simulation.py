@@ -32,7 +32,7 @@ def run_simulation(
     Returns:
         dict with keys: daily, environment, cells, snapshots, redds, config, summary, trajectories
     """
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     config_path = Path(config_path)
     original_data_dir = Path(data_dir) if data_dir else config_path.parent
@@ -50,7 +50,7 @@ def run_simulation(
     tmp.close()
 
     try:
-        model = InSTREAMModel(config_path=tmp.name, data_dir=original_data_dir)
+        model = SalmopyModel(config_path=tmp.name, data_dir=original_data_dir)
 
         # --- Pre-compute totals ---
         start = pd.Timestamp(model.config.simulation.start_date)

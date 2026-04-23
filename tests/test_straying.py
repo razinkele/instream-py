@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from instream.io.output import write_spawner_origin_matrix
+from salmopy.io.output import write_spawner_origin_matrix
 
 
 def test_smoltification_preserves_natal_reach_idx():
@@ -14,10 +14,10 @@ def test_smoltification_preserves_natal_reach_idx():
     at the SMOLT transition, destroying the birth-reach signal. v0.38 removes
     that overwrite so birth-reach persists through the full life cycle.
     """
-    from instream.state.trout_state import TroutState
-    from instream.state.life_stage import LifeStage
-    from instream.marine.config import MarineConfig, ZoneConfig
-    from instream.modules.migration import migrate_fish_downstream
+    from salmopy.state.trout_state import TroutState
+    from salmopy.state.life_stage import LifeStage
+    from salmopy.marine.config import MarineConfig, ZoneConfig
+    from salmopy.modules.migration import migrate_fish_downstream
 
     ts = TroutState.zeros(capacity=10)
     ts.alive[0] = True
@@ -85,10 +85,10 @@ def test_spawner_origin_matrix_captures_straying(tmp_path):
 
 def test_stray_fraction_zero_means_perfect_homing():
     """Arc O.2: default stray_fraction=0 → spawner returns to natal reach."""
-    from instream.state.trout_state import TroutState
-    from instream.state.life_stage import LifeStage
-    from instream.marine.config import MarineConfig, ZoneConfig
-    from instream.marine.domain import check_adult_return
+    from salmopy.state.trout_state import TroutState
+    from salmopy.state.life_stage import LifeStage
+    from salmopy.marine.config import MarineConfig, ZoneConfig
+    from salmopy.marine.domain import check_adult_return
     import datetime
 
     ts = TroutState.zeros(capacity=20)
@@ -125,10 +125,10 @@ def test_stray_fraction_zero_means_perfect_homing():
 
 def test_stray_fraction_positive_produces_off_natal_returns():
     """Arc O.2: stray_fraction=1 → every returning adult strays."""
-    from instream.state.trout_state import TroutState
-    from instream.state.life_stage import LifeStage
-    from instream.marine.config import MarineConfig, ZoneConfig
-    from instream.marine.domain import check_adult_return
+    from salmopy.state.trout_state import TroutState
+    from salmopy.state.life_stage import LifeStage
+    from salmopy.marine.config import MarineConfig, ZoneConfig
+    from salmopy.marine.domain import check_adult_return
     import datetime
 
     ts = TroutState.zeros(capacity=20)

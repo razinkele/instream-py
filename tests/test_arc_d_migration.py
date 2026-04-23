@@ -9,7 +9,7 @@ import pytest
 
 class TestTroutStateBestHabitatFitness:
     def test_array_exists_and_is_float64(self):
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         ts = TroutState.zeros(capacity=10)
         assert hasattr(ts, "best_habitat_fitness")
@@ -17,14 +17,14 @@ class TestTroutStateBestHabitatFitness:
         assert ts.best_habitat_fitness.shape == (10,)
 
     def test_initial_value_zero(self):
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         ts = TroutState.zeros(capacity=10)
         assert np.all(ts.best_habitat_fitness == 0.0)
 
     def test_writable_scalar(self):
         """Sanity: a consumer can write per-fish values."""
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         ts = TroutState.zeros(capacity=5)
         ts.best_habitat_fitness[:] = [0.1, 0.5, 0.9, 0.0, 1.0]
@@ -39,8 +39,8 @@ class TestMigrationComparatorScale:
 
     def test_small_parr_migrates_when_habitat_fitness_low(self):
         """4cm PARR with migration_fit ~0.1 and habitat_fit 0.05 -> migrate."""
-        from instream.modules.migration import migration_fitness, should_migrate
-        from instream.state.life_stage import LifeStage
+        from salmopy.modules.migration import migration_fitness, should_migrate
+        from salmopy.state.life_stage import LifeStage
 
         mig_fit = migration_fitness(length=4.0, L1=4.0, L9=10.0)
         assert 0.09 <= mig_fit <= 0.11  # logistic at L1=4 = 0.1
@@ -53,8 +53,8 @@ class TestMigrationComparatorScale:
 
     def test_parr_stays_in_good_habitat(self):
         """4cm PARR with habitat_fit 0.9 -> don't migrate."""
-        from instream.modules.migration import migration_fitness, should_migrate
-        from instream.state.life_stage import LifeStage
+        from salmopy.modules.migration import migration_fitness, should_migrate
+        from salmopy.state.life_stage import LifeStage
 
         mig_fit = migration_fitness(length=4.0, L1=4.0, L9=10.0)
         assert should_migrate(
@@ -64,8 +64,8 @@ class TestMigrationComparatorScale:
         ) is False
 
     def test_non_parr_never_migrates(self):
-        from instream.modules.migration import should_migrate
-        from instream.state.life_stage import LifeStage
+        from salmopy.modules.migration import should_migrate
+        from salmopy.state.life_stage import LifeStage
 
         for stage in [LifeStage.FRY, LifeStage.SPAWNER, LifeStage.OCEAN_ADULT]:
             assert should_migrate(0.9, 0.1, int(stage)) is False
@@ -81,15 +81,15 @@ class TestContinuousPARRPromotion:
         next Jan 1."""
         from pathlib import Path
         import datetime
-        from instream.model import InSTREAMModel
-        from instream.state.life_stage import LifeStage
+        from salmopy.model import SalmopyModel
+        from salmopy.state.life_stage import LifeStage
 
         configs = Path(__file__).parent.parent / "configs"
         fixtures = Path(__file__).parent / "fixtures"
         # Start model April 1, step one day, then hand-force FRY+size+July date
         start = datetime.date(2011, 4, 1)
         end = (start + datetime.timedelta(days=1)).isoformat()
-        model = InSTREAMModel(
+        model = SalmopyModel(
             configs / "example_a.yaml",
             data_dir=fixtures / "example_a",
             end_date_override=end,
@@ -117,14 +117,14 @@ class TestContinuousPARRPromotion:
         """FRY below length threshold AND age 0 must stay FRY."""
         from pathlib import Path
         import datetime
-        from instream.model import InSTREAMModel
-        from instream.state.life_stage import LifeStage
+        from salmopy.model import SalmopyModel
+        from salmopy.state.life_stage import LifeStage
 
         configs = Path(__file__).parent.parent / "configs"
         fixtures = Path(__file__).parent / "fixtures"
         start = datetime.date(2011, 4, 1)
         end = (start + datetime.timedelta(days=1)).isoformat()
-        model = InSTREAMModel(
+        model = SalmopyModel(
             configs / "example_a.yaml",
             data_dir=fixtures / "example_a",
             end_date_override=end,
@@ -153,13 +153,13 @@ class TestHabitatFitnessRecording:
         best_habitat_fitness in [0, 1]."""
         from pathlib import Path
         import datetime
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         configs = Path(__file__).parent.parent / "configs"
         fixtures = Path(__file__).parent / "fixtures"
         start = datetime.date(2011, 4, 1)
         end = (start + datetime.timedelta(days=2)).isoformat()
-        model = InSTREAMModel(
+        model = SalmopyModel(
             configs / "example_a.yaml",
             data_dir=fixtures / "example_a",
             end_date_override=end,
@@ -182,13 +182,13 @@ class TestHabitatFitnessRecording:
         survival, best_habitat_fitness is per-tick survival^horizon."""
         from pathlib import Path
         import datetime
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         configs = Path(__file__).parent.parent / "configs"
         fixtures = Path(__file__).parent / "fixtures"
         start = datetime.date(2011, 4, 1)
         end = (start + datetime.timedelta(days=3)).isoformat()
-        model = InSTREAMModel(
+        model = SalmopyModel(
             configs / "example_a.yaml",
             data_dir=fixtures / "example_a",
             end_date_override=end,

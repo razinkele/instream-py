@@ -12,10 +12,10 @@ CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 
 
 def test_returning_adult_not_promoted_without_redd_deposit(monkeypatch):
-    from instream.model import InSTREAMModel
-    from instream.state.life_stage import LifeStage
+    from salmopy.model import SalmopyModel
+    from salmopy.state.life_stage import LifeStage
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         config_path=str(CONFIGS_DIR / "example_a.yaml"),
         data_dir=str(FIXTURES_DIR / "example_a"),
     )

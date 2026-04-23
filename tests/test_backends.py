@@ -6,67 +6,67 @@ import pytest
 
 class TestBackendFactory:
     def test_get_backend_numpy_returns_object(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert backend is not None
 
     def test_get_backend_invalid_raises(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         with pytest.raises(ValueError, match="Unknown backend"):
             get_backend("fake")
 
     def test_backend_has_update_hydraulics(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "update_hydraulics")
 
     def test_backend_has_growth_rate(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "growth_rate")
 
     def test_backend_has_survival(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "survival")
 
     def test_backend_has_deplete_resources(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "deplete_resources")
 
     def test_backend_has_spawn_suitability(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "spawn_suitability")
 
     def test_backend_has_compute_light(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "compute_light")
 
     def test_backend_has_compute_cell_light(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "compute_cell_light")
 
     def test_backend_has_evaluate_logistic(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "evaluate_logistic")
 
     def test_backend_has_interp1d(self):
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
         assert hasattr(backend, "interp1d")
@@ -74,7 +74,7 @@ class TestBackendFactory:
 
 def test_numpy_evaluate_logistic_equal_L1_L9():
     import numpy as np
-    from instream.backends.numpy_backend import NumpyBackend
+    from salmopy.backends.numpy_backend import NumpyBackend
 
     backend = NumpyBackend()
     # Degenerate case: L1 == L9 => step function: 0.9 if x >= L1, else 0.1
@@ -88,8 +88,8 @@ def test_numba_evaluate_all_cells_matches_python():
     """Numba compiled inner loop must match Python fitness_for."""
     pytest.importorskip("numba")
     import numpy as np
-    from instream.modules.behavior import fitness_for
-    from instream.backends.numba_backend.fitness import _evaluate_all_cells
+    from salmopy.modules.behavior import fitness_for
+    from salmopy.backends.numba_backend.fitness import _evaluate_all_cells
 
     n_cells = 5
     depths = np.array([50.0, 30.0, 0.0, 80.0, 10.0])
@@ -257,7 +257,7 @@ def test_numba_evaluate_all_cells_matches_python():
 def test_jax_backend_hydraulics():
     pytest.importorskip("jax")
     import numpy as np
-    from instream.backends.jax_backend import JaxBackend
+    from salmopy.backends.jax_backend import JaxBackend
 
     backend = JaxBackend()
     flows = np.array([1.0, 5.0, 10.0])
@@ -271,8 +271,8 @@ def test_jax_backend_hydraulics():
 def test_jax_backend_logistic():
     pytest.importorskip("jax")
     import numpy as np
-    from instream.backends.jax_backend import JaxBackend
-    from instream.backends.numpy_backend import NumpyBackend
+    from salmopy.backends.jax_backend import JaxBackend
+    from salmopy.backends.numpy_backend import NumpyBackend
 
     jax_b = JaxBackend()
     np_b = NumpyBackend()
@@ -285,8 +285,8 @@ def test_jax_backend_logistic():
 def test_jax_backend_cell_light():
     pytest.importorskip("jax")
     import numpy as np
-    from instream.backends.jax_backend import JaxBackend
-    from instream.backends.numpy_backend import NumpyBackend
+    from salmopy.backends.jax_backend import JaxBackend
+    from salmopy.backends.numpy_backend import NumpyBackend
 
     jax_b = JaxBackend()
     np_b = NumpyBackend()
@@ -304,10 +304,10 @@ class TestJaxBackendSignature:
 
     @pytest.fixture
     def backends(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         try:
-            from instream.backends.jax_backend import JaxBackend
+            from salmopy.backends.jax_backend import JaxBackend
         except ImportError:
             pytest.skip("JAX not installed")
         return NumpyBackend(), JaxBackend()
@@ -430,7 +430,7 @@ class TestJaxBackendSignature:
 
 class TestSpawnSuitabilityBackend:
     def test_numpy_spawn_suitability_vectorized(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         b = NumpyBackend()
         depths = np.array([10.0, 50.0, 0.0])
@@ -460,8 +460,8 @@ class TestSpawnSuitabilityBackend:
 class TestNumpySurvivalVectorized:
     def test_survival_matches_scalar_loop(self):
         """Vectorized survival must match the per-fish scalar computation."""
-        from instream.backends.numpy_backend import NumpyBackend
-        from instream.modules.survival import (
+        from salmopy.backends.numpy_backend import NumpyBackend
+        from salmopy.modules.survival import (
             survival_high_temperature,
             survival_stranding,
             survival_condition,
@@ -590,7 +590,7 @@ class TestNumpySurvivalVectorized:
 
 class TestNumpyGrowthRateVectorized:
     def test_growth_rate_returns_correct_shape(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         b = NumpyBackend()
         n = 3
@@ -647,8 +647,8 @@ class TestNumpyGrowthRateVectorized:
 class TestNumbaEvaluateLogistic:
     def test_numba_logistic_matches_numpy(self):
         pytest.importorskip("numba")
-        from instream.backends.numpy_backend import NumpyBackend
-        from instream.backends.numba_backend import NumbaBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numba_backend import NumbaBackend
 
         np_b = NumpyBackend()
         nb_b = NumbaBackend()
@@ -660,7 +660,7 @@ class TestNumbaEvaluateLogistic:
 
 class TestNumpyDepleteResources:
     def test_drift_depletes_food_and_shelter(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         b = NumpyBackend()
         drift = np.array([10.0, 5.0])  # 2 cells
@@ -683,7 +683,7 @@ class TestNumpyDepleteResources:
         assert shelter[0] == 900.0  # 1000 - 10^2
 
     def test_hide_depletes_hiding_places(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         b = NumpyBackend()
         drift = np.array([10.0])
@@ -710,17 +710,17 @@ class TestCrossBackendParity:
 
     def _get_backends(self):
         """Return list of (name, backend) tuples for available backends."""
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         backends = [("numpy", NumpyBackend())]
         try:
-            from instream.backends.numba_backend import NumbaBackend
+            from salmopy.backends.numba_backend import NumbaBackend
 
             backends.append(("numba", NumbaBackend()))
         except ImportError:
             pass
         try:
-            from instream.backends.jax_backend import JaxBackend
+            from salmopy.backends.jax_backend import JaxBackend
 
             backends.append(("jax", JaxBackend()))
         except ImportError:
@@ -1169,7 +1169,7 @@ class TestCrossBackendParity:
         """Running the same simulation on numpy and numba backends must produce identical population counts."""
         from pathlib import Path
 
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
         pytest.importorskip("numba")
 
@@ -1179,13 +1179,13 @@ class TestCrossBackendParity:
         results = {}
         for backend_name in ["numpy", "numba"]:
             # Create a fresh config for each backend
-            from instream.io.config import load_config
+            from salmopy.io.config import load_config
 
             config = load_config(config_path)
             config.performance.backend = backend_name
             config.simulation.seed = 12345
 
-            model = InSTREAMModel(config, data_dir=data_dir)
+            model = SalmopyModel(config, data_dir=data_dir)
             for _ in range(10):
                 if model.time_manager.is_done():
                     break
@@ -1215,10 +1215,10 @@ class TestCrossBackendParity:
 
 class TestVelocityClamping:
     def test_negative_velocity_clamped_to_zero(self):
-        from instream.backends.numpy_backend import NumpyBackend
+        from salmopy.backends.numpy_backend import NumpyBackend
 
         try:
-            from instream.backends.numba_backend import NumbaBackend
+            from salmopy.backends.numba_backend import NumbaBackend
         except ImportError:
             pytest.skip("Numba not installed")
         np_be = NumpyBackend()

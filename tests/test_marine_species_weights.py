@@ -17,8 +17,8 @@ CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 def test_marine_domain_has_species_weights_populated():
     """Happy path: a well-formed Baltic config must end init with
     species_weight_A and species_weight_B populated on the marine domain."""
-    from instream.model import InSTREAMModel
-    model = InSTREAMModel(
+    from salmopy.model import SalmopyModel
+    model = SalmopyModel(
         config_path=str(CONFIGS_DIR / "example_baltic.yaml"),
         data_dir=str(FIXTURES_DIR / "example_baltic"),
     )
@@ -39,7 +39,7 @@ def test_silent_except_wrapper_removed():
     """Structural regression: the try/except:pass around the species_weight_A
     assignment must be gone. Future refactors shouldn't be able to hide
     Arc P seal-predation failures."""
-    from instream import model_init as mi
+    from salmopy import model_init as mi
     src = inspect.getsource(mi)
     needle = "self._marine_domain.species_weight_A = sp_weight_A"
     assert needle in src, (

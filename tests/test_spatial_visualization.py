@@ -27,9 +27,9 @@ from shapely.geometry import box
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "app"))
 
-from instream.state.cell_state import CellState
-from instream.space.fem_space import FEMSpace
-from instream.modules.behavior import (
+from salmopy.state.cell_state import CellState
+from salmopy.space.fem_space import FEMSpace
+from salmopy.modules.behavior import (
     evaluate_logistic,
     evaluate_logistic_array,
     movement_radius,
@@ -214,7 +214,7 @@ class TestFEMSpaceHydraulics:
 
     def test_update_at_exact_flow(self, fem_space_with_tables):
         """Depth at exact flow breakpoint should match table value."""
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
 
@@ -226,7 +226,7 @@ class TestFEMSpaceHydraulics:
 
     def test_update_between_flows_interpolates(self, fem_space_with_tables):
         """Depth between flow breakpoints should be interpolated."""
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
 
@@ -237,7 +237,7 @@ class TestFEMSpaceHydraulics:
 
     def test_update_below_min_flow(self, fem_space_with_tables):
         """Flow below minimum should use leftmost table value."""
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
 
@@ -248,7 +248,7 @@ class TestFEMSpaceHydraulics:
 
     def test_update_above_max_flow(self, fem_space_with_tables):
         """Flow above maximum should use rightmost table value."""
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
 
@@ -259,7 +259,7 @@ class TestFEMSpaceHydraulics:
 
     def test_dry_cells_have_zero_velocity(self, fem_space_with_tables):
         """Cells with zero depth must also have zero velocity."""
-        from instream.backends import get_backend
+        from salmopy.backends import get_backend
 
         backend = get_backend("numpy")
 
@@ -394,7 +394,7 @@ class TestCandidateLists:
     @pytest.fixture
     def setup(self):
         """10-cell FEMSpace with 5 fish."""
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         n_cells = 10
         n_fish = 5
@@ -494,7 +494,7 @@ class TestNumbaParity:
 
     @pytest.fixture
     def setup(self):
-        from instream.state.trout_state import TroutState
+        from salmopy.state.trout_state import TroutState
 
         n_cells = 20
         n_fish = 8
@@ -509,7 +509,7 @@ class TestNumbaParity:
 
     def test_numba_returns_same_candidates(self, setup):
         """When numba is available, candidates should match Python fallback."""
-        from instream.modules.behavior import _HAS_NUMBA_SPATIAL
+        from salmopy.modules.behavior import _HAS_NUMBA_SPATIAL
         if not _HAS_NUMBA_SPATIAL:
             pytest.skip("Numba spatial backend not available")
         ts, fs = setup
@@ -560,7 +560,7 @@ class TestMeshAdjacency:
     )
     def test_real_mesh_adjacency_symmetric(self):
         """Real shapefile mesh adjacency should be symmetric."""
-        from instream.space.polygon_mesh import PolygonMesh
+        from salmopy.space.polygon_mesh import PolygonMesh
 
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
@@ -584,7 +584,7 @@ class TestMeshAdjacency:
     )
     def test_real_mesh_all_cells_have_neighbors(self):
         """Every cell in the real mesh should have at least one neighbor."""
-        from instream.space.polygon_mesh import PolygonMesh
+        from salmopy.space.polygon_mesh import PolygonMesh
 
         mesh = PolygonMesh(
             FIXTURES_DIR / "example_a" / "Shapefile" / "ExampleA.shp",
@@ -614,7 +614,7 @@ class TestFEMMeshGeometry:
         """Area = 0.5 * |cross(v1-v0, v2-v0)|, converted to cm²."""
         pytest.importorskip("meshio")
         import meshio
-        from instream.space.fem_mesh import FEMMesh
+        from salmopy.space.fem_mesh import FEMMesh
 
         # Right triangle with legs 3m and 4m → area = 6 m² = 60000 cm²
         points = np.array([[0, 0, 0], [3, 0, 0], [0, 4, 0]], dtype=float)
@@ -630,7 +630,7 @@ class TestFEMMeshGeometry:
         """Centroid should be the average of 3 vertices."""
         pytest.importorskip("meshio")
         import meshio
-        from instream.space.fem_mesh import FEMMesh
+        from salmopy.space.fem_mesh import FEMMesh
 
         points = np.array([[0, 0, 0], [6, 0, 0], [3, 6, 0]], dtype=float)
         cells = [("triangle", np.array([[0, 1, 2]]))]
@@ -646,7 +646,7 @@ class TestFEMMeshGeometry:
         """Two triangles sharing an edge should be neighbors."""
         pytest.importorskip("meshio")
         import meshio
-        from instream.space.fem_mesh import FEMMesh
+        from salmopy.space.fem_mesh import FEMMesh
 
         # Two triangles sharing edge 1-2
         points = np.array(
@@ -666,7 +666,7 @@ class TestFEMMeshGeometry:
         """Two triangles NOT sharing an edge should NOT be neighbors."""
         pytest.importorskip("meshio")
         import meshio
-        from instream.space.fem_mesh import FEMMesh
+        from salmopy.space.fem_mesh import FEMMesh
 
         # Two separate triangles (no shared vertices)
         points = np.array(
@@ -1033,7 +1033,7 @@ class TestHydraulicsReader:
         reason="ExampleA fixtures not available",
     )
     def test_read_depth_table_shapes(self):
-        from instream.io.hydraulics_reader import read_depth_table
+        from salmopy.io.hydraulics_reader import read_depth_table
 
         flows, values = read_depth_table(
             FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv"
@@ -1047,7 +1047,7 @@ class TestHydraulicsReader:
         reason="ExampleA fixtures not available",
     )
     def test_read_velocity_table_shapes(self):
-        from instream.io.hydraulics_reader import read_velocity_table
+        from salmopy.io.hydraulics_reader import read_velocity_table
 
         flows, values = read_velocity_table(
             FIXTURES_DIR / "example_a" / "ExampleA-Vels.csv"
@@ -1061,7 +1061,7 @@ class TestHydraulicsReader:
     )
     def test_depth_and_velocity_same_flows(self):
         """Depth and velocity tables must share the same flow breakpoints."""
-        from instream.io.hydraulics_reader import read_depth_table, read_velocity_table
+        from salmopy.io.hydraulics_reader import read_depth_table, read_velocity_table
 
         d_flows, _ = read_depth_table(
             FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv"
@@ -1077,7 +1077,7 @@ class TestHydraulicsReader:
     )
     def test_flows_monotonically_increasing(self):
         """Flow breakpoints should be sorted in ascending order."""
-        from instream.io.hydraulics_reader import read_depth_table
+        from salmopy.io.hydraulics_reader import read_depth_table
 
         flows, _ = read_depth_table(FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv")
         assert np.all(np.diff(flows) > 0), "Flows not monotonically increasing"
@@ -1088,7 +1088,7 @@ class TestHydraulicsReader:
     )
     def test_depth_values_non_negative(self):
         """All depth values should be ≥ 0."""
-        from instream.io.hydraulics_reader import read_depth_table
+        from salmopy.io.hydraulics_reader import read_depth_table
 
         _, values = read_depth_table(FIXTURES_DIR / "example_a" / "ExampleA-Depths.csv")
         assert np.all(values >= 0), "Negative depth values found"

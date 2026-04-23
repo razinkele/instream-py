@@ -1,4 +1,4 @@
-"""End-to-end calibration CLI for inSTREAM-py.
+"""End-to-end calibration CLI for Salmopy-py.
 
 Ties together the calibration framework into one runnable script:
 
@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List
 
 import numpy as np
 
-from instream.calibration import (
+from salmopy.calibration import (
     FreeParameter,
     Transform,
     DiscoveryRule,
@@ -52,8 +52,8 @@ from instream.calibration import (
     validate_multiseed,
     save_run,
 )
-from instream.calibration.losses import score_against_targets
-from instream.state.life_stage import LifeStage
+from salmopy.calibration.losses import score_against_targets
+from salmopy.state.life_stage import LifeStage
 
 
 def metrics_from_model(model: Any) -> Dict[str, float]:
@@ -84,7 +84,7 @@ def build_eval_fn(
     targets: List[ParityTarget],
 ) -> Callable[[Dict[str, float]], float]:
     """Wrap evaluate_candidate + score_against_targets into a scalar loss."""
-    from instream.calibration import evaluate_candidate
+    from salmopy.calibration import evaluate_candidate
 
     def eval_fn(overrides: Dict[str, float]) -> float:
         try:
@@ -143,7 +143,7 @@ def main(argv: List[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     # 1. Load config + targets
-    from instream.io.config import load_config
+    from salmopy.io.config import load_config
 
     cfg = load_config(args.config)
     targets = load_targets(args.targets)
@@ -221,7 +221,7 @@ def main(argv: List[str] | None = None) -> int:
     # 5. Multi-seed validation
     if args.multiseed > 0:
         print(f"\n=== Multi-seed validation ({args.multiseed} seeds) ===")
-        from instream.calibration.problem import evaluate_candidate
+        from salmopy.calibration.problem import evaluate_candidate
 
         seeds = list(range(42, 42 + args.multiseed))
 

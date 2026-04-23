@@ -621,7 +621,7 @@ falls in the 3–12 % band (ICES 2023).
    Marine Regions WFS for named water bodies. Enables any European
    Geofabrik region as a case study.
 7. **Sub-daily scheduling**: hourly peaking-flow support via the
-   inSTREAM-SD extension (Railsback & Harvey 2022).
+   Salmopy-SD extension (Railsback & Harvey 2022).
 8. **Calibration framework**: Morris + Sobol sensitivity, Nelder-Mead
    + differential-evolution + GP surrogate optimization, multi-seed
    validation, JSON history, scenario manager. Adapted from
@@ -735,7 +735,7 @@ report.
 
 ### SalmoPy release
 
-- **Razinkovas-Baziukas, A.** and contributors (2026). *inSTREAM-py:
+- **Razinkovas-Baziukas, A.** and contributors (2026). *Salmopy-py:
   high-performance Python port of inSTREAM/inSALMO 7.4*. GitHub:
   [razinkele/instream-py](https://github.com/razinkele/instream-py).
   Version 0.33.0.

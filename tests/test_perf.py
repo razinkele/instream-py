@@ -10,7 +10,7 @@ class TestScalarFunctionOverhead:
 
     def test_survival_condition_fast(self):
         """survival_condition must not use np.clip (threshold: 1us)."""
-        from instream.modules.survival import survival_condition
+        from salmopy.modules.survival import survival_condition
 
         n = 50000
         t0 = time.perf_counter()
@@ -23,7 +23,7 @@ class TestScalarFunctionOverhead:
 
     def test_evaluate_logistic_fast(self):
         """evaluate_logistic must use math.exp (threshold: 1us)."""
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         n = 50000
         t0 = time.perf_counter()
@@ -36,7 +36,7 @@ class TestScalarFunctionOverhead:
 
     def test_cmax_temp_function_fast(self):
         """cmax_temp_function must use bisect (threshold: 1us)."""
-        from instream.modules.growth import cmax_temp_function
+        from salmopy.modules.growth import cmax_temp_function
 
         table_x = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0]
         table_y = [0.0, 0.2, 0.5, 0.8, 1.0, 0.7, 0.1]
@@ -51,14 +51,14 @@ class TestScalarFunctionOverhead:
 
     def test_survival_condition_returns_float(self):
         """Must return pure Python float, not numpy scalar."""
-        from instream.modules.survival import survival_condition
+        from salmopy.modules.survival import survival_condition
 
         result = survival_condition(0.85)
         assert type(result) is float
 
     def test_evaluate_logistic_returns_float(self):
         """Must return pure Python float, not numpy scalar."""
-        from instream.modules.behavior import evaluate_logistic
+        from salmopy.modules.behavior import evaluate_logistic
 
         result = evaluate_logistic(15.0, 10.0, 20.0)
         assert type(result) is float
@@ -68,12 +68,12 @@ class TestScalarFunctionOverhead:
 def test_select_habitat_step_time():
     """Step time must not regress beyond 40ms (example_a, ~350 fish)."""
     from pathlib import Path
-    from instream.model import InSTREAMModel
+    from salmopy.model import SalmopyModel
 
     PROJECT = Path(__file__).resolve().parent.parent
     config = str(PROJECT / "configs" / "example_a.yaml")
     data = str(PROJECT / "tests" / "fixtures" / "example_a")
-    model = InSTREAMModel(config, data_dir=data)
+    model = SalmopyModel(config, data_dir=data)
 
     # Warm up (JIT compilation + first steps)
     for _ in range(5):

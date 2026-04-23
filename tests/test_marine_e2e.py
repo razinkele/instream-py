@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 from pathlib import Path
-from instream.state.life_stage import LifeStage
+from salmopy.state.life_stage import LifeStage
 
 CONFIGS = Path(__file__).parent.parent / "configs"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -13,12 +13,12 @@ FIXTURES = Path(__file__).parent / "fixtures"
 class TestMarineLifecycleE2E:
     @pytest.fixture(scope="class")
     def model(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
         import datetime
 
         start = datetime.date(2011, 4, 1)
         end_date = (start + datetime.timedelta(days=1095)).isoformat()
-        m = InSTREAMModel(
+        m = SalmopyModel(
             CONFIGS / "example_marine.yaml",
             data_dir=FIXTURES / "example_a",
             end_date_override=end_date,
@@ -123,9 +123,9 @@ class TestMarineLifecycleE2E:
 
 class TestMarineEdgeCases:
     def test_mid_december_smolt_gets_sea_winter_quickly(self):
-        from instream.marine.domain import MarineDomain, ZoneState
-        from instream.state.trout_state import TroutState
-        from instream.marine.config import MarineConfig, ZoneConfig
+        from salmopy.marine.domain import MarineDomain, ZoneState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.marine.config import MarineConfig, ZoneConfig
         import datetime
 
         ts = TroutState.zeros(2)
@@ -143,9 +143,9 @@ class TestMarineEdgeCases:
         assert ts.sea_winters[0] == 1
 
     def test_unreachable_zone_fish_stays(self):
-        from instream.marine.domain import MarineDomain, ZoneState
-        from instream.state.trout_state import TroutState
-        from instream.marine.config import MarineConfig, ZoneConfig
+        from salmopy.marine.domain import MarineDomain, ZoneState
+        from salmopy.state.trout_state import TroutState
+        from salmopy.marine.config import MarineConfig, ZoneConfig
         import datetime
 
         ts = TroutState.zeros(2)
@@ -169,12 +169,12 @@ class TestMarineEdgeCases:
 @pytest.mark.slow
 class TestBackwardCompatibility:
     def test_no_marine_config_unchanged(self):
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
         import datetime
 
         start = datetime.date(2011, 4, 1)
         end_date = (start + datetime.timedelta(days=30)).isoformat()
-        m = InSTREAMModel(
+        m = SalmopyModel(
             CONFIGS / "example_a.yaml",
             data_dir=FIXTURES / "example_a",
             end_date_override=end_date,

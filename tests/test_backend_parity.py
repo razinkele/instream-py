@@ -16,19 +16,19 @@ import pytest
 
 def _get_backends():
     """Return dict of available backend instances."""
-    from instream.backends.numpy_backend import NumpyBackend
+    from salmopy.backends.numpy_backend import NumpyBackend
 
     backends = {"numpy": NumpyBackend()}
 
     try:
-        from instream.backends.numba_backend import NumbaBackend
+        from salmopy.backends.numba_backend import NumbaBackend
 
         backends["numba"] = NumbaBackend()
     except ImportError:
         pass
 
     try:
-        from instream.backends.jax_backend import JaxBackend
+        from salmopy.backends.jax_backend import JaxBackend
 
         backends["jax"] = JaxBackend()
     except ImportError:
