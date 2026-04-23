@@ -80,14 +80,18 @@ def run_smc(
                 )
 
         # Re-weight particles (log-space for stability)
-        log_weights = np.log(np.maximum(weights, 1e-300)) + log_likes
-        max_lw = log_weights.max()
-        log_weights = log_weights - max_lw
-        new_weights = np.exp(log_weights)
-        new_weights /= new_weights.sum()
+        log_weights_full = np.log(np.maximum(weights, 1e-300)) + log_likes
+        max_lw = log_weights_full.max()
+        log_weights_shifted = log_weights_full - max_lw
+        new_weights = np.exp(log_weights_shifted)
+        weights_sum = new_weights.sum()
+        new_weights = new_weights / weights_sum
 
-        # Marginal-likelihood accumulator
-        log_marginal += max_lw + np.log(np.exp(log_weights).mean())
+        # Marginal-likelihood increment: log(sum(w_old * exp(log_likes)))
+        # = log-sum-exp of log_weights_full = max_lw + log(sum(exp(shifted)))
+        # The previous `+ np.log(np.exp(log_weights).mean())` used .mean()
+        # after subtracting max_lw, introducing a spurious -log(N) per step.
+        log_marginal += float(max_lw + np.log(weights_sum))
 
         weights = new_weights
 
