@@ -1,7 +1,5 @@
 """Tests for scenarios.py — save/load/fork/compare/export."""
-import json
 import pytest
-from pathlib import Path
 
 
 class TestScenarioRoundtrip:

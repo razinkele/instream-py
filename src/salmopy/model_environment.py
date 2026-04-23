@@ -270,7 +270,6 @@ class _ModelEnvironmentMixin:
         else:
             starvation_alive = alive_all
         if len(starvation_alive) > 0:
-            from salmopy.modules.survival import survival_mass_floor
             sp_idx_s = self.trout_state.species_idx[starvation_alive]
             floor_frac = np.array([
                 getattr(self.config.species[self.species_order[si]], 'mass_floor_fraction', 0.5)

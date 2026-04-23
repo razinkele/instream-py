@@ -6,10 +6,8 @@ via widget.update() when the config changes.
 """
 
 import logging
-import math
 
 import geopandas as gpd
-import numpy as np
 import yaml
 from pathlib import Path
 from shiny import module, reactive, render, ui

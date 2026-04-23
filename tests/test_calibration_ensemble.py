@@ -38,7 +38,6 @@ class TestAggregateScalars:
         assert df.loc["b", "n"] == 3
 
     def test_nan_values_skipped(self):
-        import math
         from salmopy.calibration import aggregate_scalars
 
         per_seed = [

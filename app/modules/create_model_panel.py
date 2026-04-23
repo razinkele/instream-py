@@ -11,15 +11,10 @@ Workflow:
 
 import json
 import logging
-import math
 
 import geopandas as gpd
-import numpy as np
 import requests
-from io import BytesIO
 from pathlib import Path
-from shapely.geometry import shape, box, Polygon, MultiPolygon, LineString
-from shapely.ops import unary_union
 from shapely.validation import make_valid
 from shiny import module, reactive, render, ui
 
@@ -65,7 +60,6 @@ except ImportError:
     from app.modules.create_model_osm import (
         query_waterways,
         query_water_bodies,
-        WATERWAY_STRAHLER,
         GEOFABRIK_COUNTRIES,
         REGION_VIEWS,
     )
@@ -884,7 +878,6 @@ def create_model_server(input, output, session):
             js += "document.querySelector('.btn-sel-lagoon')?.classList.add('active');"
         elif mode == "sea":
             js += "document.querySelector('.btn-sel-sea')?.classList.add('active');"
-        import shiny
         session.send_custom_message("eval_js", js)
 
     # -----------------------------------------------------------------

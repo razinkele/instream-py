@@ -29,7 +29,6 @@ from salmopy.calibration import (
     evaluate_candidate,
     CalibrationPhase,
     MultiPhaseCalibrator,
-    ParityTarget,
     load_targets,
     save_run,
     validate_multiseed,

@@ -4,7 +4,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 
-import pytest
 
 
 def test_export_yaml_respects_junction_ids():

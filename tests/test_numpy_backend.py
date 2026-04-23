@@ -1,6 +1,5 @@
 """Tests for numpy backend baseline kernels."""
 import numpy as np
-import pytest
 
 
 class TestHydraulicsInterp:

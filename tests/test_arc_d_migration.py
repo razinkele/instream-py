@@ -4,7 +4,6 @@ Covers (1) TroutState.best_habitat_fitness schema, (2) continuous
 FRY->PARR promotion, (3) migration comparator scale consistency.
 """
 import numpy as np
-import pytest
 
 
 class TestTroutStateBestHabitatFitness:

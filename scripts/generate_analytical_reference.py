@@ -100,7 +100,6 @@ def generate_gis_reference():
 
 def generate_depth_velocity_reference():
     """Tests 2-3: Cell depths and velocities at various flows."""
-    import sys
 
     from salmopy.io.hydraulics_reader import read_depth_table, read_velocity_table
 
@@ -135,7 +134,6 @@ def generate_cstepmax_reference():
 
     Golden snapshot from Python v0.5.0 — cross-validate against NetLogo when available.
     """
-    import sys
 
     from salmopy.model import SalmopyModel
     from salmopy.modules.growth import cmax_temp_function, c_stepmax
@@ -188,7 +186,6 @@ def generate_growth_report_reference():
 
     Golden snapshot from Python v0.5.0 — cross-validate against NetLogo when available.
     """
-    import sys
 
     from salmopy.modules.growth import growth_rate_for
 
@@ -273,7 +270,6 @@ def generate_survival_reference():
 
     Golden snapshot from Python v0.5.0 — cross-validate against NetLogo when available.
     """
-    import sys
 
     from salmopy.modules.survival import (
         survival_high_temperature,
@@ -368,7 +364,6 @@ def generate_redd_survival_reference():
 
     Golden snapshot from Python v0.5.0 — cross-validate against NetLogo when available.
     """
-    import sys
 
     from salmopy.modules.survival import (
         redd_survival_lo_temp,
@@ -413,7 +408,6 @@ def generate_spawn_cell_reference():
 
     Golden snapshot from Python v0.5.0 — cross-validate against NetLogo when available.
     """
-    import sys
 
     from salmopy.modules.spawning import spawn_suitability
 
@@ -448,7 +442,6 @@ def generate_fitness_golden():
 
     Golden snapshot from Python v0.5.0 — cross-validate against NetLogo when available.
     """
-    import sys
 
     from salmopy.model import SalmopyModel
 

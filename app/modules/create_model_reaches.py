@@ -6,7 +6,6 @@ from typing import Any
 
 import geopandas as gpd
 import matplotlib.colors as mcolors
-import numpy as np
 from shapely.geometry import LineString, Point
 
 from .create_model_utils import detect_utm_epsg

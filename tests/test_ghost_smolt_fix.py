@@ -10,7 +10,6 @@ lengths of 3-4 cm — too small to be viable smolts.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from salmopy.state.trout_state import TroutState
 from salmopy.state.redd_state import ReddState

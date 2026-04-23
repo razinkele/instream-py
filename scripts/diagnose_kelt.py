@@ -4,7 +4,6 @@ Runs the Baltic 7-year calibration fixture with monkey-patched kelt
 instrumentation to locate the gate that produces 108 returns + 0 kelts.
 """
 from pathlib import Path
-import datetime
 import numpy as np
 
 from salmopy.model import SalmopyModel

@@ -3,7 +3,6 @@ UTM 34N (Baltic-only). Non-Baltic meshes (Chinook example_a in UTM 10,
 North Sea in UTM 31, etc.) previously silently projected through UTM 34N,
 producing centroids shifted by hundreds of km.
 """
-import inspect
 from pathlib import Path
 
 

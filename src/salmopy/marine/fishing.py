@@ -12,7 +12,7 @@ Outputs for each fish/day are:
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List
 
 import numpy as np

@@ -4,7 +4,6 @@ Covers pure-Python pieces (FreeParameter transforms, apply_overrides,
 losses, multiseed aggregation, history). Model-level evaluate_candidate
 is tested via one small example_a call marked slow.
 """
-import json
 import math
 from pathlib import Path
 

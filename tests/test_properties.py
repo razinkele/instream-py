@@ -3,7 +3,7 @@ import numpy as np
 from hypothesis import given, strategies as st, assume
 
 from salmopy.modules.survival import (
-    survival_high_temperature, survival_stranding, survival_condition,
+    survival_high_temperature, survival_condition,
 )
 from salmopy.modules.growth import apply_growth, drift_intake
 from salmopy.modules.behavior import evaluate_logistic

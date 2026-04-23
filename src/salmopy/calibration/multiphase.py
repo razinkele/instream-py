@@ -15,8 +15,8 @@ global scan when the objective has multiple basins.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 

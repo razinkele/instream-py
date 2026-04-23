@@ -10,7 +10,7 @@ from salmopy.io.hydraulics_reader import read_depth_table, read_velocity_table
 from salmopy.io.population_reader import (
     read_initial_populations,
 )
-from salmopy.io.arrival_reader import read_adult_arrivals, compute_daily_arrivals  # noqa: E402
+from salmopy.io.arrival_reader import read_adult_arrivals  # noqa: E402
 from salmopy.io.time_manager import TimeManager, detect_frequency
 from salmopy.space.polygon_mesh import PolygonMesh
 from salmopy.space.fem_space import FEMSpace

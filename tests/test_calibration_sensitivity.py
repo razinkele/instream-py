@@ -29,7 +29,6 @@ class TestSensitivityAnalyzer:
     def test_analyze_single_obj(self):
         """Monotone linear response → S1 close to 1 for influential param,
         ~0 for irrelevant one."""
-        import numpy as np
         from salmopy.calibration import FreeParameter, Transform, SensitivityAnalyzer
 
         params = [
@@ -48,7 +47,6 @@ class TestSensitivityAnalyzer:
         assert abs(r.S1[1]) < 0.3
 
     def test_summary_renders(self):
-        import numpy as np
         from salmopy.calibration import FreeParameter, Transform, SensitivityAnalyzer
 
         params = [FreeParameter("x", 0.0, 1.0, Transform.LINEAR)]
@@ -75,7 +73,6 @@ class TestMorrisAnalyzer:
         assert X.shape == (10 * 3, 2)
 
     def test_analyze_detects_influential(self):
-        import numpy as np
         from salmopy.calibration import FreeParameter, Transform, MorrisAnalyzer
 
         params = [

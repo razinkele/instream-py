@@ -54,7 +54,7 @@ def main() -> None:
                 print(f"  geom type: {feats[0].get('geometry', {}).get('type', '?')}")
                 props = feats[0].get("properties", {})
                 print(f"  attrs: {list(props.keys())[:12]}")
-                print(f"  first 200 chars of geometry JSON:")
+                print("  first 200 chars of geometry JSON:")
                 print("  " + json.dumps(feats[0].get("geometry"))[:200])
                 found = True
                 return

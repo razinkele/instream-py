@@ -1,6 +1,5 @@
 """Tests for I/O readers."""
 import numpy as np
-import pytest
 from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

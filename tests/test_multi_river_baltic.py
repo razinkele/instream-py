@@ -7,7 +7,6 @@ per-river geometry, temperature offsets, and flow scaling.
 Plan: docs/superpowers/plans/2026-04-20-arc-M-to-Q-expanded.md
 """
 from __future__ import annotations
-from pathlib import Path
 import yaml
 
 import pytest

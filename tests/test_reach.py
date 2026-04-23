@@ -1,6 +1,5 @@
 """Tests for reach state updates."""
 import numpy as np
-import pytest
 
 
 class TestUpdateReachState:
@@ -116,9 +115,7 @@ class TestUpdateReachState:
 
 
 def test_max_swim_temp_term_never_negative():
-    import numpy as np
     from salmopy.state.reach_state import ReachState
-    from salmopy.modules.reach import update_reach_state
     # Create minimal setup
     rs = ReachState.zeros(1, 1)
     # Use a mock backend and params that produce negative temp term

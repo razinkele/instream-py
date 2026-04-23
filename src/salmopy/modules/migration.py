@@ -1,5 +1,4 @@
 """Migration — reach connectivity, downstream migration, outmigrant tracking."""
-import numpy as np
 from salmopy.modules.behavior import evaluate_logistic
 from salmopy.state.life_stage import LifeStage
 
@@ -104,7 +103,6 @@ def migrate_fish_downstream(trout_state, fish_idx, reach_graph,
         if barrier_map is not None and rng is not None:
             from salmopy.modules.barriers import (
                 attempt_downstream_passage,
-                RESULT_TRANSMIT,
                 RESULT_DEFLECT,
                 RESULT_MORTALITY,
             )

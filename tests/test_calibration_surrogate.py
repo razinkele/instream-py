@@ -86,7 +86,6 @@ class TestFindOptimum:
     def test_weighted_sum_finds_min(self):
         """For y = (x-3)^2, surrogate + Monte-Carlo search should land
         near x=3."""
-        import numpy as np
         from salmopy.calibration import (
             FreeParameter,
             Transform,
@@ -125,7 +124,6 @@ class TestFindOptimum:
 class TestCrossValidation:
     def test_cv_returns_sane_r2(self):
         """On a clean linear response, 5-fold CV R^2 should be high."""
-        import numpy as np
         from salmopy.calibration import (
             FreeParameter,
             Transform,

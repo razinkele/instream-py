@@ -4,10 +4,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from salmopy.modules.growth import apply_growth, split_superindividuals
+from salmopy.modules.growth import split_superindividuals
 from salmopy.modules.spawning import (
     ready_to_spawn,
-    spawn_suitability,
     select_spawn_cell,
     create_redd,
     apply_superimposition,

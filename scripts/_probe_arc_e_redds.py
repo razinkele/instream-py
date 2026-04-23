@@ -22,7 +22,6 @@ from __future__ import annotations
 from pathlib import Path
 import datetime
 
-import numpy as np
 
 from salmopy.model import SalmopyModel
 

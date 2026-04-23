@@ -2,12 +2,11 @@
 import sys
 from pathlib import Path
 
-import pytest
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from generate_baltic_example import fetch_curonian_lagoon, CURONIAN_CACHE_PATH  # noqa: E402
+from generate_baltic_example import fetch_curonian_lagoon  # noqa: E402
 
 
 def test_fetch_curonian_lagoon_uses_cache(monkeypatch, tmp_path):

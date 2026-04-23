@@ -7,7 +7,6 @@ SALib = pytest.importorskip("SALib")
 class TestPreflightScreen:
     def test_detects_negligible_param(self):
         """A param with no effect on Y should be flagged NEGLIGIBLE."""
-        import numpy as np
         from salmopy.calibration import (
             FreeParameter,
             Transform,

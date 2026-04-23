@@ -37,7 +37,6 @@ Run: micromamba run -n shiny python scripts/generate_baltic_example.py
 """
 from __future__ import annotations
 
-import json
 import math
 import sys
 from datetime import datetime, timedelta
@@ -46,7 +45,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import requests
-from shapely.geometry import Point, Polygon, box, shape
+from shapely.geometry import Polygon, box, shape
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
@@ -54,7 +53,7 @@ APP_DIR = Path(__file__).resolve().parent.parent / "app"
 sys.path.insert(0, str(APP_DIR))
 
 from modules.create_model_grid import generate_cells  # noqa: E402
-from modules.create_model_osm import query_waterways, query_water_bodies  # noqa: E402
+from modules.create_model_osm import query_waterways  # noqa: E402
 from modules.bathymetry import fetch_emodnet_dtm, sample_depth  # noqa: E402
 
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "example_baltic"

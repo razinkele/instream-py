@@ -21,7 +21,6 @@ sys.path.insert(0, str(PROJECT / "src"))
 
 from salmopy.model import SalmopyModel  # noqa: E402
 from salmopy.state.life_stage import LifeStage  # noqa: E402
-from salmopy.modules.spawning import ready_to_spawn  # noqa: E402
 
 CONFIG = str(PROJECT / "configs" / "example_baltic.yaml")
 DATA_DIR = str(PROJECT / "tests" / "fixtures" / "example_baltic")

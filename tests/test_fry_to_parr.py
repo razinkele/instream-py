@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from salmopy.state.trout_state import TroutState
 from salmopy.state.life_stage import LifeStage

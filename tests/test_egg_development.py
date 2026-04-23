@@ -1,6 +1,5 @@
 """Tests for egg development and redd emergence."""
 import numpy as np
-import pytest
 
 
 class TestEggDevelopment:

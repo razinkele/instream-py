@@ -23,7 +23,7 @@ class _BlockOsmium:
 sys.meta_path.insert(0, _BlockOsmium())
 
 try:
-    from modules.create_model_osm import query_waterways, _HAS_OSMIUM  # noqa: F811
+    from modules.create_model_osm import _HAS_OSMIUM  # noqa: F811
     print(f"import ok without osmium; _HAS_OSMIUM={_HAS_OSMIUM}")
     # Try instantiating _HydroHandler — should raise a clear error
     from modules.create_model_osm import _HydroHandler  # noqa: F811

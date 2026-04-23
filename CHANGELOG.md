@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.5] - 2026-04-23 (Phase 7: Deferred hygiene batch)
+
+Closes the 12 deferred items from the 2026-04-23 deep review's v0.43.4 "Not in scope" block.
+
+### Fixed
+
+- **`io/output.py`**: all 10 CSV writers now use an atomic `_atomic_write_csv` context manager (tempfile + `fsync` + `os.replace`). Half-written CSVs can no longer leak to concurrent readers on kill/crash.
+- **`io/config.py` `SpeciesConfig`**: added `field_validator` rejecting probability values outside `[0, 1]` on `spawn_prob`, `spawn_egg_viability`, `mort_strand_survival_when_dry`. (Length-field validators were considered but dropped — shipped configs use `-9.0` sentinels.)
+- **`io/output.py::write_spawner_origin_matrix`**: emits `count_<reach>` and `prop_<reach>` columns (row-normalized proportions). WGBAST MSA consumers can now read the CSV directly as a mixing matrix.
+- **`modules/migration.py`**: kelt re-entering the ocean refreshes `smolt_date` to the current day (was stale; caused fish to bypass estuary-stress zone on next `daily_step`).
+- **`marine/config.py` + `marine/growth.py`**: added `marine_resp_ref_temp` (default 15.0) to `MarineConfig`; `apply_marine_growth` now threads it through to `marine_growth`. Phase 2 Task 2.8 had wired the low-level function but left `apply_marine_growth` using the hardcoded default.
+- **`backends/_interface.py` + `backends/numpy_backend/marine.py`**: `MarineBackend.marine_growth` Protocol + impl both now take `config: Any` — symmetric with `marine_survival` (Phase 2 Task 2.1).
+- **`modules/survival.py`**: removed unused `step_length` parameter from `redd_survival_lo_temp` and `redd_survival_hi_temp` primitives (API-compat dead code).
+- **`calibration/multiphase.py::MultiPhaseCalibrator.run`**: resets `fixed_params` to the initial set on each invocation. Repeated `.run()` calls are now deterministic (was silent warm-restart).
+- **`calibration/surrogate.py::SurrogateCalibrator.find_optimum`**: uses `scipy.stats.qmc.LatinHypercube` candidate sampling instead of uniform MC. Narrow optima at bounds now findable.
+- **`calibration/history.py`**: `save_run` timestamps now UTC-aware (was naive local time; inconsistent with `scenarios.py`).
+- **`space/fem_mesh.py::to_cell_state`**: copies internal arrays (was aliasing — a `cell_state.area[i] = ...` mutation silently corrupted `FEMMesh._areas`). Now symmetric with `PolygonMesh`.
+- **`scripts/generate_analytical_reference.py`**: removed 7 mid-function `sys.path.insert` calls; replaced with a single top-of-file import check.
+
+### Changed
+
+- **`tests/test_straying.py`** updated to the new `count_<reach>` / `prop_<reach>` schema emitted by `write_spawner_origin_matrix`.
+- **`tests/test_kelt_survival.py::test_kelt_at_mouth_reenters_as_ocean_adult`**: assertion flipped — previously encoded the bug (smolt_date preserved); now asserts the fix (smolt_date refreshed).
+
+### Chore
+
+- **Ruff auto-fixes** applied across `src/`, `tests/`, `app/`, `scripts/` (`--select E,F,W --ignore E501 --fix`). 104 of 208 warnings closed — mostly F401 unused imports and E402 late imports. The remaining 104 require human judgment and are deferred.
+
+### Added tests
+
+- `tests/test_atomic_output_hardening.py` (5 tests: helper presence, atomic semantics, rollback, no-leftover-tempfiles)
+- `tests/test_config_validators_hardening.py` (6 parameterized tests covering probability-bound validators)
+- `tests/test_spawner_origin_normalization.py` (2 tests for proportion columns)
+
+### Deliberately deferred past v0.43.5
+
+- `expected_fitness` inline→delegation refactor in `behavior.py` (Phase 2 canonical import already signals intent; inline sites are numerically equivalent, refactor is mechanical but low-value)
+- `C3` log-dropped-eggs counter (requires cross-module plumbing; low severity)
+- 104 remaining ruff warnings (human-judgment required)
+- `apply_superimposition` proportional-overlap (was v0.43.5 Task C1, dropped during plan-review — see Phase 7 plan-review notes)
+
 ## [0.43.4] - 2026-04-23 (Phase 6: Medium/low hygiene batch)
 
 ### Fixed

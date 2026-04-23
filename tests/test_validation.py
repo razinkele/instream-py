@@ -513,7 +513,6 @@ class TestGrowthReportMatchesNetLogoCSV:
 
     def test_netlogo_growth_report(self):
         import math
-        import numpy as np
         import pandas as pd
 
         ref_path = require_reference("GrowthReportOut-netlogo.csv")
@@ -665,7 +664,6 @@ class TestSurvivalMatchesNetLogoCSV:
     """Cross-validate Python survival functions against NetLogo survival-test-out."""
 
     def test_netlogo_survival(self):
-        import numpy as np
         import pandas as pd
 
         ref_path = require_reference("survival-test-out-netlogo.csv")
@@ -801,7 +799,6 @@ class TestReddSurvivalMatchesNetLogoCSV:
 
     def test_netlogo_redd_survival(self):
         import math
-        import numpy as np
         import pandas as pd
 
         ref_path = require_reference("Redd-survive-test-out-netlogo.csv")
@@ -875,7 +872,6 @@ class TestSpawnCellMatchesNetLogoCSV:
 
         ref_path = require_reference("Spawn-cell-test-out-netlogo.csv")
         ref = pd.read_csv(ref_path, skiprows=1)
-        from salmopy.modules.spawning import spawn_suitability
 
         # Example A Chinook-Spring spawn tables
         depth_xs = np.array([0.0, 12.0, 27.0, 33.5, 204.0])
@@ -921,7 +917,6 @@ class TestCStepMaxMatchesNetLogoCSV:
     """Cross-validate Python c_stepmax against NetLogo CStepmaxOut."""
 
     def test_netlogo_cstepmax(self):
-        import numpy as np
         import pandas as pd
 
         ref_path = require_reference("CStepmaxOut-netlogo.csv")
@@ -1203,7 +1198,6 @@ class TestFitnessReportMatchesNetLogoCSV:
     # ------------------------------------------------------------------
     def test_fitness_matches_netlogo(self):
         """Sample every 1000th row and compare Python fitness to NetLogo."""
-        import numpy as np
         import pandas as pd
 
         ref_path = require_reference("FitnessReportOut-netlogo.csv")

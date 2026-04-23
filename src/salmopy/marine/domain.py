@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 import numpy as np
@@ -386,7 +386,6 @@ def check_adult_return(
         if barrier_map is not None and reverse_reach_graph is not None and rng is not None:
             from salmopy.modules.barriers import (
                 attempt_upstream_route,
-                RESULT_TRANSMIT,
                 RESULT_MORTALITY,
             )
             result, last_passable = attempt_upstream_route(

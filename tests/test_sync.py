@@ -1,7 +1,5 @@
 """Tests for Mesa <-> SoA synchronization."""
 import mesa
-import numpy as np
-import pytest
 
 from salmopy.state.trout_state import TroutState
 

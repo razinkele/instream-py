@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 

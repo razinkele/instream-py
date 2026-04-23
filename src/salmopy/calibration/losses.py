@@ -7,7 +7,7 @@ for multi-objective optimization.
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, Sequence
 
 from salmopy.calibration.targets import ParityTarget
 

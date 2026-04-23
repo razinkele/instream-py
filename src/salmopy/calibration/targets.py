@@ -9,9 +9,9 @@ Targets carry a reference value + tolerance band. The loss functions in
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 
 @dataclass

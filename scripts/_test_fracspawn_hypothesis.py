@@ -10,7 +10,6 @@ Usage:
 """
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
@@ -98,7 +97,7 @@ def main() -> None:
         # Restore backup
         for ext, contents in backup.items():
             SHP.with_suffix(ext).write_bytes(contents)
-        print(f"\nRestored original fixture from backup.")
+        print("\nRestored original fixture from backup.")
 
 
 if __name__ == "__main__":

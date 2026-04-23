@@ -1,7 +1,6 @@
 """Tests for adult holding behavior (activity=4) for returning adults."""
 
 import numpy as np
-import pytest
 
 from salmopy.state.life_stage import LifeStage
 

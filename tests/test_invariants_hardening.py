@@ -12,7 +12,6 @@ Four invariants from the "regression-of-a-fix" class identified in the
 This file adds the migration-comparator invariant as a Hypothesis
 property test.
 """
-import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 

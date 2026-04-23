@@ -4,7 +4,6 @@ import logging
 import math
 
 import geopandas as gpd
-import numpy as np
 from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 

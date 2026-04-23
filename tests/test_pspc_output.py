@@ -75,7 +75,6 @@ def test_end_to_end_pspc_on_tiny_baltic(tmp_path):
     the Shapefile/ + per-reach CSV data is found. Copies only the YAML
     to tmp_path for end_date shortening.
     """
-    import shutil
     import yaml
     import pandas as pd
     from salmopy.model import SalmopyModel

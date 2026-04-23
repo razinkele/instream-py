@@ -20,7 +20,6 @@ Both return pandas DataFrames suitable for plotting or saving to CSV.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np

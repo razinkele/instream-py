@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from tests.conftest import assert_close, netlogo_reference, FIXTURES_DIR
+from tests.conftest import assert_close, netlogo_reference
 
 
 class TestFixturesExist:

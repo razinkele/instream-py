@@ -13,7 +13,7 @@ import numpy as np
 import yaml
 import math
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from salmopy.state.params import SpeciesParams
 

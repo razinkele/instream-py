@@ -25,7 +25,6 @@ from salmopy.calibration import (
     evaluate_candidate,
     MorrisAnalyzer,
 )
-from salmopy.calibration.configure import _walk  # for debug
 from salmopy.state.life_stage import LifeStage
 
 

@@ -1,6 +1,5 @@
 """Utilities for Create Model: CRS detection, reprojection, species presets."""
 
-import math
 from pathlib import Path
 
 import geopandas as gpd

@@ -1,5 +1,6 @@
 """3-year Baltic benchmark — runs N iterations, reports min/mean."""
-import time, sys
+import time
+import sys
 from pathlib import Path
 import numpy as np
 from salmopy.model import SalmopyModel

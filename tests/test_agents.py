@@ -1,6 +1,5 @@
 """Tests for Mesa agent shells."""
 import mesa
-import numpy as np
 import pytest
 
 from salmopy.state.trout_state import TroutState

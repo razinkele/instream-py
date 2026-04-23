@@ -13,8 +13,8 @@ centered on the current YAML values.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Pattern, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, Iterable, List, Optional, Pattern, Sequence, Tuple
 
 from salmopy.calibration.problem import FreeParameter, Transform
 

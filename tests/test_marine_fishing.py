@@ -6,13 +6,12 @@ import datetime
 import numpy as np
 import pytest
 
-from salmopy.marine.config import GearConfig, MarineFishingConfig
+from salmopy.marine.config import GearConfig
 from salmopy.marine.fishing import (
     logistic_selectivity,
     normal_selectivity,
     gear_selectivity,
     fishing_mortality,
-    HarvestRecord,
 )
 
 

@@ -1,6 +1,5 @@
 """Arc Q: Bayesian wrapper tests (prior + likelihood + SMC)."""
 from __future__ import annotations
-import math
 import numpy as np
 
 from salmopy.bayesian import (
