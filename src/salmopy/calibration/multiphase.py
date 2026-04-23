@@ -91,7 +91,12 @@ class MultiPhaseCalibrator:
     ):
         self.phases = list(phases)
         self.eval_fn = eval_fn
-        self.fixed_params: Dict[str, float] = dict(initial_fixed or {})
+        # v0.43.5 Task D1: save the initial set separately so .run() can
+        # cold-start from it. Previously .run() mutated self.fixed_params
+        # with each phase's best_overrides, silently warm-starting any
+        # subsequent .run() call.
+        self._initial_fixed_params: Dict[str, float] = dict(initial_fixed or {})
+        self.fixed_params: Dict[str, float] = dict(self._initial_fixed_params)
         self.verbose = verbose
         self._eval_count = 0
 
@@ -180,7 +185,15 @@ class MultiPhaseCalibrator:
 
     def run(self) -> List[PhaseResult]:
         """Execute all phases in order. Best params from each phase feed
-        into the next phase's fixed_params."""
+        into the next phase's fixed_params.
+
+        v0.43.5 Task D1: resets fixed_params to the initial set at entry
+        so repeated .run() calls on the same instance are deterministic
+        (previously each subsequent call silently warm-started from the
+        prior run's best_overrides).
+        """
+        self.fixed_params = dict(self._initial_fixed_params)
+        self._eval_count = 0
         results: List[PhaseResult] = []
         for phase in self.phases:
             if self.verbose:
