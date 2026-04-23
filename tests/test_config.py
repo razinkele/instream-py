@@ -123,3 +123,29 @@ class TestDefenseAreaSemanticReconciliation:
         sp = SpeciesConfig()
         assert sp.spawn_defense_area == 0.0
         assert sp.spawn_defense_area_m2 == 0.0
+
+
+class TestParamsFromConfigDefenseArea:
+    """Regression for config.py:544 + params.py:102.
+
+    The Pydantic SpeciesConfig stores spawn_defense_area_m (meters, the Arc E
+    canonical unit). The frozen runtime SpeciesParams must expose the same
+    field so callers that go through params_from_config do not silently fall
+    back to the legacy cm field.
+    """
+
+    def test_species_params_has_spawn_defense_area_m_field(self):
+        from instream.state.params import SpeciesParams
+        params = SpeciesParams(name="test")
+        assert hasattr(params, "spawn_defense_area_m"), (
+            "SpeciesParams must expose spawn_defense_area_m to prevent "
+            "Arc E regression"
+        )
+
+    def test_params_from_config_propagates_spawn_defense_area_m(self):
+        from instream.io.config import load_config, params_from_config
+        cfg = load_config(CONFIGS_DIR / "example_a.yaml")
+        sp_name = next(iter(cfg.species))
+        cfg.species[sp_name].spawn_defense_area_m = 3.5
+        species_params, _ = params_from_config(cfg)
+        assert species_params[sp_name].spawn_defense_area_m == pytest.approx(3.5)

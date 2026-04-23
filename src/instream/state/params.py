@@ -99,7 +99,8 @@ class SpeciesParams:
     search_area: float = 0.0
 
     # --- Spawning ---
-    spawn_defense_area: float = 0.0
+    spawn_defense_area: float = 0.0  # legacy cm² - kept for back-compat
+    spawn_defense_area_m: float = 0.0  # Arc E canonical meters
     spawn_egg_viability: float = 0.0
     spawn_fecund_mult: float = 0.0
     spawn_fecund_exp: float = 0.0

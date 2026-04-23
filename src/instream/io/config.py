@@ -542,6 +542,7 @@ def params_from_config(
             search_area=sp.search_area,
             # Spawning
             spawn_defense_area=sp.spawn_defense_area,
+            spawn_defense_area_m=getattr(sp, "spawn_defense_area_m", 0.0),
             spawn_egg_viability=sp.spawn_egg_viability,
             spawn_fecund_mult=sp.spawn_fecund_mult,
             spawn_fecund_exp=sp.spawn_fecund_exp,
