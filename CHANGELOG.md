@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.15] - 2026-04-23 (Critical correctness patch)
+
+### Fixed — critical correctness patch
+
+Closes 9 findings from the 2026-04-23 deep codebase review.
+
+- **behavior.py** indentation bug at line 211 (Numba candidate lists silently overwritten by Python KD-tree fallback). Restores v0.29.0 batch-Numba hot path and eliminates silent algorithm substitution.
+- **model_init.py**: initial-population `max_lifetime_weight` not initialized, silently disabling starvation mortality for all pre-seeded fish.
+- **model_day_boundary.py**: remove RETURNING_ADULT→SPAWNER bulk promotion at spawn-season open; v0.17.0 per-fish-on-redd-deposit semantics restored.
+- **output.py `write_smolt_production_by_reach`**: PSPC `smolts_produced` now weighted by `superind_rep` (was counting super-individuals as single fish, under-reporting ICES WGBAST PSPC achieved % by the mean rep factor).
+- **state/params.py + io/config.py**: add `spawn_defense_area_m` to `SpeciesParams` and propagate in `params_from_config`; closes a latent Arc E regression path.
+- **pyproject.toml**: `meshio>=5.3` added to core dependencies (previously imported unconditionally in `space/fem_mesh.py` but undeclared — fresh `pip install` raised ImportError on first FEM-mesh use).
+- **pyproject.toml**: new `[calibration]` extra declaring `SALib>=1.4` and `scikit-learn>=1.3`; `[dev]` now transitively includes it.
+- **model_init.py**: removed silent `except Exception: pass` around marine `species_weight_A`/`species_weight_B` propagation — any config error here silently disabled Arc P Holling-II seal predation.
+- **app/modules/movement_panel.py**: deck.gl props converted to camelCase (water-background layer was invisible on the Movement panel).
+
+### Added
+
+- Invariant test `tests/test_deckgl_camelcase.py` prevents snake_case deck.gl regressions.
+- Invariant test `tests/test_dependency_manifest.py` prevents undeclared top-level imports.
+- Regression tests: `tests/test_behavior_numba_fallback.py`, `tests/test_returning_adult_promotion.py`, `tests/test_marine_species_weights.py`, `tests/test_pspc_output.py::test_smolt_production_by_reach_weights_by_superind_rep`, `tests/test_config.py::TestParamsFromConfigDefenseArea`, `tests/test_initialization.py::TestInitialPopulationMaxLifetimeWeight`.
+
+## [0.41.14] - 2026-04-21 (Movement panel: 2-row layout)
+
+### Fixed
+
+- **Movement panel 2-row layout** matching Setup: Color-by and Trail-length now on their own rows for consistent visual baseline with the Setup panel.
+
 ## [0.41.13] - 2026-04-21 (Movement panel: UX consistent with Setup)
 
 ### Changed
