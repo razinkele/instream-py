@@ -348,7 +348,11 @@ def write_spawner_origin_matrix(
         rows.append(row)
     df = pd.DataFrame(rows)
     with _atomic_write_csv(path) as f:
-        df.to_csv(f, index=False)
+        # lineterminator='\n' is REQUIRED here: _atomic_write_csv opens
+        # the tempfile with newline="" (csv.writer expects that), and
+        # pandas on Windows defaults to '\r\n', yielding '\r\r\n' per
+        # row. Forcing '\n' gives a clean LF file on all platforms.
+        df.to_csv(f, index=False, lineterminator="\n")
     return path
 
 

@@ -18,6 +18,38 @@ def _load_pyproject():
     return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
 
 
+def test_networkx_declared_in_core_dependencies():
+    """v0.43.7: mesa.discrete_space.network imports networkx transitively;
+    mesa itself doesn't pin it, so we must. CI on Python 3.13 surfaced
+    this when the hardened workflow was activated."""
+    data = _load_pyproject()
+    core = data["project"]["dependencies"]
+    assert any(d.lower().startswith("networkx") for d in core), (
+        "networkx is a transitive dep of mesa.discrete_space that mesa "
+        "does not itself pin. Declare it in core dependencies."
+    )
+
+
+def test_requests_declared_in_core_dependencies():
+    """v0.43.7: requests is used by scripts/generate_baltic_example.py
+    (import at module top) and test_marineregions_cache. Must be in
+    core so dev installs work."""
+    data = _load_pyproject()
+    core = data["project"]["dependencies"]
+    assert any(d.lower().startswith("requests") for d in core)
+
+
+def test_dev_extra_includes_frontend():
+    """v0.43.7: several tests import from app/modules which require shiny.
+    [dev] must pull [frontend] transitively so CI installs include it."""
+    data = _load_pyproject()
+    dev = data["project"]["optional-dependencies"].get("dev", [])
+    assert any("salmopy[frontend]" in d for d in dev), (
+        "[dev] extra must include 'salmopy[frontend]' so CI dev installs "
+        "can collect app-dependent tests."
+    )
+
+
 def test_meshio_declared_in_core_dependencies():
     """meshio is imported unconditionally in src/salmopy/space/fem_mesh.py;
     it must be a core dependency so fresh installs work."""

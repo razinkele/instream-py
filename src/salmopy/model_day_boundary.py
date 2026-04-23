@@ -1,8 +1,11 @@
 """Day-boundary mixin -- spawning, redds, migration, census, outputs."""
 
+import math
 import numpy as np
 import pandas as pd
 from pathlib import Path
+
+_PI = math.pi  # cached module-level to avoid per-spawn dict lookups
 
 from salmopy.modules.growth import split_superindividuals
 from salmopy.modules.spawning import (
@@ -343,25 +346,35 @@ class _ModelDayBoundaryMixin:
                 rng=self.rng,
             )
             if new_redd_slot >= 0:
-                # v0.43.6: real proportional overlap instead of hardcoded 50%.
-                # redd footprint = pi * defense_radius^2 when defense_area_m is
-                # set; otherwise falls back to cell_area (100% overlap) and
-                # then to the legacy 50% via cell_area=None.
-                import math
-                _dr = float(getattr(sp_cfg, "spawn_defense_area_m", 0.0) or 0.0)
-                if _dr > 0.0:
-                    _redd_area_m2 = math.pi * _dr * _dr
-                    _cell_area_m2 = float(cs.area[best_cell])
+                # v0.43.7: real proportional overlap instead of hardcoded 50%.
+                # Both sides must be in the SAME units for the fraction to be
+                # correct. cs.area is stored in cm² (polygon_mesh.py:76 and
+                # fem_mesh.py:72 multiply raw m² by 10_000). So we compute
+                # redd_area in cm²: pi * (defense_radius_m * 100)^2.
+                #
+                # H1 fix (v0.43.7): v0.43.6 passed m² redd_area vs cm²
+                # cell_area, producing a loss_fraction ≈ redd_m²/cell_cm² of
+                # ~2e-5 — effectively disabling superimposition everywhere.
+                _dr_m = float(getattr(sp_cfg, "spawn_defense_area_m", 0.0) or 0.0)
+                if _dr_m > 0.0:
+                    _dr_cm = _dr_m * 100.0
+                    _redd_area_cm2 = _PI * _dr_cm * _dr_cm
+                    _cell_area_cm2 = float(cs.area[best_cell])
+                    apply_superimposition(
+                        self.redd_state,
+                        new_redd_slot,
+                        redd_area=_redd_area_cm2,
+                        cell_area=_cell_area_cm2,
+                    )
                 else:
                     # No defense radius configured: fall through to legacy 50%
-                    _redd_area_m2 = float(cs.area[best_cell])
-                    _cell_area_m2 = None
-                apply_superimposition(
-                    self.redd_state,
-                    new_redd_slot,
-                    redd_area=_redd_area_m2,
-                    cell_area=_cell_area_m2,
-                )
+                    # via cell_area=None.
+                    apply_superimposition(
+                        self.redd_state,
+                        new_redd_slot,
+                        redd_area=float(cs.area[best_cell]),
+                        cell_area=None,
+                    )
                 new_w = apply_spawner_weight_loss(
                     float(self.trout_state.weight[i]),
                     sp_cfg.spawn_wt_loss_fraction,

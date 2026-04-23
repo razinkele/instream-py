@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.7] - 2026-04-23 (Phase 9: Hotfix — unit bug + CI green)
+
+Post-Phase-8 review surfaced two defects introduced in v0.43.6 plus three dependency-manifest gaps that had been failing CI on origin since master was pushed.
+
+### Fixed (URGENT — v0.43.6 regressions)
+
+- **`model_day_boundary.py::_do_spawning` apply_superimposition caller**: v0.43.6 passed `redd_area` in m² while `cs.area` is stored in cm² (both `polygon_mesh.py:76` and `fem_mesh.py:72` multiply raw-m² by 10_000 before storage). The resulting `loss_fraction ≈ 2e-5` silently disabled superimposition for every config with `spawn_defense_area_m > 0`. Now converts defense radius meters→cm before computing `pi * r_cm²`. Regression test `tests/test_superimposition_units.py` asserts the loss fraction matches `pi*r² / cell_area` with matched units.
+- **`io/output.py::write_spawner_origin_matrix`**: `df.to_csv(f)` on a `newline=""` file produced `\r\r\n` rows on Windows. Now passes `lineterminator="\n"` for deterministic LF output on all platforms.
+
+### Fixed (CI — dependency manifest gaps)
+
+- **`pyproject.toml` core deps**: added `networkx>=3.0` (mesa.discrete_space.network transitive dep that mesa doesn't pin) and `requests>=2.28` (used by `scripts/generate_baltic_example.py` at module-top). CI on Python 3.13 had been failing collection on these since Phase 4's CI hardening landed.
+- **`pyproject.toml` `[dev]` extra**: now includes `salmopy[frontend]` transitively. Several test files import from `app/modules/*` which requires shiny; CI `pip install -e .[dev]` previously couldn't collect those tests.
+
+### Added
+
+- `tests/test_superimposition_units.py` — 3-test regression suite for the unit conversion + legacy fallback + source-level guard against the v0.43.6 buggy pattern.
+- `tests/test_dependency_manifest.py` extended with `test_networkx_declared_in_core_dependencies`, `test_requests_declared_in_core_dependencies`, `test_dev_extra_includes_frontend`.
+
+### Internal
+
+- `model_day_boundary.py`: moved `import math` to module top (was inside hot per-fish spawning loop) and cached `_PI = math.pi` constant.
+
 ## [0.43.6] - 2026-04-23 (Phase 8: Deferred closure)
 
 Closes the 3 remaining deferred items from v0.43.5 "Deliberately deferred past v0.43.5".
