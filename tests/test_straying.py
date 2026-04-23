@@ -57,14 +57,19 @@ def test_spawner_origin_matrix_is_diagonal_under_perfect_homing(tmp_path):
     path = write_spawner_origin_matrix(
         spawners, reach_names=["A", "B", "C"], year=2020, output_dir=tmp_path,
     )
-    df = pd.read_csv(path, index_col=0)
-    assert df.loc["A", "A"] == 10
-    assert df.loc["B", "B"] == 5
-    assert df.loc["C", "C"] == 8
+    # v0.43.5: CSV now uses count_<name> + prop_<name> columns, natal rows
+    # keyed by "natal_reach" name column (index is the row order).
+    df = pd.read_csv(path).set_index("natal_reach")
+    assert df.loc["A", "count_A"] == 10
+    assert df.loc["B", "count_B"] == 5
+    assert df.loc["C", "count_C"] == 8
     # Off-diagonals zero
-    assert df.loc["A", "B"] == 0
-    assert df.loc["B", "C"] == 0
-    assert df.loc["C", "A"] == 0
+    assert df.loc["A", "count_B"] == 0
+    assert df.loc["B", "count_C"] == 0
+    assert df.loc["C", "count_A"] == 0
+    # Proportions: diagonal = 1, off-diagonal = 0 under perfect homing
+    assert df.loc["A", "prop_A"] == 1.0
+    assert df.loc["B", "prop_B"] == 1.0
 
 
 def test_spawner_origin_matrix_captures_straying(tmp_path):
@@ -77,10 +82,13 @@ def test_spawner_origin_matrix_captures_straying(tmp_path):
     path = write_spawner_origin_matrix(
         spawners, reach_names=["A", "B", "C"], year=2020, output_dir=tmp_path,
     )
-    df = pd.read_csv(path, index_col=0)
-    assert df.loc["A", "A"] == 8
-    assert df.loc["A", "C"] == 2   # A→C stray detected
-    assert df.loc["B", "B"] == 5
+    df = pd.read_csv(path).set_index("natal_reach")
+    assert df.loc["A", "count_A"] == 8
+    assert df.loc["A", "count_C"] == 2   # A->C stray detected
+    assert df.loc["B", "count_B"] == 5
+    # Proportions: A is 8/10 + 2/10 = 0.8 + 0.2
+    assert abs(df.loc["A", "prop_A"] - 0.8) < 1e-6
+    assert abs(df.loc["A", "prop_C"] - 0.2) < 1e-6
 
 
 def test_stray_fraction_zero_means_perfect_homing():

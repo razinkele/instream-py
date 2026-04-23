@@ -330,8 +330,23 @@ def write_spawner_origin_matrix(
         rep = int(sp.get("superind_rep", 1))
         if 0 <= natal < n and 0 <= spawn < n:
             m[natal][spawn] += rep
-    df = pd.DataFrame(m, index=reach_names, columns=reach_names)
-    df.index.name = "natal_reach"
+
+    # v0.43.5 Task A3: emit both raw counts AND row-normalized proportions.
+    # WGBAST MSA consumers expect a row-stochastic mixing matrix; the
+    # raw-count-only output forced every downstream script to re-normalize.
+    rows = []
+    for natal_idx, natal_name in enumerate(reach_names):
+        row_total = sum(m[natal_idx])
+        row = {"year": year, "natal_reach_idx": natal_idx, "natal_reach": natal_name}
+        for spawn_idx, spawn_name in enumerate(reach_names):
+            row[f"count_{spawn_name}"] = m[natal_idx][spawn_idx]
+        for spawn_idx, spawn_name in enumerate(reach_names):
+            if row_total > 0:
+                row[f"prop_{spawn_name}"] = round(m[natal_idx][spawn_idx] / row_total, 6)
+            else:
+                row[f"prop_{spawn_name}"] = 0.0
+        rows.append(row)
+    df = pd.DataFrame(rows)
     with _atomic_write_csv(path) as f:
         df.to_csv(f, index=False)
     return path
