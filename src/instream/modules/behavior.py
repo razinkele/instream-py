@@ -208,23 +208,23 @@ def build_candidate_lists(
     else:
         # Python fallback: KD-tree queries + vectorized wet filter
         candidate_lists = [None] * n_fish
-    for i in range(n_fish):
-        if not trout_state.alive[i]:
-            continue
-        current_cell = trout_state.cell_idx[i]
-        if current_cell < 0:
-            continue
-        radius = movement_radius(
-            trout_state.length[i], move_radius_max, move_radius_L1, move_radius_L9
-        )
-        candidates = fem_space.cells_in_radius(current_cell, radius)
-        neighbors = fem_space.get_neighbor_indices(current_cell)
-        neighbors = neighbors[neighbors >= 0]
-        all_c = np.unique(
-            np.concatenate([candidates, neighbors, np.array([current_cell])])
-        )
-        # Vectorized wet filter (replaces Python for-loop)
-        candidate_lists[i] = all_c[wet_mask[all_c]].astype(np.int32)
+        for i in range(n_fish):
+            if not trout_state.alive[i]:
+                continue
+            current_cell = trout_state.cell_idx[i]
+            if current_cell < 0:
+                continue
+            radius = movement_radius(
+                trout_state.length[i], move_radius_max, move_radius_L1, move_radius_L9
+            )
+            candidates = fem_space.cells_in_radius(current_cell, radius)
+            neighbors = fem_space.get_neighbor_indices(current_cell)
+            neighbors = neighbors[neighbors >= 0]
+            all_c = np.unique(
+                np.concatenate([candidates, neighbors, np.array([current_cell])])
+            )
+            # Vectorized wet filter (replaces Python for-loop)
+            candidate_lists[i] = all_c[wet_mask[all_c]].astype(np.int32)
 
     # Post-filter: restrict to current reach + connected reaches
     if reach_allowed is not None:
