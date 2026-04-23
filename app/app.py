@@ -416,8 +416,10 @@ app_ui = ui.page_fluid(
         ui.tags.script(_WEBGL_FALLBACK_JS),
         ui.include_css(Path(__file__).parent / "www" / "bootstrap-icons.min.css"),
         ui.tags.link(rel="icon", href="data:,"),
+        # Plotly self-hosted from app/www/ (CDN blocked by Edge/Firefox
+        # tracking prevention on laguna deploy — see memory/CLAUDE.md).
         ui.tags.script(
-            src="https://cdn.plot.ly/plotly-2.35.2.min.js",
+            src="plotly-2.35.2.min.js",
             charset="utf-8",
         ),
         ui.tags.script(DASHBOARD_JS),
