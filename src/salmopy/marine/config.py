@@ -105,6 +105,7 @@ class MarineConfig(BaseModel):
     marine_resp_A: float = 0.0548         # respiration allometric intercept
     marine_resp_B: float = -0.299         # respiration allometric slope
     marine_resp_Q10: float = 2.1          # temperature coefficient
+    marine_resp_ref_temp: float = 15.0    # v0.43.5: Q10 anchor (deg C); was implicitly cmax_topt
     marine_growth_efficiency: float = 0.50  # K2 net growth efficiency
 
     # Seal predation (logistic, size-dependent)

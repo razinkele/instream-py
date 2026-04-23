@@ -143,6 +143,7 @@ def apply_marine_growth(
         resp_A=config.marine_resp_A,
         resp_B=config.marine_resp_B,
         resp_Q10=config.marine_resp_Q10,
+        resp_ref_temp=config.marine_resp_ref_temp,
         growth_efficiency=config.marine_growth_efficiency,
     )
 
