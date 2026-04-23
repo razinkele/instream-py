@@ -283,7 +283,7 @@ def _evaluate_all_cells_v2(
             if act == 1 and vel > max_spd:
                 continue
             if act == 0:
-                d_speed = vel * shelter_speed_frac if a_shelter > fish_length * fish_length else vel
+                d_speed = vel * shelter_speed_frac if a_shelter > fish_length * fish_length * superind_rep else vel
                 if d_speed > max_spd:
                     continue
 
@@ -316,7 +316,7 @@ def _evaluate_all_cells_v2(
                     intake = ca * drift_conc * vel * 86400.0 * cs_val
                     intake = min(intake, cstepmax)
                     intake = min(intake, a_drift / max(superind_rep, 1))
-                sw_spd = vel * shelter_speed_frac if a_shelter > fish_length * fish_length else vel
+                sw_spd = vel * shelter_speed_frac if a_shelter > fish_length * fish_length * superind_rep else vel
                 resp = _respiration(resp_std, resp_temp_term, sw_spd, max_spd, resp_D)
                 growth = (intake * prey_energy_density - resp) / fish_energy_density
 
