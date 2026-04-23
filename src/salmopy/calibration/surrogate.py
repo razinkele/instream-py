@@ -153,11 +153,15 @@ class SurrogateCalibrator:
         if not self._gps:
             raise RuntimeError("call fit() before find_optimum()")
 
-        rng = np.random.default_rng(self.seed)
         k = len(self.params)
         bounds = np.array([p.bounds_optimizer() for p in self.params])
-        # Uniform random candidates inside optimizer-space bounds
-        X_cand = rng.uniform(bounds[:, 0], bounds[:, 1], size=(n_candidates, k))
+        # v0.43.5 Task D2: Latin Hypercube candidates (was uniform MC,
+        # which misses narrow optima at parameter bounds). Consistent
+        # with the LHS used for training-sample generation.
+        from scipy.stats import qmc
+        sampler = qmc.LatinHypercube(d=k, seed=self.seed)
+        u = sampler.random(n=n_candidates)
+        X_cand = bounds[:, 0] + u * (bounds[:, 1] - bounds[:, 0])
         Y_pred = self.predict(X_cand)
         n_obj = Y_pred.shape[1]
 
