@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.10] - 2026-04-23 (Phase 9d: CI docs warnings)
+
+v0.43.9 fixed the catastrophic docs failure (`ModuleNotFoundError: No module named 'instream'`). CI then surfaced 13 remaining Sphinx `-W` warnings that the local build (on Windows) didn't flag — Linux CI's stricter ndarray resolution path exposed them.
+
+### Fixed
+
+- **`docs/source/conf.py` `nitpick_ignore`**: added remaining docstring-placeholder types (`ndarray`, `bool array`, `FEMSpace`, `Path`), private mixin classes (`salmopy.model_{init,environment,day_boundary}._Model*Mixin`), external base class (`mesa.model.Model`), and one stale upstream-pre-rebrand reference (`instream.modules.growth_math.safe_cmax_interp` in a docstring). Docs now build cleanly under `-W` on both Windows and Linux.
+
 ## [0.43.9] - 2026-04-23 (Phase 9c: docs + final test call-site fix)
 
 ### Fixed

@@ -68,4 +68,19 @@ nitpick_ignore = [
     ("py:class", "tuple"),
     ("py:class", "list"),
     ("py:class", "path-like"),
+    # v0.43.9 additions — CI sphinx is stricter than local (different
+    # ndarray resolution path on Linux); add the remaining leaf references.
+    ("py:class", "ndarray"),
+    ("py:class", "bool array"),
+    ("py:class", "FEMSpace"),
+    ("py:class", "Path"),
+    # Internal mixin classes (private by convention — leading _)
+    ("py:class", "salmopy.model_init._ModelInitMixin"),
+    ("py:class", "salmopy.model_environment._ModelEnvironmentMixin"),
+    ("py:class", "salmopy.model_day_boundary._ModelDayBoundaryMixin"),
+    # External base classes we don't control
+    ("py:class", "mesa.model.Model"),
+    # Stale upstream-pre-rebrand reference in a docstring — will be fixed
+    # naturally when that module's docstring is edited for another reason
+    ("py:func", "instream.modules.growth_math.safe_cmax_interp"),
 ]
