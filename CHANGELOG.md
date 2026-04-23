@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.1] - 2026-04-23 (Phase 3: Frontend regression sweep)
+
+### Fixed
+
+- **`app/app.py`**: Plotly self-hosted from `app/www/plotly-2.35.2.min.js` instead of CDN. Fixes all four plot panels (population, environment, distribution, redds) rendering empty iframes on laguna.ku.lt (Edge/Firefox tracking prevention blocks CDN loads).
+- **`app/modules/spatial_panel.py`**: auto-detect UTM zone via `cells.estimate_utm_crs()` instead of hardcoding `epsg=32634` (Baltic UTM 34N). Non-Baltic deploys (Chinook example_a in UTM 10N, North Sea in UTM 31N, etc.) no longer silently reproject through UTM 34N and produce centroids shifted by hundreds of km.
+- **`app/app.py`**: `_poll_progress` now catches narrow `(ValueError, TypeError)` on queue-item unpack, logs the malformed item, forces `_sim_state` to `"error"`, and shows a notification. Previously a bare `except Exception: pass` swallowed unpack failures and left the UI frozen at stale progress.
+
+### Removed
+
+- `tests/e2e/_debug_lagoon_cells.py` — scratch debugging script, explicitly flagged as such in its own header.
+- `--reload` flag from `tests/test_e2e_spatial.py` app-fixture subprocess — no files change during a test run, and WatchFiles is unreliable on OneDrive paths per project CLAUDE.md.
+
+### Added
+
+- `app/www/plotly-2.35.2.min.js` (4.4 MB) — self-hosted Plotly bundle.
+- `tests/test_plotly_self_hosted.py` — invariant: Plotly must live under `app/www/` and `app/app.py` must not reference `cdn.plot.ly`.
+- `tests/test_spatial_utm_autodetect.py` — source-level guard: spatial_panel.py must call `estimate_utm_crs`.
+- `tests/e2e/conftest.py` `collect_ignore_glob = ["_debug_*.py", "_scratch_*.py"]` — prevents future scratch scripts from being collected.
+
 ## [0.43.0] - 2026-04-23 (Phase 2: Scientific/numerical hardening)
 
 ### Changed — BREAKING
