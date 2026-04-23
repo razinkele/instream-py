@@ -35,9 +35,17 @@ class MarineBackend(Protocol):
         temperatures: np.ndarray,
         days_since_ocean_entry: np.ndarray,
         cormorant_zone_indices: np.ndarray,
-        **species_params: Any,
+        config: Any,
     ) -> np.ndarray:
-        """Return combined daily natural survival probability (0..1)."""
+        """Return combined daily natural survival probability (0..1).
+
+        Parameters
+        ----------
+        config : Any
+            The marine-config bag (species-aware hazard parameters). Treated
+            opaquely by the Protocol; each backend unpacks its own required
+            fields.
+        """
         ...
 
     def fishing_mortality(
