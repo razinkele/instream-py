@@ -1,4 +1,4 @@
-"""Test configuration and shared fixtures for inSTREAM test suite."""
+"""Test configuration and shared fixtures for Salmopy test suite."""
 
 import os
 from pathlib import Path
@@ -7,6 +7,32 @@ import numpy as np
 import pytest
 
 collect_ignore = ["_debug_alignment.py"]
+
+
+def pytest_configure(config):
+    """Warn loudly when NetLogo oracle CSVs are missing.
+
+    ~11 validation tests in test_validation.py + test_run_level_parity.py
+    use `pytest.skip()` at runtime when their fixture CSV is absent. A
+    suite can go 100% green with zero oracle coverage — a real hazard
+    for scientific correctness. This hook emits a UserWarning so the
+    skip is at least visible in CI logs. Set CI_NO_ORACLE=1 to silence
+    when running a deliberately oracle-free subset (e.g., a unit-only
+    developer run).
+    """
+    if os.environ.get("CI_NO_ORACLE") == "1":
+        return
+    ref_dir = Path(__file__).parent / "fixtures" / "reference"
+    if not ref_dir.exists() or not any(ref_dir.glob("*-netlogo.csv")):
+        import warnings
+        warnings.warn(
+            f"NetLogo oracle CSVs missing under {ref_dir}. ~11 validation "
+            "tests will silently skip. Set CI_NO_ORACLE=1 to silence this "
+            "warning, or regenerate the fixtures with the netlogo-oracle "
+            "workflow.",
+            UserWarning,
+            stacklevel=2,
+        )
 
 # Enable JAX float64 if JAX is available
 try:
