@@ -56,7 +56,10 @@ def app_server() -> Generator[subprocess.Popen, None, None]:
             "-m",
             "shiny",
             "run",
-            "--reload",
+            # --reload removed: no files change during a test run, and
+            # shiny's WatchFiles backend is unreliable on OneDrive paths
+            # (see CLAUDE.md). Spawning a file-watcher thread per test is
+            # pure overhead.
             str(APP_DIR / "app.py"),
             "--port",
             str(PORT),
