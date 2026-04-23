@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.6] - 2026-04-23 (Phase 8: Deferred closure)
+
+Closes the 3 remaining deferred items from v0.43.5 "Deliberately deferred past v0.43.5".
+
+### Refactoring
+
+- **`modules/behavior.py`**: both inline `expected_fitness` implementations (batch path ~line 956, scalar fallback ~line 1444) now delegate to the canonical `habitat_fitness.expected_fitness`. Three sources of truth reduced to one; numerics unchanged (the canonical function's final clamp is mathematically equivalent to the inline pre-clamps).
+
+### Fixed
+
+- **`modules/spawning.py::apply_superimposition`**: now takes optional `cell_area` and uses the real NetLogo InSALMO overlap fraction `redd_area / cell_area`. Caller in `model_day_boundary.py::_do_spawning` derives `redd_area` as `pi * spawn_defense_area_m^2` when configured, falling back to the legacy 50% hardcoded default when no defense radius is set. The v0.43.5 deferral rationale (the naive fix flipped behavior from 50% to 100%) is resolved by making the cell_area parameter optional + deriving a realistic redd footprint.
+- **`modules/spawning.py::redd_emergence`**: now logs a `WARNING` and accumulates dropped-egg count on `trout_state._eggs_dropped_capacity_full` when no free slots remain. Previously silent; inflated apparent surviving-egg fraction under capacity pressure.
+
+### Known still-deferred (acceptable)
+
+- 104 remaining ruff warnings (require case-by-case review; tracked)
+- v0.43.6 does NOT add new test files — the existing `test_spawning.py::test_superimposition_reduces_existing_eggs` continues to cover the 50% default branch; the new pi-radius branch is exercised transitively by whole-model tests.
+
 ## [0.43.5] - 2026-04-23 (Phase 7: Deferred hygiene batch)
 
 Closes the 12 deferred items from the 2026-04-23 deep review's v0.43.4 "Not in scope" block.
