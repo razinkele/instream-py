@@ -514,19 +514,22 @@ class _ModelInitMixin:
             # so apply_marine_growth can update length from weight (without
             # this, smolts stay at 12-15 cm their entire ocean phase and
             # seal predation — with L1=40 cm — never activates).
-            try:
-                sp_weight_A = np.array(
-                    [self.config.species[n].weight_A for n in self.species_order],
-                    dtype=np.float64,
-                )
-                sp_weight_B = np.array(
-                    [self.config.species[n].weight_B for n in self.species_order],
-                    dtype=np.float64,
-                )
-                self._marine_domain.species_weight_A = sp_weight_A
-                self._marine_domain.species_weight_B = sp_weight_B
-            except Exception:
-                pass
+            # Arc P: Holling-II seal predation reads species_weight_A/B to
+            # recover length from weight. Assignments are unconditional —
+            # MarineDomain reads these later via getattr(..., None), so
+            # ad-hoc attaching is the documented pattern. A previous
+            # `try/except Exception: pass` wrapper silently swallowed real
+            # config errors; removed 2026-04-23.
+            sp_weight_A = np.array(
+                [self.config.species[n].weight_A for n in self.species_order],
+                dtype=np.float64,
+            )
+            sp_weight_B = np.array(
+                [self.config.species[n].weight_B for n in self.species_order],
+                dtype=np.float64,
+            )
+            self._marine_domain.species_weight_A = sp_weight_A
+            self._marine_domain.species_weight_B = sp_weight_B
 
         # Mesa agent dict (for sync_trout_agents)
         from instream.sync import sync_trout_agents
