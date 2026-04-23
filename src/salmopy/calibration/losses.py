@@ -31,13 +31,18 @@ def banded_log_ratio_loss(actual: float, lower: float, upper: float) -> float:
 
 
 def rmse_loss(actual: Sequence[float], reference: Sequence[float]) -> float:
-    """sqrt(mean((a-r)**2)). NaN → skipped pair; empty → 0."""
+    """sqrt(mean((a-r)**2)). NaN pair skipped; all-NaN or empty returns NaN.
+
+    Returning NaN on no finite pairs prevents optimizers from ranking a
+    crashed run (all-NaN output) as a perfect match. Callers should decide
+    whether to treat NaN as `inf` (penalty), skip, or propagate.
+    """
     pairs = [
         (a, r) for a, r in zip(actual, reference)
         if not (math.isnan(a) or math.isnan(r))
     ]
     if not pairs:
-        return 0.0
+        return float("nan")
     s = sum((a - r) ** 2 for a, r in pairs)
     return math.sqrt(s / len(pairs))
 
