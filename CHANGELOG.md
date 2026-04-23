@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.11] - 2026-04-23 (Phase 9e: CI final — lint + docutils)
+
+### Fixed
+
+- **`.github/workflows/ci.yml`** lint job: added `F841` (local-variable assigned but never used) to `--ignore` list. Tests sometimes bind row values for clarity even when not asserted (`test_validation.py:888` `area`, line 929 `header_line`). The remaining 102 ruff warnings need case-by-case review — tracked as future hygiene.
+- **`src/salmopy/model.py::SalmopyModel.step` docstring**: docutils on Linux flagged the `A)` / `B)` list-item indentation continuation as "Unexpected indentation". Rewrote as prose (no RST list) — identical content, unambiguously parsed.
+
 ## [0.43.10] - 2026-04-23 (Phase 9d: CI docs warnings)
 
 v0.43.9 fixed the catastrophic docs failure (`ModuleNotFoundError: No module named 'instream'`). CI then surfaced 13 remaining Sphinx `-W` warnings that the local build (on Windows) didn't flag — Linux CI's stricter ndarray resolution path exposed them.

@@ -33,10 +33,10 @@ class SalmopyModel(_ModelInitMixin, _ModelEnvironmentMixin, _ModelDayBoundaryMix
     def step(self):
         """Advance the simulation by one sub-step (or full day if daily).
 
-        Operations are split into two groups:
-        A) Every sub-step: hydraulics, light, resources, habitat, survival.
-        B) Day boundary only: growth application, spawning, redds, migration,
-           census, age increment, memory reset.
+        Operations are split into two groups. **A** runs every sub-step
+        (hydraulics, light, resources, habitat, survival); **B** runs
+        only on the day-boundary sub-step (growth application, spawning,
+        redds, migration, census, age increment, memory reset).
 
         When steps_per_day == 1, substep_index is always 0 and
         is_day_boundary is always True, so every step executes both A and B
