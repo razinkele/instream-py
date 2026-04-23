@@ -94,6 +94,7 @@ class SpeciesParams:
     resp_B: float = 0.0
     resp_C: float = 0.0
     resp_D: float = 0.0
+    resp_ref_temp: float = 15.0  # Q10 anchor (degC); conventional salmonid metabolic standard
 
     # --- Search ---
     search_area: float = 0.0

@@ -55,6 +55,7 @@ def marine_growth(
     resp_B: float,
     resp_Q10: float,
     growth_efficiency: float,
+    resp_ref_temp: float = 15.0,
 ) -> np.ndarray:
     """Compute daily marine weight delta (g/day) for each fish.
 
@@ -97,7 +98,7 @@ def marine_growth(
     cmax *= _cmax_temperature_response(t, cmax_topt, cmax_tmax)
     consumption = cmax * np.clip(prey, 0.0, 1.0) * np.clip(cond, 0.0, 1.0)
 
-    q10_exp = (t - cmax_topt) / 10.0
+    q10_exp = (t - resp_ref_temp) / 10.0
     respiration = resp_A * np.power(w_safe, 1.0 + resp_B) * np.power(resp_Q10, q10_exp)
 
     delta = (consumption - respiration) * growth_efficiency

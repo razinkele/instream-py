@@ -186,6 +186,7 @@ class SpeciesConfig(BaseModel, extra="allow"):
     resp_B: float = 0.0
     resp_C: float = 0.0
     resp_D: float = 0.0
+    resp_ref_temp: float = 15.0  # Q10 anchor (degC); conventional salmonid standard
 
     # Search
     search_area: float = 0.0
@@ -538,6 +539,7 @@ def params_from_config(
             resp_B=sp.resp_B,
             resp_C=sp.resp_C,
             resp_D=sp.resp_D,
+            resp_ref_temp=getattr(sp, "resp_ref_temp", 15.0),
             # Search
             search_area=sp.search_area,
             # Spawning
