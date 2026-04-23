@@ -587,8 +587,23 @@ def server(input, output, session):
                     return
                 # Normal progress tuple (int, int)
                 step, total = item
-        except Exception:
-            pass
+        except (ValueError, TypeError) as exc:
+            # Malformed queue item (not a 2-tuple, wrong types). Log and
+            # flip simulation to error state so the user sees a notification
+            # rather than a stuck-running UI.
+            import logging
+            logging.getLogger("salmopy.app").warning(
+                "_poll_progress: unpack failed for item %r: %s", item, exc,
+            )
+            _sim_state.set("error")
+            _active_task.set("none")
+            ui.notification_show(
+                "Progress update failed (malformed queue item). "
+                "Simulation state forced to error.",
+                type="error",
+                duration=30,
+            )
+            return
         _latest_progress.set((step, total))
 
     @reactive.effect
