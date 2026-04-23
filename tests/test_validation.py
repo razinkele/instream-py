@@ -1004,8 +1004,11 @@ class TestFitnessReport:
     """
 
     @pytest.mark.xfail(
-        reason="Golden needs regeneration after Arc D migration rewrite; see v0.31.0-arc-D-netlogo-comparison.md",
-        strict=False,
+        reason="Golden needs regeneration after Arc D migration rewrite "
+        "(v0.31.0). Phase 4 flipped strict=False -> strict=True: any "
+        "surprise pass now fails the suite so we notice when the golden "
+        "regen is no longer needed.",
+        strict=True,
     )
     def test_fitness_report(self):
         import numpy as np
