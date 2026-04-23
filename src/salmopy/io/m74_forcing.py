@@ -25,7 +25,11 @@ def load_m74_forcing(path: Path | str) -> Dict[Tuple[int, str], float]:
     df = pd.read_csv(path, comment="#")
     required = {"year", "river", "ysfm_fraction"}
     missing = required - set(df.columns)
-    assert not missing, f"M74 CSV missing columns: {missing}"
+    if missing:
+        raise ValueError(
+            f"M74 CSV at {path} is missing required columns {missing}. "
+            f"Got columns: {sorted(df.columns)}."
+        )
     return {
         (int(r.year), str(r.river)): float(r.ysfm_fraction)
         for r in df.itertuples()

@@ -302,14 +302,27 @@ def git_commit_and_tag(version, dry_run=False):
     )
 
 
+def _current_branch():
+    """Return the currently-checked-out branch name."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(PROJECT_ROOT),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
 def git_push(dry_run=False):
-    """Push commits and tags to origin master."""
+    """Push commits and tags to the current branch's upstream."""
+    branch = _current_branch()
     if dry_run:
-        print("[dry-run] Would push: git push origin master --tags")
+        print(f"[dry-run] Would push: git push origin {branch} --tags")
         return
-    print("Pushing to origin master with tags...")
+    print(f"Pushing to origin {branch} with tags...")
     subprocess.run(
-        ["git", "push", "origin", "master", "--tags"],
+        ["git", "push", "origin", branch, "--tags"],
         cwd=str(PROJECT_ROOT),
         check=True,
     )

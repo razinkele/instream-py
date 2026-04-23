@@ -108,8 +108,20 @@ class _ModelInitMixin:
         # which may differ from config ordering.  Use a temp array to avoid
         # collision when swapping indices.
         mesh_unique = list(dict.fromkeys(self.mesh.reach_names))
+        # Phase 6: pre-check that every reach name in the shapefile is
+        # present in the config. Previously the dict access at
+        # `self._reach_name_to_idx[rname]` raised a bare KeyError — no
+        # diagnostic, often caused by case or trailing-whitespace drift.
+        unknown = [r for r in mesh_unique if r not in self._reach_name_to_idx]
+        if unknown:
+            raise ValueError(
+                f"Shapefile reach names not present in config: {sorted(unknown)}. "
+                f"Config declares reaches: {sorted(self._reach_name_to_idx)}. "
+                f"Check for case differences or trailing whitespace in the "
+                f"shapefile's reach-name column."
+            )
         needs_remap = any(
-            self._reach_name_to_idx.get(rname, mesh_idx) != mesh_idx
+            self._reach_name_to_idx[rname] != mesh_idx
             for mesh_idx, rname in enumerate(mesh_unique)
         )
         if needs_remap:

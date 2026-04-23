@@ -13,11 +13,17 @@ def read_initial_populations(path: Path) -> List[Dict[str, Any]]:
     """
     populations = []
     with open(path, "r") as f:
-        for line in f:
-            line = line.strip()
+        for lineno, raw in enumerate(f, start=1):
+            line = raw.strip()
             if not line or line.startswith(";"):
                 continue
             parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 7:
+                raise ValueError(
+                    f"Population file {path}, line {lineno}: expected 7 "
+                    f"comma-separated columns (Species, Reach, Age, Number, "
+                    f"Length min/mode/max), got {len(parts)}: {line!r}"
+                )
             populations.append({
                 "species": parts[0],
                 "reach": parts[1],
