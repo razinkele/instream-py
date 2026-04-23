@@ -4,6 +4,12 @@ import math
 import numpy as np
 
 from salmopy.state.life_stage import LifeStage
+# Canonical expected-fitness function — single source of truth for the
+# NetLogo InSALMO 7.3 fitness-for formula (see habitat_fitness.py docstring).
+# Phase 2 Task 2.9 imports this here so the inline implementations at the
+# batch-path and scalar-fallback sites below can be refactored to delegate
+# in a follow-up patch without further source changes.
+from salmopy.modules.habitat_fitness import expected_fitness  # noqa: F401
 
 try:
     from salmopy.backends.numba_backend.fitness import (
