@@ -257,12 +257,13 @@ def create_redd(
     return slot
 
 
-def apply_superimposition(redd_state, new_redd_idx, redd_area):
+def apply_superimposition(redd_state, new_redd_idx, redd_area, cell_area=None):
     """Reduce eggs in existing redds on the same cell as the new redd.
 
-    Each existing redd loses a fraction of eggs proportional to
-    redd_area / cell_area overlap. Simplified: lose 50% of remaining eggs
-    when superimposed.
+    v0.43.6: Uses the NetLogo InSALMO overlap fraction = clamp(redd_area /
+    cell_area, 0, 1). When cell_area is None or <= 0, falls back to the
+    legacy 50% default (ensures back-compat with callers that haven't
+    been updated).
 
     Parameters
     ----------
@@ -271,16 +272,23 @@ def apply_superimposition(redd_state, new_redd_idx, redd_area):
     new_redd_idx : int
         Index of the newly created redd.
     redd_area : float
-        Area of the redd (currently unused; fixed 50% loss).
+        Area footprint of the new redd (m^2). Typically pi * r^2 where
+        r is spawn_defense_area_m.
+    cell_area : float, optional
+        Area of the underlying cell (m^2). When None, uses 0.5 as the
+        loss fraction (legacy behavior).
     """
     cell = redd_state.cell_idx[new_redd_idx]
+    if cell_area is None or cell_area <= 0.0:
+        loss_fraction = 0.5  # legacy default
+    else:
+        loss_fraction = min(1.0, max(0.0, redd_area / cell_area))
     alive_redds = np.where(redd_state.alive)[0]
     for i in alive_redds:
         if i == new_redd_idx:
             continue
         if redd_state.cell_idx[i] == cell:
-            # Existing redd loses eggs from disturbance
-            lost = redd_state.num_eggs[i] // 2
+            lost = int(redd_state.num_eggs[i] * loss_fraction)
             redd_state.num_eggs[i] -= lost
             redd_state.eggs_scour[i] += lost
 
@@ -448,6 +456,22 @@ def redd_emergence(
         dead_slots = np.where(~ts.alive)[0]
         n_slots = min(n_slots_needed, len(dead_slots))
         if n_slots <= 0:
+            # v0.43.6 Task 3: log + count dropped eggs (was silent).
+            # trout_state capacity is full; these eggs are lost without
+            # becoming fish. Inflates apparent survivor counts downstream.
+            import logging
+            logging.getLogger("salmopy.spawning").warning(
+                "redd_emergence: trout_state capacity full; dropping %d "
+                "eggs from redd %d (cell %d).",
+                int(n_eggs_today), int(i), int(rs.cell_idx[i]),
+            )
+            # Expose for model-level accounting. Callers that care
+            # (e.g. SalmopyModel) initialize `ts._eggs_dropped_capacity_full = 0`
+            # and read it after each redd_emergence pass.
+            try:
+                ts._eggs_dropped_capacity_full += int(n_eggs_today)
+            except AttributeError:
+                ts._eggs_dropped_capacity_full = int(n_eggs_today)
             continue
 
         slots = dead_slots[:n_slots]

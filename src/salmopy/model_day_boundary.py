@@ -343,10 +343,24 @@ class _ModelDayBoundaryMixin:
                 rng=self.rng,
             )
             if new_redd_slot >= 0:
+                # v0.43.6: real proportional overlap instead of hardcoded 50%.
+                # redd footprint = pi * defense_radius^2 when defense_area_m is
+                # set; otherwise falls back to cell_area (100% overlap) and
+                # then to the legacy 50% via cell_area=None.
+                import math
+                _dr = float(getattr(sp_cfg, "spawn_defense_area_m", 0.0) or 0.0)
+                if _dr > 0.0:
+                    _redd_area_m2 = math.pi * _dr * _dr
+                    _cell_area_m2 = float(cs.area[best_cell])
+                else:
+                    # No defense radius configured: fall through to legacy 50%
+                    _redd_area_m2 = float(cs.area[best_cell])
+                    _cell_area_m2 = None
                 apply_superimposition(
                     self.redd_state,
                     new_redd_slot,
-                    float(cs.area[best_cell]),
+                    redd_area=_redd_area_m2,
+                    cell_area=_cell_area_m2,
                 )
                 new_w = apply_spawner_weight_loss(
                     float(self.trout_state.weight[i]),
