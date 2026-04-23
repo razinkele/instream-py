@@ -6,30 +6,30 @@ import pytest
 class TestReddLoTempSurvival:
     def test_cold_kills_eggs(self):
         from salmopy.modules.survival import redd_survival_lo_temp
-        frac = redd_survival_lo_temp(temperature=0.0, T1=1.7, T9=4.0, step_length=1.0)
+        frac = redd_survival_lo_temp(temperature=0.0, T1=1.7, T9=4.0)
         assert frac < 1.0  # significant mortality at T=0
 
     def test_warm_no_mortality(self):
         from salmopy.modules.survival import redd_survival_lo_temp
-        frac = redd_survival_lo_temp(temperature=15.0, T1=1.7, T9=4.0, step_length=1.0)
+        frac = redd_survival_lo_temp(temperature=15.0, T1=1.7, T9=4.0)
         np.testing.assert_allclose(frac, 1.0, atol=0.01)
 
     def test_bounded_zero_one(self):
         from salmopy.modules.survival import redd_survival_lo_temp
         for t in [0, 1, 2, 3, 5, 10, 20]:
-            f = redd_survival_lo_temp(t, T1=1.7, T9=4.0, step_length=1.0)
+            f = redd_survival_lo_temp(t, T1=1.7, T9=4.0)
             assert 0 <= f <= 1.0
 
 
 class TestReddHiTempSurvival:
     def test_hot_kills_eggs(self):
         from salmopy.modules.survival import redd_survival_hi_temp
-        frac = redd_survival_hi_temp(temperature=25.0, T1=23.0, T9=17.5, step_length=1.0)
+        frac = redd_survival_hi_temp(temperature=25.0, T1=23.0, T9=17.5)
         assert frac < 1.0
 
     def test_cool_no_mortality(self):
         from salmopy.modules.survival import redd_survival_hi_temp
-        frac = redd_survival_hi_temp(temperature=10.0, T1=23.0, T9=17.5, step_length=1.0)
+        frac = redd_survival_hi_temp(temperature=10.0, T1=23.0, T9=17.5)
         np.testing.assert_allclose(frac, 1.0, atol=0.01)
 
 

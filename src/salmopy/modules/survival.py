@@ -385,17 +385,15 @@ def redd_survival_lo_temp(
     temperature: float,
     T1: float = 1.7,
     T9: float = 4.0,
-    step_length: float = 1.0,
 ) -> float:
     """Daily survival probability for low-temperature redd mortality.
 
     The logistic is *increasing* (T1 < T9): cold temperatures yield low
     logistic values -> high mortality.
 
-    Returns the daily logistic value (step_length parameter is accepted
-    for API compatibility but not used — step_length scaling is handled
-    in apply_redd_survival via the constant-hazard formula, matching
-    NetLogo's ``(1 - s_daily) * eggs * step_length`` approach).
+    Returns the daily logistic value. v0.43.5: dropped the unused
+    step_length parameter (sub-daily scaling is handled by
+    apply_redd_survival via the constant-hazard formula).
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
     return float(np.clip(logistic_val, 0.0, 1.0))
@@ -410,17 +408,14 @@ def redd_survival_hi_temp(
     temperature: float,
     T1: float = 23.0,
     T9: float = 17.5,
-    step_length: float = 1.0,
 ) -> float:
     """Daily survival probability for high-temperature redd mortality.
 
     The logistic is *decreasing* (T1 > T9): hot temperatures yield low
     logistic values -> high mortality.
 
-    Returns the daily logistic value (step_length parameter is accepted
-    for API compatibility but not used — step_length scaling is handled
-    in apply_redd_survival via the constant-hazard formula, matching
-    NetLogo's ``(1 - s_daily) * eggs * step_length`` approach).
+    Returns the daily logistic value. v0.43.5: dropped the unused
+    step_length parameter.
     """
     logistic_val = _redd_logistic(temperature, T1, T9)
     return float(np.clip(logistic_val, 0.0, 1.0))
