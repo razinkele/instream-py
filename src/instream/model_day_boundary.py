@@ -249,11 +249,6 @@ class _ModelDayBoundaryMixin:
             alive = alive[fw_mask]
         cs = self.fem_space.cell_state
 
-        # Transition RETURNING_ADULT → SPAWNER when spawn season opens
-        ra_mask = self.trout_state.life_history[alive] == int(LifeStage.RETURNING_ADULT)
-        if ra_mask.any():
-            self.trout_state.life_history[alive[ra_mask]] = int(LifeStage.SPAWNER)
-
         for i in alive:
             sp_idx = int(self.trout_state.species_idx[i])
             sp_name = self.species_order[sp_idx]
