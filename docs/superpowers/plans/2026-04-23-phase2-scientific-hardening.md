@@ -26,12 +26,12 @@
 
 ## Task 2.1: Align `MarineBackend.marine_survival` Protocol with implementation
 
-**Problem:** `src/instream/backends/_interface.py:31-41` declares `MarineBackend.marine_survival(..., **species_params: Any)`. The numpy implementation at `src/instream/backends/numpy_backend/marine.py:45-53` takes a positional `config: Any` argument instead. Because `MarineBackend` is `@runtime_checkable`, `isinstance(NumpyMarineBackend(), MarineBackend)` returns True (structural subtyping is name-based, not signature-aware). A caller following the Protocol contract would pass keyword args that the implementation ignores, producing silent wrong behavior or a TypeError depending on how it's called.
+**Problem:** `src/salmopy/backends/_interface.py:31-41` declares `MarineBackend.marine_survival(..., **species_params: Any)`. The numpy implementation at `src/salmopy/backends/numpy_backend/marine.py:45-53` takes a positional `config: Any` argument instead. Because `MarineBackend` is `@runtime_checkable`, `isinstance(NumpyMarineBackend(), MarineBackend)` returns True (structural subtyping is name-based, not signature-aware). A caller following the Protocol contract would pass keyword args that the implementation ignores, producing silent wrong behavior or a TypeError depending on how it's called.
 
 The right convention for this codebase: the numpy impl already settled on `config: Any` as a single marine-config bag, and this is more ergonomic than loose kwargs. Align the Protocol to match the impl.
 
 **Files:**
-- Modify: `src/instream/backends/_interface.py:31-41`
+- Modify: `src/salmopy/backends/_interface.py:31-41`
 - Create: `tests/test_backend_protocol_hardening.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -43,8 +43,8 @@ Create `tests/test_backend_protocol_hardening.py`:
 numpy implementation so typed callers bind arguments correctly."""
 import inspect
 
-from instream.backends._interface import MarineBackend
-from instream.backends.numpy_backend.marine import NumpyMarineBackend
+from salmopy.backends._interface import MarineBackend
+from salmopy.backends.numpy_backend.marine import NumpyMarineBackend
 
 
 def test_marine_survival_protocol_matches_implementation():
@@ -70,7 +70,7 @@ Expected: FAIL — Protocol has `kwargs` param (for `**species_params`), impl ha
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/backends/_interface.py`, change the `marine_survival` method declaration. Currently (lines 31-41):
+In `src/salmopy/backends/_interface.py`, change the `marine_survival` method declaration. Currently (lines 31-41):
 
 ```python
     def marine_survival(
@@ -121,7 +121,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/instream/backends/_interface.py tests/test_backend_protocol_hardening.py
+git add src/salmopy/backends/_interface.py tests/test_backend_protocol_hardening.py
 git commit -m "fix(backends): align MarineBackend.marine_survival Protocol with impl
 
 Protocol declared **species_params: Any but numpy impl uses config: Any.
@@ -136,10 +136,10 @@ Tests/test_backend_protocol_hardening.py asserts signature parity."
 
 ## Task 2.2: Raise on multi-species JAX `growth_rate` until per-species dispatch is implemented
 
-**Problem:** `src/instream/backends/jax_backend/__init__.py:220-221` reads `params["cmax_temp_table_xs"][0]` — hardcoded index 0. Multi-species simulations running through the JAX backend silently use species-0's cmax-temperature curve for every fish. The comment at line 219 acknowledges "Known single-species limitation" but there is no runtime guard, so this is silent wrong behavior. Since no parity test currently exercises multi-species JAX, this would ship bad numbers to any Baltic multi-river user who happens to enable JAX.
+**Problem:** `src/salmopy/backends/jax_backend/__init__.py:220-221` reads `params["cmax_temp_table_xs"][0]` — hardcoded index 0. Multi-species simulations running through the JAX backend silently use species-0's cmax-temperature curve for every fish. The comment at line 219 acknowledges "Known single-species limitation" but there is no runtime guard, so this is silent wrong behavior. Since no parity test currently exercises multi-species JAX, this would ship bad numbers to any Baltic multi-river user who happens to enable JAX.
 
 **Files:**
-- Modify: `src/instream/backends/jax_backend/__init__.py:220-221`
+- Modify: `src/salmopy/backends/jax_backend/__init__.py:220-221`
 - Modify: `tests/test_backend_protocol_hardening.py` (append)
 
 - [ ] **Step 1: Write the failing test**
@@ -158,7 +158,7 @@ def test_jax_growth_rate_raises_on_multi_species():
         pytest.skip("JAX not installed")
 
     import numpy as np
-    from instream.backends.jax_backend import JaxBackend
+    from salmopy.backends.jax_backend import JaxBackend
 
     backend = JaxBackend()
     # Build a params dict with TWO species' tables — triggers the latent bug
@@ -196,7 +196,7 @@ Expected: FAIL — currently silently uses species-0 table, no NotImplementedErr
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/backends/jax_backend/__init__.py` around lines 219-221, the current block is:
+In `src/salmopy/backends/jax_backend/__init__.py` around lines 219-221, the current block is:
 
 ```python
         # Known single-species limitation: use first table
@@ -239,7 +239,7 @@ Expected: all PASS — existing single-species tests unaffected.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/backends/jax_backend/__init__.py tests/test_backend_protocol_hardening.py
+git add src/salmopy/backends/jax_backend/__init__.py tests/test_backend_protocol_hardening.py
 git commit -m "fix(jax): raise NotImplementedError on multi-species growth_rate
 
 JAX backend hardcoded cmax_temp_table_xs[0] — multi-species simulations
@@ -251,10 +251,10 @@ answer into a loud early error until per-species JAX dispatch lands."
 
 ## Task 2.3: Consistent shelter accounting between eligibility and depletion
 
-**Problem:** In `src/instream/backends/numba_backend/fitness.py:286`, Pass 1 allows drift-with-shelter activity when `a_shelter > fish_length * fish_length` (cm², per-individual). In Pass 2 at line 946-948, depletion charges `fl * fl * rep` (per-super-individual). For a super-individual with `rep=100`, Pass 1 says "yes, shelter fits" based on one fish's footprint, but Pass 2 deducts 100× that footprint — silently over-depleting shared shelter. Downstream fish of the same cell may then fail to find shelter they should have had.
+**Problem:** In `src/salmopy/backends/numba_backend/fitness.py:286`, Pass 1 allows drift-with-shelter activity when `a_shelter > fish_length * fish_length` (cm², per-individual). In Pass 2 at line 946-948, depletion charges `fl * fl * rep` (per-super-individual). For a super-individual with `rep=100`, Pass 1 says "yes, shelter fits" based on one fish's footprint, but Pass 2 deducts 100× that footprint — silently over-depleting shared shelter. Downstream fish of the same cell may then fail to find shelter they should have had.
 
 **Files:**
-- Modify: `src/instream/backends/numba_backend/fitness.py:286`
+- Modify: `src/salmopy/backends/numba_backend/fitness.py:286`
 - Create: `tests/test_shelter_consistency_hardening.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -275,7 +275,7 @@ def test_shelter_eligibility_matches_depletion_for_super_individuals():
     For rep > 1, Pass 1 can accept fish that Pass 2 cannot actually shelter.
     The fix is: Pass 1 threshold must also scale by rep.
     """
-    from instream.backends.numba_backend import fitness
+    from salmopy.backends.numba_backend import fitness
 
     # Read the function source to confirm the Pass 1 threshold scales with rep
     import inspect
@@ -305,14 +305,14 @@ Expected: FAIL with the message above.
 Verify which rep variable is already in scope at the Pass 1 threshold site (`fitness.py:286`). Pass 2 at line 946 uses the local name `rep`, passed as a function parameter. Grep for it:
 
 ```bash
-micromamba run -n shiny python -c "from instream.backends.numba_backend import fitness; import inspect; print(inspect.signature(fitness._evaluate_all_cells_v2))"
+micromamba run -n shiny python -c "from salmopy.backends.numba_backend import fitness; import inspect; print(inspect.signature(fitness._evaluate_all_cells_v2))"
 ```
 
 If `_evaluate_all_cells_v2` already takes a `rep`-like parameter, use it directly in Step 4. If not, thread `superind_rep` through from `_pass1_evaluate_parallel` (see `fitness.py:637` where `fish_superind_reps[fi]` is in scope) — add a `superind_rep: int = 1` parameter to `_evaluate_all_cells_v2` and pass it at the call site.
 
 - [ ] **Step 4: Apply the fix**
 
-In `src/instream/backends/numba_backend/fitness.py` line ~286, the current code is:
+In `src/salmopy/backends/numba_backend/fitness.py` line ~286, the current code is:
 
 ```python
             if act == 0:
@@ -351,7 +351,7 @@ Expected: all PASS (scaling threshold up by rep is a tightening, not a loosening
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/instream/backends/numba_backend/fitness.py tests/test_shelter_consistency_hardening.py
+git add src/salmopy/backends/numba_backend/fitness.py tests/test_shelter_consistency_hardening.py
 git commit -m "fix(numba/fitness): scale shelter eligibility by super-individual rep
 
 Pass 1 threshold 'a_shelter > fish_length²' accepted fish Pass 2 then
@@ -393,20 +393,20 @@ def test_batch_and_scalar_paths_agree_on_example_a():
     once with the batch path — and assert the chosen-cell arrays agree
     for all alive fish."""
     import numpy as np
-    from instream.model import InSTREAMModel
-    from instream.modules import behavior
+    from salmopy.model import SalmopyModel
+    from salmopy.modules import behavior
 
     if not behavior._HAS_NUMBA_SPATIAL:
         pytest.skip("numba not installed")
 
-    import instream.modules.behavior as _beh
+    import salmopy.modules.behavior as _beh
 
     def run(force_scalar: bool, monkeypatch_local):
         """Run 3 model steps with the scalar flag controlled by monkeypatch
         so the flag resets automatically at the end of the test, preventing
         cross-test leakage of the module-level flag."""
         monkeypatch_local.setattr(_beh, "_FORCE_SCALAR_HABITAT_PATH", force_scalar)
-        m = InSTREAMModel(
+        m = SalmopyModel(
             config_path=str(CONFIGS_DIR / "example_a.yaml"),
             data_dir=str(FIXTURES_DIR / "example_a"),
         )
@@ -447,7 +447,7 @@ If the test fails because cells diverge, investigate and fix the batch kernel di
 
 - [ ] **Step 3: If no scalar-force hook exists, add one**
 
-In `src/instream/modules/behavior.py`, near the top (after imports), add:
+In `src/salmopy/modules/behavior.py`, near the top (after imports), add:
 
 ```python
 # Test-only flag to force the per-fish scalar path (used by parity tests).
@@ -478,7 +478,7 @@ Expected: PASS. If it fails on cell/activity divergence, that is a real batch-ke
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/test_batch_select_habitat_parity.py src/instream/modules/behavior.py
+git add tests/test_batch_select_habitat_parity.py src/salmopy/modules/behavior.py
 git commit -m "test(backends): add batch vs scalar habitat-selection parity test
 
 The v0.29.0 batch_select_habitat hot path had zero parity coverage.
@@ -493,7 +493,7 @@ asserts cell, activity, and growth-rate arrays match exactly."
 
 ## Task 2.5: Correct SMC log-marginal-likelihood accumulator
 
-**Problem:** `src/instream/bayesian/smc.py:90` computes:
+**Problem:** `src/salmopy/bayesian/smc.py:90` computes:
 
 ```python
 log_marginal += max_lw + np.log(np.exp(log_weights).mean())
@@ -504,7 +504,7 @@ After the shift on line 85 (`log_weights = log_weights - max_lw`), `log_weights`
 Empirical invariant: with zero log-likelihood (`log_likes = 0`), `log_marginal_likelihood` should be exactly 0 (no evidence added). Current code returns `-n_steps × log(n_particles)`.
 
 **Files:**
-- Modify: `src/instream/bayesian/smc.py:82-92`
+- Modify: `src/salmopy/bayesian/smc.py:82-92`
 - Create: `tests/test_smc_hardening.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -519,7 +519,7 @@ import numpy as np
 
 
 def test_log_marginal_is_zero_under_flat_likelihood():
-    from instream.bayesian.smc import run_smc
+    from salmopy.bayesian.smc import run_smc
 
     class _FakePrior:
         def __init__(self, name):
@@ -560,7 +560,7 @@ Expected: FAIL with `log_marginal_likelihood ≈ -4 * log(64) ≈ -16.6` instead
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/bayesian/smc.py`, the current accumulator block (lines 82-92) is:
+In `src/salmopy/bayesian/smc.py`, the current accumulator block (lines 82-92) is:
 
 ```python
         # Re-weight particles (log-space for stability)
@@ -615,7 +615,7 @@ Expected: all PASS. If any existing test had hardcoded the buggy log_marginal va
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/bayesian/smc.py tests/test_smc_hardening.py
+git add src/salmopy/bayesian/smc.py tests/test_smc_hardening.py
 git commit -m "fix(bayesian): correct SMC log-marginal-likelihood accumulator
 
 smc.py:90 used np.exp(log_weights).mean() after subtracting max_lw,
@@ -630,10 +630,10 @@ Regression test: with flat likelihood the marginal must be exactly 0."
 
 ## Task 2.6: `rmse_loss` NaN semantics
 
-**Problem:** `src/instream/calibration/losses.py:33-42` returns `0.0` (perfect-match score) when all (actual, reference) pairs are filtered out by NaN. An optimizer that calls `rmse_loss` on a crashed-run whose metric output is all-NaN will rank that run as optimal. The sister function `banded_log_ratio_loss` returns `float("inf")` for bad inputs — `rmse_loss` should return `nan` and let callers decide policy explicitly.
+**Problem:** `src/salmopy/calibration/losses.py:33-42` returns `0.0` (perfect-match score) when all (actual, reference) pairs are filtered out by NaN. An optimizer that calls `rmse_loss` on a crashed-run whose metric output is all-NaN will rank that run as optimal. The sister function `banded_log_ratio_loss` returns `float("inf")` for bad inputs — `rmse_loss` should return `nan` and let callers decide policy explicitly.
 
 **Files:**
-- Modify: `src/instream/calibration/losses.py:33-42`
+- Modify: `src/salmopy/calibration/losses.py:33-42`
 - Create: `tests/test_calibration_losses_hardening.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -645,7 +645,7 @@ Create `tests/test_calibration_losses_hardening.py`:
 optimizers cannot rank a crashed run as optimal."""
 import math
 
-from instream.calibration.losses import rmse_loss
+from salmopy.calibration.losses import rmse_loss
 
 
 def test_rmse_all_nan_returns_nan_not_zero():
@@ -687,7 +687,7 @@ Expected: `test_rmse_all_nan_returns_nan_not_zero`, `test_rmse_nan_in_reference_
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/calibration/losses.py`, current `rmse_loss`:
+In `src/salmopy/calibration/losses.py`, current `rmse_loss`:
 
 ```python
 def rmse_loss(actual: Sequence[float], reference: Sequence[float]) -> float:
@@ -741,7 +741,7 @@ Expected: all PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/calibration/losses.py tests/test_calibration_losses_hardening.py
+git add src/salmopy/calibration/losses.py tests/test_calibration_losses_hardening.py
 git commit -m "fix(calibration/losses): rmse_loss returns NaN (not 0.0) on no finite pairs
 
 An all-NaN (crashed-run) metric produced rmse_loss=0, which optimizers
@@ -753,7 +753,7 @@ explicitly — typically by treating NaN as an inf penalty. Documented."
 
 ## Task 2.7: Narrow post-smolt forced-hazard write mask
 
-**Problem:** `src/instream/marine/survival.py:221` writes:
+**Problem:** `src/salmopy/marine/survival.py:221` writes:
 
 ```python
 h_forced_array[smolt_years == sy] = daily_hazard_multiplier(S_ann)
@@ -762,7 +762,7 @@ h_forced_array[smolt_years == sy] = daily_hazard_multiplier(S_ann)
 This writes to every fish whose smolt year equals `sy`, including adults (`days_since >= 365`) who happen to have the same smolt year as a post-smolt cohort. The bug is guarded only by the downstream `forced_mask = post_smolt_mask & np.isfinite(h_forced_array)` at line 222 — remove that guard in a future refactor and adults get post-smolt (much higher) daily hazard silently. This is a latent-trap class bug.
 
 **Files:**
-- Modify: `src/instream/marine/survival.py:216-223`
+- Modify: `src/salmopy/marine/survival.py:216-223`
 - Create: `tests/test_post_smolt_mask_hardening.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -775,7 +775,7 @@ for fish that are actually in the post-smolt window. Guard at line 222
 currently rescues the code; removing it silently applies the post-smolt
 hazard to adults sharing the smolt year."""
 import inspect
-from instream.marine import survival as ms
+from salmopy.marine import survival as ms
 
 
 def test_post_smolt_write_is_masked_by_post_smolt_mask():
@@ -802,7 +802,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/marine/survival.py` around lines 216-223, the current block is:
+In `src/salmopy/marine/survival.py` around lines 216-223, the current block is:
 
 ```python
         h_forced_array = np.full_like(h_back, np.nan, dtype=np.float64)
@@ -849,7 +849,7 @@ Expected: all PASS (behavior is unchanged for valid inputs — this narrows a wr
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/marine/survival.py tests/test_post_smolt_mask_hardening.py
+git add src/salmopy/marine/survival.py tests/test_post_smolt_mask_hardening.py
 git commit -m "fix(marine/survival): narrow post-smolt forced-hazard write mask
 
 h_forced_array write used `smolt_years == sy` alone, touching adult
@@ -862,14 +862,14 @@ also masked by post_smolt_mask — defense-in-depth."
 
 ## Task 2.8: Respiration Q10 anchored to configurable reference temperature
 
-**Problem:** `src/instream/marine/growth.py:100` computes `q10_exp = (t - cmax_topt) / 10.0`, anchoring respiration's Q10 exponent to the consumption optimum temperature. The conventional physiological Q10 is anchored to a fixed metabolic standard temperature (typically 15°C for temperate salmonids). When a user sets `cmax_topt` to a species-specific non-standard value (e.g., 12°C for Arctic char), respiration is silently over-estimated at moderate temperatures, which depresses growth.
+**Problem:** `src/salmopy/marine/growth.py:100` computes `q10_exp = (t - cmax_topt) / 10.0`, anchoring respiration's Q10 exponent to the consumption optimum temperature. The conventional physiological Q10 is anchored to a fixed metabolic standard temperature (typically 15°C for temperate salmonids). When a user sets `cmax_topt` to a species-specific non-standard value (e.g., 12°C for Arctic char), respiration is silently over-estimated at moderate temperatures, which depresses growth.
 
 **Files:**
-- Modify: `src/instream/state/params.py` (add `resp_ref_temp` field)
-- Modify: `src/instream/io/config.py` (add `resp_ref_temp` to `SpeciesConfig` Pydantic model AND propagate in `params_from_config`)
-- Modify: `src/instream/marine/growth.py:100` (use `resp_ref_temp` instead of `cmax_topt` as Q10 anchor; add param to signature)
-- Modify: `src/instream/marine/growth.py:107+` (thread `resp_ref_temp` through `apply_marine_growth` so it reaches the per-species kwargs)
-- Modify: `src/instream/marine/config.py` if `MarineConfig` is where marine species params flow through; check this path and mirror the field
+- Modify: `src/salmopy/state/params.py` (add `resp_ref_temp` field)
+- Modify: `src/salmopy/io/config.py` (add `resp_ref_temp` to `SpeciesConfig` Pydantic model AND propagate in `params_from_config`)
+- Modify: `src/salmopy/marine/growth.py:100` (use `resp_ref_temp` instead of `cmax_topt` as Q10 anchor; add param to signature)
+- Modify: `src/salmopy/marine/growth.py:107+` (thread `resp_ref_temp` through `apply_marine_growth` so it reaches the per-species kwargs)
+- Modify: `src/salmopy/marine/config.py` if `MarineConfig` is where marine species params flow through; check this path and mirror the field
 - Create: `tests/test_marine_growth_q10_hardening.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -888,7 +888,7 @@ def test_respiration_q10_anchored_to_reference_temperature():
     when resp_ref_temp is fixed. Current code uses cmax_topt as the anchor
     so the two species get different respiration — a silent calibration
     drift for any species with non-standard cmax_topt."""
-    from instream.marine.growth import marine_growth
+    from salmopy.marine.growth import marine_growth
 
     # Two species, different cmax_topt, everything else identical
     common = dict(
@@ -940,7 +940,7 @@ Expected: FAIL — the current source uses `(t - cmax_topt)`.
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/marine/growth.py`:
+In `src/salmopy/marine/growth.py`:
 - Add `resp_ref_temp: float = 15.0` to the `marine_growth` signature.
 - Change line 100 from `q10_exp = (t - cmax_topt) / 10.0` to `q10_exp = (t - resp_ref_temp) / 10.0`.
 
@@ -985,7 +985,7 @@ Also thread `resp_ref_temp` through `apply_marine_growth` (function at ~line 107
 
 - [ ] **Step 4: Add `resp_ref_temp` to `SpeciesParams`**
 
-In `src/instream/state/params.py`, in the Respiration section (~line 92-96), the current fields are:
+In `src/salmopy/state/params.py`, in the Respiration section (~line 92-96), the current fields are:
 
 ```python
     # --- Respiration ---
@@ -1006,7 +1006,7 @@ Add:
     resp_ref_temp: float = 15.0  # Q10 anchor (°C); conventional salmonid metabolic standard
 ```
 
-Populate in `src/instream/io/config.py`'s `params_from_config` the same way `resp_A` etc. are (add one line inside the `SpeciesParams(...)` call):
+Populate in `src/salmopy/io/config.py`'s `params_from_config` the same way `resp_A` etc. are (add one line inside the `SpeciesParams(...)` call):
 
 ```python
             resp_D=sp.resp_D,
@@ -1030,7 +1030,7 @@ Expected: all PASS. If existing `test_marine_growth.py` tests assumed the `(t - 
 Verify `io/config.py` was edited to add `resp_ref_temp` to both `SpeciesConfig` (Pydantic) and the `SpeciesParams(...)` call inside `params_from_config`. The commit must include `io/config.py`.
 
 ```bash
-git add src/instream/marine/growth.py src/instream/state/params.py src/instream/io/config.py tests/test_marine_growth_q10_hardening.py
+git add src/salmopy/marine/growth.py src/salmopy/state/params.py src/salmopy/io/config.py tests/test_marine_growth_q10_hardening.py
 git commit -m "fix(marine/growth): anchor respiration Q10 on configurable ref temp
 
 q10_exp used (t - cmax_topt) / 10 — wrong for any species whose
@@ -1043,10 +1043,10 @@ on SpeciesParams / SpeciesConfig; marine_growth anchors Q10 on it."
 
 ## Task 2.9: Consolidate `expected_fitness` into a single call-site (dedup C9)
 
-**Problem:** `src/instream/modules/behavior.py:956-984` (batch path) and `:1444-1462` (scalar fallback path) both re-implement the same NetLogo InSALMO 7.3 fitness-for formula inline, rather than importing `expected_fitness` from `src/instream/modules/habitat_fitness.py`. Three sources of truth — guaranteed to drift. The habitat-fitness function is pure and has no side effects, so this is a mechanical replacement.
+**Problem:** `src/salmopy/modules/behavior.py:956-984` (batch path) and `:1444-1462` (scalar fallback path) both re-implement the same NetLogo InSALMO 7.3 fitness-for formula inline, rather than importing `expected_fitness` from `src/salmopy/modules/habitat_fitness.py`. Three sources of truth — guaranteed to drift. The habitat-fitness function is pure and has no side effects, so this is a mechanical replacement.
 
 **Files:**
-- Modify: `src/instream/modules/behavior.py:956-984` and `:1444-1462`
+- Modify: `src/salmopy/modules/behavior.py:956-984` and `:1444-1462`
 - Create: `tests/test_expected_fitness_dedup.py`
 
 - [ ] **Step 1: Write the failing parity test**
@@ -1062,7 +1062,7 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from instream.modules.habitat_fitness import expected_fitness
+from salmopy.modules.habitat_fitness import expected_fitness
 
 
 @given(
@@ -1093,11 +1093,11 @@ def test_behavior_py_imports_expected_fitness():
     """Structural: behavior.py must import expected_fitness from
     habitat_fitness, signaling it is the single source of truth."""
     import inspect
-    from instream.modules import behavior
+    from salmopy.modules import behavior
 
     src = inspect.getsource(behavior)
-    assert "from instream.modules.habitat_fitness import expected_fitness" in src \
-        or "from instream.modules.habitat_fitness import" in src and "expected_fitness" in src, (
+    assert "from salmopy.modules.habitat_fitness import expected_fitness" in src \
+        or "from salmopy.modules.habitat_fitness import" in src and "expected_fitness" in src, (
         "behavior.py must import expected_fitness from habitat_fitness. "
         "Inline reimplementation at lines 956-984 and 1444-1462 creates "
         "three sources of truth for the same scientific formula."
@@ -1114,10 +1114,10 @@ Expected: `test_expected_fitness_output_in_unit_interval` PASSES (canonical func
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/modules/behavior.py`, near the top with the other imports, add:
+In `src/salmopy/modules/behavior.py`, near the top with the other imports, add:
 
 ```python
-from instream.modules.habitat_fitness import expected_fitness
+from salmopy.modules.habitat_fitness import expected_fitness
 ```
 
 Then at the batch-path site (`behavior.py:956-984`, currently the block starting `# Arc D: expected_fitness port of NetLogo InSALMO 7.3`), replace the inline computation:
@@ -1238,7 +1238,7 @@ Expected: all PASS. Numerical values should be identical (the replacement is sem
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/modules/behavior.py tests/test_expected_fitness_dedup.py
+git add src/salmopy/modules/behavior.py tests/test_expected_fitness_dedup.py
 git commit -m "refactor(behavior): delegate expected_fitness to canonical function
 
 behavior.py had two inline copies of the NetLogo InSALMO 7.3 fitness-for
@@ -1256,7 +1256,7 @@ structural test asserting the import stays in place."
 
 **Files:**
 - Modify: `pyproject.toml:7`
-- Modify: `src/instream/__init__.py:3`
+- Modify: `src/salmopy/__init__.py:3`
 - Modify: `CHANGELOG.md`
 
 - [ ] **Step 1: Bump version**
@@ -1267,7 +1267,7 @@ structural test asserting the import stays in place."
 version = "0.42.0"
 ```
 
-`src/instream/__init__.py:3`:
+`src/salmopy/__init__.py:3`:
 
 ```python
 __version__ = "0.42.0"
@@ -1322,7 +1322,7 @@ Expected: clean.
 - [ ] **Step 5: Commit, tag, push**
 
 ```bash
-git add pyproject.toml src/instream/__init__.py CHANGELOG.md
+git add pyproject.toml src/salmopy/__init__.py CHANGELOG.md
 git commit -m "release(v0.42.0): scientific/numerical hardening
 
 See CHANGELOG v0.42.0 — 9 HIGH-severity fixes from Phase 2 of the
@@ -1343,7 +1343,7 @@ git push origin master --tags
 - [ ] All 9 fixes have a passing regression/invariant test
 - [ ] `test_backend_parity.py` now includes `test_batch_and_scalar_paths_agree_on_example_a`
 - [ ] Multi-species JAX simulation raises `NotImplementedError` cleanly (not silent wrong answer)
-- [ ] `pyproject.toml` and `src/instream/__init__.py` agree on version string `0.42.0`
+- [ ] `pyproject.toml` and `src/salmopy/__init__.py` agree on version string `0.42.0`
 - [ ] CHANGELOG.md top entry is `[0.42.0]`
 - [ ] `git tag v0.42.0` exists and pushed
 - [ ] `ruff check` is clean

@@ -31,14 +31,14 @@
 
 | # | File:Line | Fix |
 |---|---|---|
-| C1 | `src/instream/modules/behavior.py:211-227` | Indent Python KD-tree fallback under the `else:` branch. |
-| C2 | `src/instream/model_init.py:347` | Initialize `max_lifetime_weight` for initial population. |
-| C3 | `src/instream/model_day_boundary.py:252-255` | Remove bulk RETURNING_ADULT→SPAWNER promotion; restore per-fish promotion at line 369. |
-| C4 | `src/instream/io/output.py:219-223` | Weight PSPC counts by `superind_rep`. |
-| C5 | `src/instream/state/params.py:102` + `src/instream/io/config.py:544` | Add `spawn_defense_area_m` to `SpeciesParams`; populate in `params_from_config`. |
+| C1 | `src/salmopy/modules/behavior.py:211-227` | Indent Python KD-tree fallback under the `else:` branch. |
+| C2 | `src/salmopy/model_init.py:347` | Initialize `max_lifetime_weight` for initial population. |
+| C3 | `src/salmopy/model_day_boundary.py:252-255` | Remove bulk RETURNING_ADULT→SPAWNER promotion; restore per-fish promotion at line 369. |
+| C4 | `src/salmopy/io/output.py:219-223` | Weight PSPC counts by `superind_rep`. |
+| C5 | `src/salmopy/state/params.py:102` + `src/salmopy/io/config.py:544` | Add `spawn_defense_area_m` to `SpeciesParams`; populate in `params_from_config`. |
 | C6 | `pyproject.toml:21-30` | Declare `meshio>=5.3` as core dependency (imported unconditionally in `fem_mesh.py`). |
 | C7 | `pyproject.toml:36-50` | Add `[calibration]` extra declaring `SALib>=1.4` + `scikit-learn>=1.3`; make `[dev]` include it. |
-| C8 | `src/instream/model_init.py:516-528` | Replace silent `except Exception: pass` around marine species-weight propagation with an `hasattr` guard so real errors surface. |
+| C8 | `src/salmopy/model_init.py:516-528` | Replace silent `except Exception: pass` around marine species-weight propagation with an `hasattr` guard so real errors surface. |
 | H1 | `app/modules/movement_panel.py:39-41` | Convert `get_fill_color` → `getFillColor` (deck.gl camelCase). |
 
 **Exit criteria:** All 9 fixes landed with regression tests. `__version__` bumped to 0.41.15. CHANGELOG entry written. `ruff check src/ tests/ --select E,F,W --ignore E501` passes. Fresh `pip install -e .` and `pip install -e ".[dev]"` both succeed in a clean environment.
@@ -55,15 +55,15 @@
 
 | # | File:Line | Finding | Fix shape |
 |---|---|---|---|
-| 2.1 | `src/instream/backends/_interface.py:31-41` vs `numpy_backend/marine.py:45-53` | `MarineBackend.marine_survival` Protocol/impl signature mismatch | Align both to `config: Any` OR expand impl to `**species_params`. Add Protocol-conformance test. |
-| 2.2 | `src/instream/backends/jax_backend/__init__.py:220-221` | Multi-species JAX silently uses `cmax_temp_table_xs[0]` for all species | Raise `NotImplementedError` when `len(cmax_temp_table_xs) > 1`. Add a multi-species parity test that currently skips JAX. |
-| 2.3 | `src/instream/backends/numba_backend/fitness.py:286` vs `:946-948` | Shelter eligibility check ignores `superind_rep`; depletion charges `length² × rep` | Align Pass 1 threshold to `a_shelter > length² * rep`. |
+| 2.1 | `src/salmopy/backends/_interface.py:31-41` vs `numpy_backend/marine.py:45-53` | `MarineBackend.marine_survival` Protocol/impl signature mismatch | Align both to `config: Any` OR expand impl to `**species_params`. Add Protocol-conformance test. |
+| 2.2 | `src/salmopy/backends/jax_backend/__init__.py:220-221` | Multi-species JAX silently uses `cmax_temp_table_xs[0]` for all species | Raise `NotImplementedError` when `len(cmax_temp_table_xs) > 1`. Add a multi-species parity test that currently skips JAX. |
+| 2.3 | `src/salmopy/backends/numba_backend/fitness.py:286` vs `:946-948` | Shelter eligibility check ignores `superind_rep`; depletion charges `length² × rep` | Align Pass 1 threshold to `a_shelter > length² * rep`. |
 | 2.4 | `tests/test_backends.py`, `tests/test_backend_parity.py` | Zero parity coverage of `batch_select_habitat` | Add test calling `batch_select_habitat` on a small CSR input; compare against Python scalar loop over same candidates. |
-| 2.5 | `src/instream/bayesian/smc.py:83-91` | Log-marginal-likelihood accumulator double-counts `max_lw`; uses `.mean()` where log-sum-exp is required | Replace with standard SMC incremental `log(sum(w_old * exp(delta_log_like)))` formula. Test: zero-log-likelihood input must produce `log_marginal_likelihood ≈ 0`. |
-| 2.6 | `src/instream/calibration/losses.py:36-42` | `rmse_loss` returns `0.0` (perfect) for all-NaN input | Return `float("nan")`. Document that callers must handle NaN with explicit policy. |
-| 2.7 | `src/instream/marine/survival.py:221` | Post-smolt forced-hazard write not masked by `post_smolt_mask` | Change to `h_forced_array[post_smolt_mask & (smolt_years == sy)] = ...`. Add regression test. |
-| 2.8 | `src/instream/marine/growth.py:100` | Respiration Q10 anchored to `cmax_topt`, not a fixed metabolic standard temp | Add `resp_ref_temp: float = 15.0` field to `SpeciesParams`; use it as Q10 anchor. |
-| 2.9 | `src/instream/modules/behavior.py:~956, ~1444` | `expected_fitness` formula duplicated inline at two sites instead of importing from `habitat_fitness.py` — three sources of truth for the same scientific expression | Import `expected_fitness` from `instream.modules.habitat_fitness`; call it at both sites. Add a property test asserting parity with the canonical function. |
+| 2.5 | `src/salmopy/bayesian/smc.py:83-91` | Log-marginal-likelihood accumulator double-counts `max_lw`; uses `.mean()` where log-sum-exp is required | Replace with standard SMC incremental `log(sum(w_old * exp(delta_log_like)))` formula. Test: zero-log-likelihood input must produce `log_marginal_likelihood ≈ 0`. |
+| 2.6 | `src/salmopy/calibration/losses.py:36-42` | `rmse_loss` returns `0.0` (perfect) for all-NaN input | Return `float("nan")`. Document that callers must handle NaN with explicit policy. |
+| 2.7 | `src/salmopy/marine/survival.py:221` | Post-smolt forced-hazard write not masked by `post_smolt_mask` | Change to `h_forced_array[post_smolt_mask & (smolt_years == sy)] = ...`. Add regression test. |
+| 2.8 | `src/salmopy/marine/growth.py:100` | Respiration Q10 anchored to `cmax_topt`, not a fixed metabolic standard temp | Add `resp_ref_temp: float = 15.0` field to `SpeciesParams`; use it as Q10 anchor. |
+| 2.9 | `src/salmopy/modules/behavior.py:~956, ~1444` | `expected_fitness` formula duplicated inline at two sites instead of importing from `habitat_fitness.py` — three sources of truth for the same scientific expression | Import `expected_fitness` from `salmopy.modules.habitat_fitness`; call it at both sites. Add a property test asserting parity with the canonical function. |
 
 > **Dropped during verification:**
 > - `interpax` was flagged as undeclared — actually IS in `[jax]` (pyproject.toml:43).
@@ -129,8 +129,8 @@
 |---|---|---|---|
 | 5.1 | `README.md:9` | Shield badge stuck at `v0.33.0` | Update shield URL to current `__version__`. Extend `scripts/release.py:166-170`'s regex to cover the shield URL pattern. Add a `scripts/release.py` test that roundtrips a version bump. |
 | 5.2 | `CHANGELOG.md` | No entry for `0.41.14` | Add entry documenting v0.41.14 diff from v0.41.13. |
-| 5.3 | `scripts/release.py` pre-flight check | CHANGELOG top and `__version__` can drift | Add a pre-release check: fail if `re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog)` group(1) != `instream.__version__`. |
-| 5.4 | `docs/api-reference.md:3,87` | Document version "0.1.0"; `life_history` enum documented with pre-v0.13.0 names (`resident`, `anad_juve`, `anad_adult`) | Regenerate enum table from `src/instream/state/life_stage.py` (FRY=0, PARR=1, SPAWNER=2, SMOLT=3, OCEAN_JUVENILE=4, OCEAN_ADULT=5, RETURNING_ADULT=6, KELT=7). Bump version header to current. |
+| 5.3 | `scripts/release.py` pre-flight check | CHANGELOG top and `__version__` can drift | Add a pre-release check: fail if `re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog)` group(1) != `salmopy.__version__`. |
+| 5.4 | `docs/api-reference.md:3,87` | Document version "0.1.0"; `life_history` enum documented with pre-v0.13.0 names (`resident`, `anad_juve`, `anad_adult`) | Regenerate enum table from `src/salmopy/state/life_stage.py` (FRY=0, PARR=1, SPAWNER=2, SMOLT=3, OCEAN_JUVENILE=4, OCEAN_ADULT=5, RETURNING_ADULT=6, KELT=7). Bump version header to current. |
 | 5.5 | `docs/user-manual.md:3` | Document version "0.1.0" | Bump version header. |
 | 5.6 | `docs/NETLOGO_PARITY_ROADMAP.md` | 2026-03-22 snapshot; claims 0/11 validation tests active | Archive under `docs/releases/archive-2026-03-22-parity-roadmap.md`. Replace the canonical path with a redirect to `docs/validation/wgbast-roadmap-complete.md`. |
 
@@ -147,30 +147,30 @@
 ### Tasks (grouped by subsystem)
 
 **IO / config:**
-- 6.1 `src/instream/io/m74_forcing.py:28` — replace `assert` column-validation with `raise ValueError`.
-- 6.2 `src/instream/io/population_reader.py:11-29` — guard `len(parts) < 7` with a diagnostic including path + line number.
-- 6.3 `src/instream/io/output.py` all writers — switch to write-then-rename atomic pattern via `tempfile.NamedTemporaryFile` + `shutil.move`.
-- 6.4 `src/instream/io/config.py:111-330` — add `field_validator` on all probability fields (`spawn_prob`, `spawn_egg_viability`, `mass_floor_survival`, `kelt_survival_prob`, `outmigration_max_prob`) enforcing `[0, 1]`; non-negative guards on length/distance fields.
+- 6.1 `src/salmopy/io/m74_forcing.py:28` — replace `assert` column-validation with `raise ValueError`.
+- 6.2 `src/salmopy/io/population_reader.py:11-29` — guard `len(parts) < 7` with a diagnostic including path + line number.
+- 6.3 `src/salmopy/io/output.py` all writers — switch to write-then-rename atomic pattern via `tempfile.NamedTemporaryFile` + `shutil.move`.
+- 6.4 `src/salmopy/io/config.py:111-330` — add `field_validator` on all probability fields (`spawn_prob`, `spawn_egg_viability`, `mass_floor_survival`, `kelt_survival_prob`, `outmigration_max_prob`) enforcing `[0, 1]`; non-negative guards on length/distance fields.
 
 **Marine:**
-- 6.5 `src/instream/modules/migration.py:129-138` — refresh `smolt_date` when a kelt re-enters the ocean.
-- 6.6 `src/instream/io/output.py:283-293` — document whether `spawner_origin_matrix` is raw counts or row-proportions; if proportions, normalize on write.
+- 6.5 `src/salmopy/modules/migration.py:129-138` — refresh `smolt_date` when a kelt re-enters the ocean.
+- 6.6 `src/salmopy/io/output.py:283-293` — document whether `spawner_origin_matrix` is raw counts or row-proportions; if proportions, normalize on write.
 
 **Biology:**
-- 6.7 `src/instream/modules/spawning.py:260-285` — implement `redd_area / cell_area` fraction for `apply_superimposition`, or remove dead `redd_area` param. Add a partial-overlap test.
-- 6.8 `src/instream/modules/survival.py:384-426` — remove unused `step_length` from `redd_survival_lo_temp` / `redd_survival_hi_temp` primitives.
-- 6.9 `src/instream/modules/spawning.py:448-451` — log/count dropped eggs when `trout_state` capacity is full.
+- 6.7 `src/salmopy/modules/spawning.py:260-285` — implement `redd_area / cell_area` fraction for `apply_superimposition`, or remove dead `redd_area` param. Add a partial-overlap test.
+- 6.8 `src/salmopy/modules/survival.py:384-426` — remove unused `step_length` from `redd_survival_lo_temp` / `redd_survival_hi_temp` primitives.
+- 6.9 `src/salmopy/modules/spawning.py:448-451` — log/count dropped eggs when `trout_state` capacity is full.
 
 **Spatial:**
-- 6.10 `src/instream/model_init.py:117-120` — pre-check unknown reach names and raise with the list.
-- 6.11 `src/instream/space/fem_mesh.py:142-162` — add `.copy()` calls in `to_cell_state` to match `PolygonMesh`.
-- 6.12 `src/instream/space/fem_space.py` — document immutability contract; add optional `_mesh_version` counter.
+- 6.10 `src/salmopy/model_init.py:117-120` — pre-check unknown reach names and raise with the list.
+- 6.11 `src/salmopy/space/fem_mesh.py:142-162` — add `.copy()` calls in `to_cell_state` to match `PolygonMesh`.
+- 6.12 `src/salmopy/space/fem_space.py` — document immutability contract; add optional `_mesh_version` counter.
 
 **Calibration:**
-- 6.13 `src/instream/calibration/multiphase.py:130,190` — reset `fixed_params` at `.run()` start OR document the warm-restart behavior.
-- 6.14 `src/instream/calibration/surrogate.py:157-160` — replace uniform Monte-Carlo candidate search with LHS.
-- 6.15 `src/instream/calibration/surrogate.py` — add `scenario_id` to `fit()` and assert at `find_optimum()`.
-- 6.16 `src/instream/calibration/history.py:34` — use `datetime.now(timezone.utc)` to match `scenarios.py`.
+- 6.13 `src/salmopy/calibration/multiphase.py:130,190` — reset `fixed_params` at `.run()` start OR document the warm-restart behavior.
+- 6.14 `src/salmopy/calibration/surrogate.py:157-160` — replace uniform Monte-Carlo candidate search with LHS.
+- 6.15 `src/salmopy/calibration/surrogate.py` — add `scenario_id` to `fit()` and assert at `find_optimum()`.
+- 6.16 `src/salmopy/calibration/history.py:34` — use `datetime.now(timezone.utc)` to match `scenarios.py`.
 
 **Scripts + housekeeping:**
 - 6.17 `scripts/release.py:302` — detect current branch via `git rev-parse --abbrev-ref HEAD` instead of hardcoded `origin master`.

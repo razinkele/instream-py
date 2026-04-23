@@ -29,10 +29,10 @@ micromamba run -n shiny python -m pytest tests/ -v
 
 ## Task 1: Fix `behavior.py` fallback loop indentation (C1)
 
-**Problem:** In `src/instream/modules/behavior.py` the `for i in range(n_fish):` at line 211 is at 4-space indentation and sits OUTSIDE the `else:` block. Every Numba-computed candidate list gets overwritten by the Python KD-tree scan, silently wasting the Numba hot path and replacing its result when the two algorithms differ at boundary cases.
+**Problem:** In `src/salmopy/modules/behavior.py` the `for i in range(n_fish):` at line 211 is at 4-space indentation and sits OUTSIDE the `else:` block. Every Numba-computed candidate list gets overwritten by the Python KD-tree scan, silently wasting the Numba hot path and replacing its result when the two algorithms differ at boundary cases.
 
 **Files:**
-- Modify: `src/instream/modules/behavior.py:208-227`
+- Modify: `src/salmopy/modules/behavior.py:208-227`
 - Create: `tests/test_behavior_numba_fallback.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -53,13 +53,13 @@ CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 
 
 def test_numba_path_does_not_invoke_python_fallback(monkeypatch):
-    from instream.modules import behavior
+    from salmopy.modules import behavior
 
     if not behavior._HAS_NUMBA_SPATIAL:
         pytest.skip("numba not installed")
 
-    from instream.model import InSTREAMModel
-    model = InSTREAMModel(
+    from salmopy.model import SalmopyModel
+    model = SalmopyModel(
         config_path=str(CONFIGS_DIR / "example_a.yaml"),
         data_dir=str(FIXTURES_DIR / "example_a"),
     )
@@ -97,7 +97,7 @@ Expected: FAIL with `AssertionError: fem_space.cells_in_radius was called — Py
 
 - [ ] **Step 3: Apply the fix (indent the fallback loop under `else:`)**
 
-In `src/instream/modules/behavior.py` lines 208-227, the structure is currently:
+In `src/salmopy/modules/behavior.py` lines 208-227, the structure is currently:
 
 ```python
     else:
@@ -166,7 +166,7 @@ Expected: all tests PASS (existing skip/xfail counts unchanged).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/modules/behavior.py tests/test_behavior_numba_fallback.py
+git add src/salmopy/modules/behavior.py tests/test_behavior_numba_fallback.py
 git commit -m "fix(behavior): indent Python KD-tree fallback under else: branch
 
 The for-loop at line 211 was at 4-space indentation, running unconditionally
@@ -181,10 +181,10 @@ Regression test asserts cells_in_radius is not invoked when Numba is available."
 
 ## Task 2: Initialize `max_lifetime_weight` for initial population (C2)
 
-**Problem:** In `src/instream/model_init.py:347` the initial-population builder writes `weight[idx:end]` but never writes `max_lifetime_weight`, which stays at the `zeros(capacity)` default from `TroutState.zeros()`. The `survival_mass_floor` function returns `1.0` (exempt from starvation) when `max_lifetime_weight <= 0.0`, so starvation is silently disabled for initial-population fish. Hatchery stocking and adult arrivals handle this correctly — only the initial population is broken.
+**Problem:** In `src/salmopy/model_init.py:347` the initial-population builder writes `weight[idx:end]` but never writes `max_lifetime_weight`, which stays at the `zeros(capacity)` default from `TroutState.zeros()`. The `survival_mass_floor` function returns `1.0` (exempt from starvation) when `max_lifetime_weight <= 0.0`, so starvation is silently disabled for initial-population fish. Hatchery stocking and adult arrivals handle this correctly — only the initial population is broken.
 
 **Files:**
-- Modify: `src/instream/model_init.py:342-353`
+- Modify: `src/salmopy/model_init.py:342-353`
 - Modify: `tests/test_initialization.py` (append a new test class)
 
 - [ ] **Step 1: Write the failing test**
@@ -205,9 +205,9 @@ class TestInitialPopulationMaxLifetimeWeight:
 
     def test_max_lifetime_weight_matches_initial_weight(self):
         import numpy as np
-        from instream.model import InSTREAMModel
+        from salmopy.model import SalmopyModel
 
-        model = InSTREAMModel(
+        model = SalmopyModel(
             config_path=str(CONFIGS_DIR / "example_a.yaml"),
             data_dir=str(FIXTURES_DIR / "example_a"),
         )
@@ -233,7 +233,7 @@ Expected: FAIL with `AssertionError: max_lifetime_weight has zeros at indices ..
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/model_init.py`, after the existing line `self.trout_state.weight[idx:end] = weights` (currently line 347), add:
+In `src/salmopy/model_init.py`, after the existing line `self.trout_state.weight[idx:end] = weights` (currently line 347), add:
 
 ```python
             self.trout_state.max_lifetime_weight[idx:end] = weights
@@ -271,7 +271,7 @@ micromamba run -n shiny python -m pytest tests/ -v -m "not slow" --ignore=tests/
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/model_init.py tests/test_initialization.py
+git add src/salmopy/model_init.py tests/test_initialization.py
 git commit -m "fix(init): initialize max_lifetime_weight for initial population
 
 Initial-population fish had max_lifetime_weight left at the zeros default,
@@ -286,10 +286,10 @@ Regression test asserts max_lifetime_weight == weight for all pre-seeded fish."
 
 ## Task 3: Remove RETURNING_ADULT bulk promotion at spawn-season open (C3)
 
-**Problem:** In `src/instream/model_day_boundary.py:252-255`, RETURNING_ADULT fish are bulk-promoted to SPAWNER as soon as the spawn season opens — before any per-fish readiness check and before any redd deposit. This shadows the v0.17.0 fix at line 369 (`if int(self.trout_state.life_history[i]) == int(LifeStage.RETURNING_ADULT): ...`) which becomes dead code because the bulk promotion has already set every RETURNING_ADULT to SPAWNER. The net effect: fish that fail readiness are promoted anyway and may be exposed to the post-spawn death block incorrectly.
+**Problem:** In `src/salmopy/model_day_boundary.py:252-255`, RETURNING_ADULT fish are bulk-promoted to SPAWNER as soon as the spawn season opens — before any per-fish readiness check and before any redd deposit. This shadows the v0.17.0 fix at line 369 (`if int(self.trout_state.life_history[i]) == int(LifeStage.RETURNING_ADULT): ...`) which becomes dead code because the bulk promotion has already set every RETURNING_ADULT to SPAWNER. The net effect: fish that fail readiness are promoted anyway and may be exposed to the post-spawn death block incorrectly.
 
 **Files:**
-- Modify: `src/instream/model_day_boundary.py:252-255`
+- Modify: `src/salmopy/model_day_boundary.py:252-255`
 - Create: `tests/test_returning_adult_promotion.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -312,10 +312,10 @@ CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 
 
 def test_returning_adult_not_promoted_without_redd_deposit(monkeypatch):
-    from instream.model import InSTREAMModel
-    from instream.state.life_stage import LifeStage
+    from salmopy.model import SalmopyModel
+    from salmopy.state.life_stage import LifeStage
 
-    model = InSTREAMModel(
+    model = SalmopyModel(
         config_path=str(CONFIGS_DIR / "example_a.yaml"),
         data_dir=str(FIXTURES_DIR / "example_a"),
     )
@@ -365,7 +365,7 @@ Expected: FAIL with `AssertionError: Fish was promoted to SPAWNER without deposi
 
 - [ ] **Step 3: Apply the fix (delete the bulk promotion block)**
 
-In `src/instream/model_day_boundary.py`, delete lines 252-255 (the four lines ending with `self.trout_state.life_history[alive[ra_mask]] = int(LifeStage.SPAWNER)`). The surrounding code becomes:
+In `src/salmopy/model_day_boundary.py`, delete lines 252-255 (the four lines ending with `self.trout_state.life_history[alive[ra_mask]] = int(LifeStage.SPAWNER)`). The surrounding code becomes:
 
 ```python
         alive = self.trout_state.alive_indices()
@@ -406,7 +406,7 @@ micromamba run -n shiny python -m pytest tests/ -v -m "not slow" --ignore=tests/
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/instream/model_day_boundary.py tests/test_returning_adult_promotion.py
+git add src/salmopy/model_day_boundary.py tests/test_returning_adult_promotion.py
 git commit -m "fix(spawning): remove RETURNING_ADULT bulk promotion at season open
 
 The bulk promotion at model_day_boundary.py:252-255 shadowed the v0.17.0
@@ -421,10 +421,10 @@ Restores v0.17.0 semantics: RETURNING_ADULT -> SPAWNER only on redd deposit."
 
 ## Task 4: Weight PSPC counts by `superind_rep` (C4)
 
-**Problem:** In `src/instream/io/output.py:219-223`, `write_smolt_production_by_reach` increments `counts[r] += 1` per outmigrant dict. Each outmigrant represents a super-individual with `superind_rep` real fish. The sibling function `write_spawner_origin_matrix` (line 288) correctly uses `rep = int(sp.get("superind_rep", 1))`. The PSPC writer is inconsistent and silently under-reports the primary ICES WGBAST scientific deliverable ("Potential Smolt Production Capacity achieved %") by a factor equal to the mean super-individual rep.
+**Problem:** In `src/salmopy/io/output.py:219-223`, `write_smolt_production_by_reach` increments `counts[r] += 1` per outmigrant dict. Each outmigrant represents a super-individual with `superind_rep` real fish. The sibling function `write_spawner_origin_matrix` (line 288) correctly uses `rep = int(sp.get("superind_rep", 1))`. The PSPC writer is inconsistent and silently under-reports the primary ICES WGBAST scientific deliverable ("Potential Smolt Production Capacity achieved %") by a factor equal to the mean super-individual rep.
 
 **Files:**
-- Modify: `src/instream/io/output.py:219-223`
+- Modify: `src/salmopy/io/output.py:219-223`
 - Modify: `tests/test_pspc_output.py` (add a new test)
 
 - [ ] **Step 1: Write the failing test**
@@ -479,7 +479,7 @@ Expected: FAIL with `Expected rep-weighted count 150 (=100+50), got 2`.
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/io/output.py`, change lines 219-223 from:
+In `src/salmopy/io/output.py`, change lines 219-223 from:
 
 ```python
     counts = [0] * len(reach_names)
@@ -518,7 +518,7 @@ Expected: PASS or the same skip/xfail state as before.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/io/output.py tests/test_pspc_output.py
+git add src/salmopy/io/output.py tests/test_pspc_output.py
 git commit -m "fix(output): weight PSPC smolts_produced by superind_rep
 
 write_smolt_production_by_reach counted each outmigrant as 1 fish instead
@@ -534,11 +534,11 @@ Regression tests cover both rep-weighted and legacy (no-rep) outmigrant inputs."
 
 ## Task 5: Propagate `spawn_defense_area_m` into `SpeciesParams` (C5)
 
-**Problem:** The Arc E fix reconciled legacy `spawn_defense_area` (cm²) into the canonical `spawn_defense_area_m` (meters) on the Pydantic `SpeciesConfig` object. But `src/instream/state/params.py:102` still declares only `spawn_defense_area: float = 0.0` on the frozen `SpeciesParams` runtime dataclass, and `params_from_config` (`src/instream/io/config.py:544`) copies only the legacy cm field. The spawning code in `model_day_boundary.py:325` reads `spawn_defense_area_m` directly from `sp_cfg` (the Pydantic object) so it happens to be correct today — but any refactor that switches a caller to read `SpeciesParams.spawn_defense_area_m` silently resurrects the Arc E bug (values 100× too large, one giant redd blocking all spawn).
+**Problem:** The Arc E fix reconciled legacy `spawn_defense_area` (cm²) into the canonical `spawn_defense_area_m` (meters) on the Pydantic `SpeciesConfig` object. But `src/salmopy/state/params.py:102` still declares only `spawn_defense_area: float = 0.0` on the frozen `SpeciesParams` runtime dataclass, and `params_from_config` (`src/salmopy/io/config.py:544`) copies only the legacy cm field. The spawning code in `model_day_boundary.py:325` reads `spawn_defense_area_m` directly from `sp_cfg` (the Pydantic object) so it happens to be correct today — but any refactor that switches a caller to read `SpeciesParams.spawn_defense_area_m` silently resurrects the Arc E bug (values 100× too large, one giant redd blocking all spawn).
 
 **Files:**
-- Modify: `src/instream/state/params.py:102`
-- Modify: `src/instream/io/config.py:544`
+- Modify: `src/salmopy/state/params.py:102`
+- Modify: `src/salmopy/io/config.py:544`
 - Modify: `tests/test_config.py` (add a new test)
 
 - [ ] **Step 1: Write the failing test**
@@ -556,7 +556,7 @@ class TestParamsFromConfigDefenseArea:
     """
 
     def test_species_params_has_spawn_defense_area_m_field(self):
-        from instream.state.params import SpeciesParams
+        from salmopy.state.params import SpeciesParams
         params = SpeciesParams()
         assert hasattr(params, "spawn_defense_area_m"), (
             "SpeciesParams must expose spawn_defense_area_m to prevent "
@@ -564,7 +564,7 @@ class TestParamsFromConfigDefenseArea:
         )
 
     def test_params_from_config_propagates_spawn_defense_area_m(self):
-        from instream.io.config import load_config, params_from_config
+        from salmopy.io.config import load_config, params_from_config
         cfg = load_config(CONFIGS_DIR / "example_a.yaml")
         sp_name = next(iter(cfg.species))
         cfg.species[sp_name].spawn_defense_area_m = 3.5
@@ -582,7 +582,7 @@ Expected: FAIL with `AttributeError: 'SpeciesParams' object has no attribute 'sp
 
 - [ ] **Step 3a: Add the field to `SpeciesParams`**
 
-In `src/instream/state/params.py` around line 102 (inside the `# --- Spawning ---` section), add the new field. The existing line is:
+In `src/salmopy/state/params.py` around line 102 (inside the `# --- Spawning ---` section), add the new field. The existing line is:
 
 ```python
     # --- Spawning ---
@@ -601,7 +601,7 @@ Change to:
 
 - [ ] **Step 3b: Populate the field in `params_from_config`**
 
-In `src/instream/io/config.py` around line 544, the existing line is:
+In `src/salmopy/io/config.py` around line 544, the existing line is:
 
 ```python
             # Spawning
@@ -645,7 +645,7 @@ micromamba run -n shiny python -m pytest tests/ -v -m "not slow" --ignore=tests/
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/instream/state/params.py src/instream/io/config.py tests/test_config.py
+git add src/salmopy/state/params.py src/salmopy/io/config.py tests/test_config.py
 git commit -m "fix(params): add spawn_defense_area_m to SpeciesParams (Arc E completion)
 
 Arc E's fix reconciled the legacy cm field into canonical meters on the
@@ -785,7 +785,7 @@ future regressions of this class."
 
 ## Task 6a: Declare `meshio` as a core dependency (C6)
 
-**Problem:** `src/instream/space/fem_mesh.py:7` imports `meshio` unconditionally at module top. `meshio` is not declared in `pyproject.toml` — not in core `dependencies`, not in any optional-dependency group. A user who does `pip install instream` into a clean environment will get `ImportError: No module named 'meshio'` the moment any FEM-mesh path is touched (which happens during normal model init for configs using `.2dm` / `.msh` meshes). The project currently "works" only because the `shiny` micromamba environment has `meshio` installed for unrelated reasons.
+**Problem:** `src/salmopy/space/fem_mesh.py:7` imports `meshio` unconditionally at module top. `meshio` is not declared in `pyproject.toml` — not in core `dependencies`, not in any optional-dependency group. A user who does `pip install instream` into a clean environment will get `ImportError: No module named 'meshio'` the moment any FEM-mesh path is touched (which happens during normal model init for configs using `.2dm` / `.msh` meshes). The project currently "works" only because the `shiny` micromamba environment has `meshio` installed for unrelated reasons.
 
 **Files:**
 - Modify: `pyproject.toml:21-30`
@@ -826,12 +826,12 @@ def _all_declared_packages():
 
 
 def test_meshio_declared_in_core_dependencies():
-    """meshio is imported unconditionally in src/instream/space/fem_mesh.py;
+    """meshio is imported unconditionally in src/salmopy/space/fem_mesh.py;
     it must be a core dependency so fresh installs work."""
     data = _load_pyproject()
     core = data["project"]["dependencies"]
     assert any(d.lower().startswith("meshio") for d in core), (
-        "meshio is imported unconditionally at src/instream/space/fem_mesh.py:7 "
+        "meshio is imported unconditionally at src/salmopy/space/fem_mesh.py:7 "
         "but is not listed in pyproject.toml [project.dependencies]. "
         "Add 'meshio>=5.3' to the core dependencies block."
     )
@@ -843,7 +843,7 @@ def test_meshio_declared_in_core_dependencies():
 micromamba run -n shiny python -m pytest tests/test_dependency_manifest.py::test_meshio_declared_in_core_dependencies -v
 ```
 
-Expected: FAIL with `AssertionError: meshio is imported unconditionally at src/instream/space/fem_mesh.py:7 but is not listed...`
+Expected: FAIL with `AssertionError: meshio is imported unconditionally at src/salmopy/space/fem_mesh.py:7 but is not listed...`
 
 - [ ] **Step 3: Apply the fix**
 
@@ -907,7 +907,7 @@ guard for the dep manifest."
 
 ## Task 6b: Declare `SALib` and `scikit-learn` in a `[calibration]` extra (C7)
 
-**Problem:** `src/instream/calibration/sensitivity.py` lazily imports `SALib.sample.sobol`, `SALib.sample.morris`, `SALib.analyze.sobol`, `SALib.analyze.morris`. `src/instream/calibration/surrogate.py` lazily imports `sklearn.gaussian_process`. Neither `SALib` nor `scikit-learn` appears in any optional-dependency group. `SensitivityAnalyzer.generate_samples()` and `SurrogateCalibrator.fit()` both raise `ModuleNotFoundError` on a clean `pip install instream[dev]`. The `[dev]` extra should be the canonical "everything developers need" group, and the calibration suite is a first-class feature.
+**Problem:** `src/salmopy/calibration/sensitivity.py` lazily imports `SALib.sample.sobol`, `SALib.sample.morris`, `SALib.analyze.sobol`, `SALib.analyze.morris`. `src/salmopy/calibration/surrogate.py` lazily imports `sklearn.gaussian_process`. Neither `SALib` nor `scikit-learn` appears in any optional-dependency group. `SensitivityAnalyzer.generate_samples()` and `SurrogateCalibrator.fit()` both raise `ModuleNotFoundError` on a clean `pip install salmopy[dev]`. The `[dev]` extra should be the canonical "everything developers need" group, and the calibration suite is a first-class feature.
 
 **Files:**
 - Modify: `pyproject.toml:36-50` (optional-dependencies block)
@@ -919,7 +919,7 @@ Append to `tests/test_dependency_manifest.py`:
 
 ```python
 def test_calibration_extra_declares_salib_and_sklearn():
-    """SALib and scikit-learn are imported in src/instream/calibration/;
+    """SALib and scikit-learn are imported in src/salmopy/calibration/;
     they must be declared in an optional-dependencies group (canonically
     a new [calibration] extra, and [dev] should depend on that extra)."""
     data = _load_pyproject()
@@ -932,11 +932,11 @@ def test_calibration_extra_declares_salib_and_sklearn():
         return any(d.startswith(pkg) for d in declared)
 
     assert has("salib"), (
-        "SALib is imported in src/instream/calibration/sensitivity.py. "
+        "SALib is imported in src/salmopy/calibration/sensitivity.py. "
         "Declare it in an optional-dependencies group (recommended: [calibration])."
     )
     assert has("scikit-learn") or has("sklearn"), (
-        "scikit-learn is imported in src/instream/calibration/surrogate.py. "
+        "scikit-learn is imported in src/salmopy/calibration/surrogate.py. "
         "Declare it in an optional-dependencies group (recommended: [calibration])."
     )
 
@@ -947,8 +947,8 @@ def test_dev_extra_pulls_calibration_transitively():
     enough to run the calibration tests."""
     data = _load_pyproject()
     dev = data["project"]["optional-dependencies"].get("dev", [])
-    assert any("instream[calibration]" in d for d in dev), (
-        "The [dev] extra must include 'instream[calibration]' so a clean "
+    assert any("salmopy[calibration]" in d for d in dev), (
+        "The [dev] extra must include 'salmopy[calibration]' so a clean "
         "dev install brings SALib + scikit-learn. Currently dev can't run "
         "the calibration tests from scratch."
     )
@@ -980,7 +980,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "hypothesis>=6.0",
-    "instream[numba]",
+    "salmopy[numba]",
 ]
 docs = [
     "sphinx",
@@ -1014,8 +1014,8 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "hypothesis>=6.0",
-    "instream[numba]",
-    "instream[calibration]",
+    "salmopy[numba]",
+    "salmopy[calibration]",
 ]
 docs = [
     "sphinx",
@@ -1045,7 +1045,7 @@ git commit -m "fix(deps): add [calibration] extra declaring SALib + scikit-learn
 
 calibration/sensitivity.py imports SALib (Sobol + Morris analyzers);
 calibration/surrogate.py imports sklearn.gaussian_process. Neither was
-declared in any dependency group, so a clean pip install instream[dev]
+declared in any dependency group, so a clean pip install salmopy[dev]
 raised ModuleNotFoundError on first SensitivityAnalyzer.generate_samples()
 or SurrogateCalibrator.fit() call.
 
@@ -1056,10 +1056,10 @@ New [calibration] extra. [dev] now transitively includes it."
 
 ## Task 6c: Remove silent `except Exception: pass` around marine species-weight propagation (C8)
 
-**Problem:** `src/instream/model_init.py:516-528` wraps the propagation of `species_weight_A` / `species_weight_B` from config onto `self._marine_domain` in a bare `try: ... except Exception: pass`. The comment on the block explicitly says this assignment is **required for Arc P seal-predation (Holling-II) to fire** — without it, the seal-hazard computation silently returns zero mortality because the species-weight length-at-weight table isn't populated. A misspelled species name in `species_order`, a numpy shape mismatch, or any AttributeError silently disables seal predation with no diagnostic in logs or output.
+**Problem:** `src/salmopy/model_init.py:516-528` wraps the propagation of `species_weight_A` / `species_weight_B` from config onto `self._marine_domain` in a bare `try: ... except Exception: pass`. The comment on the block explicitly says this assignment is **required for Arc P seal-predation (Holling-II) to fire** — without it, the seal-hazard computation silently returns zero mortality because the species-weight length-at-weight table isn't populated. A misspelled species name in `species_order`, a numpy shape mismatch, or any AttributeError silently disables seal predation with no diagnostic in logs or output.
 
 **Files:**
-- Modify: `src/instream/model_init.py:515-528`
+- Modify: `src/salmopy/model_init.py:515-528`
 - Create: `tests/test_marine_species_weights.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -1085,8 +1085,8 @@ CONFIGS_DIR = Path(__file__).parent.parent / "configs"
 def test_marine_domain_has_species_weights_populated():
     """Happy path: a well-formed Baltic config must end init with
     species_weight_A and species_weight_B populated on the marine domain."""
-    from instream.model import InSTREAMModel
-    model = InSTREAMModel(
+    from salmopy.model import SalmopyModel
+    model = SalmopyModel(
         config_path=str(CONFIGS_DIR / "example_baltic.yaml"),
         data_dir=str(FIXTURES_DIR / "example_baltic"),
     )
@@ -1110,10 +1110,10 @@ def test_bad_species_order_surfaces_keyerror_not_silent_failure(monkeypatch):
     Before the fix, the try/except:pass swallowed the KeyError and left
     species_weight_A unset, yielding zero seal mortality with no diagnostic.
     """
-    from instream.model import InSTREAMModel
-    from instream import model_init as mi
+    from salmopy.model import SalmopyModel
+    from salmopy import model_init as mi
 
-    orig = mi.InSTREAMModel._build_model
+    orig = mi.SalmopyModel._build_model
 
     def break_species_order_after_build(self):
         orig(self)
@@ -1153,7 +1153,7 @@ Expected: `test_bad_species_order_surfaces_keyerror_not_silent_failure` FAILS wi
 
 - [ ] **Step 3: Apply the fix**
 
-In `src/instream/model_init.py` lines 515-528, the current block is:
+In `src/salmopy/model_init.py` lines 515-528, the current block is:
 
 ```python
             # seal predation — with L1=40 cm — never activates).
@@ -1210,7 +1210,7 @@ Expected: all PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/instream/model_init.py tests/test_marine_species_weights.py
+git add src/salmopy/model_init.py tests/test_marine_species_weights.py
 git commit -m "fix(init): remove silent except Exception: pass around marine species-weight
 
 The try/except:pass at model_init.py:516-528 silently disabled Arc P seal
@@ -1230,10 +1230,10 @@ errors now propagate."
 
 **Files:**
 - Modify: `pyproject.toml:7`
-- Modify: `src/instream/__init__.py:3`
+- Modify: `src/salmopy/__init__.py:3`
 - Modify: `CHANGELOG.md`
 
-Note: per memory, `src/instream/__init__.py` already declares `__version__ = "0.41.14"` while `pyproject.toml` is at `0.41.13`. We bump both to `0.41.15` in one atomic commit so the version index is consistent.
+Note: per memory, `src/salmopy/__init__.py` already declares `__version__ = "0.41.14"` while `pyproject.toml` is at `0.41.13`. We bump both to `0.41.15` in one atomic commit so the version index is consistent.
 
 - [ ] **Step 1: Bump version in `pyproject.toml`**
 
@@ -1249,9 +1249,9 @@ to:
 version = "0.41.15"
 ```
 
-- [ ] **Step 2: Bump version in `src/instream/__init__.py`**
+- [ ] **Step 2: Bump version in `src/salmopy/__init__.py`**
 
-Change `src/instream/__init__.py:3` from:
+Change `src/salmopy/__init__.py:3` from:
 
 ```python
 __version__ = "0.41.14"
@@ -1311,7 +1311,7 @@ Expected: no violations.
 - [ ] **Step 6: Commit version bump**
 
 ```bash
-git add pyproject.toml src/instream/__init__.py CHANGELOG.md
+git add pyproject.toml src/salmopy/__init__.py CHANGELOG.md
 git commit -m "release(v0.41.15): critical correctness patch
 
 See CHANGELOG.md entry for v0.41.15 — 9 fixes closing findings from the
@@ -1345,7 +1345,7 @@ git push origin master --tags
 - [ ] All 9 new regression/invariant tests pass (6 originally planned + 3 from the dependency/marine additions)
 - [ ] Existing test suite's skip/xfail count is unchanged from pre-Phase-1
 - [ ] `ruff check` is clean
-- [ ] `pyproject.toml` and `src/instream/__init__.py` agree on version string `0.41.15`
+- [ ] `pyproject.toml` and `src/salmopy/__init__.py` agree on version string `0.41.15`
 - [ ] CHANGELOG.md top entry is `[0.41.15]` with a `[0.41.14]` entry right below documenting the previously-unlogged diff
 - [ ] `git tag v0.41.15` exists and pushed
 - [ ] Manual smoke: `pip install -e .` in a clean Python env succeeds (verifies C6 meshio declaration holds)
