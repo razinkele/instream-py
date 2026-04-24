@@ -23,6 +23,7 @@ This is idempotent — re-running overwrites existing shapefiles.
 """
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import sys
@@ -30,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import geopandas as gpd
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point, shape
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
@@ -38,6 +39,8 @@ sys.path.insert(0, str(ROOT / "app"))
 # Borrow the Create-Model hex-cell infrastructure so the output is schema-
 # compatible with what the Shiny UI produces and what SalmopyModel loads.
 from modules.create_model_grid import generate_cells  # noqa: E402
+
+OSM_CACHE = ROOT / "tests" / "fixtures" / "_osm_cache"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -158,8 +161,32 @@ COLUMN_RENAME = {
 }
 
 
-def build_reach_segments(river: River) -> dict:
-    """Split river waypoints into 4 reaches (Mouth/Lower/Middle/Upper).
+REACH_NAMES = ["Mouth", "Lower", "Middle", "Upper"]
+# Salmon prefer fast-water riffles in mid-upper reaches for redd digging.
+FRAC_SPAWN = [0.0, 0.15, 0.35, 0.30]
+
+
+def _load_osm_ways(river: River) -> list[LineString] | None:
+    """Load cached OSM ways for `river` if available, else return None.
+
+    Use `scripts/_fetch_wgbast_osm_polylines.py` to populate the cache.
+    Returns a list of LineStrings in WGS84 lon/lat.
+    """
+    cache_path = OSM_CACHE / f"{river.short_name}.json"
+    if not cache_path.exists():
+        return None
+    data = json.loads(cache_path.read_text(encoding="utf-8"))
+    lines = []
+    for w in data:
+        try:
+            lines.append(shape(w["geometry"]))
+        except Exception as exc:
+            log.debug("skipping malformed OSM way %s: %s", w.get("id"), exc)
+    return lines or None
+
+
+def build_reach_segments_from_waypoints(river: River) -> dict:
+    """Fallback: split hand-curated waypoints into 4 reaches.
 
     With 5 waypoints we get 4 segments; each segment becomes one reach.
     The most-downstream reach (0→1) is the Mouth; it receives
@@ -167,19 +194,83 @@ def build_reach_segments(river: River) -> dict:
     Upstream reaches get progressively higher frac_spawn.
     """
     wps = river.waypoints
-    reach_names = ["Mouth", "Lower", "Middle", "Upper"]
-    # Salmon prefer fast-water riffles in mid-upper reaches for redd digging.
-    frac_spawn = [0.0, 0.15, 0.35, 0.30]
-
     segments = {}
-    for i, name in enumerate(reach_names):
+    for i, name in enumerate(REACH_NAMES):
         line = LineString([wps[i], wps[i + 1]])
         segments[name] = {
             "segments": [line],
-            "frac_spawn": frac_spawn[i],
+            "frac_spawn": FRAC_SPAWN[i],
             "type": "river",
         }
     return segments
+
+
+def build_reach_segments_from_osm(
+    river: River, ways: list[LineString]
+) -> dict:
+    """Split real OSM ways into 4 reaches by quartile of along-channel
+    distance from the river mouth.
+
+    Each OSM way's centroid is projected to a 1-D coordinate measuring
+    how far the way is from `river.waypoints[0]` (the mouth). Ways are
+    then partitioned into 4 equal-count quartiles ordered mouth→source.
+
+    This is a simple proxy for true along-channel distance (which would
+    require graph assembly of connected ways). Quartile splits by
+    euclidean distance are robust when the river's centerline is roughly
+    monotone in one direction from the mouth, which holds for all 4
+    WGBAST rivers (they flow SE/S/SW from inland sources to the Baltic).
+    """
+    if len(ways) < 4:
+        # Fall back to waypoint split if OSM returned too few segments.
+        log.warning(
+            "[%s] only %d OSM ways — falling back to waypoint polyline.",
+            river.river_name, len(ways),
+        )
+        return build_reach_segments_from_waypoints(river)
+
+    mouth = Point(river.waypoints[0])
+    # distance in degrees (approximate) — fine for ordering
+    scored = sorted(
+        ((w.centroid.distance(mouth), w) for w in ways),
+        key=lambda t: t[0],
+    )
+
+    # Split into 4 quartiles as equally as possible
+    n = len(scored)
+    q = n / 4.0
+    slices = [
+        (int(q * i), int(q * (i + 1))) for i in range(4)
+    ]
+    # last slice always goes to end to absorb rounding
+    slices[-1] = (slices[-1][0], n)
+
+    segments: dict = {}
+    for i, name in enumerate(REACH_NAMES):
+        lo, hi = slices[i]
+        reach_ways = [w for _, w in scored[lo:hi]]
+        segments[name] = {
+            "segments": reach_ways,
+            "frac_spawn": FRAC_SPAWN[i],
+            "type": "river",
+        }
+        log.info("  [%s] %d ways, distance range %.4f → %.4f deg",
+                 name, len(reach_ways),
+                 scored[lo][0] if reach_ways else 0.0,
+                 scored[hi - 1][0] if reach_ways else 0.0)
+    return segments
+
+
+def build_reach_segments(river: River) -> dict:
+    """Use cached OSM ways when available, fall back to waypoints."""
+    ways = _load_osm_ways(river)
+    if ways is None:
+        log.info("[%s] no OSM cache; using %d hand-curated waypoints.",
+                 river.river_name, len(river.waypoints))
+        return build_reach_segments_from_waypoints(river)
+    log.info("[%s] using %d OSM ways from cache.",
+             river.river_name, len(ways))
+    return build_reach_segments_from_osm(river, ways)
 
 
 def write_river_shapefile(river: River) -> Path:

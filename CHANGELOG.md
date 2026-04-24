@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.1] — 2026-04-25
+
+### Added — real OSM Overpass polylines for 3 of 4 rivers
+
+Upgrades v0.45.0's hand-curated 5-waypoint polylines to real OpenStreetMap
+`waterway=river` ways for the river centerlines. The generator now
+consults the OSM cache first and falls back to waypoints only when fewer
+than 4 ways are available (needed to split into 4 reaches).
+
+### New script
+
+- **`scripts/_fetch_wgbast_osm_polylines.py`**: queries Overpass API by
+  (bbox, name pattern) for each river. Caches raw responses to
+  `tests/fixtures/_osm_cache/{river}.json`. Idempotent — re-runs use the
+  cache unless `--refresh` is passed. Multi-endpoint fallback
+  (overpass-api.de → overpass.kumi.systems → overpass.osm.ch) for
+  resilience to individual endpoint outages.
+
+### Updated generator
+
+- **`scripts/_generate_wgbast_physical_domains.py`**: new `build_reach_segments_from_osm()`
+  sorts OSM ways by centroid distance from the river mouth and partitions
+  into 4 quartile reaches (Mouth/Lower/Middle/Upper). Falls back to the
+  v0.45.0 waypoint-based split when <4 OSM ways are available.
+
+### OSM coverage summary
+
+| River | OSM ways | Total coords | Cell count | Used OSM? |
+|---|---|---|---|---|
+| Tornionjoki | 8 (incl. Swedish "Torne älv") | 274 | 1320 | yes |
+| Simojoki | 10 | 1255 | 5980 | yes |
+| Byskealven | 3 | 1034 | 3944 | **no — waypoint fallback** (OSM under-tagged; 3 ways can't split into 4 reaches) |
+| Morrumsan | 36 | 1076 | 2362 | yes |
+
+### Notes
+
+- Cell distribution across reaches is uneven for OSM-based rivers
+  because the quartile-by-euclidean-distance heuristic groups cells by
+  their location, not by along-channel position. E.g. Tornionjoki's
+  "Upper" reach ends up with 1100 of 1320 cells because most OSM ways
+  are concentrated in the north. This is adequate for habitat-selection
+  tests; a true along-channel split would require graph assembly of
+  connected ways (deferred).
+- Byskealven's OSM coverage is sparse (only 3 waterway=river ways). A
+  future OSM-tagging refinement or manual way split could enable
+  OSM-based reach partitioning for it too.
+- All 4 fixtures pass `test_fixture_loads_and_runs_3_days` (132s total).
+
 ## [0.45.0] — 2026-04-24
 
 ### Added — real-geography physical domains for the 4 WGBAST rivers
