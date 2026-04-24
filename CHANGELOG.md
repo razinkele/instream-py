@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.17] — 2026-04-24
+
+### Test-quality upgrades (closes 5-iteration retrospective review)
+
+- **`tests/test_batch_select_habitat_parity.py`**: added third test
+  asserting batch and forced-scalar paths produce identical cell_idx,
+  activity, and last_growth_rate for the same model step. Restores the
+  original Phase-2 Task 2.4 intent that was downgraded to structural
+  validity during execution. **First run caught real drift**: on
+  example_a seeded with 42, 354/359 alive fish (98.6%) end up in
+  different cells between the Numba batch kernel and the Python scalar
+  fallback. Marked `@pytest.mark.xfail(strict=True)` with full diagnostic;
+  batch-kernel fix tracked as a separate v0.44 item.
+- **`tests/test_shelter_consistency_hardening.py`**: replaced
+  `inspect.getsource()` source-grep with an arithmetic invariant test
+  for the rep=1 case (full kernel-level test stays as a documented skip
+  pending fixture extraction).
+- **`tests/test_post_smolt_mask_hardening.py`**: replaced source-grep
+  with an end-to-end `marine_survival` behavioral test.
+- **`tests/test_marine_growth_q10_hardening.py`**: replaced source-grep
+  with a behavioral test that varies `cmax_topt` while holding
+  `resp_ref_temp` fixed and asserts respiration is anchor-independent
+  of `cmax_topt`.
+- **`tests/test_superimposition_units.py`**: replaced caller-source-grep
+  with an arithmetic test of `apply_superimposition` using
+  production-canonical cm² inputs.
+
+### Added
+
+- **`tests/test_config.py::TestParamsFromConfigDefenseArea::test_species_params_spawn_defense_area_m_matches_pydantic_for_all_species`**:
+  sync invariant for every species across `example_a.yaml` and
+  `example_baltic.yaml`, preventing the Phase-1 Task C5 dead-field hazard.
+
+### Dropped after pre-flight
+
+- `tests/test_marine_species_weights.py::test_silent_except_wrapper_removed`
+  upgrade was dropped — pre-flight found the proposed fix targeted a
+  non-existent method and a real behavioral test requires a larger
+  refactor. Existing source-grep retained as pragmatic regression guard
+  (documented in the plan's Task 5 section).
+
+### Notes
+
+No production-behavior changes. Three `inspect.getsource()` source-grep
+tests upgraded to behavioral (post_smolt_mask, marine_growth Q10,
+superimposition caller); one replaced with arithmetic invariant + skip
+(shelter consistency); one task dropped after pre-flight
+(marine_species_weights — retained as documented source-grep); one new
+batch-vs-scalar parity test added (strict xfail — caught real drift);
+one new sync invariant added. All tests that were passing in v0.43.16
+remain passing.
+
 ## [0.43.16] - 2026-04-23 (Phase 9j: test-slow xfail sprint-exposed regressions)
 
 ### Changed (tests)
