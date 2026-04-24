@@ -30,8 +30,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 
-def run_path(force_scalar: bool, days: int, seed: int, verbose: bool = False):
-    """Run example_a for `days` with the given dispatch. Returns metrics dict."""
+def run_path(force_scalar: bool, days: int, seed: int,
+             config_path: str, data_dir: str, verbose: bool = False):
+    """Run the given fixture for `days` with the given dispatch. Returns metrics dict."""
     from salmopy.model import SalmopyModel
     from salmopy.modules import behavior
 
@@ -42,8 +43,8 @@ def run_path(force_scalar: bool, days: int, seed: int, verbose: bool = False):
     try:
         t0 = time.time()
         model = SalmopyModel(
-            config_path="configs/example_a.yaml",
-            data_dir="tests/fixtures/example_a",
+            config_path=config_path,
+            data_dir=data_dir,
         )
         model.rng = np.random.default_rng(seed)
 
@@ -115,18 +116,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=30)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--fixture", default="example_a",
+                    help="example_a (small Chinook) or example_baltic (multi-reach salmon)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
+    config_path = f"configs/{args.fixture}.yaml"
+    data_dir = f"tests/fixtures/{args.fixture}"
+
     print(f"v0.44 batch-vs-scalar calibration-bias probe")
-    print(f"  fixture: example_a | days: {args.days} | seed: {args.seed}")
+    print(f"  fixture: {args.fixture} | days: {args.days} | seed: {args.seed}")
     print()
 
     print("Running batch path (default)...")
-    batch = run_path(force_scalar=False, days=args.days, seed=args.seed, verbose=args.verbose)
+    batch = run_path(force_scalar=False, days=args.days, seed=args.seed,
+                     config_path=config_path, data_dir=data_dir, verbose=args.verbose)
 
     print("Running scalar path (_HAS_NUMBA_BATCH=False)...")
-    scalar = run_path(force_scalar=True, days=args.days, seed=args.seed, verbose=args.verbose)
+    scalar = run_path(force_scalar=True, days=args.days, seed=args.seed,
+                      config_path=config_path, data_dir=data_dir, verbose=args.verbose)
 
     print()
     print(f"{'metric':<25} {'batch':>15} {'scalar':>15} {'rel_diff':>10}")
