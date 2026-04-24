@@ -1,11 +1,10 @@
 """Day-boundary mixin -- spawning, redds, migration, census, outputs."""
 
 import math
-import numpy as np
-import pandas as pd
 from pathlib import Path
 
-_PI = math.pi  # cached module-level to avoid per-spawn dict lookups
+import numpy as np
+import pandas as pd
 
 from salmopy.modules.growth import split_superindividuals
 from salmopy.modules.spawning import (
@@ -20,6 +19,8 @@ from salmopy.modules.spawning import (
 from salmopy.modules.survival import apply_redd_survival
 from salmopy.state.life_stage import LifeStage
 from salmopy.sync import sync_trout_agents
+
+_PI = math.pi  # cached module-level to avoid per-spawn dict lookups
 
 
 class _ModelDayBoundaryMixin:

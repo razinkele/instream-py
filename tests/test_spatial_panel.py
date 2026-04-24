@@ -11,7 +11,7 @@ from shapely.geometry import Polygon
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "app"))
 
-from simulation import _build_trajectories_data, _value_to_rgba
+from simulation import _build_trajectories_data, _value_to_rgba  # noqa: E402 (sys.path.insert above is load-bearing)
 
 
 class TestBuildTrajectoriesData:

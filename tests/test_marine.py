@@ -9,6 +9,16 @@ import pytest
 from pydantic import ValidationError
 
 from salmopy.marine.config import MarineConfig, ZoneConfig, ZoneDriverData
+from salmopy.marine.domain import (
+    MarineDomain,
+    StaticDriver,
+    ZoneState,
+    accumulate_smolt_readiness,
+    check_adult_return,
+)
+from salmopy.modules.migration import migrate_fish_downstream
+from salmopy.state.life_stage import LifeStage
+from salmopy.state.trout_state import TroutState
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +101,6 @@ class TestMarineConfig:
 # Task 3 — ZoneState + StaticDriver
 # ===================================================================
 
-from salmopy.marine.domain import ZoneState, StaticDriver
-
-
 class TestZoneState:
     def test_zeros_factory(self):
         zs = ZoneState.zeros(3)
@@ -153,7 +160,6 @@ class TestStaticDriver:
 # Task 4 — MarineDomain
 # ===================================================================
 
-from salmopy.marine.domain import MarineDomain
 
 
 def _make_mock_trout_state(n: int = 10):
@@ -282,9 +288,6 @@ class TestMarineDomain:
 # Task 6 — Smolt Transition at River Mouth
 # ===================================================================
 
-from salmopy.modules.migration import migrate_fish_downstream
-from salmopy.state.trout_state import TroutState
-from salmopy.state.life_stage import LifeStage
 
 
 def _make_trout_at_mouth(length=15.0, readiness=0.9, life_history=LifeStage.PARR):
@@ -379,8 +382,6 @@ class TestSmoltTransitionAtRiverMouth:
 # Task 7 — Smolt Readiness Accumulation
 # ===================================================================
 
-from salmopy.marine.domain import accumulate_smolt_readiness
-
 
 class TestSmoltReadiness:
     def test_readiness_accumulates_in_spring(self):
@@ -443,7 +444,6 @@ class TestSmoltReadiness:
 # Task 8 — Adult Return
 # ===================================================================
 
-from salmopy.marine.domain import check_adult_return
 
 
 class TestAdultReturn:

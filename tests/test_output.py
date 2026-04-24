@@ -1,5 +1,7 @@
 """Tests for output writer module."""
 
+import numpy as np
+
 
 def test_write_population_census(tmp_path):
     from salmopy.io.output import write_population_census
@@ -82,9 +84,6 @@ def test_write_outmigrants_empty(tmp_path):
     assert path.exists()
     lines = path.read_text().strip().split("\n")
     assert len(lines) == 1  # header only
-
-
-import numpy as np
 
 
 class TestWriteHabitatSummary:

@@ -23,18 +23,19 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-# Make app/ importable for simulation helpers
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "app"))
-
-from salmopy.state.cell_state import CellState
-from salmopy.space.fem_space import FEMSpace
 from salmopy.modules.behavior import (
+    build_candidate_lists,
     evaluate_logistic,
     evaluate_logistic_array,
     movement_radius,
-    build_candidate_lists,
 )
+from salmopy.space.fem_space import FEMSpace
+from salmopy.state.cell_state import CellState
+
+# Make app/ importable for simulation helpers (kept for any downstream
+# tests in this module that import from app.* — deferred imports are fine).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "app"))
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

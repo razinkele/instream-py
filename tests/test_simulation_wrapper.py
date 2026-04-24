@@ -9,7 +9,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "app"))
 
-from simulation import run_simulation
+from simulation import run_simulation  # noqa: E402 (sys.path.insert above is load-bearing)
 
 
 class TestRunSimulation:

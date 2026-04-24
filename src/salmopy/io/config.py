@@ -5,13 +5,14 @@ Loads YAML configuration files and converts NetLogo .nls parameter files.
 
 from __future__ import annotations
 
+import math
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import yaml
-import math
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -450,7 +451,6 @@ class ModelConfig(BaseModel):
 # ---------------------------------------------------------------------------
 # ReachParams (frozen dataclass for runtime use)
 # ---------------------------------------------------------------------------
-from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
