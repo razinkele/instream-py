@@ -5,3 +5,12 @@ from salmopy.state.redd_state import ReddState
 from salmopy.state.cell_state import CellState
 from salmopy.state.reach_state import ReachState
 from salmopy.state.params import SpeciesParams
+
+__all__ = [
+    "LifeStage",
+    "TroutState",
+    "ReddState",
+    "CellState",
+    "ReachState",
+    "SpeciesParams",
+]

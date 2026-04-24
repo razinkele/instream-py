@@ -36,7 +36,7 @@ from salmopy.calibration.multiphase import (
     MultiPhaseCalibrator,
 )
 try:
-    from salmopy.calibration.surrogate import (
+    from salmopy.calibration.surrogate import (  # noqa: F401
         SurrogateCalibrator,
         SurrogateResult,
         CrossValidationResult,
@@ -53,12 +53,12 @@ from salmopy.calibration.ensemble import (
 from salmopy.calibration.configure import DiscoveryRule, discover_parameters
 from salmopy.calibration.scenarios import Scenario, ScenarioManager
 try:
-    from salmopy.calibration.sensitivity import (
+    from salmopy.calibration.sensitivity import (  # noqa: F401
         SensitivityAnalyzer,
         SensitivityResult,
         MorrisAnalyzer,
     )
-    from salmopy.calibration.preflight import (
+    from salmopy.calibration.preflight import (  # noqa: F401
         preflight_screen,
         format_issues,
         PreflightIssue,
@@ -89,20 +89,27 @@ __all__ = [
     "CalibrationPhase",
     "PhaseResult",
     "MultiPhaseCalibrator",
+    # unconditional re-exports (ensemble / configure / scenarios)
+    "aggregate_scalars",
+    "aggregate_trajectories",
+    "run_replicates",
+    "DiscoveryRule",
+    "discover_parameters",
+    "Scenario",
+    "ScenarioManager",
 ]
 
+# Conditional re-exports: present only when optional deps (surrogate,
+# sensitivity) are available. Guarded at import time via try/except
+# above; the noqa directives on those try-imports tell ruff the names
+# are intentional re-exports even when ruff cannot statically see the
+# conditional __all__ extension below.
 if _HAS_SURROGATE:
     __all__.extend([
         "SurrogateCalibrator",
         "SurrogateResult",
         "CrossValidationResult",
     ])
-
-__all__.extend(["aggregate_scalars", "aggregate_trajectories", "run_replicates"])
-__all__.extend([
-    "DiscoveryRule", "discover_parameters",
-    "Scenario", "ScenarioManager",
-])
 
 if _HAS_SENSITIVITY:
     __all__.extend([
