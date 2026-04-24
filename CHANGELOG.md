@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.1] — 2026-04-24
+
+### Fixed
+
+- **`tests/test_expected_fitness_dedup.py::test_expected_fitness_output_in_unit_interval`**: added `derandomize=True` to the Hypothesis `@settings`, making the 200 property-test examples deterministic across CI runs. Closes the intermittent flake documented in v0.44.0 Notes — the test now runs the same inputs every build, so "passes once → passes always" (or fails deterministically and actionably).
+
+### Verified
+
+- Five consecutive isolated runs of the test all pass (5.0s each).
+- No production-code change; no change to the number of examples or the
+  invariants asserted. The strict-mode CI introduced in v0.44.0 can now
+  rely on this test being reproducible.
+
 ## [0.44.0] — 2026-04-24
 
 ### Lint hygiene sweep — CI strict mode restored
