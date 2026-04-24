@@ -149,3 +149,32 @@ class TestParamsFromConfigDefenseArea:
         cfg.species[sp_name].spawn_defense_area_m = 3.5
         species_params, _ = params_from_config(cfg)
         assert species_params[sp_name].spawn_defense_area_m == pytest.approx(3.5)
+
+    def test_species_params_spawn_defense_area_m_matches_pydantic_for_all_species(self):
+        """Sync invariant: every SpeciesParams instance produced by
+        params_from_config must agree with the Pydantic SpeciesConfig on
+        spawn_defense_area_m. Catches drift if a future change populates
+        the field from a stale source.
+
+        Without this guard, the field is dead today (no caller reads it)
+        but can silently desync the moment a caller migrates to use it —
+        resurrecting the Arc E 'one giant redd blocks all spawn' bug class.
+        """
+        from salmopy.io.config import load_config, params_from_config
+
+        for cfg_name in ("example_a.yaml", "example_baltic.yaml"):
+            cfg_path = CONFIGS_DIR / cfg_name
+            if not cfg_path.exists():
+                continue
+            cfg = load_config(cfg_path)
+            for sp_name, sp_cfg in cfg.species.items():
+                sp_cfg.spawn_defense_area_m = 0.7  # arbitrary non-default
+            species_params, _ = params_from_config(cfg)
+            for sp_name, sp_cfg in cfg.species.items():
+                assert species_params[sp_name].spawn_defense_area_m == pytest.approx(
+                    sp_cfg.spawn_defense_area_m
+                ), (
+                    f"{cfg_name}: SpeciesParams[{sp_name}].spawn_defense_area_m "
+                    f"({species_params[sp_name].spawn_defense_area_m}) does not "
+                    f"match Pydantic config ({sp_cfg.spawn_defense_area_m})"
+                )
