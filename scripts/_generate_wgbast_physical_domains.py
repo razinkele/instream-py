@@ -32,6 +32,7 @@ from pathlib import Path
 
 import geopandas as gpd
 from shapely.geometry import LineString, Point, shape
+from shapely.ops import unary_union
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
@@ -41,6 +42,11 @@ sys.path.insert(0, str(ROOT / "app"))
 from modules.create_model_grid import generate_cells  # noqa: E402
 
 OSM_CACHE = ROOT / "tests" / "fixtures" / "_osm_cache"
+
+# Polygon-filter radius around the waterway=river centerline (degrees).
+# 0.02° ≈ 2.2 km — keeps the river channel + connected small lakes,
+# excludes sea, distant unconnected lakes, etc.
+POLY_NEAR_CENTERLINE_DEG = 0.02
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -185,6 +191,46 @@ def _load_osm_ways(river: River) -> list[LineString] | None:
     return lines or None
 
 
+def _load_osm_polygons_filtered(
+    river: River, centerline: list[LineString]
+) -> list:
+    """Load cached OSM water polygons, filter to those near the centerline.
+
+    The raw polygon fetch includes any water within the bbox — sea,
+    distant lakes, unconnected ponds. We keep only polygons that
+    intersect the centerline buffered by POLY_NEAR_CENTERLINE_DEG
+    (~2 km). This leaves the river's main channel + connected tributary
+    channels + small lakes the river flows through.
+    """
+    poly_cache = OSM_CACHE / f"{river.short_name}_polygons.json"
+    if not poly_cache.exists():
+        return []
+    data = json.loads(poly_cache.read_text(encoding="utf-8"))
+
+    # Assemble centerline buffer (in WGS84 degrees — crude but fine as a
+    # near-filter; precise area work happens later in UTM inside generate_cells)
+    merged_line = unary_union(centerline)
+    near = merged_line.buffer(POLY_NEAR_CENTERLINE_DEG)
+
+    kept = []
+    for item in data:
+        try:
+            poly = shape(item["geometry"])
+        except Exception:
+            continue
+        if not poly.is_valid or poly.is_empty:
+            continue
+        if near.intersects(poly):
+            # Clip to the near-buffer so we don't drag in half-a-sea when
+            # a coastal polygon just grazes the buffer
+            clipped = near.intersection(poly)
+            if not clipped.is_empty and clipped.geom_type in (
+                "Polygon", "MultiPolygon"
+            ):
+                kept.append(clipped)
+    return kept
+
+
 def build_reach_segments_from_waypoints(river: River) -> dict:
     """Fallback: split hand-curated waypoints into 4 reaches.
 
@@ -261,14 +307,75 @@ def build_reach_segments_from_osm(
     return segments
 
 
+def build_reach_segments_from_polygons(
+    river: River, centerline: list[LineString], polygons: list
+) -> dict:
+    """Partition water polygons into 4 reaches by centroid distance from mouth.
+
+    This is the highest-fidelity representation: each reach is a
+    MultiPolygon of actual water surface (channel, side channels, small
+    connected lakes), clipped to within POLY_NEAR_CENTERLINE_DEG of the
+    centerline. `generate_cells` sees a Polygon reach and uses it
+    directly without buffering — hex cells tessellate the real water
+    body's shape.
+    """
+    if len(polygons) < 4:
+        log.warning(
+            "[%s] only %d polygons (need ≥4) — falling back to line-buffer split.",
+            river.river_name, len(polygons),
+        )
+        return build_reach_segments_from_osm(river, centerline)
+
+    mouth = Point(river.waypoints[0])
+    scored = sorted(
+        ((p.centroid.distance(mouth), p) for p in polygons),
+        key=lambda t: t[0],
+    )
+    n = len(scored)
+    q = n / 4.0
+    slices = [(int(q * i), int(q * (i + 1))) for i in range(4)]
+    slices[-1] = (slices[-1][0], n)
+
+    segments: dict = {}
+    for i, name in enumerate(REACH_NAMES):
+        lo, hi = slices[i]
+        reach_polys = [p for _, p in scored[lo:hi]]
+        segments[name] = {
+            "segments": reach_polys,
+            "frac_spawn": FRAC_SPAWN[i],
+            "type": "water",  # tells generate_cells to use polygons directly
+        }
+        # Area summary
+        total_area_m2 = sum(
+            p.area * 111000 * 111000 for p in reach_polys
+        )  # rough conversion; real area computed in UTM later
+        log.info("  [%s] %d polys, ~%.1f degree² raw",
+                 name, len(reach_polys),
+                 sum(p.area for p in reach_polys))
+    return segments
+
+
 def build_reach_segments(river: River) -> dict:
-    """Use cached OSM ways when available, fall back to waypoints."""
+    """Use the highest-fidelity source available:
+       (1) OSM water polygons (filtered near the centerline)
+       (2) OSM waterway=river line ways (centerlines + buffer)
+       (3) Hand-curated waypoints (fallback)
+    """
     ways = _load_osm_ways(river)
     if ways is None:
         log.info("[%s] no OSM cache; using %d hand-curated waypoints.",
                  river.river_name, len(river.waypoints))
         return build_reach_segments_from_waypoints(river)
-    log.info("[%s] using %d OSM ways from cache.",
+
+    polygons = _load_osm_polygons_filtered(river, ways)
+    if polygons:
+        log.info("[%s] using %d OSM water polygons (filtered to within %.3f° of "
+                 "centerline) + %d line ways as center reference.",
+                 river.river_name, len(polygons),
+                 POLY_NEAR_CENTERLINE_DEG, len(ways))
+        return build_reach_segments_from_polygons(river, ways, polygons)
+
+    log.info("[%s] no polygons available; using %d OSM line ways.",
              river.river_name, len(ways))
     return build_reach_segments_from_osm(river, ways)
 

@@ -100,9 +100,38 @@ def _build_query(q: RiverQuery) -> str:
     )
 
 
-def fetch_overpass(q: RiverQuery) -> dict:
-    """POST the query to Overpass and return the parsed JSON response."""
-    query = _build_query(q)
+def _build_polygon_query(q: RiverQuery) -> str:
+    """Build Overpass QL for water-body POLYGONS within the river's bbox.
+
+    Covers three OSM tagging styles:
+      * `natural=water` + `water=river|lake|stream` (modern)
+      * `waterway=riverbank` (legacy, still widespread)
+      * `natural=water` without `water=*` (generic)
+    Also includes multipolygon relations for complex river surfaces.
+    We do NOT filter by river name here — within the bbox, most water
+    polygons belong to the target river system. Downstream processing
+    clips to the buffer around named line ways.
+    """
+    s, w, n, e = q.bbox
+    return (
+        f'[out:json][timeout:180];\n'
+        f'(\n'
+        f'  way["natural"="water"]({s:.4f},{w:.4f},{n:.4f},{e:.4f});\n'
+        f'  way["waterway"="riverbank"]({s:.4f},{w:.4f},{n:.4f},{e:.4f});\n'
+        f'  relation["natural"="water"]({s:.4f},{w:.4f},{n:.4f},{e:.4f});\n'
+        f');\n'
+        f'out geom;'
+    )
+
+
+def fetch_overpass(q: RiverQuery, query: str | None = None) -> dict:
+    """POST the query to Overpass and return the parsed JSON response.
+
+    If `query` is not supplied, the default line query (_build_query) runs.
+    Pass a custom Overpass-QL string to fetch polygons instead.
+    """
+    if query is None:
+        query = _build_query(q)
     last_err = None
     for endpoint in OVERPASS_ENDPOINTS:
         try:
@@ -142,12 +171,94 @@ def parse_ways_to_linestrings(osm_json: dict) -> list[dict]:
     return features
 
 
+def parse_water_polygons(osm_json: dict) -> list[dict]:
+    """Convert Overpass polygon-query response into per-way dicts holding
+    shapely Polygon (or MultiPolygon) geometry.
+
+    Handles two cases:
+      * Closed way (first coord == last coord): treat as a Polygon.
+      * Relation of type=multipolygon: assemble outer rings into a
+        MultiPolygon. Inner rings (holes) are best-effort; we keep the
+        outer loops which is what matters for cell tessellation.
+    """
+    from shapely.geometry import Polygon, MultiPolygon
+    features = []
+    for element in osm_json.get("elements", []):
+        etype = element.get("type")
+        tags = element.get("tags", {}) or {}
+
+        if etype == "way":
+            geom = element.get("geometry") or []
+            if len(geom) < 4:
+                continue
+            coords = [(n["lon"], n["lat"]) for n in geom]
+            # OSM closed ways have first == last; treat as polygon ring
+            if coords[0] != coords[-1]:
+                continue
+            try:
+                poly = Polygon(coords)
+            except Exception:
+                continue
+            if not poly.is_valid or poly.is_empty:
+                continue
+            features.append({
+                "id": element.get("id"),
+                "name": tags.get("name", ""),
+                "source": f"way:{tags.get('natural') or tags.get('waterway') or '?'}",
+                "geometry": mapping(poly),
+            })
+
+        elif etype == "relation":
+            members = element.get("members", []) or []
+            outer_polys = []
+            for m in members:
+                if m.get("role") != "outer":
+                    continue
+                geom = m.get("geometry") or []
+                if len(geom) < 4:
+                    continue
+                coords = [(n["lon"], n["lat"]) for n in geom]
+                if coords[0] != coords[-1]:
+                    # Close the ring (OSM multipolygon outer rings are
+                    # sometimes shipped as open coord lists)
+                    coords = coords + [coords[0]]
+                try:
+                    poly = Polygon(coords)
+                except Exception:
+                    continue
+                if poly.is_valid and not poly.is_empty:
+                    outer_polys.append(poly)
+            if not outer_polys:
+                continue
+            geom_obj = (
+                MultiPolygon(outer_polys) if len(outer_polys) > 1 else outer_polys[0]
+            )
+            features.append({
+                "id": element.get("id"),
+                "name": tags.get("name", ""),
+                "source": f"relation:{tags.get('natural') or tags.get('waterway') or '?'}",
+                "geometry": mapping(geom_obj),
+            })
+    return features
+
+
 def cache_path(short_name: str) -> Path:
     return CACHE_DIR / f"{short_name}.json"
 
 
+def polygon_cache_path(short_name: str) -> Path:
+    return CACHE_DIR / f"{short_name}_polygons.json"
+
+
 def load_cached_ways(short_name: str) -> list[dict] | None:
     p = cache_path(short_name)
+    if not p.exists():
+        return None
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def load_cached_polygons(short_name: str) -> list[dict] | None:
+    p = polygon_cache_path(short_name)
     if not p.exists():
         return None
     return json.loads(p.read_text(encoding="utf-8"))
@@ -158,6 +269,14 @@ def save_cached_ways(short_name: str, features: list[dict]) -> None:
     p = cache_path(short_name)
     p.write_text(json.dumps(features, indent=2), encoding="utf-8")
     log.info("[%s] cached %d ways to %s", short_name, len(features), p.relative_to(ROOT))
+
+
+def save_cached_polygons(short_name: str, features: list[dict]) -> None:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    p = polygon_cache_path(short_name)
+    p.write_text(json.dumps(features, indent=2), encoding="utf-8")
+    log.info("[%s] cached %d polygons to %s",
+             short_name, len(features), p.relative_to(ROOT))
 
 
 def fetch_river(q: RiverQuery, refresh: bool = False) -> list[dict]:
@@ -176,6 +295,25 @@ def fetch_river(q: RiverQuery, refresh: bool = False) -> list[dict]:
     log.info("[%s] parsed %d ways from Overpass response",
              q.river_label, len(features))
     save_cached_ways(q.short_name, features)
+    return features
+
+
+def fetch_river_polygons(q: RiverQuery, refresh: bool = False) -> list[dict]:
+    """Fetch OSM water polygons (natural=water + waterway=riverbank +
+    relations) within the river's bbox. Cached separately from lines."""
+    if not refresh:
+        cached = load_cached_polygons(q.short_name)
+        if cached is not None:
+            log.info("[%s] using cached %d polygons",
+                     q.river_label, len(cached))
+            return cached
+
+    query = _build_polygon_query(q)
+    osm_json = fetch_overpass(q, query=query)
+    features = parse_water_polygons(osm_json)
+    log.info("[%s] parsed %d polygons from Overpass response",
+             q.river_label, len(features))
+    save_cached_polygons(q.short_name, features)
     return features
 
 
@@ -206,8 +344,27 @@ def main():
             log.info("[%s] %d ways, ~%.1f km total polyline",
                      q.river_label, len(lines), total_km)
 
+        # Fetch water polygons — may return 0 for rivers with no polygon tagging
+        try:
+            polys = fetch_river_polygons(q, refresh=args.refresh)
+            if polys:
+                from shapely.geometry import shape as _shape
+                total_area_km2 = sum(
+                    _shape(f["geometry"]).area * 111 * 111 * _cosd(q.mouth_lon_lat[1])
+                    for f in polys
+                )
+                log.info("[%s] %d polygons, ~%.2f km² total water area",
+                         q.river_label, len(polys), total_area_km2)
+        except Exception as exc:
+            log.warning("[%s] polygon fetch failed: %s", q.river_label, exc)
+
     log.info("=" * 60)
     log.info("All rivers: %d ways cached under %s", total, CACHE_DIR.relative_to(ROOT))
+
+
+def _cosd(deg: float) -> float:
+    import math
+    return math.cos(math.radians(deg))
 
 
 if __name__ == "__main__":

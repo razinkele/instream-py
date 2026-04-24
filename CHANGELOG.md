@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.2] — 2026-04-25
+
+### Fixed — river grid now fills real water polygons, not line-buffer strips
+
+The v0.45.1 grid was generated along the `waterway=river` centerline
+buffered by ~240 m either side. The result was a **thin strip** along the
+centerline, not a river-shaped cell tessellation — visible on the Shiny
+map as skinny lines rather than true river surfaces.
+
+Fix: fetch OSM `natural=water` + `waterway=riverbank` **polygons**
+(water-body surfaces) in addition to the centerline lines. Filter the
+polygons to those within ~2 km (0.02°) of the centerline — this keeps
+the main channel, side channels, and small connected lakes, while
+excluding the Gulf of Bothnia, distant unconnected lakes, etc.
+
+`generate_cells` already handles `Polygon/MultiPolygon` reach segments
+directly (no buffering applied — the polygon IS the reach extent), so
+hex cells tessellate the real water shape.
+
+### OSM polygon coverage after filter
+
+| River | Polygons (near centerline) | Cells |
+|---|---|---|
+| Tornionjoki | 63 | 534 |
+| Simojoki | 132 | 2849 |
+| Byskealven | 65 (now uses OSM, v0.45.1 was waypoint fallback) | 1023 |
+| Morrumsan | 92 | 919 |
+
+### Added
+
+- **`scripts/_fetch_wgbast_osm_polylines.py`**: new `--` equivalent commands
+  for polygon queries (`natural=water`, `waterway=riverbank`, multipolygon
+  relations). Caches separately at `tests/fixtures/_osm_cache/{river}_polygons.json`.
+- **`scripts/_generate_wgbast_physical_domains.py`**: new tiered data
+  source order — polygons (preferred) → line ways → hand-curated
+  waypoints. Polygons are filtered to within 0.02° of the centerline
+  before use.
+
+### Verified
+
+- All 4 fixtures pass `test_fixture_loads_and_runs_3_days` (39s total —
+  3× faster than v0.45.1's 132s thanks to fewer-but-realer cells).
+
+### Known limits (still open)
+
+- Mouth-area polygons at deltas are coarse (OSM's coastline-detail
+  varies). A coastline-boolean intersection would clip out sea water
+  more precisely.
+- Along-channel reach partitioning still uses the quartile-by-centroid
+  heuristic; for truly correct upstream/downstream ordering, a
+  graph-assembled OSM way topology is needed (deferred).
+
 ## [0.45.1] — 2026-04-25
 
 ### Added — real OSM Overpass polylines for 3 of 4 rivers
