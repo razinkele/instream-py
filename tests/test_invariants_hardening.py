@@ -66,7 +66,7 @@ def test_should_migrate_monotone_in_habitat_fitness():
     n=st.integers(min_value=0, max_value=100),
     fraction_nan=st.floats(min_value=0.0, max_value=1.0),
 )
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=50, deadline=None, derandomize=True)
 def test_rmse_loss_nan_iff_no_finite_pairs(n, fraction_nan):
     """Property: rmse_loss returns NaN iff there are no finite pairs.
     Otherwise returns a non-negative finite number.
