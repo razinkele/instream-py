@@ -123,7 +123,7 @@ class TestPopulationDynamicsExampleB:
         records = model._census_records
         if len(records) == 0:
             pytest.skip("No census records available")
-        df = pd.DataFrame(records)
+        pd.DataFrame(records)
         # Census records may have reach-level info; if not, check final state
         alive = model.trout_state.alive_indices()
         if len(alive) > 0:

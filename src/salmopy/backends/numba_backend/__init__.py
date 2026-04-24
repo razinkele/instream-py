@@ -211,7 +211,7 @@ class NumbaBackend:
 
     def survival(self, lengths, weights, conditions, temperatures, depths, **params):
         """Vectorized survival (delegates to NumPy-style vectorized computation)."""
-        n = len(lengths)
+        len(lengths)
 
         # High temperature
         s_ht = self.evaluate_logistic(

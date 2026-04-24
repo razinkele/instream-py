@@ -1211,7 +1211,7 @@ class TestBatchVsScalarHabitatSelection:
         ni[3, 0] = 2
         ni[3, 1] = 4
         ni[4, 0] = 3
-        space = FEMSpace(cs, ni)
+        FEMSpace(cs, ni)
 
         # 4 fish of varying sizes
         ts = TroutState.zeros(4)

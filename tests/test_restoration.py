@@ -16,7 +16,7 @@ class TestRestorationEvents:
         cs = model.fem_space.cell_state
 
         # Record original values
-        original_shelter = cs.frac_vel_shelter[0].copy()
+        cs.frac_vel_shelter[0].copy()
 
         # Manually inject a restoration event for today's date
         date_str = model.time_manager.current_date.strftime("%Y-%m-%d")
@@ -71,7 +71,7 @@ class TestRestorationEvents:
         date_str = model.time_manager.current_date.strftime("%Y-%m-%d")
         rname = model.reach_order[0]
         reach_cfg = model.config.reaches[rname]
-        n_cells = np.sum(cs.reach_idx == 0)
+        np.sum(cs.reach_idx == 0)
         reach_cfg.restoration_events = [
             {"date": date_str, "cells": "all", "changes": {"frac_spawn": 0.77}}
         ]

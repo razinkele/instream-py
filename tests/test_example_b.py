@@ -35,7 +35,7 @@ class TestExampleBInit:
 
         model = SalmopyModel(CONFIGS / "example_b.yaml", data_dir=FIXTURES)
         alive = model.trout_state.alive_indices()
-        species = set(model.trout_state.species_idx[alive].tolist())
+        set(model.trout_state.species_idx[alive].tolist())
         # Example B populations may only have some species in initial pop
         assert model.trout_state.num_alive() > 0
 

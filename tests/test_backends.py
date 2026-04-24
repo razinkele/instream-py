@@ -593,7 +593,6 @@ class TestNumpyGrowthRateVectorized:
         from salmopy.backends.numpy_backend import NumpyBackend
 
         b = NumpyBackend()
-        n = 3
         result = b.growth_rate(
             np.array([5.0, 8.0, 12.0]),
             np.array([2.0, 6.0, 20.0]),

@@ -48,7 +48,7 @@ class TestReddDewateringSurvival:
 class TestReddScourSurvival:
     def test_high_flow_kills_all(self):
         from salmopy.modules.survival import redd_survival_scour
-        frac = redd_survival_scour(
+        redd_survival_scour(
             flow=100.0, is_flow_peak=True,
             shear_A=0.013, shear_B=0.40, scour_depth=20.0)
         # Use a low scour_depth threshold so high flow triggers scour

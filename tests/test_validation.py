@@ -527,8 +527,6 @@ class TestGrowthReportMatchesNetLogoCSV:
         # Example A Chinook-Spring species params
         table_x = [0.0, 2.0, 10.0, 22.0, 23.0, 25.0, 30.0]
         table_y = [0.05, 0.05, 0.5, 1.0, 0.8, 0.5, 0.0]
-        cmax_A = 0.628
-        cmax_B = 0.7
         max_speed_A = 2.8
         max_speed_B = 21.0
         max_speed_C = -0.0029
@@ -548,7 +546,6 @@ class TestGrowthReportMatchesNetLogoCSV:
             length = row["trout-length"]
             weight = row["trout-weight"]
             temp = row["temperature"]
-            depth = row["depth"]
             velocity = row["velocity"]
             shelter_frac = row["shelter-frac"]
 
@@ -884,8 +881,6 @@ class TestSpawnCellMatchesNetLogoCSV:
         for idx, row in ref.iterrows():
             depth = row["Depth"]
             velocity = row["Velocity"]
-            frac_spawn = row["Gravel fraction"]
-            area = row["Area"]
 
             # Verify depth and velocity suitability individually
             py_depth_suit = float(np.interp(depth, depth_xs, depth_ys))
@@ -926,7 +921,7 @@ class TestCStepMaxMatchesNetLogoCSV:
         rows = []
         with open(ref_path) as f:
             next(f)  # skip comment line
-            header_line = next(f).strip()
+            next(f)  # skip header line
             for line in f:
                 fields = line.strip().split(",")
                 # First 10 columns are well-defined; rest is ConsList

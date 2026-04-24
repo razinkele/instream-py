@@ -24,7 +24,7 @@ class TestPreflightScreen:
             return (X[:, 0] * 10.0).reshape(-1, 1)
 
         issues = preflight_screen(params, eval_fn, morris_trajectories=30, sobol_n_base=32, seed=42)
-        cats = [i.category for i in issues]
+        [i.category for i in issues]
         # The negligible param should be flagged
         flagged = [i for i in issues if i.param == "negligible" and i.category == IssueCategory.NEGLIGIBLE]
         assert len(flagged) == 1

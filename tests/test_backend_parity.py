@@ -553,8 +553,6 @@ class TestDepleteResourcesParity:
     """Sequential resource depletion must match across backends."""
 
     def test_deplete_resources(self, all_backends):
-        n_fish = 4
-        n_cells = 3
         fish_order = np.array([0, 1, 2, 3])
         chosen_cells = np.array([0, 1, 0, 2])
 

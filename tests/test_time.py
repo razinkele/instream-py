@@ -77,7 +77,7 @@ class TestTimeManager:
         assert "turbidity" in conditions
 
     def test_conditions_change_after_advance(self, time_manager):
-        c1 = time_manager.get_conditions("ExampleA")
+        time_manager.get_conditions("ExampleA")
         time_manager.advance()
         c2 = time_manager.get_conditions("ExampleA")
         # At least one value should potentially differ (not guaranteed for every step)

@@ -183,7 +183,7 @@ class _ModelInitMixin:
         self._prev_flow = np.zeros(len(self.reach_order), dtype=np.float64)
 
         # Pre-build per-species parameter arrays for fast per-fish lookup
-        n_sp = len(self.species_order)
+        len(self.species_order)
         self._sp_arrays = {}
         for field in [
             "cmax_A",
@@ -269,7 +269,7 @@ class _ModelInitMixin:
         ]
 
         # Pre-build per-reach parameter arrays
-        n_r = len(self.reach_order)
+        len(self.reach_order)
         self._rp_arrays = {}
         for field in [
             "drift_conc",

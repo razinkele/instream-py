@@ -87,7 +87,7 @@ class TestMarineLifecycleE2E:
         if len(currently_marine) == 0:
             pytest.skip("No fish currently in ocean at end of run")
         weights = ts.weight[currently_marine]
-        lengths = ts.length[currently_marine]
+        ts.length[currently_marine]
         # Healthy weight for each fish by its own species weight_A/B is
         # unknown here — use the fact that condition factor (W/L^3) should
         # span a non-trivial range if growth is active.

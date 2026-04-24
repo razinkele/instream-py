@@ -560,9 +560,8 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
     best_cells = np.full(trout_state.alive.shape[0], -1, dtype=np.int32)
     best_activities = np.zeros(trout_state.alive.shape[0], dtype=np.int32)
-    intake_amounts = np.zeros(trout_state.alive.shape[0], dtype=np.float64)
+    np.zeros(trout_state.alive.shape[0], dtype=np.float64)
 
-    activities = ["drift", "search", "hide"]
 
     # === PRE-EXTRACT species param arrays to locals ===
     _step_length = params["step_length"]
