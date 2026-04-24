@@ -5,6 +5,86 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.0] — 2026-04-24
+
+### Added — real-geography physical domains for the 4 WGBAST rivers
+
+Replaces the Nemunas-template-copy fixtures with shapefiles that sit at
+real lat/lon locations for each river. Each river is now a 4-reach linear
+topology (`Mouth` → `Lower` → `Middle` → `Upper`) along a curated polyline
+connecting the real river mouth to a source waypoint.
+
+| River | Latitude | Cell size | Cells | Length |
+|---|---|---|---|---|
+| Tornionjoki | 65.85°N | 150 m | ~4000 | ~213 km |
+| Simojoki | 65.62°N | 80 m | 3543 | ~213 km |
+| Byskealven | 64.94°N | 80 m | 3944 | ~260 km |
+| Morrumsan | 56.17°N | 60 m | 3362 | ~58 km |
+
+### New scripts
+
+- **`scripts/_generate_wgbast_physical_domains.py`**: builds hex-cell shapefiles
+  from curated per-river waypoints via `app/modules/create_model_grid.generate_cells`.
+  Idempotent. Re-run to regenerate.
+- **`scripts/_wire_wgbast_physical_configs.py`**: rewrites each config's
+  `reaches:` section to match the new shapefile (4 freshwater reaches +
+  existing marine zones). Also copies per-reach hydraulic CSVs
+  (TimeSeriesInputs/Depths/Vels) and expands the per-cell depth/velocity
+  tables to match new cell counts.
+
+### Breaking
+
+- **`configs/example_{tornionjoki,simojoki,byskealven,morrumsan}.yaml`**:
+  reach names changed from Nemunas-basin (Nemunas/Atmata/Minija/Sysa/Skirvyte/
+  Leite/Gilija) to Mouth/Lower/Middle/Upper. Downstream tests that
+  hardcoded the old reach names will break; `test_multi_river_baltic.py`
+  only reads outmigrant totals and `smolt_production_by_reach_*.csv` so
+  it's unaffected.
+- **`tests/fixtures/example_{river}/Shapefile/BalticExample.{shp,dbf,shx,prj,cpg}`**:
+  removed. Replaced by `{RiverStem}Example.shp` (TornionjokiExample.shp, etc.).
+
+### Hydrology
+
+- Per-reach hydrological parameters (drift_conc, search_prod, shelter_speed_frac,
+  etc.) inherit from Nemunas-basin prototypes via the mapping: Mouth←Nemunas
+  (broad slow), Lower←Atmata (lower-tributary), Middle←Minija (mid-basin),
+  Upper←Sysa (upper, smaller). This preserves published channel-mean
+  hydraulics while the shapefile now reflects real geography.
+- Per-cell Depths/Vels CSVs now have N rows matching each reach's cell
+  count, with the prototype's per-flow depth/velocity profile replicated
+  to every cell. Coarser than true bathymetry (real per-cell variation
+  requires national hydrology agency data — deferred) but matches
+  scaffolded-synthetic convention.
+- Per-reach TimeSeriesInputs.csv (flow + temperature + turbidity)
+  preserves the `_scaffold_wgbast_rivers.py` temperature_offset and
+  mean_flow_multiplier applied earlier.
+
+### PSPC allocations (smolts/year, WGBAST assessment totals)
+
+| River | Total | Mouth | Lower | Middle | Upper |
+|---|---|---|---|---|---|
+| Tornionjoki | 2,200,000 | 0 | 660,000 | 990,000 | 550,000 |
+| Simojoki | 65,000 | 0 | 19,500 | 29,250 | 16,250 |
+| Byskealven | 30,000 | 0 | 9,000 | 13,500 | 7,500 |
+| Morrumsan | 90,000 | 0 | 27,000 | 40,500 | 22,500 |
+
+### Verified
+
+- `tests/test_multi_river_baltic.py::test_fixture_loads_and_runs_3_days`
+  passes all 4 parametrizations (~28s per river × 4 = 113s total).
+- Shapefiles written in WGS84 (EPSG:4326) matching the spatial loader contract.
+- Test_latitudinal_smolt_age_gradient still xfails Tornionjoki modal_age=4
+  expectation (separate juvenile-calibration v0.45+ item — not affected
+  by geography change since the initial-population fish smolt immediately).
+
+### Still open (v0.45+)
+
+- Real bathymetry (EMODnet / national hydrology agencies) — per-cell
+  depth/velocity currently replicates a single profile per reach.
+- Real waterway polylines from OSM Overpass (current polylines are
+  hand-curated 5-waypoint approximations).
+- Tornionjoki juvenile-growth calibration to achieve modal_age=4 smolts.
+
 ## [0.44.3] — 2026-04-24
 
 ### Fixed — age_years unit bug in outmigrants.csv (closes 3 of 4 Baltic xfails)
