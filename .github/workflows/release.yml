@@ -8,6 +8,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # pypa/gh-action-pypi-publish@v1 needs id-token:write to either use
+    # OIDC trusted publishing OR read the ACTIONS_ID_TOKEN env var that
+    # its own pre-flight check requires. Without this permission, v0.44.1
+    # and v0.44.2 PyPI runs failed with "OIDC token retrieval failed"
+    # even though PYPI_API_TOKEN was set.
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

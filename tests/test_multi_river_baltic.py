@@ -57,26 +57,30 @@ def test_fixture_loads_and_runs_3_days(config_path, fixture_dir, tmp_path):
     )
 
 
+_TORNIONJOKI_XFAIL = pytest.mark.xfail(
+    reason=(
+        "Modal smolt age is 2 (age of initial-population fish that outmigrate "
+        "immediately at their seeded 12-20 cm sizes). Expected 4 requires "
+        "natal FRY to grow 4 years in-river before outmigrating — but "
+        "juvenile growth/mortality calibration on example_tornionjoki does "
+        "not currently sustain cohorts that long. Real calibration work; "
+        "the other 3 Baltic rivers (Simojoki, Byskealven, Morrumsan) pass "
+        "after the v0.44.3 age_years unit fix. Tracked as a v0.45 item."
+    ),
+    strict=False,
+)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("config_path,fixture_dir,expected_modal_age", [
-    ("configs/example_tornionjoki.yaml", "example_tornionjoki", 4),
+    pytest.param(
+        "configs/example_tornionjoki.yaml", "example_tornionjoki", 4,
+        marks=_TORNIONJOKI_XFAIL,
+    ),
     ("configs/example_simojoki.yaml", "example_simojoki", 3),
     ("configs/example_byskealven.yaml", "example_byskealven", 2),
     ("configs/example_morrumsan.yaml", "example_morrumsan", 2),
 ])
-@pytest.mark.xfail(
-    reason=(
-        "v0.43.16: sprint-exposed. All 4 rivers now report modal_age=0 "
-        "instead of expected 2-4. Phase 2 (resp_ref_temp=15 default) + "
-        "Phase 7 (allow_unknown_species_remap for Baltic fixture) + Phase 9 "
-        "(superimposition unit fix restoring real overlap loss from the "
-        "silent ≈0 bug that had been active since v0.43.6) shifted the "
-        "juvenile growth/mortality balance. The WGBAST latitudinal-gradient "
-        "assertion needs re-calibration against the corrected model. "
-        "Tracked as a dedicated v0.44 item."
-    ),
-    strict=False,
-)
 def test_latitudinal_smolt_age_gradient(
     config_path, fixture_dir, expected_modal_age, tmp_path
 ):

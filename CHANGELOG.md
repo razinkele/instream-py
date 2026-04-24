@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.3] — 2026-04-24
+
+### Fixed — age_years unit bug in outmigrants.csv (closes 3 of 4 Baltic xfails)
+
+- **`src/salmopy/modules/migration.py`**: `build_outmigrant_record` was computing `age_years = float(trout_state.age) / 365.25`, but `trout_state.age` is tracked in YEARS (incremented only on Jan 1 in `model_day_boundary._increment_age_if_new_year`), not days. The division made every outmigrant report age_years ≈ 0, breaking `test_latitudinal_smolt_age_gradient` across all 4 Baltic rivers (2026-04-23 v0.43.16 xfail reason: "All 4 rivers now report modal_age=0 instead of expected 2-4").
+- Fix removes the division. `scripts/_probe_v045_smolt_age.py` confirms tornionjoki now reports 85 smolts at age=2 (was 0.0055). Byskealven, Morrumsan, and Simojoki all satisfy the `abs(modal_age - expected) <= 1` tolerance now; Tornionjoki remains xfail'd (expects 4, gets 2 — needs juvenile-growth-calibration work since 4-year in-river growth requires natal FRY to survive + grow, which the current calibration doesn't sustain).
+
+### Changed
+
+- **`tests/test_multi_river_baltic.py`**: `@pytest.mark.xfail` moved from the whole parametrize to only the Tornionjoki case via `pytest.param(..., marks=_TORNIONJOKI_XFAIL)`. The 3 rivers now in-band become real regression guards; Tornionjoki stays visible as an open calibration item.
+
+### Added
+
+- **`scripts/_probe_v045_smolt_age.py`**: `--river`-parameterized diagnostic for smolt-age distributions from Baltic-river simulations. Kept for future calibration investigations.
+
+### CI
+
+- **`.github/workflows/release.yml`**: added `permissions: id-token: write` to the PyPI-publish job. The `pypa/gh-action-pypi-publish@v1` action performs an OIDC pre-flight check that needs this permission; without it, v0.44.1 and v0.44.2 PyPI publish runs failed with "OIDC token retrieval failed" despite `PYPI_API_TOKEN` being set correctly.
+
 ## [0.44.2] — 2026-04-24
 
 ### Fixed — xfail'd test restored (1 of 2 v0.45 calibration items)

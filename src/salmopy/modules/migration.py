@@ -59,7 +59,12 @@ def _build_outmigrant_record(trout_state, fish_idx, current_reach,
         "reach_idx": int(current_reach),
         "natal_reach_idx": natal_idx,
         "natal_reach_name": natal_name,
-        "age_years": float(trout_state.age[fish_idx]) / 365.25,
+        # trout_state.age is tracked in YEARS (incremented on Jan 1, see
+        # model_day_boundary._increment_age_if_new_year). No conversion
+        # needed. Previously divided by 365.25, making every outmigrant
+        # report age_years ≈ 0, which broke
+        # test_latitudinal_smolt_age_gradient across all 4 Baltic rivers.
+        "age_years": float(trout_state.age[fish_idx]),
         "length_category": length_category,
         "length": fish_length,
         "initial_length": float(trout_state.initial_length[fish_idx]),
