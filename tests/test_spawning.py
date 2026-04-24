@@ -295,7 +295,7 @@ def test_redd_emergence_assigns_random_sex():
     assert females > 0, "No female fry"
     # Verify clean state initialization (superind_max_rep=1 makes each slot one fish)
     assert np.all(ts.superind_rep[alive] == 1)
-    assert np.all(ts.spawned_this_season[alive] == False)
+    assert not np.any(ts.spawned_this_season[alive])
     assert np.all(ts.growth_memory[alive] == 0.0)
 
 

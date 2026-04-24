@@ -680,8 +680,8 @@ class TestGrow:
         from salmopy.modules.growth import length_for_weight
 
         w = 0.0041 * 10.0**3.49
-        l = length_for_weight(w, 0.0041, 3.49)
-        np.testing.assert_allclose(l, 10.0, rtol=1e-10)
+        length = length_for_weight(w, 0.0041, 3.49)
+        np.testing.assert_allclose(length, 10.0, rtol=1e-10)
 
 
 class TestSuperindividual:

@@ -8,7 +8,6 @@ the same smolt year, runs marine_survival, and asserts the adult hazard
 is governed by the background hazard, not the post-smolt forced value.
 """
 import numpy as np
-import pytest
 
 
 def test_adult_with_same_smolt_year_does_not_get_post_smolt_hazard(monkeypatch):

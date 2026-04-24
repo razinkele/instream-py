@@ -32,13 +32,13 @@ def _logistic_hazard(
     Hazard rises from ~0.1 * max_daily at ``L1`` to ~0.9 * max_daily at ``L9``.
     Above ``L9`` it saturates at ``max_daily``; below ``L1`` it decays toward 0.
     """
-    l = np.asarray(length, dtype=np.float64)
+    length_arr = np.asarray(length, dtype=np.float64)
     width = max(L9 - L1, 1e-6)
     # Centre of the logistic is midway between L1 and L9
     midpoint = 0.5 * (L1 + L9)
     # slope chosen so that f(L1)=0.1, f(L9)=0.9  ->  logit(0.1)=-2.197
     k = 2.0 * 2.197 / width
-    return max_daily / (1.0 + np.exp(-k * (l - midpoint)))
+    return max_daily / (1.0 + np.exp(-k * (length_arr - midpoint)))
 
 
 _SEAL_FORCING_CACHE: "dict" = {}

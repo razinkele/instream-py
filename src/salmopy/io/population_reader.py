@@ -1,8 +1,13 @@
 """Read initial trout population CSV and build TroutState."""
+from __future__ import annotations
+
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from salmopy.state.trout_state import TroutState
 
 
 def read_initial_populations(path: Path) -> List[Dict[str, Any]]:
@@ -50,7 +55,7 @@ def build_initial_trout_state(
     weight_B: float,
     species_index: int,
     seed: int,
-) -> "TroutState":
+) -> TroutState:
     """Build a TroutState from population specs.
 
     Parameters

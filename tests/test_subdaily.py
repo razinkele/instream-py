@@ -148,7 +148,7 @@ class TestDailyBackwardCompatibility:
         for _ in range(10):
             model.step()
             # Every step should be a day boundary in daily mode
-            assert model.time_manager.is_day_boundary == True
+            assert model.time_manager.is_day_boundary
         alive = model.trout_state.num_alive()
         # Arc D (v0.31.0, 2026-04-19): continuous FRY->PARR promotion +
         # scale-consistent migration comparator mean some emergence-length

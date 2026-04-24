@@ -10,7 +10,6 @@ silently disabled for every config with spawn_defense_area_m > 0.
 import math
 from pathlib import Path
 
-import numpy as np
 
 from salmopy.state.redd_state import ReddState
 from salmopy.modules.spawning import apply_superimposition

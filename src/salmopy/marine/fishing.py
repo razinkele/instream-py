@@ -43,14 +43,14 @@ class HarvestRecord:
 
 def logistic_selectivity(length: np.ndarray, L50: float, slope: float) -> np.ndarray:
     """Logistic knife-edge retention probability (0..1)."""
-    l = np.asarray(length, dtype=np.float64)
-    return 1.0 / (1.0 + np.exp(-slope * (l - L50) / 10.0))
+    length_arr = np.asarray(length, dtype=np.float64)
+    return 1.0 / (1.0 + np.exp(-slope * (length_arr - L50) / 10.0))
 
 
 def normal_selectivity(length: np.ndarray, mean: float, sd: float) -> np.ndarray:
     """Gaussian bell-curve retention probability (0..1 at the mode)."""
-    l = np.asarray(length, dtype=np.float64)
-    return np.exp(-0.5 * ((l - mean) / max(sd, 1e-6)) ** 2)
+    length_arr = np.asarray(length, dtype=np.float64)
+    return np.exp(-0.5 * ((length_arr - mean) / max(sd, 1e-6)) ** 2)
 
 
 def gear_selectivity(length: np.ndarray, gear) -> np.ndarray:

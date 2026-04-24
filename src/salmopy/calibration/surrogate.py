@@ -18,11 +18,14 @@ Workflow:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence
 
 import numpy as np
 
 from salmopy.calibration.problem import FreeParameter
+
+if TYPE_CHECKING:
+    from sklearn.gaussian_process import GaussianProcessRegressor
 
 
 @dataclass
@@ -71,7 +74,7 @@ class SurrogateCalibrator:
         self.params = list(params)
         self.n_samples = int(n_samples)
         self.seed = int(seed)
-        self._gps: List["GaussianProcessRegressor"] = []  # type: ignore[name-defined]
+        self._gps: List[GaussianProcessRegressor] = []
 
     def generate_samples(self) -> np.ndarray:
         """Latin Hypercube Sample in **optimizer space** (log10 for LOG params).

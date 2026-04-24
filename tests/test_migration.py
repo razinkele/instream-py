@@ -44,8 +44,8 @@ class TestMigrationFitness:
     def test_bounded(self):
         from salmopy.modules.migration import migration_fitness
 
-        for l in [1, 3, 5, 10, 20]:
-            f = migration_fitness(l, L1=4.0, L9=10.0)
+        for length in [1, 3, 5, 10, 20]:
+            f = migration_fitness(length, L1=4.0, L9=10.0)
             assert 0 <= f <= 1
 
 

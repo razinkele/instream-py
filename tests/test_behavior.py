@@ -1204,9 +1204,12 @@ class TestBatchVsScalarHabitatSelection:
         cs.dist_escape[:] = 10.0
         ni = np.full((5, 4), -1, dtype=np.int32)
         ni[0, 0] = 1
-        ni[1, 0] = 0; ni[1, 1] = 2
-        ni[2, 0] = 1; ni[2, 1] = 3
-        ni[3, 0] = 2; ni[3, 1] = 4
+        ni[1, 0] = 0
+        ni[1, 1] = 2
+        ni[2, 0] = 1
+        ni[2, 1] = 3
+        ni[3, 0] = 2
+        ni[3, 1] = 4
         ni[4, 0] = 3
         space = FEMSpace(cs, ni)
 

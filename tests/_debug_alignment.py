@@ -125,19 +125,19 @@ with sync_playwright() as p:
     print("Bounds:", result.get("map_bounds"))
 
     print("\n=== LAYERS ===")
-    for l in result.get("layers", []):
-        print(f"\nLayer: {l.get('type')} id={l.get('id')}")
-        print(f"  coordinateSystem: {l.get('coordinateSystem')}")
-        if "num_features" in l:
-            print(f"  features: {l['num_features']}")
-            print(f"  geom_type: {l.get('geom_type')}")
-            print(f"  first_coord: {l.get('first_coord')}")
-            print(f"  coord_range: {l.get('coord_range')}")
-        if "num_points" in l:
-            print(f"  points: {l['num_points']}")
-            print(f"  first_point: {l.get('first_point')}")
-            print(f"  point_bounds: {l.get('point_bounds')}")
-            print(f"  getPosition: {l.get('getPosition')}")
+    for layer in result.get("layers", []):
+        print(f"\nLayer: {layer.get('type')} id={layer.get('id')}")
+        print(f"  coordinateSystem: {layer.get('coordinateSystem')}")
+        if "num_features" in layer:
+            print(f"  features: {layer['num_features']}")
+            print(f"  geom_type: {layer.get('geom_type')}")
+            print(f"  first_coord: {layer.get('first_coord')}")
+            print(f"  coord_range: {layer.get('coord_range')}")
+        if "num_points" in layer:
+            print(f"  points: {layer['num_points']}")
+            print(f"  first_point: {layer.get('first_point')}")
+            print(f"  point_bounds: {layer.get('point_bounds')}")
+            print(f"  getPosition: {layer.get('getPosition')}")
 
     if "error" in result:
         print("\nERROR:", result["error"])
