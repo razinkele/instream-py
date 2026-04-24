@@ -97,9 +97,9 @@ def test_batch_kernel_runs_a_full_day_without_error():
         "across many similarly-good cells. Batch retains its v0.29.0 "
         "~25% speedup at production scale. This xfail is retained as a "
         "documented regression guard — it will surface if anyone changes "
-        "example_a's cell-score topology. Test on example_baltic would "
-        "PASS with <5% tolerance; adding that variant is a TODO but not "
-        "blocking."
+        "example_a's cell-score topology. The production-scale sibling "
+        "test_batch_and_scalar_populations_converge_at_production_scale "
+        "(example_baltic) PASSES with <5% tolerance."
     ),
 )
 def test_batch_and_scalar_paths_agree_numerically():
@@ -148,4 +148,91 @@ def test_batch_and_scalar_paths_agree_numerically():
     np.testing.assert_allclose(
         g_b, g_s, rtol=1e-9, atol=1e-12,
         err_msg="batch vs scalar produced different last_growth_rate",
+    )
+
+
+def test_batch_and_scalar_populations_converge_at_production_scale():
+    """Production-scale positive-parity counterpart to the strict xfail above.
+
+    The per-fish exact-match test fails on example_a because the batch path's
+    Pass-1 parallel evaluation funnels all fish to the single dominant cell
+    (few good cells → peaked fitness landscape), while the scalar path's
+    rolling depletion disperses them. This is a fixture-scale artifact.
+
+    At production scale (example_baltic: ~3800 fish, 227 good cells, broad
+    fitness landscape) both paths converge on population-level metrics.
+    The 2026-04-24 probe (scripts/_probe_v044_batch_scalar_bias.py) measured
+    <1% divergence on n_alive, length_mean, and cell_entropy after 30 days.
+
+    This test runs the same 30-day comparison and asserts the divergence
+    stays within 5% on aggregate metrics. If the batch kernel's semantics
+    drift into something that breaks Baltic-scale convergence, this test
+    fails loudly — which is what we actually want to prevent.
+    """
+    from salmopy.model import SalmopyModel
+    from salmopy.modules import behavior
+
+    if not behavior._HAS_NUMBA_BATCH:
+        pytest.skip("numba batch kernel not available")
+
+    baltic_cfg = CONFIGS_DIR / "example_baltic.yaml"
+    baltic_fix = FIXTURES_DIR / "example_baltic"
+    if not baltic_cfg.exists() or not baltic_fix.exists():
+        pytest.skip("example_baltic fixture not available")
+
+    def run(force_scalar: bool):
+        with pytest.MonkeyPatch.context() as mp:
+            if force_scalar:
+                mp.setattr(behavior, "_HAS_NUMBA_BATCH", False)
+            model = SalmopyModel(
+                config_path=str(baltic_cfg),
+                data_dir=str(baltic_fix),
+            )
+            model.rng = np.random.default_rng(42)
+            for _ in range(30):
+                model.step()
+            alive = model.trout_state.alive
+            lengths = model.trout_state.length[alive]
+            cells = model.trout_state.cell_idx[alive]
+            unique, counts = np.unique(cells, return_counts=True)
+            probs = counts / counts.sum()
+            entropy = float(-(probs * np.log2(probs + 1e-30)).sum())
+            return {
+                "n_alive": int(alive.sum()),
+                "length_mean": float(lengths.mean()) if alive.sum() > 0 else 0.0,
+                "cell_entropy": entropy,
+                "n_unique_cells": int(len(unique)),
+            }
+
+    batch = run(force_scalar=False)
+    scalar = run(force_scalar=True)
+
+    def rel_diff(a, b):
+        if a == 0 and b == 0:
+            return 0.0
+        return abs(a - b) / max(abs(a), abs(b))
+
+    # Tolerances based on the 2026-04-24 Baltic probe actuals:
+    # n_alive 0.1%, length_mean 0.6%, cell_entropy 0.8%, n_unique_cells 4.4%.
+    # 5% on the tight three, 10% on n_unique_cells (the noisiest).
+    d_alive = rel_diff(batch["n_alive"], scalar["n_alive"])
+    d_length = rel_diff(batch["length_mean"], scalar["length_mean"])
+    d_entropy = rel_diff(batch["cell_entropy"], scalar["cell_entropy"])
+    d_cells = rel_diff(batch["n_unique_cells"], scalar["n_unique_cells"])
+
+    assert d_alive < 0.05, (
+        f"n_alive diverges > 5%: batch={batch['n_alive']}, "
+        f"scalar={scalar['n_alive']}, rel_diff={d_alive*100:.1f}%"
+    )
+    assert d_length < 0.05, (
+        f"length_mean diverges > 5%: batch={batch['length_mean']:.3f}, "
+        f"scalar={scalar['length_mean']:.3f}, rel_diff={d_length*100:.1f}%"
+    )
+    assert d_entropy < 0.05, (
+        f"cell_entropy diverges > 5%: batch={batch['cell_entropy']:.3f}, "
+        f"scalar={scalar['cell_entropy']:.3f}, rel_diff={d_entropy*100:.1f}%"
+    )
+    assert d_cells < 0.10, (
+        f"n_unique_cells diverges > 10%: batch={batch['n_unique_cells']}, "
+        f"scalar={scalar['n_unique_cells']}, rel_diff={d_cells*100:.1f}%"
     )
