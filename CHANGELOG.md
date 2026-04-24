@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.0] — 2026-04-24
+
+### Lint hygiene sweep — CI strict mode restored
+
+Closes the "advisory-mode" state introduced at v0.43.13 and tracked in the CI
+workflow comment. All 87 ruff findings cleared across 7 rule categories:
+
+- **F821** (2): forward-reference type annotations on `sklearn.gaussian_process.GaussianProcessRegressor` (in `calibration/surrogate.py`) and `TroutState` (in `io/population_reader.py`) now use proper `if TYPE_CHECKING:` guards.
+- **E741** (6): ambiguous `l` variable renamed to `length_arr` / `length` / `layer` in `marine/fishing.py`, `marine/survival.py`, `test_growth.py`, `test_migration.py`, `_debug_alignment.py`.
+- **E712** (2): `== False` / `== True` replaced with `not np.any(...)` and bare truth checks.
+- **E702** (3): semicolon-chained statements in `test_behavior.py` split onto separate lines.
+- **F841** (23): dead-assignment remnants from prior refactors removed (notable: `intake_amounts` and `activities` in `behavior.py` were allocated but never consumed).
+- **F401** (29): package re-exports made explicit via `__all__` declarations in `state/__init__.py`, `utils/__init__.py`, and consolidated `calibration/__init__.py` list.
+- **E402** (20): legitimate late-import patterns (`sys.path.insert` + app imports, `jax.config.update` + `jax.numpy` ordering) got `# noqa: E402` with explanatory comments; the rest were reordered to standard top-of-file position.
+
+### Changed
+
+- **`.github/workflows/ci.yml`**: ruff step no longer passes `--exit-zero`; lint violations now fail CI.
+
+### Notes
+
+- No production-behavior changes. Pure code-style + CI-policy work.
+- v0.44.0 minor bump is driven by the CI-policy change (strict enforcement restored); nothing else shifts.
+- The other original v0.44 item — re-calibrate the 2 xfail'd test families (`test_fish_size_correlates_with_depth`, `test_latitudinal_smolt_age_gradient` × 4 Baltic rivers) — remains deferred. Needs simulation-domain judgment and longer session time than hygiene sweeps.
+- Known intermittent flake in `test_expected_fitness_dedup.py::test_expected_fitness_output_in_unit_interval` (Hypothesis property test). Full-suite runs occasionally surface a counter-example that fails the `[0, 1]` range assertion, but isolated re-runs against the same code pass cleanly. Predates this release; worth derandomizing or adding explicit `@example` cases in a future patch.
+
 ## [0.43.17] — 2026-04-24
 
 ### Test-quality upgrades (closes 5-iteration retrospective review)

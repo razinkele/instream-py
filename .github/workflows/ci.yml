@@ -20,14 +20,14 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      - name: Run ruff check (advisory)
-        # Advisory mode: exits 0 regardless of findings. The v0.42-v0.43.12
-        # sprint closed 56 deep-review findings; pre-existing style smells
-        # (F821 TYPE_CHECKING imports, E741 ambiguous `l`, E702 semicolons,
-        # E712 == True/False, E741, F401/F841/E402 re-export patterns) are
-        # tracked for a future dedicated hygiene pass. Reporting visible in
-        # CI logs for those who want to pick them off.
-        run: ruff check src/ tests/ --select E,F,W --ignore E501 --exit-zero
+      - name: Run ruff check (strict)
+        # v0.44.0: strict mode restored after the dedicated hygiene pass
+        # closed all 87 style smells that had been tracked as "advisory"
+        # since v0.43.13. Categories cleared: F821 (forward refs via
+        # TYPE_CHECKING), E741 (ambiguous `l`), E702 (semicolons), E712
+        # (== True/False), F841 (unused vars), F401 (re-exports via
+        # __all__), E402 (legitimate late imports with # noqa).
+        run: ruff check src/ tests/ --select E,F,W --ignore E501
 
   test:
     runs-on: ubuntu-latest
