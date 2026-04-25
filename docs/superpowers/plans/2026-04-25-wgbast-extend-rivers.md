@@ -105,10 +105,12 @@ The bbox `(65.5, 22.8, 68.6, 25.6)` already covers the Muonio basin — no bbox 
 - [ ] **Step 3: Refresh the Tornionjoki cache (line ways + polygons)**
 
 ```bash
-micromamba run -n shiny python scripts/_fetch_wgbast_osm_polylines.py --refresh
+timeout 600 micromamba run -n shiny python scripts/_fetch_wgbast_osm_polylines.py --refresh
 ```
 
-The `--refresh` flag forces a re-fetch even though caches exist. Expected runtime: 30–90 s (Overpass-side latency dominates).
+The `--refresh` flag forces a re-fetch even though caches exist. Expected runtime: 30–90 s on the happy path (Overpass-side latency dominates). The hard `timeout 600` (10 min) bound catches degraded Overpass that wasn't surfaced by the pre-flight liveness probe; the script's internal `requests.post` timeout is 200 s × 3 endpoint fallbacks × 8 queries = ~80 min worst case without an outer bound.
+
+If wall-clock exceeds ~3 min on any single river (the script logs each river start), Overpass is degraded — abort with Ctrl-C and **defer PR-1** (same disposition as the pre-flight curl 503 case). Do NOT partially commit `tests/fixtures/_osm_cache/` files: the script writes per-river, so a kill mid-run leaves caches inconsistent with the regex change. Either the full refresh succeeds or you run `git checkout -- tests/fixtures/_osm_cache/` to discard partial writes and retry later.
 
 After completion, sanity-check:
 ```bash
