@@ -21,11 +21,23 @@ WGBAST PSPC totals (smolts/year):
 """
 from __future__ import annotations
 
+import logging
 import shutil
 import sys
 from pathlib import Path
 
 import yaml
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -70,29 +82,86 @@ JUNCTIONS = {
     "Upper":  (4, 5),
 }
 
+# v0.46+ spec §Components.5b: per-river BalticCoast tuning.
+# Bothnian Bay (3 northern rivers): historically lower seal density →
+#   fish_pred_min=0.95 (~5%/day mortality). The Klaipėda BalticCoast value
+#   of 0.65 (~35%/day) would eliminate all smolts in days.
+# Hanöbukten (Mörrumsån): intermediate seal density → fish_pred_min=0.90.
+BALTICCOAST_OVERRIDES = {
+    "example_tornionjoki": {"fish_pred_min": 0.95},
+    "example_simojoki":    {"fish_pred_min": 0.95},
+    "example_byskealven":  {"fish_pred_min": 0.95},
+    "example_morrumsan":   {"fish_pred_min": 0.90},
+}
+
+# Reaches inherited from the example_baltic Lithuanian template that
+# don't apply to the WGBAST rivers; remove them from each WGBAST yaml.
+ORPHAN_REACHES = ("Skirvyte", "Leite", "Gilija", "CuronianLagoon")
+
 
 def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
-    with open(cfg_path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
 
     # 1. Point spatial.mesh_file at the new shapefile
     cfg["spatial"]["mesh_file"] = f"Shapefile/{stem}.shp"
 
     old_reaches = cfg["reaches"]
 
+    # Drop orphan reaches (Lithuanian template leftovers). Surface any
+    # non-zero pspc_smolts_per_year being dropped so the engineer can
+    # update the CHANGELOG.
+    short_name = cfg_path.stem
+    for orphan in ORPHAN_REACHES:
+        if orphan in cfg.get("reaches", {}):
+            pspc = cfg["reaches"][orphan].get("pspc_smolts_per_year", 0) or 0
+            if pspc:
+                log.warning(
+                    "[%s] dropping orphan reach %s with pspc_smolts_per_year=%d "
+                    "-- update CHANGELOG ### Breaking section",
+                    short_name, orphan, pspc,
+                )
+            del cfg["reaches"][orphan]
+            log.info("[%s] dropped orphan reach: %s", short_name, orphan)
+
+    # Apply per-river BalticCoast overrides
+    overrides = BALTICCOAST_OVERRIDES.get(short_name, {})
+    if overrides and "BalticCoast" in cfg.get("reaches", {}):
+        for k, v in overrides.items():
+            cfg["reaches"]["BalticCoast"][k] = v
+        log.info("[%s] BalticCoast overrides applied: %s", short_name, overrides)
+
+    # Verify BalticCoast junction integers connect to Upper.downstream.
+    # Pre-existing template-inherited reaches may have stale junctions
+    # (e.g. Klaipeda topology). After orphan reaches are dropped, the
+    # chain should be Mouth(1->2) -> Lower(2->3) -> Middle(3->4) ->
+    # Upper(4->5) -> BalticCoast(5->6).
+    upper = cfg["reaches"].get("Upper", {})
+    bc = cfg["reaches"].get("BalticCoast", {})
+    if upper and bc:
+        upper_dn = upper.get("downstream_junction")
+        bc_up = bc.get("upstream_junction")
+        if upper_dn != bc_up:
+            log.warning(
+                "[%s] BalticCoast.upstream_junction=%s != Upper.downstream_junction=%s; "
+                "fixing to match",
+                short_name, bc_up, upper_dn,
+            )
+            cfg["reaches"]["BalticCoast"]["upstream_junction"] = upper_dn
+            if cfg["reaches"]["BalticCoast"].get("downstream_junction") in (None, upper_dn):
+                cfg["reaches"]["BalticCoast"]["downstream_junction"] = upper_dn + 1
+
     # Idempotency: if already rewritten (has Mouth/Lower/Middle/Upper and no
     # prototype Nemunas-basin names), skip the reach rewrite. The shapefile
-    # path and CSV-copy steps still run.
+    # path, orphan-drop, and override steps already ran above.
     already_rewritten = (
         all(n in old_reaches for n in REACH_PROTOTYPE)
         and "Nemunas" not in old_reaches
     )
     if already_rewritten:
-        # Just make sure mesh_file is correct, which we did above, then
-        # write back and return.
+        # Write back with mesh_file + orphan drops + BalticCoast overrides applied.
         with open(cfg_path, "w", encoding="utf-8") as f:
             f.write(
-                f"# {stem.replace('Example', '')} — physical-geography domain (v0.45).\n"
+                f"# {stem.replace('Example', '')} -- physical-geography domain (v0.45).\n"
                 "# 4 reaches (Mouth/Lower/Middle/Upper) along the real river\n"
                 "# centerline. Shapefile generated via\n"
                 "# scripts/_generate_wgbast_physical_domains.py.\n"
@@ -135,8 +204,9 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
 
         new_reaches[new_name] = proto_entry
 
-    # Preserve marine-zone reaches (CuronianLagoon, BalticCoast etc.) unchanged.
-    for name, entry in old_reaches.items():
+    # Preserve marine-zone reaches (CuronianLagoon, BalticCoast etc.) unchanged,
+    # except orphans already removed from cfg["reaches"] above are not present.
+    for name, entry in cfg["reaches"].items():
         if name in REACH_PROTOTYPE.values() or name in REACH_PROTOTYPE:
             continue
         # non-prototype, non-new → likely marine zone. Keep.
@@ -148,7 +218,7 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
     # header line is prepended below to replace the old scaffold preamble).
     with open(cfg_path, "w", encoding="utf-8") as f:
         f.write(
-            f"# {river_name} — physical-geography domain (v0.45).\n"
+            f"# {river_name} -- physical-geography domain (v0.45).\n"
             "# 4 reaches (Mouth/Lower/Middle/Upper) along the real river\n"
             "# centerline. Shapefile generated via\n"
             "# scripts/_generate_wgbast_physical_domains.py.\n"
