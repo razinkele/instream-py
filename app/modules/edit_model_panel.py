@@ -157,6 +157,23 @@ def edit_model_ui():
                 ui.input_action_button(
                     "merge_apply", "Apply merge", class_="btn-primary",
                 ),
+                ui.hr(),
+                ui.h5("Split a reach by drawing a line"),
+                ui.input_select("split_target", "Reach to split", choices=[]),
+                ui.input_text(
+                    "split_north_name", "Name for north side",
+                    placeholder="e.g. Upper-N",
+                ),
+                ui.input_text(
+                    "split_south_name", "Name for south side",
+                    placeholder="e.g. Upper-S",
+                ),
+                ui.input_action_button(
+                    "split_start", "Start drawing line", class_="btn-warning",
+                ),
+                ui.input_action_button(
+                    "split_apply", "Apply split", class_="btn-primary",
+                ),
                 ui.output_ui("save_status"),
             ),
             ui.column(
@@ -192,6 +209,9 @@ def edit_model_server(input, output, session):
     # Merge state machine: idle -> pick_a -> pick_b -> ready
     merge_state = reactive.value({"phase": "idle", "reach_a": None})
 
+    # Split state: idle -> drawing
+    split_state = reactive.value({"phase": "idle"})
+
     @reactive.effect
     def _load_on_select():
         short_name = input.fixture()
@@ -213,7 +233,7 @@ def edit_model_server(input, output, session):
         last_save.set(f"loaded {short_name} ({len(cells)} cells)")
 
     @reactive.effect
-    def _populate_rename_dropdown():
+    def _populate_reach_dropdowns():
         s = state()
         if s["cells"] is None:
             return
@@ -221,6 +241,10 @@ def edit_model_server(input, output, session):
         names = sorted(s["cells"][reach_col].unique())
         ui.update_select(
             "rename_old", choices=names,
+            selected=names[0] if names else None,
+        )
+        ui.update_select(
+            "split_target", choices=names,
             selected=names[0] if names else None,
         )
 
@@ -497,3 +521,141 @@ def edit_model_server(input, output, session):
         state.set(new_state)
         merge_state.set({"phase": "idle", "reach_a": None})
         last_save.set(f"✓ merged '{a}' + '{b}' → '{new_name}' and saved")
+
+    # ------------------------------------------------------------------
+    # Split a reach by drawing a line
+    # ------------------------------------------------------------------
+    @reactive.effect
+    @reactive.event(input.split_start)
+    async def _split_start():
+        try:
+            await _widget.enable_draw(
+                session,
+                modes=["draw_line_string"],
+                default_mode="draw_line_string",
+            )
+        except Exception as exc:
+            last_save.set(f"❌ enable_draw failed: {exc}")
+            return
+        split_state.set({"phase": "drawing"})
+        last_save.set(
+            "split: draw a single line across the target reach, then click Apply"
+        )
+
+    @reactive.effect
+    @reactive.event(input.split_apply)
+    async def _split_apply():
+        s = state()
+        target = (input.split_target() or "").strip()
+        north_name = (input.split_north_name() or "").strip()
+        south_name = (input.split_south_name() or "").strip()
+        if not target or not north_name or not south_name:
+            last_save.set("❌ split: pick target reach and both new names")
+            return
+        if north_name == south_name:
+            last_save.set("❌ split: north and south names must differ")
+            return
+        try:
+            await _widget.get_drawn_features(session)
+        except Exception as exc:
+            last_save.set(f"❌ get_drawn_features trigger failed: {exc}")
+            return
+        features_input_name = _widget.drawn_features_input_id
+        try:
+            features = getattr(input, features_input_name)()
+        except Exception:
+            features = None
+        line = None
+        for f in (features or []):
+            try:
+                g = shape(f["geometry"])
+            except Exception:
+                continue
+            if g.geom_type == "LineString":
+                line = g
+                break
+        if line is None:
+            last_save.set(
+                "❌ split: no LineString found in drawn features (did you finish the line?)"
+            )
+            return
+
+        cells = s["cells"].copy()
+        reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
+        target_mask = cells[reach_col] == target
+        if not target_mask.any():
+            last_save.set(f"❌ no cells with reach '{target}'")
+            return
+
+        target_cells = cells[target_mask]
+        sides = []
+        L = line.length
+        for geom in target_cells.geometry:
+            c = geom.centroid
+            nearest_dist = line.project(c)
+            nearest_pt = line.interpolate(nearest_dist)
+            eps = max(L * 1e-6, 1e-9)
+            if nearest_dist + eps <= L:
+                tangent_pt = line.interpolate(nearest_dist + eps)
+                base = nearest_pt
+            else:
+                # End-of-line: step backward, flip frame so cross sign matches.
+                prev_pt = line.interpolate(max(nearest_dist - eps, 0.0))
+                base = prev_pt
+                tangent_pt = nearest_pt
+            dx = tangent_pt.x - base.x
+            dy = tangent_pt.y - base.y
+            cross = (c.x - base.x) * dy - (c.y - base.y) * dx
+            sides.append("north" if cross >= 0 else "south")
+        cells.loc[target_mask, reach_col] = [
+            north_name if sd == "north" else south_name for sd in sides
+        ]
+
+        cfg = dict(s["cfg"])
+        if "reaches" in cfg and target in cfg["reaches"]:
+            base_entry = dict(cfg["reaches"][target])
+            del cfg["reaches"][target]
+            for new_name in (north_name, south_name):
+                entry = dict(base_entry)
+                entry["time_series_input_file"] = f"{new_name}-TimeSeriesInputs.csv"
+                entry["depth_file"] = f"{new_name}-Depths.csv"
+                entry["velocity_file"] = f"{new_name}-Vels.csv"
+                cfg["reaches"][new_name] = entry
+            fixture_dir = s["shp_path"].parent.parent
+            for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
+                src = fixture_dir / f"{target}-{suffix}"
+                if src.exists():
+                    shutil.copy2(src, fixture_dir / f"{north_name}-{suffix}")
+                    src.rename(fixture_dir / f"{south_name}-{suffix}")
+
+        try:
+            cells.to_file(s["shp_path"], driver="ESRI Shapefile")
+            with open(s["cfg_path"], "w", encoding="utf-8") as f:
+                f.write(
+                    f"# {s['short_name']} — split via Edit Model panel.\n"
+                    f"# Reach '{target}' split into '{north_name}' (N) and "
+                    f"'{south_name}' (S).\n#\n"
+                )
+                yaml.safe_dump(cfg, f, sort_keys=False, default_flow_style=False)
+        except Exception as exc:
+            logger.exception("split save failed")
+            last_save.set(f"❌ save failed: {exc}")
+            return
+
+        try:
+            await _widget.delete_drawn_features(session)
+            await _widget.disable_draw(session)
+        except Exception:
+            pass
+
+        new_state = dict(s)
+        new_state["cells"] = cells
+        new_state["cfg"] = cfg
+        state.set(new_state)
+        split_state.set({"phase": "idle"})
+        n_north = sum(1 for sd in sides if sd == "north")
+        n_south = len(sides) - n_north
+        last_save.set(
+            f"✓ split '{target}' into '{north_name}' ({n_north} cells) "
+            f"and '{south_name}' ({n_south} cells)"
+        )
