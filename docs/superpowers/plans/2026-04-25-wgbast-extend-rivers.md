@@ -1920,14 +1920,31 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
 
 - [ ] **Step 3: Run the wire script and capture pspc warnings**
 
+Force UTF-8 encoding for stdout/stderr — on Windows, Python's logging module defaults to cp1252 and crashes mid-run on the `Mörrumsån`/`Klaipėda`-style non-ASCII strings that may appear in log records. A truncated log → empty grep → silent data loss for the CHANGELOG enumeration:
+
 ```bash
-micromamba run -n shiny python scripts/_wire_wgbast_physical_configs.py 2>&1 | tee /tmp/wire_log.txt
-grep -i "pspc_smolts_per_year" /tmp/wire_log.txt
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_wire_wgbast_physical_configs.py 2>&1 | tee /tmp/wire_log.txt
+# Specifically match the warning line emitted when a non-zero pspc is dropped.
+# (Looser grep would also match log-record format strings if the script ever
+# echoes its source.)
+grep -E "dropping orphan reach.*pspc_smolts_per_year=[1-9]" /tmp/wire_log.txt
 ```
 
 If any line appears in the grep, **update the CHANGELOG `### Breaking` enumeration in Task 2.F.1 BEFORE committing** to list every dropped non-zero pspc value (river, reach, integer count). Loop-2 review found `Skirvyte.pspc_smolts_per_year=13000` in `example_byskealven.yaml`; the other 3 yamls may have additional values surfaced only by this run.
 
 If grep is empty, the only known value is `Skirvyte=13000` — leave the CHANGELOG as-is.
+
+Also add belt-and-suspenders defaults at the TOP of `_wire_wgbast_physical_configs.py` (alongside the loop-6 `import logging` addition):
+
+```python
+import sys
+# Force UTF-8 stderr/stdout so non-ASCII reach names in log warnings
+# don't crash the script under cp1252 (Windows default).
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+```
 
 - [ ] **Step 4: Commit**
 
@@ -2518,6 +2535,28 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 17 review loops, convergence confirmed
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loop 26 — Unicode encoding crash on Windows
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| MED | 1 | The wire script's `log.warning(...)` records may include non-ASCII reach names (`Mörrumsån`, `Klaipėda`, etc.). Windows Python's logging defaults stderr to cp1252; a UnicodeEncodeError mid-run truncates `/tmp/wire_log.txt`, causing the next grep to falsely return empty and the engineer to skip the CHANGELOG enumeration → silent data loss. | Force UTF-8 via `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` on the command line; add belt-and-suspenders `sys.{stdout,stderr}.reconfigure(encoding="utf-8")` to the wire script top. |
+| LOW | 2 | The grep `pspc_smolts_per_year` was loose — would match any string containing the column name (e.g., script source if echoed). | Tightened to `grep -E "dropping orphan reach.*pspc_smolts_per_year=[1-9]"` (only matches the warning line for non-zero dropped values). |
+
+## Loop 25 — exhaustive stale-numeric-value sweep
+
+Verified all 10 numeric/identifier values introduced or changed across loops 1-24 are now consistent:
+
+- `3000` → `5000` (cell count bound) ✓
+- `1087` → `1126` (test count) ✓
+- `~36` → `39` (new test count) ✓
+- `8 PASS` for test_create_model_river.py → `9 PASS` ✓
+- `2 MLS tests` → `3 MLS tests` ✓
+- `0.46.0` references in Section F are pre-bump source values + baseline comparisons (correct) ✓
+- `:04d` cell-id format → adaptive width ✓
+- `buffer(1e-7)/(1e-5)` adjacency → UTM 5m ✓
+- `unary_union` accessor (deprecated) → `union_all()` (only `shapely.ops.unary_union` function still used, which is correct) ✓
+- `_query_marine_regions` only appears as the function being deleted/replaced ✓
 
 ## Loop 24 — TWO more stale `3000` cell-count references that loop 7 missed
 
