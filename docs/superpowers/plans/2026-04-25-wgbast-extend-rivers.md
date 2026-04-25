@@ -1050,15 +1050,20 @@ def _query_marine_regions(bbox_wgs84):
     ...
 ```
 
-Replace those lines (86–108) with:
+Replace those lines (86–108) with the existing project pattern of try/except-guarded imports (verified at `create_model_panel.py:25-49` — every internal `modules.*` import is wrapped so a single missing module doesn't crash the whole Shiny app):
 
 ```python
-from modules.create_model_marine import query_named_sea_polygon  # noqa: E402
+try:
+    from modules.create_model_marine import query_named_sea_polygon
+except ImportError:  # pragma: no cover — matches existing fallback pattern
+    query_named_sea_polygon = None  # type: ignore[assignment]
 ```
 
 **IMPORTANT**: this is an ABSOLUTE import (`from modules.create_model_marine`), NOT a relative import (`from .create_model_marine`). The Shiny app loads `create_model_panel.py` as a top-level module, not as part of a package — `__package__` is `None`, so a leading-dot import would raise `ImportError: attempted relative import with no known parent package` at startup. This matches the pattern of every other internal import in `create_model_panel.py` (verified at lines 26–65: `from modules.create_model_grid import ...`, `from modules.create_model_osm import ...`, etc.).
 
 Note we do NOT alias as `_query_marine_regions` — the consumer is being rewritten in Step 2 below to consume a GeoDataFrame directly.
+
+The smoke-test in Step 3 below uses source-string substring matching that still matches the guarded form (the literal `from modules.create_model_marine import query_named_sea_polygon` substring is unchanged, just nested in a `try:` block).
 
 **Also remove now-orphaned imports/constants from `create_model_panel.py`:**
 - Line 16: `import requests` — no longer used after Step 2 (handler uses the helper, not `requests` directly).
@@ -1105,6 +1110,14 @@ Replace the body of `_on_fetch_sea` (the lines AFTER `bbox = _get_view_bbox()` t
 
 ```python
 import asyncio
+# Guard against the helper-module import having failed (matches the
+# graceful-degradation pattern of other panel imports at lines 25-49)
+if query_named_sea_polygon is None:
+    _fetch_msg.set(
+        "Marine Regions helper unavailable (create_model_marine module "
+        "failed to import). Sea-fetch disabled."
+    )
+    return
 loop = asyncio.get_running_loop()
 gdf = await loop.run_in_executor(None, query_named_sea_polygon, bbox)
 # query_named_sea_polygon already does the bbox-intersect + centroid-cover
@@ -1437,7 +1450,17 @@ def _load_or_fetch_marineregions(
     if not refresh and cache.exists():
         data = json.loads(cache.read_text(encoding="utf-8"))
         if not data:
-            return None
+            # An empty cache file is never a legitimate state — we only
+            # write the cache when WFS returned a non-empty result.
+            # Surface this as a hard error rather than silently returning
+            # None (which would mask the real cause: the cache was
+            # corrupted, manually emptied, or written by an old buggy
+            # version of this script).
+            raise RuntimeError(
+                f"Cache file {cache} is empty. Delete it and re-run "
+                f"with --refresh-marineregions, or copy a known-good "
+                f"cache from another developer's machine."
+            )
         gdf = gpd.GeoDataFrame.from_features(data, crs="EPSG:4326")
         return gdf[["name", "geometry"]] if "name" in gdf.columns else gdf
 
@@ -1449,9 +1472,16 @@ def _load_or_fetch_marineregions(
     )
     gdf = query_named_sea_polygon(bbox)
     if gdf is None or gdf.empty:
+        # WFS unreachable or empty result — do NOT write an empty cache
+        # file. Future calls will see "no cache" and retry the WFS,
+        # rather than seeing a corrupt empty cache.
         return None
-    # Cache as a list of GeoJSON features
+    # Cache as a list of GeoJSON features (always non-empty here)
     payload = json.loads(gdf.to_json())["features"]
+    if not payload:
+        # Defensive: gdf was non-empty but to_json round-trip yielded
+        # no features. Don't write a misleading empty cache.
+        return gdf
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return gdf
@@ -2427,9 +2457,24 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history — 10 review loops
+# Plan revision history — 12 review loops
 
-TEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loop 7: 13 cleanup items. Loop 8: 2 LOW + first "converged" verdict. Loop 9 (skeptical re-review): 1 IMP + 3 LOW. **Loop 10 (broad mandate "find ANY meaningful issue"): 3 IMP + 2 LOW — none CRIT, but real polish items the earlier loops missed.**
+TWELVE multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loop 7: 13 cleanup. Loop 8: 2 LOW. Loop 9: 1 IMP + 3 LOW. Loop 10: 3 IMP + 2 LOW. Loop 11 (narrow regression check): **0 findings**. Loop 12 (final broad sweep): 2 IMP — graceful-degradation guard + cache disambiguation.
+
+## Loop 12 (v11 → v12) — broad sweep, 2 IMP
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| IMP | 1 | Bare `from modules.create_model_marine import ...` in panel breaks the project's existing try/except graceful-degradation pattern (lines 25-49). If the import fails, the whole Shiny app crashes at startup. | Wrap in `try: ... except ImportError: query_named_sea_polygon = None`. Handler fast-fails with user-facing message when None. |
+| IMP | 2 | `_load_or_fetch_marineregions` cache empty-payload masking — read path returns None on empty cache, hiding "cache corrupted" vs "WFS down". | Read path raises `RuntimeError` on empty cache; write path does NOT write empty payloads (defensive). |
+
+**Critical-bug trajectory across 12 loops: 4, 3, 0, 3, 1, 1, 0, 0, 0, 0, 0, 0.** SIX consecutive zero-CRIT loops.
+
+## Loop 11 (v11) — narrow regression check, ZERO findings
+
+Verified loop-10 fixes are clean (no regressions, self-consistent, correctly interact with surroundings).
+
+## Loop 10 (v10 → v11) — find any meaningful issue
 
 ## Loop 10 (v10 → v11) — find any meaningful issue
 
