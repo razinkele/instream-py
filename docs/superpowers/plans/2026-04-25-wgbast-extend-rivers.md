@@ -147,6 +147,33 @@ Diagnostic post-refresh:
 
 PR-2 has six sections (A–F). Sections A and B are pure refactors with no behaviour change; C–F add the new BalticCoast cells, the YAML cleanup, the tests, and the release.
 
+## Task dependency DAG (read this if dispatching subagents in parallel)
+
+```
+2.A.1 (create_model_marine + clip_sea + 3 tests)
+2.A.2 (mock-WFS tests)                    ← depends on 2.A.1
+2.A.3 (create_model_river + filter)
+2.A.4 (partition + 4 tests)               ← depends on 2.A.3
+2.A.5 (panel refactor + handler rewrite)  ← depends on 2.A.1
+
+2.B.1 (generator refactor)                ← depends on 2.A.3 + 2.A.4
+
+2.C.1 (constants + WFS cache helper)      ← depends on 2.B.1, 2.A.1
+2.C.2 (BalticCoast cell generation)       ← depends on 2.C.1, 2.A.1, 2.A.4
+
+2.D.1 (orphan drop + tuning)              ← depends on 2.C.2 (needs new shapefiles)
+2.D.2 (CSV re-expand)                     ← depends on 2.D.1, 2.C.2
+
+2.E.1 (river extents tests)               ← depends on 2.D.2 (needs final fixtures)
+2.E.2 (full suite)                        ← depends on 2.E.1
+
+2.F.1 (release)                           ← depends on 2.E.2
+```
+
+**Parallel-safe groups:** {2.A.1, 2.A.3} — different new files. {2.A.2, 2.A.4} (after 2.A.1, 2.A.3 land) — different new files.
+
+**Strictly serial:** 2.B.1 → 2.C.1 → 2.C.2 → 2.D.1 → 2.D.2 (each modifies the previous file or its outputs). Subagents dispatched in parallel within this chain WILL race on shared files; do not parallelize.
+
 ## Section A — Shared helpers in `app/modules/`
 
 ### Task 2.A.1: Create `app/modules/create_model_marine.py` with `clip_sea_polygon_to_disk`
@@ -946,6 +973,8 @@ WGBAST-specific REACH_NAMES/FRAC_SPAWN hardcoding."
 **Files:**
 - Modify: `app/modules/create_model_panel.py:86-108` (replace the private `_query_marine_regions`)
 
+**IMPORTANT — TYPE-CONTRACT CHANGE.** The existing `_query_marine_regions` returns a **dict** (raw GeoJSON via `resp.json()`). The new `query_named_sea_polygon` returns a **GeoDataFrame**. These are NOT swap-compatible — the consumer at `_on_fetch_sea` (lines 727–763) does `geoj.get("features")` and `gpd.GeoDataFrame.from_features(geoj["features"], ...)`, both of which fail on a GeoDataFrame. This step rewrites BOTH the helper and its consumer.
+
 - [ ] **Step 1: Replace the private helper with an import**
 
 Open `app/modules/create_model_panel.py`. The current lines 86–108 define `_query_marine_regions`:
@@ -959,12 +988,64 @@ def _query_marine_regions(bbox_wgs84):
 Replace those lines (86–108) with:
 
 ```python
-from modules.create_model_marine import query_named_sea_polygon as _query_marine_regions  # noqa: E402
+from modules.create_model_marine import query_named_sea_polygon  # noqa: E402
 ```
 
 **IMPORTANT**: this is an ABSOLUTE import (`from modules.create_model_marine`), NOT a relative import (`from .create_model_marine`). The Shiny app loads `create_model_panel.py` as a top-level module, not as part of a package — `__package__` is `None`, so a leading-dot import would raise `ImportError: attempted relative import with no known parent package` at startup. This matches the pattern of every other internal import in `create_model_panel.py` (verified at lines 26–65: `from modules.create_model_grid import ...`, `from modules.create_model_osm import ...`, etc.).
 
-This preserves the existing call site `_query_marine_regions(bbox)` at line 733 (`_on_fetch_sea` handler) without further edits.
+Note we do NOT alias as `_query_marine_regions` — the consumer is being rewritten in Step 2 below to consume a GeoDataFrame directly.
+
+- [ ] **Step 2: Rewrite the `_on_fetch_sea` handler to consume a GeoDataFrame**
+
+The current handler (lines 727–763) is shaped for a dict return:
+
+```python
+geoj = await loop.run_in_executor(None, _query_marine_regions, bbox)
+if geoj is None or not geoj.get("features"):
+    _fetch_msg.set("No sea areas found — try zooming out to see the coast.")
+    return
+gdf = gpd.GeoDataFrame.from_features(geoj["features"], crs="EPSG:4326")
+# Post-filter: WFS bbox returns global polygons that merely touch the bbox.
+from shapely.geometry import box as _box
+view_box = _box(*bbox)
+gdf = gdf[gdf.geometry.intersects(view_box)].copy()
+if len(gdf) > 1:
+    center = view_box.centroid
+    covers = gdf[gdf.geometry.contains(center)]
+    if len(covers) > 0:
+        gdf = covers.copy()
+if len(gdf) == 0:
+    _fetch_msg.set("No sea areas found — try zooming out to see the coast.")
+    return
+gdf["geometry"] = gdf.geometry.simplify(0.01, preserve_topology=True)
+_sea_gdf.set(gdf)
+names = ", ".join(gdf["name"].dropna().unique()[:5]) if "name" in gdf.columns else ""
+_fetch_msg.set(f"Loaded {len(gdf)} sea areas. {names}")
+await _refresh_map()
+```
+
+Replace lines 727–763 (the entire body of `_on_fetch_sea` after the initial `_fetch_msg.set("Fetching ...")` and `bbox = _get_view_bbox()` lines) with:
+
+```python
+import asyncio
+loop = asyncio.get_running_loop()
+gdf = await loop.run_in_executor(None, query_named_sea_polygon, bbox)
+# query_named_sea_polygon already does the bbox-intersect + centroid-cover
+# post-filter that this handler used to do inline (see create_model_marine.py).
+# It returns a GeoDataFrame in EPSG:4326 with columns ['name', 'geometry'],
+# or None on failure / empty result.
+if gdf is None or len(gdf) == 0:
+    _fetch_msg.set("No sea areas found — try zooming out to see the coast.")
+    return
+gdf = gdf.copy()
+gdf["geometry"] = gdf.geometry.simplify(0.01, preserve_topology=True)
+_sea_gdf.set(gdf)
+names = ", ".join(gdf["name"].dropna().unique()[:5]) if "name" in gdf.columns else ""
+_fetch_msg.set(f"Loaded {len(gdf)} sea areas. {names}")
+await _refresh_map()
+```
+
+This is a behaviour-preserving rewrite: the bbox-intersect + centroid-cover filter is now in `query_named_sea_polygon` instead of inline. Net effect: the handler is ~10 lines shorter, and the helper does the geographic filtering once for both UI and batch callers.
 
 - [ ] **Step 2: Verify no other call sites of `_query_marine_regions` exist**
 
@@ -974,39 +1055,81 @@ grep -rn "_query_marine_regions" app/ scripts/
 
 Expected: only the import at line 86 and the call at line 733 (or thereabouts) in the same file. If anything else references it, update the import accordingly.
 
-- [ ] **Step 3: Smoke-test the panel module imports cleanly**
+- [ ] **Step 3: Smoke-test the panel module imports cleanly + handler is callable**
 
-There is no dedicated `tests/test_create_model_panel.py` covering `_query_marine_regions` (verified by grep). Add a minimal smoke test as part of this step. Append to `tests/test_create_model_marine.py`:
+Append to `tests/test_create_model_marine.py`:
 
 ```python
-def test_create_model_panel_reexport_intact():
-    """Behaviour-preserving extraction: create_model_panel must still
-    expose _query_marine_regions as before, now resolved via the
-    shared module."""
+def test_create_model_panel_imports_query_named_sea_polygon():
+    """The panel must import the helper and no longer define
+    its own private dict-returning version. Detects:
+      - relative-import crashes (ImportError at module load)
+      - residual references to the old _query_marine_regions function
+        that we rewrote out in Task 2.A.5"""
     import sys
     sys.path.insert(0, str(ROOT / "app"))
     from modules import create_model_panel
-    assert hasattr(create_model_panel, "_query_marine_regions")
-    # Same callable as the new public name
     from modules.create_model_marine import query_named_sea_polygon
-    assert create_model_panel._query_marine_regions is query_named_sea_polygon
+    # The panel must expose the helper under its public name
+    assert getattr(create_model_panel, "query_named_sea_polygon", None) is query_named_sea_polygon
+    # The old private name must NOT exist (we rewrote the handler;
+    # leaving it would mean the import-replace step was skipped).
+    assert not hasattr(create_model_panel, "_query_marine_regions"), (
+        "stale _query_marine_regions still defined in panel — Step 1 was incomplete"
+    )
+
+
+def test_query_named_sea_polygon_handler_contract(monkeypatch):
+    """The handler in _on_fetch_sea consumes a GeoDataFrame from
+    query_named_sea_polygon, NOT a dict. This test exercises the
+    failure mode that loop-4 review caught: if the helper still
+    returns a dict, downstream gdf operations fail."""
+    from modules import create_model_marine as m
+
+    fake_geoj = {
+        "features": [{
+            "type": "Feature",
+            "properties": {"name": "Mock Sea"},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]],
+            },
+        }],
+    }
+    class _FakeResp:
+        def raise_for_status(self): pass
+        def json(self): return fake_geoj
+    monkeypatch.setattr(m.requests, "get", lambda *a, **kw: _FakeResp())
+
+    result = m.query_named_sea_polygon((-0.5, -0.5, 0.5, 0.5))
+    # Contract assertions used by _on_fetch_sea:
+    assert result is not None, "helper returned None on success path"
+    import geopandas as gpd
+    assert isinstance(result, gpd.GeoDataFrame), (
+        f"helper returned {type(result).__name__}, not GeoDataFrame"
+    )
+    assert "name" in result.columns
+    assert "geometry" in result.columns
+    # The handler does len(gdf) and gdf.geometry.simplify; both must work
+    assert len(result) >= 1
+    _ = result.geometry.simplify(0.01, preserve_topology=True)
 ```
 
 Run:
 
 ```bash
-micromamba run -n shiny python -m pytest tests/test_create_model_marine.py::test_create_model_panel_reexport_intact -v
+micromamba run -n shiny python -m pytest tests/test_create_model_marine.py -v
 ```
 
-Expected: PASS. If it fails with `ImportError: attempted relative import with no known parent package`, the import in Step 1 used a leading `.` — fix to absolute.
+Expected: 8 PASS (3 from Task 2.A.1 + 3 from Task 2.A.2 + 2 new from this step).
 
-Also run the broader Create Model test surface to catch any other regression:
+Also run the broader Create Model test surface:
 
 ```bash
 micromamba run -n shiny python -m pytest tests/ -k create_model -v 2>&1 | tail -20
 ```
 
-Expected: same pass/fail counts as before this task.
+Expected: same pre-task baseline + 8 new tests in test_create_model_marine.py.
 
 - [ ] **Step 4: Commit**
 
@@ -1268,6 +1391,14 @@ regenerator is offline-clean after the first run with network."
 
 If smoke-test #3 fails, the failure is contained to "the BalticCoast block" — narrower than re-bisecting the whole release.
 
+**Rollback strategy:** the regenerator iterates through 4 rivers in `RIVERS`. If any river fails (Marine Regions WFS rejects a query, disk-clip raises `ValueError`, adjacency check raises `RuntimeError`), the regenerator dies mid-iteration leaving a half-converted state: rivers 1..N have new 5-reach shapefiles; rivers N+1..4 have the old 4-reach shapefiles. Section D's `_balticcoast_cell_count` would then crash on the half-converted rivers with a `FileNotFoundError`-or-similar.
+
+To avoid this:
+- Before commit: regenerate ALL 4 rivers and verify with `_probe_wgbast_river_extents.py`. If any river shows fewer than 5 reaches, do NOT commit; investigate the regenerator log and re-run.
+- If you've already committed and discover the half-converted state mid-Section-D: `git reset --hard HEAD~1` to revert the partial regenerate, then fix the root cause and re-run from Task 2.C.2.
+
+`git status tests/fixtures/example_*/Shapefile/` after a successful run should show all 4 rivers' shapefiles modified, not just some.
+
 - [ ] **Step 1: Locate the `write_river_shapefile` function**
 
 It's around line 478 of the file. Find the section after `cells = generate_cells(...)` and before `cells = cells.rename(columns=COLUMN_RENAME)`.
@@ -1365,6 +1496,15 @@ Replace it with:
     # an island, peninsula, or skerry (e.g., Tärnö near Mörrum, the many
     # small skerries near Tornio). Pass the geoms separately to
     # generate_cells so each piece tessellates independently.
+    #
+    # Known limitation (not fixed in this PR — see PR-3 follow-up):
+    # `create_model_grid.generate_cells` uses `geom.exterior` for sea
+    # reaches, which silently drops INTERIOR HOLES in a Polygon. If the
+    # disk-clip yields a Polygon with an island as an interior hole,
+    # cells will be generated INSIDE the island. Acceptable for the 4
+    # WGBAST rivers (Tärnö-class skerries are <0.1% of disk area) but
+    # the generator should be enhanced to pass holes as negative-space
+    # exclusions in a future PR.
     if bc_polygon.geom_type == "MultiPolygon":
         bc_segments = list(bc_polygon.geoms)
     else:
@@ -1387,9 +1527,16 @@ Replace it with:
             f"radius={BALTICCOAST_RADIUS_M}m)."
         )
 
-    # Concat freshwater + marine, renumber cell_ids with width adapted
-    # to the total count (so C00001 and C99999 sort lexically).
-    cells = pd.concat([fresh, marine], ignore_index=True)
+    # Concat freshwater + marine. pd.concat of two GeoDataFrames may
+    # return a plain DataFrame (CRS lost) on older geopandas — wrap
+    # explicitly so downstream .geometry.buffer() and .to_file() work.
+    cells = gpd.GeoDataFrame(
+        pd.concat([fresh, marine], ignore_index=True),
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    # Renumber cell_ids with width adapted to the total count
+    # (so C00001 and C99999 sort lexically).
     width = max(4, len(str(len(cells))))
     cells["cell_id"] = [f"C{i+1:0{width}d}" for i in range(len(cells))]
 
@@ -1424,6 +1571,9 @@ Replace it with:
 
     # Rename columns to match the shapefile-loader contract
     cells = cells.rename(columns=COLUMN_RENAME)
+    # Re-cast ID_TEXT to string explicitly — pandas can demote dtype
+    # across concat; this keeps the DBF column type consistent.
+    cells["ID_TEXT"] = cells["ID_TEXT"].astype(str)
 ```
 
 Add the missing import at the top of the file if not already present:
@@ -1596,7 +1746,15 @@ The `n_cells` parameter for BalticCoast must match the new shapefile cell count.
 ```python
 def _balticcoast_cell_count(short_name: str) -> int:
     fix_dir = ROOT / "tests" / "fixtures" / short_name
-    shp = next((fix_dir / "Shapefile").glob("*.shp"))
+    try:
+        shp = next((fix_dir / "Shapefile").glob("*.shp"))
+    except StopIteration:
+        raise FileNotFoundError(
+            f"No shapefile in {fix_dir / 'Shapefile'} — Section C "
+            f"(BalticCoast cell generation) likely never ran for "
+            f"{short_name}. Re-run scripts/_generate_wgbast_physical_domains.py "
+            f"before retrying Section D."
+        ) from None
     gdf = gpd.read_file(shp)
     reach_col = "REACH_NAME" if "REACH_NAME" in gdf.columns else "reach_name"
     return int((gdf[reach_col] == "BalticCoast").sum())
@@ -1838,7 +1996,12 @@ micromamba run -n shiny python -m pytest tests/ -m "not slow" --ignore=tests/_de
 
 Runtime: ~25-30 minutes per CLAUDE.md memory.
 
-Expected: same xfail/skip count as v0.46.0 baseline (`1087 passed, 52 skipped, 64 deselected, 2 xfailed`). Any new failures must be diagnosed before proceeding.
+Expected: v0.46.0 baseline + ~36 new tests:
+- `test_create_model_marine.py`: 8 (3 from 2.A.1 + 3 from 2.A.2 + 2 from 2.A.5)
+- `test_create_model_river.py`: 8 (3 from 2.A.3 + 3 from 2.A.4 + 2 MLS tests)
+- `test_wgbast_river_extents.py`: 22 (4 rivers × 5 parametrized + 2 standalone)
+
+Total ≈ `1123 passed, 52 skipped, 64 deselected, 2 xfailed`. Treat as expected the new ~36 passes. Any pre-existing test that now FAILS must be diagnosed before proceeding.
 
 - [ ] **Step 2: If a previously-passing test fails, debug**
 
@@ -2040,9 +2203,24 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history (v1 → v2 → v3 → v4)
+# Plan revision history (v1 → v2 → v3 → v4 → v5)
 
-The plan went through THREE multi-tool review loops. Loop 1: 14 findings (4 critical), all applied. Loop 2: 16 findings (3 critical/high, 7 important, 6 deferred-info), 10 applied. Loop 3: 3 polish items, all applied — convergence reached.
+The plan went through FOUR multi-tool review loops. Loop 1: 14 findings (4 critical), all applied. Loop 2: 16 findings (3 critical/high), 10 applied. Loop 3: 3 polish items, all applied. **Loop 4 (CRUCIAL): 8 findings (3 CRITICAL bugs that all 3 prior loops missed) — convergence had been declared prematurely.**
+
+## Loop 4 (v4 → v5) — fresh-eyes architect found bugs all 3 prior loops missed
+
+The architect (Opus) was given an explicit "fresh eyes, look for what prior reviewers missed" mandate. This produced findings of much higher severity than loops 2-3.
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| CRIT | 1 | **Task 2.A.5 type-contract bug**: `_query_marine_regions` returns `dict`; new helper returns `GeoDataFrame`. Caller does `geoj.get("features")` → AttributeError. Smoke test only checked identity, not behaviour. 🌊 Sea button silently broken. | Step 1 + new Step 2 rewrite the `_on_fetch_sea` handler to consume GeoDataFrame; new test exercises the handler contract end-to-end. |
+| CRIT | 2 | **`pd.concat` may drop CRS**: `cells = pd.concat([fresh, marine])` returns a plain DataFrame on older geopandas; `cells.geometry.buffer(...)` then crashes. | Wrap explicitly: `gpd.GeoDataFrame(pd.concat([fresh, marine], ignore_index=True), geometry="geometry", crs="EPSG:4326")`. |
+| CRIT | 3 | **`_balticcoast_cell_count` raises bare `StopIteration`** on missing shapefile (Section C failed mid-way) → opaque error. | `try/except StopIteration` → raise `FileNotFoundError` naming the river + instructing re-run. |
+| IMP | 4 | **Test count baseline wrong**: plan said `1087 passed` but PR-2 adds ~36 new tests | Updated to `~1123 passed`. |
+| IMP | 5 | **No task DAG for parallel/serial dispatch**: subagents could race on shared files | Added a "Task dependency DAG" block to PR-2 preamble. |
+| IMP | 6 | **No rollback / partial-failure handling**: half-converted state across 4 fixtures | Added rollback strategy note to Task 2.C.2. |
+| IMP | 7 | **`cells["ID_TEXT"].astype(str)` line dropped** from prescribed code | Restored. |
+| INFO | 8 | **Polygon-with-holes (interior islands) silently dropped** by `geom.exterior` in `generate_cells` | Documented as known limitation (acceptable for our 4 rivers; future PR enhances generator). |
 
 ## Loop 3 (v3 → v4) — 4 polish items
 
