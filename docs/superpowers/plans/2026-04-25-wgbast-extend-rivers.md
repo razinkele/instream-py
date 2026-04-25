@@ -1413,6 +1413,18 @@ from modules.create_model_river import (  # noqa: E402
 )
 ```
 
+Also add at the very top of the file (BEFORE any `import` statements that may emit log records on import) — UTF-8 stdout/stderr setup so non-ASCII reach names + river logs (`Mörrumsån`, `älv`) don't crash on Windows cp1252. This must live IN the script, not in a `VAR=val cmd` shell prefix (POSIX-shell-only — silently fails under PowerShell/cmd):
+
+```python
+import sys
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+```
+
+(Same block also goes into `scripts/_probe_wgbast_river_extents.py` since Section B Step 5's diff-redirection test runs it.)
+
 - [ ] **Step 2: Replace `_load_osm_polygons_filtered` body with a call to the new helper**
 
 Locate `_load_osm_polygons_filtered` (around line 201 in the original file; the function has the docstring "Load cached OSM water polygons, keep only the connected component..."). Replace its body — the part AFTER the `data = json.loads(...)` line and the `raw_polys` assembly loop — with:
@@ -1503,13 +1515,13 @@ Combined effect: when the cap fires, the surviving 2000-polygon subset is **dete
 
 Save the existing fixtures' shapefile metadata as a baseline:
 ```bash
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_before.txt 2>&1
+micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_before.txt 2>&1
 ```
 
 Re-run the generator (only Section B changes are applied — Section C's BalticCoast generation hasn't landed yet):
 ```bash
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_generate_wgbast_physical_domains.py
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_after.txt 2>&1
+micromamba run -n shiny python scripts/_generate_wgbast_physical_domains.py
+micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_after.txt 2>&1
 diff /tmp/wgbast_extents_before.txt /tmp/wgbast_extents_after.txt
 ```
 
@@ -1961,7 +1973,7 @@ Expected log output:
 - [ ] **Step 4: Re-run the diagnostic probe**
 
 ```bash
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py
+micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py
 ```
 
 Expected: each river now lists 5 reaches. If any river's BalticCoast cell count is 0 or > 5000, the disk radius / cell factor needs adjusting. (Mörrumsån specifically uses cell-factor 8.0 to keep its open-Hanöbukten count under 5000.)
@@ -2143,10 +2155,10 @@ All three pieces are required:
 
 - [ ] **Step 3: Run the wire script and capture pspc warnings**
 
-Force UTF-8 encoding for stdout/stderr — on Windows, Python's logging module defaults to cp1252 and crashes mid-run on the `Mörrumsån`/`Klaipėda`-style non-ASCII strings that may appear in log records. A truncated log → empty grep → silent data loss for the CHANGELOG enumeration:
+Force UTF-8 encoding for stdout/stderr — on Windows, Python's logging module defaults to cp1252 and crashes mid-run on the `Mörrumsån`/`Klaipėda`-style non-ASCII strings that may appear in log records. A truncated log → empty grep → silent data loss for the CHANGELOG enumeration. The plan applies the encoding setup IN THE SCRIPT (below) rather than via an inline `VAR=val cmd` shell prefix because the latter is POSIX-shell-only and silently fails under PowerShell or cmd.exe:
 
 ```bash
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_wire_wgbast_physical_configs.py 2>&1 | tee /tmp/wire_log.txt
+micromamba run -n shiny python scripts/_wire_wgbast_physical_configs.py 2>&1 | tee /tmp/wire_log.txt
 # Specifically match the warning line emitted when a non-zero pspc is dropped.
 # (Looser grep would also match log-record format strings if the script ever
 # echoes its source.)

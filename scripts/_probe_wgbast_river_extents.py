@@ -1,4 +1,14 @@
 """Throwaway probe: inspect the 4 WGBAST river fixtures to understand what's there."""
+import sys
+
+# UTF-8 stdout/stderr — non-ASCII reach names (Mörrumsån, älv, etc.)
+# must not crash on Windows cp1252 default. Setting via os.environ from
+# inside Python is too late; reconfigure() is the supported API.
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import json
 from pathlib import Path
 
