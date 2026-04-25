@@ -6,7 +6,7 @@
 
 **Architecture:** Two independent PRs. PR-1 is a one-line OSM-regex change to `scripts/_fetch_wgbast_osm_polylines.py` plus a Tornionjoki fixture regeneration. PR-2 introduces 2 new pure-Python helper modules (`create_model_marine.py`, `create_model_river.py`), refactors the WGBAST batch generator to import from them, adds Marine Regions WFS-clipped BalticCoast cells via `sea_polygon.intersection(disk)`, tunes per-river BalticCoast YAML parameters for Bothnian Bay vs Hanöbukten predator regimes, drops 4 orphan Lithuanian template reaches, and regenerates all 4 fixtures.
 
-**Tech Stack:** Python 3.11+, **geopandas ≥ 1.0** (uses `.union_all()`; the `.unary_union` accessor is deprecated in 1.0 and removed in 2.0), shapely ≥ 2.0, pyproj, pandas, requests, pyyaml, pytest. Project conda env: `shiny` (per `CLAUDE.md`). Verify the env meets the geopandas lower bound before starting:
+**Tech Stack:** Python 3.11+, **geopandas ≥ 1.0** (uses `.union_all()`; the `.unary_union` accessor is deprecated in 1.0 and removed in 2.0), shapely ≥ 2.0 (uses `STRtree.query(predicate="intersects")` and `linemerge`), pandas, requests, pyyaml, pytest. (`pyproj` is a transitive dep of geopandas used implicitly via `.to_crs()`; no direct import in prescribed code.) Project conda env: `shiny` (per `CLAUDE.md`). Verify the env meets the geopandas lower bound before starting:
 ```bash
 micromamba run -n shiny python -c "import geopandas; print(geopandas.__version__)"
 ```
