@@ -1788,7 +1788,12 @@ Expected: each river now lists 5 reaches. If any river's BalticCoast cell count 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/_generate_wgbast_physical_domains.py tests/fixtures/_osm_cache/example_*_marineregions.json
+git add scripts/_generate_wgbast_physical_domains.py \
+        tests/fixtures/_osm_cache/example_*_marineregions.json \
+        tests/fixtures/example_tornionjoki/Shapefile/ \
+        tests/fixtures/example_simojoki/Shapefile/ \
+        tests/fixtures/example_byskealven/Shapefile/ \
+        tests/fixtures/example_morrumsan/Shapefile/
 git commit -m "feat(wgbast): generate BalticCoast cells via Marine Regions + disk clip
 
 Each WGBAST fixture's shapefile now contains a BalticCoast reach with
@@ -1915,8 +1920,10 @@ If grep is empty, the only known value is `Skirvyte=13000` — leave the CHANGEL
 
 - [ ] **Step 4: Commit**
 
+Stage the SCRIPT (which drives the rewrite) AND the YAML files (which it just wrote). Without staging the YAMLs, this commit lands as "feat: ... drop orphan reaches" with a diff that contains zero reach drops — bisecting against this commit would be misleading.
+
 ```bash
-git add scripts/_wire_wgbast_physical_configs.py
+git add scripts/_wire_wgbast_physical_configs.py configs/example_*.yaml
 git commit -m "feat(wgbast): drop orphan reaches + per-river BalticCoast tuning
 
 Each WGBAST yaml inherited 4 reaches from the example_baltic template
@@ -2491,7 +2498,18 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
 
-## Loop 18 (final → final2) — release-blocker found after two zero-finding loops
+## Loop 19 — same git-add-scope pattern in 2 more tasks
+
+Loop 18's finding had THREE instances, not one. Loop 19 swept all `git add` commands in the plan and found two more cases where the staging command misses files written by the same task's earlier steps:
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| CRIT | 1 | Task 2.C.2 Step 5 commit dropped the regenerated shapefiles. Step 3 runs the regenerator which rewrites all 4 fixtures' `Shapefile/*.shp` files; the commit staged only `_generate_wgbast_physical_domains.py` + `_marineregions.json` caches. Partial-execution recovery (between 2.C.2 and 2.D.2) would leave 4 dirty fixtures. | Added `tests/fixtures/example_*/Shapefile/` (per-river) to the git add. |
+| CRIT | 2 | Task 2.D.1 Step 4 commit dropped the YAML mutations. Step 3 runs `_wire_wgbast_physical_configs.py` which physically rewrites `configs/example_*.yaml` (orphan reaches removed, per-river `fish_pred_min` tuned, junction fix-up applied); the commit staged only the script. The YAMLs got swept up by 2.D.2's catch-all, but the 2.D.1 commit message ("drop orphan reaches + per-river BalticCoast tuning") would have a diff containing zero reach drops or tuning. Bisecting `test_fixture_loads_and_runs_3_days` against this commit would be misleading. | Added `configs/example_*.yaml` to Step 4's git add. |
+
+**Lesson reinforced AGAIN:** `git add` scope is a cross-cutting concern that requires explicit per-task review. Three out of three "script writes data files" tasks had this bug. Loop-19 swept the remaining tasks (1.1, 2.A.{1-5}, 2.B.1, 2.E.1, 2.F.1) and found them clean — they either explicitly stage every output or have no script-driven file writes.
+
+## Loop 18 — release-blocker found after two zero-finding loops
 
 **Loop 18 found 1 IMP that loops 16 and 17 both missed.** This is the second time "convergence" was declared prematurely in this plan's history (loop 8 was the first). Lesson: cross-task workflow gaps slip past task-by-task review.
 
