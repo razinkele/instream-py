@@ -1611,14 +1611,23 @@ def _load_or_fetch_marineregions(
         # no features. Don't write a misleading empty cache.
         return gdf
     cache.parent.mkdir(parents=True, exist_ok=True)
-    # Atomic write: tmp file then os.replace. Defeats OneDrive sync /
-    # Defender real-time scan read-locks that could otherwise cause
-    # PermissionError [WinError 32] on the second write of the 4-river
-    # loop. os.replace is atomic on NTFS and Linux. The try/finally
-    # cleans up the .tmp file if os.replace fails (Defender lock,
-    # permission denied), preventing orphan files in the cache dir.
+    # Atomic write: PID+thread-unique tmp file, then os.replace.
+    # Defeats OneDrive sync / Defender real-time scan read-locks that
+    # could otherwise cause PermissionError [WinError 32] on the second
+    # write of the 4-river loop. os.replace is atomic on NTFS and Linux.
+    # The try/except cleans up the .tmp file if os.replace fails
+    # (Defender lock, permission denied), preventing orphan files in
+    # the cache dir.
+    #
+    # PID+thread-unique suffix prevents tmp-file collision when two
+    # concurrent processes (regenerator + Shiny session both calling
+    # query_named_sea_polygon, or a CI run + dev machine on shared
+    # storage) both miss the cache and race to write it.
     import os
-    tmp = cache.with_suffix(cache.suffix + ".tmp")
+    import threading
+    tmp = cache.with_suffix(
+        f".{os.getpid()}.{threading.get_ident()}.tmp"
+    )
     try:
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         os.replace(tmp, cache)
