@@ -44,31 +44,22 @@
 
 ---
 
-# Pre-flight (run before either PR)
+# Pre-flight check (orchestrator runs ONCE before dispatching any task)
 
-## Task 0: Verify external services are reachable
-
-PR-1 depends on Overpass; PR-2 depends on Marine Regions WFS. Both are external services. Failures from network timeouts mid-task waste a lot of time. Check up-front:
-
-- [ ] **Step 1: Verify Overpass is reachable**
+This is NOT a task and should NOT be dispatched to a subagent (no code change, no commit). The orchestrator (or the engineer running this plan inline) verifies external service reachability before starting:
 
 ```bash
-curl -sf -o /dev/null -w "%{http_code}" --max-time 10 https://overpass-api.de/api/status
+# 1. Overpass interpreter (used by PR-1's _fetch_wgbast_osm_polylines.py --refresh)
+curl -sf --max-time 15 --data "data=[out:json];node(1);out;" https://overpass-api.de/api/interpreter -o /tmp/preflight_overpass.json
+test -s /tmp/preflight_overpass.json || echo "OVERPASS UNREACHABLE — defer PR-1"
+
+# 2. Marine Regions WFS (used by PR-2 Task 2.C.1's _load_or_fetch_marineregions)
+curl -sf --max-time 30 -o /dev/null -w "%{http_code}\n" \
+  "https://geo.vliz.be/geoserver/MarineRegions/wfs?service=WFS&version=2.0.0&request=GetCapabilities"
+# Expected: 200. If 503/timeout: defer PR-2.
 ```
 
-Expected: `200`. If anything else, try the kumi or osm.ch endpoints (`scripts/_fetch_wgbast_osm_polylines.py:38-41` lists them) before aborting. If all three fail, defer PR-1 until later.
-
-- [ ] **Step 2: Verify Marine Regions WFS is reachable**
-
-```bash
-curl -sf -o /dev/null -w "%{http_code}" --max-time 30 "https://geo.vliz.be/geoserver/MarineRegions/wfs?service=WFS&version=2.0.0&request=GetCapabilities"
-```
-
-Expected: `200`. If `503` or timeout, defer PR-2.
-
-- [ ] **Step 3: No commit; this is a pre-flight gate.**
-
-If both services are up, proceed to PR-1. Otherwise wait and retry.
+If both services respond, proceed. If either is down, defer the corresponding PR until the service recovers — fixture regeneration depends on live data.
 
 ---
 
@@ -112,47 +103,21 @@ micromamba run -n shiny python scripts/_diag_tornionjoki_polygon_filter.py
 
 Expected: Tornionjoki seed polygon count rises from 4 to **>20** (Muonio brings additional polygon coverage). Centerline length grows from ~1.36° (~151 km) to **>2.4°** (~270 km).
 
-- [ ] **Step 4: Regenerate the Tornionjoki shapefile**
+- [ ] **Step 4: Sanity-check the new connectivity (no fixture regenerate yet)**
+
+PR-1 ships the regex change + the refreshed OSM caches ONLY. The shapefile regeneration is deferred to PR-2 Section C, which will run the regenerator AFTER the helper-extraction refactor lands. This avoids regenerating Tornionjoki twice (once in PR-1, again in PR-2 Section B claims "byte-equivalent refactor" — which is a strong byte-level claim that STRtree iteration order + dict ordering may not actually meet). PR-2 Section C is the single regenerate point.
+
+The diagnostic confirms the cache refresh worked:
+```bash
+micromamba run -n shiny python scripts/_diag_tornionjoki_polygon_filter.py
+```
+
+Expected: Tornionjoki seed polygon count >20 (was 4); centerline >2.4° (was 1.36°).
+
+- [ ] **Step 5: Commit PR-1 (regex + OSM caches only)**
 
 ```bash
-micromamba run -n shiny python scripts/_generate_wgbast_physical_domains.py
-```
-
-Runtime: ~2-3 min total for all 4 rivers (most spent on Tornionjoki and Simojoki). Expected output (Tornionjoki only):
-
-```
-INFO ... [Tornionjoki] connectivity filter: NNN/MMMM polygons in the centerline-connected component
-...
-Generated XXXX cells
-Per-reach distribution:
-  Lower    NN cells
-  Middle   NN cells
-  Mouth    NN cells
-  Upper    NN cells
-```
-
-Cell count must exceed Simojoki's current 2595. If it doesn't, the Muonio names didn't pick up — check whether the bbox needs widening or the Overpass result actually matched the regex.
-
-- [ ] **Step 5: Verify with the per-river extent probe**
-
-```bash
-micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py
-```
-
-Expected: `example_tornionjoki` total cells > `example_simojoki` cells (which is currently 2595). Cell count for Lower / Middle / Mouth / Upper should all be non-zero.
-
-- [ ] **Step 6: Verify the fixture still loads in the simulation**
-
-```bash
-micromamba run -n shiny python -m pytest tests/test_multi_river_baltic.py::test_fixture_loads_and_runs_3_days -v -k tornionjoki
-```
-
-Expected: PASS. (The 3-day run only verifies the fixture loads and ticks; smolt outmigration won't occur in 3 days.)
-
-- [ ] **Step 7: Commit PR-1**
-
-```bash
-git add scripts/_fetch_wgbast_osm_polylines.py tests/fixtures/_osm_cache/example_tornionjoki.json tests/fixtures/_osm_cache/example_tornionjoki_polygons.json tests/fixtures/example_tornionjoki/Shapefile/
+git add scripts/_fetch_wgbast_osm_polylines.py tests/fixtures/_osm_cache/example_tornionjoki.json tests/fixtures/_osm_cache/example_tornionjoki_polygons.json
 git commit -m "fix(wgbast): include Muonionjoki in Tornionjoki OSM regex
 
 Was: ^(Tornionjoki|Torne älv|Torneälven|Torneå älv|Torne)$
@@ -162,11 +127,16 @@ Tornionjoki main stem only spans ~150 km; the basin extends another
 ~150 km north along the Muonio tributary. WGBAST stock-assessment
 practice treats Muonio as part of the Tornionjoki population.
 
-Pre: Tornionjoki 860 cells (4 OSM seed polygons → 71 connected).
-Post: Tornionjoki >2600 cells (target ratio: > Simojoki's 2595).
+The OSM line-way and water-polygon caches are refreshed here.
+The Tornionjoki shapefile is intentionally NOT regenerated in this
+commit — the same generator changes substantially in PR-2 (helper
+extraction + BalticCoast cells), so regenerating fixtures once after
+PR-2 lands avoids producing two distinct Tornionjoki shapefiles in
+the git history within hours of each other.
 
-Regenerated tests/fixtures/example_tornionjoki/Shapefile/ and the OSM
-caches under tests/fixtures/_osm_cache/example_tornionjoki*.json."
+Diagnostic post-refresh:
+- Pre: 4 OSM seed polygons -> 71 connected, ~150 km centerline.
+- Post: >20 OSM seed polygons -> >300 connected, ~270 km centerline."
 ```
 
 ---
@@ -914,6 +884,32 @@ def test_partition_handles_multilinestring_centerline():
     )
     assert near_mouth in groups[0], "near-mouth polygon not in first group"
     assert far in groups[1], "far polygon not in last group"
+
+
+def test_partition_handles_disjoint_multilinestring():
+    """Genuinely disjoint MultiLineString (no shared endpoints) — linemerge
+    cannot merge, so the helper falls back to coordinate-distance sort.
+    Approximate but should still order polygons mouth → source for a
+    river-shaped (roughly radial-from-mouth) input."""
+    from shapely.geometry import MultiLineString
+    from modules.create_model_river import partition_polygons_along_channel
+
+    # Disjoint: no endpoint shared between (0,0)→(4,0) and (6,0)→(10,0)
+    cl = MultiLineString([
+        [(0, 0), (4, 0)],
+        [(6, 0), (10, 0)],
+    ])
+    near_mouth = Polygon([(0, -0.5), (1, -0.5), (1, 0.5), (0, 0.5)])
+    far = Polygon([(9, -0.5), (10, -0.5), (10, 0.5), (9, 0.5)])
+
+    groups = partition_polygons_along_channel(
+        centerline=cl,
+        polygons=[far, near_mouth],
+        mouth_lon_lat=(0.0, 0.0),
+        n_reaches=2,
+    )
+    assert near_mouth in groups[0], "near-mouth polygon not in first group (disjoint MLS)"
+    assert far in groups[1], "far polygon not in last group (disjoint MLS)"
 ```
 
 Add to the existing imports at the top of the file:
@@ -927,7 +923,7 @@ from shapely.geometry import Point  # noqa: F401  (used inside _orient_centerlin
 micromamba run -n shiny python -m pytest tests/test_create_model_river.py -v
 ```
 
-Expected: 6 PASS (3 from Task 2.A.3 + 3 new).
+Expected: 8 PASS (3 from Task 2.A.3 + 3 partition tests + 1 MLS-merge test + 1 MLS-disjoint test).
 
 - [ ] **Step 5: Commit**
 
@@ -1259,13 +1255,14 @@ regenerator is offline-clean after the first run with network."
 **Files:**
 - Modify: `scripts/_generate_wgbast_physical_domains.py`
 
-**Note on commit granularity:** the prescribed replacement adds ~90 lines to `write_river_shapefile`. To keep bisection narrow if the smoke-test fails, decompose into THREE commits within this task:
+**Note on commit granularity:** the prescribed replacement adds ~90 lines to `write_river_shapefile`. The block is logically one change (build BalticCoast cells); attempts to artificially split it into multiple commits create commits that don't compile or that have unused imports. **Land it as one commit.** Bisection granularity is achieved by:
 
-- Commit A: Convert `cells = generate_cells(...)` → `fresh = generate_cells(...)` (pure rename, no behaviour change). Add `import pandas as pd` to module-level imports if absent. Run smoke test on Mörrumsån; expected: identical cell count.
-- Commit B: Add the BalticCoast geometry block (UTM detect, WFS load via `_load_or_fetch_marineregions`, mouth containment, `clip_sea_polygon_to_disk`, second `generate_cells` call). Concat `fresh + marine` into `cells`. Run smoke test; expected: 5 reaches per fixture, BalticCoast non-empty.
-- Commit C: Add the cell_id renumber + adjacency sanity check + the empty-Mouth guard. Run smoke test; expected: same 5 reaches, no RuntimeError.
+1. Smoke-test on Mörrumsån (smallest fixture, ~30s) BEFORE applying the BalticCoast block — confirms the existing path still works.
+2. Apply the block.
+3. Smoke-test on Mörrumsån AFTER — confirms the new path works.
+4. Smoke-test on Tornionjoki (largest, ~2 min) — confirms scaling.
 
-The Steps below describe the FINAL state after all 3 commits. Engineer applies each commit incrementally, smoke-testing between them.
+If smoke-test #3 fails, the failure is contained to "the BalticCoast block" — narrower than re-bisecting the whole release.
 
 - [ ] **Step 1: Locate the `write_river_shapefile` function**
 
@@ -1313,8 +1310,18 @@ Replace it with:
         )
 
     # --- BalticCoast marine reach -----------------------------------------
-    # Pin both grids to the SAME UTM zone (freshwater centroid's zone)
-    # so the adjacency check below sees no UTM↔WGS84 round-trip drift.
+    # Pin the marine disk to the MOUTH's UTM zone (NOT the freshwater
+    # centroid's zone). The mouth is where the disk is centred, and for
+    # Tornionjoki the mouth lon=24.142° is in zone 35 while the centerline
+    # centroid is at ~23.77° (zone 34); using the freshwater zone for a
+    # mouth-centred disk would push the entire disk to the far edge of
+    # the wrong zone where UTM scale distortion grows.
+    #
+    # The freshwater grid was already generated by `generate_cells` in a
+    # zone derived from its own internal centroid logic — the adjacency
+    # check below uses a 1m WGS84 buffer (1e-5°) which is enough to
+    # absorb sub-meter cross-zone round-trip drift between the two grids.
+    #
     # IMPORTANT: also add `from shapely.geometry import Point` and
     # `from modules.create_model_utils import detect_utm_epsg`,
     # `from modules.create_model_marine import clip_sea_polygon_to_disk`
@@ -1322,11 +1329,8 @@ Replace it with:
     # near line 30-42). Importing inside the function works but is
     # fragile under future refactors.
 
-    fresh_geoms = []
-    for info in reach_segments.values():
-        fresh_geoms.extend(info["segments"])
-    fresh_centroid = unary_union(fresh_geoms).centroid
-    utm_epsg = detect_utm_epsg(fresh_centroid.x, fresh_centroid.y)
+    mouth_lon, mouth_lat = river.waypoints[0]
+    utm_epsg = detect_utm_epsg(mouth_lon, mouth_lat)
 
     sea_gdf = _load_or_fetch_marineregions(river)
     if sea_gdf is None or sea_gdf.empty:
@@ -1349,7 +1353,15 @@ Replace it with:
         radius_m=BALTICCOAST_RADIUS_M,
         utm_epsg=utm_epsg,
     )
-    bc_segment = {"segments": [bc_polygon], "frac_spawn": 0.0, "type": "sea"}
+    # The intersection can return a MultiPolygon if the disk straddles
+    # an island, peninsula, or skerry (e.g., Tärnö near Mörrum, the many
+    # small skerries near Tornio). Pass the geoms separately to
+    # generate_cells so each piece tessellates independently.
+    if bc_polygon.geom_type == "MultiPolygon":
+        bc_segments = list(bc_polygon.geoms)
+    else:
+        bc_segments = [bc_polygon]
+    bc_segment = {"segments": bc_segments, "frac_spawn": 0.0, "type": "sea"}
     bc_cell_factor = BALTICCOAST_CELL_FACTOR_OVERRIDE.get(
         river.short_name, BALTICCOAST_CELL_FACTOR_DEFAULT,
     )
@@ -1501,10 +1513,19 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
     """... existing docstring ..."""
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
 
-    # Drop orphan reaches (Lithuanian template leftovers)
+    # Drop orphan reaches (Lithuanian template leftovers). Surface any
+    # non-zero pspc_smolts_per_year being dropped so the engineer can
+    # update the CHANGELOG.
     short_name = cfg_path.stem
     for orphan in ORPHAN_REACHES:
         if orphan in cfg.get("reaches", {}):
+            pspc = cfg["reaches"][orphan].get("pspc_smolts_per_year", 0) or 0
+            if pspc:
+                log.warning(
+                    "[%s] dropping orphan reach %s with pspc_smolts_per_year=%d "
+                    "— update CHANGELOG ### Breaking section",
+                    short_name, orphan, pspc,
+                )
             del cfg["reaches"][orphan]
             log.info("[%s] dropped orphan reach: %s", short_name, orphan)
 
@@ -1544,6 +1565,8 @@ Bothnian smolts). Per-river overrides:
 - [ ] **Step 1: Locate the existing CSV-expansion helper**
 
 `_expand_per_cell_csv(src, dst, n_cells)` exists at line 211 of the file. It reads a Depths/Vels CSV, preserves the header lines (lines starting with `;` plus the count + flow-values rows), and replicates the first data row N times.
+
+**Module-level imports needed for the new helpers:** `_wire_wgbast_physical_configs.py` currently imports only `shutil`, `sys`, `pathlib.Path`, and `yaml` at module level (lines 22–28). `geopandas` is currently imported INSIDE `copy_reach_csvs` as a local. The new `_balticcoast_cell_count` helper needs `geopandas` at MODULE level — add `import geopandas as gpd` to the top-of-file imports BEFORE pasting the new helper. The local `import geopandas as gpd` inside `copy_reach_csvs` can stay or be removed (harmless duplicate).
 
 - [ ] **Step 2: Ensure the helper is called for BalticCoast**
 
@@ -1739,12 +1762,17 @@ def test_tornionjoki_larger_than_simojoki():
     )
 
 
-def test_balticcoast_coastward_of_mouth():
+def test_balticcoast_offset_from_mouth():
     """Sanity: BalticCoast centroid is at least 1 km away from Mouth
-    centroid (in any direction). For Bothnian Bay rivers the bay is
-    south of the mouth; for Mörrumsån, also south. The 0.01° threshold
-    (~1 km) detects "BalticCoast disk centred ON the mouth" or "disk
-    spuriously inland" — both bug modes."""
+    centroid. The 0.01° threshold (~1 km) detects "BalticCoast disk
+    centred ON the mouth" or "disk spuriously inland" — both bug
+    modes that would slip past geometric-adjacency checks.
+
+    NOTE: a strict "BalticCoast south of Mouth" assertion was tried in
+    an earlier draft, but Byskeälven's mouth opens east-southeast into
+    Byskefjärden — the marine disk centroid lies east of the mouth and
+    can be at the same latitude or slightly north. Distance-only is
+    the correct generic invariant."""
     for short_name in WGBAST:
         gdf, _cfg, reach_col = _load(short_name)
         mouth = gdf[gdf[reach_col] == "Mouth"]
@@ -1756,12 +1784,8 @@ def test_balticcoast_coastward_of_mouth():
         dist_deg = mouth_centroid.distance(bc_centroid)
         assert dist_deg > 0.01, (
             f"{short_name}: BalticCoast centroid {dist_deg:.4f}° from Mouth "
-            f"centroid (expected > 0.01° = ~1 km)"
-        )
-        # Bothnian Bay rivers + Mörrumsån all open SOUTH of the mouth
-        assert bc_centroid.y < mouth_centroid.y, (
-            f"{short_name}: BalticCoast centroid lat {bc_centroid.y:.4f} "
-            f"is not south of Mouth lat {mouth_centroid.y:.4f}"
+            f"centroid (expected > 0.01° = ~1 km). Disk likely centred on "
+            f"land or on the mouth itself."
         )
 ```
 
@@ -1906,10 +1930,24 @@ exactly 5 reaches.
 **Downstream impact:** Any user code or analysis pinned to those reach
 names in `example_tornionjoki.yaml` / `example_simojoki.yaml` /
 `example_byskealven.yaml` / `example_morrumsan.yaml` will see KeyError.
-The reaches contributed nothing to the simulation (no shapefile cells,
-no spawn weight). They were carried as dead config from the original
-template-copy. `example_baltic.yaml` retains them since they represent
-real Curonian Lagoon distributaries.
+
+These reaches had **no shapefile cells attached**, so the spatial
+simulation was unaffected by their presence. However, **some do carry
+non-zero `pspc_smolts_per_year` values** that contributed to stock
+accounting:
+
+- `example_byskealven.yaml`: `Skirvyte.pspc_smolts_per_year = 13000`
+  (verified pre-removal; other 3 orphan reaches in this config have
+  no `pspc_smolts_per_year` field)
+- Other 3 WGBAST configs (`example_tornionjoki`, `example_simojoki`,
+  `example_morrumsan`): the implementation step verifies whether any
+  orphan reach carries `pspc_smolts_per_year` and lists it here before
+  the release.
+
+If a user-facing analysis depended on these `pspc_smolts_per_year`
+values, the impact is a corresponding reduction in total smolts/year
+modelled for that river. `example_baltic.yaml` retains the reaches —
+they represent real Curonian Lagoon distributaries there.
 
 ### Verified
 
@@ -1983,9 +2021,26 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history (v1 → v2)
+# Plan revision history (v1 → v2 → v3)
 
-The original plan went through a multi-tool review (4 reviewers in parallel: codebase-fidelity, logic, numerical, skeptical-architect). 14 findings surfaced, all applied inline:
+The plan went through TWO multi-tool review loops (4 reviewers in parallel each loop: codebase-fidelity, logic, numerical, skeptical-architect).
+
+## Loop 2 (v2 → v3) — 10 fixes applied
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| CRIT | 1 | Tornionjoki UTM zone boundary (mouth in 35, freshwater centroid in 34) | Pin UTM to `detect_utm_epsg(mouth_lon, mouth_lat)` instead of freshwater centroid |
+| HIGH | 2 | PR-1 regenerated Tornionjoki with old code; Section B byte-equivalence claim was unprovable | PR-1 ships regex + cache only; PR-2 Section C does the single regenerate |
+| HIGH | 3 | Task 2.C.2 "3-commit decomposition" was theatre | Replaced with honest single-commit + smoke-tests-mid-block |
+| IMP | 4 | Byskeälven `bc.y < mouth.y` test would fail (bay opens E/SE) | Dropped strict directional check; kept distance check only |
+| IMP | 5 | CHANGELOG falsely claimed orphan reaches had no spawn weight | Enumerated `Skirvyte.pspc_smolts_per_year=13000`; helper logs warning when dropping non-zero pspc |
+| IMP | 6 | `_wire_wgbast_physical_configs.py` lacked module-level `geopandas` import | Plan now flags the missing import explicitly |
+| IMP | 7 | Test count off-by-one (Task 2.A.4) | Fixed: 8 PASS (was incorrectly stated as 6, then 7) |
+| IMP | 8 | Disjoint-MultiLineString fallback shipped untested | Added `test_partition_handles_disjoint_multilinestring` |
+| IMP | 9 | Pre-flight Task 0 was curl-only (incompatible with subagent workflow) | Moved out of the task list into the plan preamble |
+| IMP | 10 | `bc_polygon` could be MultiPolygon (islands/skerries) | Added MultiPolygon → list-of-polygons conditional handling |
+
+## Loop 1 (v1 → v2) — 14 fixes applied
 
 | Sev | # | Issue | Fix |
 |---|---|---|---|
