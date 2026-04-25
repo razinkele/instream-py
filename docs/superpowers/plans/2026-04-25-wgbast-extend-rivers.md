@@ -1737,17 +1737,25 @@ Replace it with:
 
 - [ ] **Step 2b: Add module-top imports**
 
-The prescribed code in Step 2 calls `detect_utm_epsg(...)`, `clip_sea_polygon_to_disk(...)`, and `pd.concat(...)` — none of which are imported by `_generate_wgbast_physical_domains.py` today (verified: only `Point` exists at line 34; `detect_utm_epsg` and `clip_sea_polygon_to_disk` are absent from the import block). Add at the module top (alongside the existing `geopandas` / `shapely` imports near line 33–42):
+The prescribed code in Step 2 calls `detect_utm_epsg(...)`, `clip_sea_polygon_to_disk(...)`, and `pd.concat(...)` — none of which are imported by `_generate_wgbast_physical_domains.py` today (verified: only `Point` exists at line 34; `detect_utm_epsg` and `clip_sea_polygon_to_disk` are absent from the import block).
+
+**Placement matters** — the existing file has `sys.path.insert(0, str(ROOT / "app"))` at line 38, which is what makes `from modules.*` imports work. So the two `from modules.*` lines below MUST be added AFTER line 38, NOT alongside the `geopandas`/`shapely` imports at lines 33–35 (which run before the `sys.path.insert`). The safe location is **immediately after the existing `from modules.create_model_grid import generate_cells  # noqa: E402` line at line 42**:
 
 ```python
-import pandas as pd
+# After line 42 (next to the existing `from modules.create_model_grid` import)
 from modules.create_model_utils import detect_utm_epsg  # noqa: E402
 from modules.create_model_marine import clip_sea_polygon_to_disk  # noqa: E402
 ```
 
+The `pandas` import is third-party and CAN go anywhere. Add it alongside the other third-party imports near line 33:
+```python
+# Near line 33 (alongside geopandas)
+import pandas as pd
+```
+
 `Point` is already imported on the existing `from shapely.geometry import LineString, Point, shape` line — no change needed.
 
-Skipping this step makes the smoke test in Step 3 below crash with `NameError: detect_utm_epsg` (or `clip_sea_polygon_to_disk`, or `pd`).
+Skipping this step makes the smoke test in Step 3 below crash with `NameError: detect_utm_epsg` (or `clip_sea_polygon_to_disk`, or `pd`). Misplacing the `from modules.*` imports above line 38 makes them crash with `ModuleNotFoundError: No module named 'modules.create_model_utils'`.
 
 - [ ] **Step 3: Smoke-test the regenerator on Mörrumsån (smallest fixture, fastest)**
 
@@ -2467,6 +2475,12 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 12 review loops
 
 TWELVE multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loop 7: 13 cleanup. Loop 8: 2 LOW. Loop 9: 1 IMP + 3 LOW. Loop 10: 3 IMP + 2 LOW. Loop 11 (narrow regression check): **0 findings**. Loop 12 (final broad sweep): 2 IMP — graceful-degradation guard + cache disambiguation.
+
+## Loop 15 (v14 → v15) — Step 2b import-placement disambiguation
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| IMP | 1 | Loop-14's Step 2b said "alongside `geopandas`/`shapely` imports near line 33–42", but the `sys.path.insert(0, "app")` is at line 38 — so `from modules.*` imports placed at lines 33–35 would crash with `ModuleNotFoundError`. | Split Step 2b into "third-party (anywhere) vs from-modules (must be after line 42)" with explicit placement. |
 
 ## Loop 14 (v13 → v14) — module-top imports made an explicit step
 
