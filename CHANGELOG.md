@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.0] — 2026-04-25
+
+### Added — Edit Model panel feature additions
+
+Building on v0.45.3's MVP (load fixture, view reaches, rename), this
+release adds 4 new editing operations + safety net:
+
+- **Merge two reaches** by clicking each (`Start merge: click reach A`
+  workflow). Combines cells, renames hydrology CSVs, drops the second
+  reach's YAML entry.
+- **Split a reach** by drawing a line on the map
+  (`MapWidget.enable_draw(modes=['draw_line_string'])`). Cells are
+  classified by signed cross-product against the line tangent. Both new
+  reaches inherit the parent's hydrology CSVs (each editable separately).
+- **Lasso-select cells** by drawing a polygon, then bulk-reassign to a
+  new (or existing) reach name. The new reach inherits its hydrology
+  config from the most-common previously-assigned reach in the lasso.
+- **Regenerate cell grid** at a new cell size from inside the panel.
+  Reuses each existing reach's polygon union as `reach_segments` and
+  calls `create_model_grid.generate_cells` with the new size; re-expands
+  per-reach `Depths.csv` / `Vels.csv` to match new cell counts.
+- **Undo / redo** with a 10-snapshot ring buffer. Every Apply pushes
+  the prior `(cells, cfg)` onto an undo stack; Undo restores it and
+  persists.
+
+### Verified
+
+- 6 new test files, ~10 unit tests covering merge mutation, split-side
+  classification (horizontal/vertical/diagonal), lasso containment,
+  regenerate cell-count behaviour, H7 CSV re-expansion regression, and
+  history-stack semantics.
+- All Edit Model panel handlers preserve shapefile + YAML round-trip
+  consistency.
+
+### Workstream B (Tornionjoki calibration) deferred
+
+The 2026-04-25 plan also covered re-calibrating
+`test_latitudinal_smolt_age_gradient[example_tornionjoki]`. That
+workstream needs domain judgment for the parameter sweep and is
+deferred to v0.46.1+.
+
 ## [0.45.3] — 2026-04-25
 
 ### Fixed — connectivity-based polygon filter + along-channel reach split
