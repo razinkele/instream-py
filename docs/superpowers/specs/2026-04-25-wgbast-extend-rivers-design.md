@@ -1,49 +1,61 @@
-# WGBAST rivers — extend Tornionjoki + materialize BalticCoast cells (design v2)
+# WGBAST rivers — extend Tornionjoki + materialize BalticCoast cells (design v3)
 
-**Date:** 2026-04-25 (v2 after multi-reviewer pass)
+**Date:** 2026-04-25 (v3 after Create Model framework comparison)
 **Scope:** Two independent PRs.
 - **PR-1 (Tornionjoki regex):** `scripts/_fetch_wgbast_osm_polylines.py`, regenerated `tests/fixtures/example_tornionjoki/`.
-- **PR-2 (BalticCoast cells + WGBAST yaml cleanup):** `scripts/_generate_wgbast_physical_domains.py`, `scripts/_wire_wgbast_physical_configs.py`, new `scripts/_wgbast_balticcoast.py` helper, all 4 `configs/example_*.yaml`, regenerated 4 fixtures.
+- **PR-2 (BalticCoast cells + WGBAST yaml cleanup):** new `app/modules/create_model_marine.py` shared helper, `scripts/_generate_wgbast_physical_domains.py`, `scripts/_wire_wgbast_physical_configs.py`, `app/modules/create_model_panel.py` (small refactor), all 4 `configs/example_*.yaml`, regenerated 4 fixtures.
 
-**Out of scope:** Tornionjoki juvenile-growth calibration; basin-wide shared marine state; salinity time-series for the new marine cells (deferred — see Open questions).
+**Out of scope:** Tornionjoki juvenile-growth calibration; basin-wide shared marine state; salinity time-series for the new marine cells.
 
-## Why v2 (changes from v1)
+## Why v3 (changes from v2)
 
-The v1 spec invented a new reach name `Estuary` and an entire generation pipeline. Multi-tool review surfaced:
+The v2 spec invented a per-river OSM-coastline + disk-minus-land pipeline. Comparison against `app/modules/create_model_panel.py` revealed that:
 
-- **`example_baltic.yaml` already defines a `BalticCoast` reach** (lines 370–388) with the marine-typical hydrology values v1 wanted to recreate.
-- **All 4 WGBAST fixtures already ship `BalticCoast-{Depths,Vels,TimeSeriesInputs}.csv`** files — only the shapefile cells are missing.
-- **All 4 WGBAST `configs/example_*.yaml` already declare a `BalticCoast` reach** with `upstream_junction: 5, downstream_junction: 6`, downstream of `Upper: 4→5`. The YAML chain is already mouth-to-sea correct; only geometry is missing.
-- **`scripts/generate_baltic_example.py:419-485`** has a working precedent: build a sea polygon by `rectangle.difference(land_polygon)` and pass it to `generate_cells` with `type="sea"`.
-- Naming a new reach `Estuary` would collide with the **zone-based marine model** (`src/salmopy/marine/`) that uses `"Estuary"` as a string literal in `marine/survival.py:257` and a 14-day residency timer in `marine/domain.py:129`.
-- v1's `cell_id + len(fresh)` arithmetic would crash because `cell_id` is the string format `"C0001"` (per `app/modules/create_model_grid.py:208`).
+- **The Create Model UI already has a complete sea-reach workflow.** A "🌊 Sea" button at `create_model_panel.py:229` calls `_query_marine_regions(bbox)` (line 86), filters the result to the polygon containing the bbox centre (lines 744–752), and pipes the polygon through `generate_cells(..., type="sea")` (lines 1136–1147).
+- **Marine Regions WFS returns named IHO sea polygons** (`Gulf of Bothnia` for the 3 northern rivers, `Baltic Sea` for Mörrumsån — confirmed by probe). These are **real, sea-only polygons** — no land-vs-sea classifier needed.
+- **The cell-id format `f"C{i+1:04d}"` is already standardized** at `create_model_panel.py:1153` and `create_model_grid.py:208`. Both freshwater and sea cells use it consistently.
+- **A future Create Model "Add a sea reach to my custom river" workflow** wants the same algorithm the WGBAST batch generator needs.
 
-v2 keeps every geometric idea from v1 (UTM disk, coastline clip, adjacency sanity check) but uses the existing `BalticCoast` reach name + `type="sea"` plumbing. This converts the work from "invent new infrastructure" to "fill an empty slot in existing infrastructure."
+v3 collapses v2's bespoke OSM-coastline pipeline into a thin reuse of the Create Model framework. The disk geometry survives (UTM-accurate, true-meters radius), but the coastline-clip + land-vs-sea classifier is replaced by `sea_polygon.intersection(disk)`, where `sea_polygon` is whatever Marine Regions WFS returns for the bbox. Sea-only by definition.
+
+## Why v2 (kept from v2 → v3)
+
+The v2 → v3 transition keeps:
+- Use of the existing `BalticCoast` reach name (already in all 4 WGBAST yamls + CSVs).
+- PR-1 / PR-2 split.
+- Per-river `BalticCoast` parameter tuning (0.95 Bothnian Bay, 0.90 Hanöbukten).
+- Drop the 4 orphan Lithuanian template reaches.
+- Fail-fast error handling (no silent fallbacks).
+- Both grids pinned to the same UTM zone.
+- Junction-graph adjacency assertion in tests.
+
+## Why v1 (kept from v1 → v2)
+
+The original v1 surfaced the right *problems* (Tornionjoki extent + missing marine reach) but proposed the wrong *solution shape*. v2/v3 keep the problem framing.
 
 ## Problem (unchanged from v1)
 
-1. **Tornionjoki extent is too small.** OSM line-way fetch matches only `^(Tornionjoki|Torne älv|Torneälven|Torneå älv|Torne)$` — misses Muonionjoki tributary (~150 km of the basin). Tornionjoki ends up with 71 OSM polygons → 860 hex cells, vs Simojoki at 87 polygons → 2595 cells. Cell-count ordering inverted from physical reality.
-2. **No marine cells at any WGBAST river mouth.** Configs declare a `BalticCoast` reach with junction integers `(5, 6)`, but the shapefiles contain only `Mouth`/`Lower`/`Middle`/`Upper`. Smolts have no transit cells between the river mouth and the sea-zone abstraction.
-3. **Stale Lithuanian template reaches.** Each WGBAST YAML carries 4 orphan reaches (`Skirvyte`, `Leite`, `Gilija`, `CuronianLagoon`) inherited from the example_baltic template. They have `pspc_smolts_per_year: 0` (effectively dead) and reference Lithuanian-named CSV files that ship in each fixture but represent the wrong system. Adding marine cells without removing this cruft keeps a confusing config surface.
+1. **Tornionjoki extent is too small.** OSM line-way fetch matches only `^(Tornionjoki|Torne älv|Torneälven|Torneå älv|Torne)$` — misses Muonionjoki tributary (~150 km of the basin). Tornionjoki ends up with 71 OSM polygons → 860 hex cells, vs Simojoki at 87 polygons → 2595 cells.
+2. **No marine cells at any WGBAST river mouth.** Configs declare a `BalticCoast` reach with junction integers `(5, 6)`, but the shapefiles contain only `Mouth/Lower/Middle/Upper`.
+3. **Stale Lithuanian template reaches.** Each WGBAST YAML carries 4 orphan reaches (`Skirvyte`, `Leite`, `Gilija`, `CuronianLagoon`) inherited from the example_baltic template.
 
-## Goals
+## Goals (PR-2 wording revised; PR-1 unchanged)
 
 **PR-1:** Tornionjoki's freshwater extent grows to include Muonionjoki. Cell count rises above Simojoki.
 
 **PR-2 (after PR-1 lands):**
-- Each of the 4 WGBAST fixtures has shapefile cells under the existing `BalticCoast` reach name (~10 km coastline-clipped disk at the river mouth, coarse hex cells).
-- BalticCoast cells are spatially adjacent to Mouth cells (at least one shared edge in the polygon adjacency graph) so the simulation can route fish through.
-- Per-river `BalticCoast` parameter tuning: lower `fish_pred_min` for Bothnian Bay rivers (lower seal density than the Klaipėda value of 0.65) — concrete values in the Components section.
-- Stale Lithuanian template reaches removed from each WGBAST YAML.
-- All existing tests pass; reach name set in each WGBAST fixture becomes exactly `{Mouth, Lower, Middle, Upper, BalticCoast}`.
+- Each WGBAST fixture has shapefile cells under the existing `BalticCoast` reach name, generated from a Marine Regions IHO polygon clipped to a 10 km disk at the river mouth.
+- BalticCoast cells are spatially adjacent to Mouth cells.
+- A new module `app/modules/create_model_marine.py` exposes the disk-clipped sea-polygon helper. Both the WGBAST batch generator AND the Create Model UI consume it (UI integration is a small refactor, not a new feature — see Components §6).
+- Per-river `BalticCoast` parameter tuning.
+- Stale Lithuanian template reaches removed.
 
-## Non-goals (v2)
+## Non-goals (v3)
 
-- Per-tributary multi-reach decomposition of Muonionjoki (PR-1 keeps the existing 4-quartile along-channel partition).
-- Bay-scale shared marine state across rivers.
+- Adding new UI features to Create Model (the helper extraction is purely a refactor; the existing 🌊 Sea button keeps its current behaviour). A future task may add a "Generate sea reach near point" button — the helper is designed to support that, but it's not implemented in PR-2.
+- Per-tributary multi-reach decomposition of Muonionjoki.
+- Salinity time-series.
 - Tornionjoki juvenile-growth calibration.
-- Salinity time-series for the new BalticCoast cells (defer; see Open questions).
-- Adjusting the marine-zone model in `src/salmopy/marine/`.
 
 ## Architecture overview
 
@@ -55,31 +67,31 @@ tests/fixtures/_osm_cache/                 [MOD]   refresh tornionjoki line cach
 tests/fixtures/example_tornionjoki/        [MOD]   regenerated shapefile (more cells)
 ```
 
-### PR-2 (BalticCoast cells + WGBAST yaml cleanup)
+### PR-2 (BalticCoast cells via Marine Regions + WGBAST yaml cleanup)
 
 ```
+app/modules/
+├── create_model_marine.py                 [NEW]  query_named_sea_polygon + clip_to_disk
+└── create_model_panel.py                  [MOD]  thin wrapper: re-export from new module
+
 scripts/
-├── _wgbast_balticcoast.py                 [NEW]   coastline-clipped disk → polygon
-├── _fetch_wgbast_osm_polylines.py         [MOD]   per-river coastline cache fetch
-├── _generate_wgbast_physical_domains.py   [MOD]   BalticCoast segment + adjacency check
-└── _wire_wgbast_physical_configs.py       [MOD]   per-river BalticCoast tuning + orphan-reach cleanup
+├── _generate_wgbast_physical_domains.py   [MOD]  BalticCoast segment via create_model_marine
+└── _wire_wgbast_physical_configs.py       [MOD]  per-river BalticCoast tuning + orphan-reach cleanup
+
 configs/
-├── example_tornionjoki.yaml               [MOD]   tuned BalticCoast params; orphan reaches removed
-├── example_simojoki.yaml                  [MOD]   same
-├── example_byskealven.yaml                [MOD]   same
-└── example_morrumsan.yaml                 [MOD]   same
-tests/fixtures/example_*/                  [MOD]   regenerated shapefile (5 reaches)
+├── example_tornionjoki.yaml               [MOD]  tuned BalticCoast params; orphan reaches removed
+├── example_simojoki.yaml                  [MOD]  same
+├── example_byskealven.yaml                [MOD]  same
+└── example_morrumsan.yaml                 [MOD]  same
+
+tests/fixtures/example_*/                  [MOD]  regenerated shapefile (5 reaches)
 ```
 
-Per-river `River` dataclass gains **two module-level constants**, not per-river fields (per the YAGNI feedback):
-
+Module-level constants in `_generate_wgbast_physical_domains.py`:
 ```python
-# in _generate_wgbast_physical_domains.py
 BALTICCOAST_RADIUS_M = 10_000.0
 BALTICCOAST_CELL_FACTOR = 4.0   # BalticCoast cell_size = river.cell_size_m × this
 ```
-
-A future river that needs different values triggers a refactor; today four rivers, one set of constants.
 
 ## Components — PR-1
 
@@ -102,70 +114,142 @@ PR-1 is a single-line code change + a fixture regeneration. Ship by itself.
 
 ## Components — PR-2
 
-### 1. New `scripts/_wgbast_balticcoast.py` helper
+### 1. New `app/modules/create_model_marine.py` shared helper
+
+Two functions, both pure-Python (no Shiny dependency, no IO beyond the WFS request — same constraints as `create_model_grid.py`):
 
 ```python
-def build_balticcoast_polygon(
-    mouth_lon_lat: tuple[float, float],
-    source_lon_lat: tuple[float, float],   # next upstream waypoint, identifies "land" side
-    radius_m: float,
-    coastline_lines: list[LineString],
-    utm_epsg: int,                          # explicit; matches freshwater grid's UTM
-) -> Polygon:
-    """Return a coastline-clipped marine polygon (WGS84) representing the
-    BalticCoast extent at a river mouth.
+"""Marine sea-reach geometry helpers shared by Create Model UI and the
+WGBAST batch generator.
 
-    Algorithm:
-      1. In `utm_epsg` (chosen to match the freshwater grid's UTM zone so the
-         two grids land in the same projection without round-trip drift):
-           a. Project mouth and source to UTM.
-           b. Verify the disk does NOT contain the source point. If it does,
-              raise ValueError immediately (caller reduces radius_m or
-              picks a closer-in source proxy). Source-inside-disk inverts
-              the land/sea classifier.
-           c. Build the disk: mouth_pt.buffer(radius_m).
-           d. Project coastline_lines to UTM, merge into a single
-              MultiLineString, buffer by 1.0 (true 1 m at this scale).
-      2. If `coastline_lines` is empty:
-           Raise ValueError("coastline cache missing") — do NOT silently
-           return the unclipped disk. An unclipped disk at any of these
-           4 mouths extends ~10 km inland; tagging freshwater pixels as
-           marine causes silent biological corruption that the adjacency
-           check cannot detect.
-      3. Otherwise:
-           a. Compute pieces = disk.difference(buffered_coastline). Result
-              is one of:
-              - empty (disk fully covered by coastline buffer): raise ValueError.
-              - single Polygon (coastline does not split the disk): raise
-                ValueError("coastline does not cross disk; suspicious").
-              - MultiPolygon (coastline splits the disk into ≥2 pieces).
-           b. Land = pieces.geoms[i] containing source_pt (UTM).
-              Sea = union of pieces NOT containing source_pt.
-           c. If no piece contains source_pt (source on or near a coastline
-              line): raise ValueError ("source within 1 m of coastline,
-              cannot classify").
-      4. Reproject sea polygon back to WGS84 (EPSG:4326) and return.
+`query_named_sea_polygon(bbox)` is the same Marine Regions WFS query
+that `create_model_panel.py::_query_marine_regions` did privately. It is
+moved here so the WGBAST scripts can call it directly without spawning
+a Shiny session.
 
-    All branches that "can't decide" raise ValueError — caller turns these
-    into `RuntimeError` with the river name. Fail-fast over silent
-    fallbacks.
+`clip_sea_polygon_to_disk(...)` is a new helper: given an already-fetched
+sea polygon and a river-mouth point, returns the polygon clipped to a
+true-meters disk around the mouth. The clip is done in UTM so the radius
+is in actual metres regardless of latitude.
+"""
+from __future__ import annotations
+import requests
+import geopandas as gpd
+from shapely.geometry import Point, Polygon, MultiPolygon, box
+from shapely.ops import unary_union
+
+MARINE_REGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
+
+
+def query_named_sea_polygon(
+    bbox_wgs84: tuple[float, float, float, float],   # west, south, east, north
+    timeout_s: int = 60,
+) -> gpd.GeoDataFrame | None:
+    """Query Marine Regions WFS for IHO sea-area polygons within bbox.
+
+    Returns a GeoDataFrame in EPSG:4326 with columns ['name', 'geometry'],
+    post-filtered to features whose geometry actually intersects the bbox
+    (Marine Regions returns global polygons that merely touch the bbox).
+    Returns None on network/HTTP failure.
     """
+    west, south, east, north = bbox_wgs84
+    params = {
+        "service": "WFS",
+        "version": "2.0.0",
+        "request": "GetFeature",
+        "typeNames": "MarineRegions:iho",
+        "outputFormat": "application/json",
+        "srsName": "EPSG:4326",
+        "bbox": f"{west},{south},{east},{north},EPSG:4326",
+    }
+    try:
+        resp = requests.get(MARINE_REGIONS_WFS, params=params, timeout=timeout_s)
+        resp.raise_for_status()
+        geoj = resp.json()
+    except Exception:
+        return None
+    if not geoj.get("features"):
+        return None
+    gdf = gpd.GeoDataFrame.from_features(geoj["features"], crs="EPSG:4326")
+    view_box = box(*bbox_wgs84)
+    gdf = gdf[gdf.geometry.intersects(view_box)].copy()
+    # Prefer polygons that contain the bbox centroid (eliminates spurious
+    # globe-spanning matches like Bering Sea).
+    if len(gdf) > 1:
+        centre = view_box.centroid
+        covers = gdf[gdf.geometry.contains(centre)]
+        if len(covers) > 0:
+            gdf = covers.copy()
+    if "name" not in gdf.columns:
+        gdf["name"] = ""
+    return gdf[["name", "geometry"]].reset_index(drop=True)
+
+
+def clip_sea_polygon_to_disk(
+    sea_polygon: Polygon | MultiPolygon,
+    mouth_lon_lat: tuple[float, float],
+    radius_m: float,
+    utm_epsg: int,
+) -> Polygon | MultiPolygon:
+    """Return `sea_polygon` clipped to a true-meters disk around the mouth.
+
+    Algorithm (no land subtraction needed — sea_polygon is sea-only by
+    definition):
+      1. Reproject sea_polygon and mouth point to `utm_epsg`.
+      2. Build a true-meters disk: mouth_pt.buffer(radius_m).
+      3. Intersect: clipped = sea_polygon_utm.intersection(disk).
+      4. Reproject the result back to EPSG:4326. Return.
+
+    Raises ValueError if the intersection is empty (sea polygon does not
+    cover the mouth at all — likely a wrong waypoint or zoomed-in bbox).
+    """
+    if sea_polygon.is_empty:
+        raise ValueError("sea_polygon is empty; nothing to clip")
+    sea_gdf = gpd.GeoDataFrame(geometry=[sea_polygon], crs="EPSG:4326").to_crs(epsg=utm_epsg)
+    mouth_gdf = gpd.GeoDataFrame(
+        geometry=[Point(mouth_lon_lat)], crs="EPSG:4326"
+    ).to_crs(epsg=utm_epsg)
+    disk = mouth_gdf.geometry.iloc[0].buffer(radius_m)
+    clipped = sea_gdf.geometry.iloc[0].intersection(disk)
+    if clipped.is_empty:
+        raise ValueError(
+            f"sea polygon does not intersect a {radius_m}m disk at "
+            f"mouth {mouth_lon_lat} — wrong waypoint?"
+        )
+    out = gpd.GeoDataFrame(geometry=[clipped], crs=f"EPSG:{utm_epsg}").to_crs("EPSG:4326")
+    return out.geometry.iloc[0]
 ```
 
-The helper takes **explicit `utm_epsg`** rather than computing it locally — this forces the caller to pin the BalticCoast UTM to the freshwater grid's UTM, eliminating cross-grid round-trip drift in the adjacency check (numerical reviewer finding 3).
+Key advantages over v2:
+- **No coastline cache.** Marine Regions data is fetched once at generation time. No `_osm_cache/<river>_coastline.json` files.
+- **No land-vs-sea classifier.** Marine Regions IHO polygons are sea-only.
+- **No `source_lon_lat` parameter.** The disk doesn't need a "land side" to exclude.
+- **Reusable.** The Create Model UI's existing fetch_sea handler can call into the same helper.
 
-Pure-Python (geopandas + shapely + pyproj already in the `shiny` env), no I/O, fully unit-testable on synthetic inputs.
+### 2. `create_model_panel.py` refactor
 
-### 2. `_fetch_wgbast_osm_polylines.py` — coastline fetch
+Replace the private `_query_marine_regions` (line 86) with `from .create_model_marine import query_named_sea_polygon`. The handler at line 727 (`_on_fetch_sea`) keeps its existing body but consumes the moved function.
 
-For each `RiverQuery`, add a third Overpass query for `natural=coastline` ways within a 0.3° × 0.3° bbox centered on `mouth_lon_lat`. Cache to `_osm_cache/<short_name>_coastline.json` in the same flat-list format as the existing line/polygon caches. Network errors and non-200 responses are non-recoverable — fail loudly so the user re-runs after Overpass recovers (no silent empty cache).
+This is a 5-line patch — extract + re-export. Behaviour-preserving.
 
-### 3. `_generate_wgbast_physical_domains.py` — BalticCoast cell generation
+### 3a. WFS payload caching
+
+The WGBAST generator caches the Marine Regions response to
+`tests/fixtures/_osm_cache/<short_name>_marineregions.json` (same flat-list
+format as the existing OSM line-way / polygon caches). On second and
+subsequent runs the cache is read instead of hitting WFS, making
+fixture regeneration fully offline-clean. Pass `--refresh` (mirroring
+the existing flag in `_fetch_wgbast_osm_polylines.py`) to force a
+re-fetch.
+
+### 3b. `_generate_wgbast_physical_domains.py` — BalticCoast cell generation
 
 After the existing `build_reach_segments(river)` call returns the 4 freshwater reach segments:
 
 ```python
-from _wgbast_balticcoast import build_balticcoast_polygon
+from app.modules.create_model_marine import (
+    query_named_sea_polygon, clip_sea_polygon_to_disk,
+)
 from app.modules.create_model_utils import detect_utm_epsg
 
 # Pin both grids to the SAME UTM zone (freshwater centroid's zone)
@@ -175,19 +259,38 @@ for info in fresh_segments.values():
 fresh_centroid = unary_union(all_geoms).centroid
 utm_epsg = detect_utm_epsg(fresh_centroid.x, fresh_centroid.y)
 
-coastline_lines = _load_coastline_cache(river)   # raises if missing
-bc_polygon = build_balticcoast_polygon(
+# Marine Regions returns the IHO polygon (`Gulf of Bothnia` or `Baltic Sea`).
+# 0.5° bbox around mouth is wide enough to ensure the polygon is returned
+# but narrow enough to keep WFS payloads small.
+mouth_lon, mouth_lat = river.waypoints[0]
+bbox = (mouth_lon - 0.5, mouth_lat - 0.5, mouth_lon + 0.5, mouth_lat + 0.5)
+sea_gdf = query_named_sea_polygon(bbox)
+if sea_gdf is None or sea_gdf.empty:
+    raise RuntimeError(
+        f"{river.river_name}: Marine Regions returned no sea polygon for "
+        f"mouth {river.waypoints[0]}. Re-run when WFS recovers."
+    )
+# Use the polygon that actually covers the mouth point (post-filter
+# redundant with query_named_sea_polygon's own filter, but defensive).
+mouth_pt = Point(mouth_lon, mouth_lat)
+sea_gdf = sea_gdf[sea_gdf.geometry.contains(mouth_pt)]
+if sea_gdf.empty:
+    raise RuntimeError(
+        f"{river.river_name}: no sea polygon contains the mouth point. "
+        f"Mouth waypoint may need updating."
+    )
+sea_polygon = sea_gdf.geometry.iloc[0]
+
+bc_polygon = clip_sea_polygon_to_disk(
+    sea_polygon=sea_polygon,
     mouth_lon_lat=river.waypoints[0],
-    source_lon_lat=river.waypoints[1],     # second waypoint = next upstream
     radius_m=BALTICCOAST_RADIUS_M,
-    coastline_lines=coastline_lines,
     utm_epsg=utm_epsg,
 )
-
 bc_segment = {"segments": [bc_polygon], "frac_spawn": 0.0, "type": "sea"}
 ```
 
-Two `generate_cells` calls (per the v1 design — kept verbatim):
+Two `generate_cells` calls (per the v2 design — kept verbatim). The renumber-cell-id logic uses the standardised format from `create_model_panel.py:1153`:
 
 ```python
 fresh = generate_cells(
@@ -204,40 +307,25 @@ marine = generate_cells(
     buffer_factor=1.0,
     min_overlap=0.1,
 )
-```
-
-Both calls return GeoDataFrames with a `cell_id` STRING column formatted `"C0001"`, `"C0002"`, ... (per `create_model_grid.py:208`). Renumber the marine ids to avoid collision with freshwater ids:
-
-```python
-n_fresh = len(fresh)
-n_total = n_fresh + len(marine)
-width = max(4, len(str(n_total)))   # widen format if needed; 4 was the old hardcoded width
-fresh["cell_id"] = [f"C{(i+1):0{width}d}" for i in range(n_fresh)]
-marine["cell_id"] = [f"C{(n_fresh + i + 1):0{width}d}" for i in range(len(marine))]
 combined = pd.concat([fresh, marine], ignore_index=True)
+combined["cell_id"] = [f"C{i+1:04d}" for i in range(len(combined))]
 ```
 
-(The existing fresh ids are also re-formatted so widths match. This is safe because cell_id is informational, not a foreign key into other CSVs — `Depths.csv` and `Vels.csv` are indexed by row position, not id.)
+(Cell-id is informational, not a foreign key into `Depths.csv`/`Vels.csv` which are indexed by row position.)
 
 ### 4. Adjacency sanity check
+
+Same as v2 — both grids in the same `utm_epsg` mean residual round-trip drift is sub-meter; a 1e-7° buffer absorbs it:
 
 ```python
 reach_col = "REACH_NAME" if "REACH_NAME" in combined.columns else "reach_name"
 mouth_subset = combined[combined[reach_col] == "Mouth"]
 marine_subset = combined[combined[reach_col] == "BalticCoast"]
 if marine_subset.empty:
-    raise RuntimeError(
-        f"{river.river_name}: BalticCoast generated 0 cells "
-        f"(disk minus coastline likely too small at radius={BALTICCOAST_RADIUS_M}m)."
-    )
+    raise RuntimeError(f"{river.river_name}: BalticCoast generated 0 cells.")
 marine_union = marine_subset.geometry.unary_union
 if marine_union is None or marine_union.is_empty:
-    raise RuntimeError(
-        f"{river.river_name}: BalticCoast geometry is empty after concat."
-    )
-# Use a small buffer to absorb sub-meter UTM↔WGS84 round-trip noise.
-# Both grids ran in the SAME utm_epsg (set above) so noise is small;
-# a 1e-7° buffer (~0.011 m at this latitude) is enough.
+    raise RuntimeError(f"{river.river_name}: BalticCoast geometry empty after concat.")
 hits = mouth_subset.geometry.buffer(1e-7).intersects(marine_union).sum()
 if hits == 0:
     raise RuntimeError(
@@ -247,161 +335,100 @@ if hits == 0:
     )
 ```
 
-The check guards against:
-- Empty marine cells (from coastline cache covering the whole disk).
-- `unary_union` returning `None` on empty selections (older shapely versions).
-- Sub-meter round-trip drift between freshwater and marine grids (mitigated by pinning UTM to the same zone, but the `1e-7°` buffer absorbs any residual hairline gap).
-
 ### 5. `_wire_wgbast_physical_configs.py` — per-river BalticCoast tuning + orphan cleanup
 
-For each WGBAST config (Tornionjoki, Simojoki, Byskealven, Morrumsan):
+Unchanged from v2 (per-river tuning of `fish_pred_min` to 0.95 / 0.90; drop Skirvyte/Leite/Gilija/CuronianLagoon; re-expand BalticCoast-Depths.csv/Vels.csv to new cell counts using the v0.46.0 H7 algorithm).
 
-**5a. Drop the 4 orphan reaches** — `Skirvyte`, `Leite`, `Gilija`, `CuronianLagoon` (remove their YAML blocks entirely).
+### 6. Create Model UI continuity
 
-**5b. Update `BalticCoast` parameters** to per-river marine ecology. Defaults from `example_baltic.yaml`'s BalticCoast (Klaipėda) block apply for marine-typical hydrology, but predator regime differs per river. The 3 northern rivers see Bothnian Bay (lower seal density historically; cormorant + cod the dominant predators); Mörrumsån sees Hanöbukten (intermediate seal density). Concrete tuning:
+The 🌊 Sea button at `create_model_panel.py:229` keeps its existing behaviour: user clicks it, current bbox is queried, returned polygon is added to the reach list as `type="sea"`. No new UI work in PR-2.
 
-```yaml
-# Tornionjoki, Simojoki, Byskealven (Bothnian Bay rivers)
-BalticCoast:
-  drift_conc: 2.0e-10
-  search_prod: 1.0e-07
-  shelter_speed_frac: 0.0
-  prey_energy_density: 1500
-  drift_regen_distance: 20000
-  shading: 0.02
-  fish_pred_min: 0.95          # was 0.65 (Klaipėda seals);
-                               # Bothnian Bay smolts see lower seal density.
-                               # 0.95 = ~5% daily mortality, ~consistent with
-                               # post-smolt at-sea survival of 75% over 30 days
-                               # (matches existing example_baltic Mouth = 0.985)
-  terr_pred_min: 0.995
-  light_turbid_coef: 0.007
-  light_turbid_const: 0.004
-  max_spawn_flow: 999
-  shear_A: 0.001
-  shear_B: 0.15
-  upstream_junction: 5         # already set; downstream of Upper: 4→5
-  downstream_junction: 6       # already set; terminal toward marine zone
-  time_series_input_file: "BalticCoast-TimeSeriesInputs.csv"
-  depth_file: "BalticCoast-Depths.csv"
-  velocity_file: "BalticCoast-Vels.csv"
-
-# Mörrumsån (Hanöbukten, southern Baltic)
-BalticCoast:
-  ...
-  fish_pred_min: 0.90          # higher seal density than Bothnian Bay,
-                               # lower than Klaipėda; ~10% daily mortality
-  ...
-```
-
-(Marine-zone parameters left for a later calibration pass.)
-
-**5c. Per-reach hydrology CSVs** — the BalticCoast-*.csv files already exist in each fixture (template-copied). After the regenerate they will have row counts that don't match the new BalticCoast cell count, so they must be re-expanded the same way the v0.46.0 H7 fix re-expands per-cell CSVs after regenerate:
-
-```
-# For each river, re-expand BalticCoast-Depths.csv and BalticCoast-Vels.csv
-# to len(combined[combined.REACH_NAME == "BalticCoast"]) rows by replicating
-# the first data row (header lines + count row + flow-values row preserved).
-# BalticCoast-TimeSeriesInputs.csv is per-reach not per-cell, so it needs no
-# row-count change; only the temperature column may need adjustment to match
-# the Mouth reach's mean (so smolts emerging into BalticCoast don't see a
-# discontinuous temp jump).
-```
-
-The CSV format (verified by code-explorer) is:
-
-```
-; comment line 1
-; comment line 2 (e.g. "CELL DEPTHS IN METERS")
-N,Number of flows in table,,,,,...    ← N flow columns
-,f1,f2,f3,...,fN                       ← leading empty cell, then N flow values
-1,d11,d12,...,d1N                      ← cell 1
-2,d21,d22,...,d2N                      ← cell 2
-...
-```
-
-Re-expansion preserves lines 1-4 verbatim and replicates the cell-1 data row for every new cell. (This is the same algorithm v0.46.0 uses in `app/modules/edit_model_panel.py::_regen_apply` H7 fix.)
-
-### 6. Reach-name set in shapefile after PR-2
-
-Final reach set per WGBAST shapefile: `{Mouth, Lower, Middle, Upper, BalticCoast}`. Ordering in YAML `reaches:` block: `BalticCoast` stays at the END (after Upper), preserving the YAML's existing junction order (Mouth=1→2 first, BalticCoast=5→6 last).
+Future enhancement (deferred — out of scope for PR-2): a "Add coastal reach near current river mouth" button that calls `clip_sea_polygon_to_disk` on top of `query_named_sea_polygon` to produce a per-river sea reach without the user needing to tag a separately-fetched polygon. The helper is already shaped for this.
 
 ## Error handling
 
-- **Coastline fetch fails (Overpass timeout/error):** raise. Re-run when Overpass is back. No silent empty cache.
-- **Coastline cache covers entire disk** (`disk.difference(buffered_coastline)` empty): raise `ValueError`.
-- **Coastline cache present but doesn't cross disk** (single Polygon result): raise `ValueError` (suspicious — coastline should cross any reasonable river-mouth disk).
-- **`source_lon_lat` inside disk** (radius too large for the river's first waypoint spacing): raise `ValueError` early in `build_balticcoast_polygon`.
-- **`source_lon_lat` within 1 m of coastline** (no disk piece contains it): raise `ValueError` (waypoint hand-curation issue; user fixes the waypoint).
-- **BalticCoast generates 0 cells**: raise `RuntimeError`.
-- **BalticCoast not adjacent to Mouth**: raise `RuntimeError`.
+- **Marine Regions WFS unreachable / 5xx** → raise `RuntimeError` with the river name. Re-run when WFS recovers. The Marine Regions service has been stable for years; this is a soft failure mode.
+- **WFS returns no polygon containing the mouth** → raise `RuntimeError` (mouth waypoint is wrong, or the IHO regions don't cover it).
+- **`clip_sea_polygon_to_disk` returns empty** → `ValueError` from the helper, caller wraps as `RuntimeError`.
+- **BalticCoast generates 0 cells / not adjacent to Mouth** → `RuntimeError` (same as v2).
 
-The hard stance on fail-fast (rejecting silent fallbacks) addresses the architect's concern that a silently degraded fixture is worse than no fixture.
+No silent fallbacks at any layer.
 
 ## Testing
 
-Three test layers, all fast (<30 s) and network-free at CI time (OSM caches committed to git per existing pattern):
+Three test layers, all fast (<30 s) and network-free at CI time. WFS is hit only at fixture-generation time; tests use cached `_osm_cache/<river>_marineregions.json` payloads committed alongside fixtures (mirrors the existing OSM line-way / polygon cache pattern).
 
-### `tests/test_wgbast_balticcoast.py` (new)
+### `tests/test_create_model_marine.py` (new)
 
-Pure-Python unit tests of `build_balticcoast_polygon`:
+Pure-Python unit tests of `clip_sea_polygon_to_disk`:
 
-1. **Synthetic half-disk (success):** mouth at `(0.0, 0.0)`, source at `(0.0, 1.0)`, coastline = `LineString([(-1, 0), (1, 0)])`. Result: a half-disk in the southern half-plane (the side NOT containing source). UTM EPSG arbitrary fixed value for test (e.g. 32634).
-2. **Empty coastline (raises):** `coastline_lines=[]` → ValueError, no silent unclipped fallback.
-3. **Source inside disk (raises):** mouth at `(0,0)`, source at `(0, 0.05)` with radius_m equivalent to ~6 km → ValueError.
-4. **Source on coastline (raises):** source within 1 m of the coastline buffer → ValueError.
-5. **Coastline does not cross disk (raises):** coastline parallel to disk diameter but offset by 1.5×radius → single-polygon difference result → ValueError.
-6. **Real Mörrumsån case:** mouth `(14.745, 56.175)`, source `(14.702, 56.300)`, real cached coastline → polygon non-empty, area ≥ 30% of unclipped disk, polygon entirely SOUTH of source.
+1. **Basic intersection (success):** sea_polygon = box(0, 0, 2, 2) (deg), mouth at (1.0, 1.0), radius 50_000m, UTM zone 33 (Sweden) → result has area > 0 and lies inside the disk's circular bound.
+2. **Mouth outside polygon (raises ValueError):** sea = box(0, 0, 1, 1), mouth at (5, 5), radius 1_000_000m → intersection empty.
+3. **Tiny radius (raises ValueError):** sea = box(0, 0, 1, 1), mouth at (0.5, 0.5), radius 1m, UTM zone 33 → 1m disk doesn't intersect at all when reprojected back, OR clip is sub-mm. (Edge case to confirm.)
+
+### `tests/test_create_model_marine.py::test_query_named_sea_polygon_offline`
+
+Mock the requests.get response with a fake WFS GeoJSON payload to exercise the post-filter logic without hitting the network. Two scenarios:
+1. Multiple polygons, one contains bbox centroid → only that one returned.
+2. WFS returns 500 → returns None.
 
 ### `tests/test_wgbast_river_extents.py` (new)
 
 For each of the 4 rivers, after running the generator end-to-end:
 
 1. Reach name set is exactly `{Mouth, Lower, Middle, Upper, BalticCoast}`.
-2. BalticCoast cell count ∈ `[100, 3000]` (widened from v1's tight `[200, 2000]` per the numerical review — Mörrumsån's 240 m hexes plus an open Hanöbukten can reasonably yield 1500–2500 cells, while the 600 m Tornionjoki cells over a half-clipped disk can fall to ~150).
-3. BalticCoast cell centroids lie SOUTH of (or coastward of) the Mouth centroid mean. (Direction depends on the river — for Mörrumsån the bay is south; for Bothnian rivers it's the bay generally south of the mouth.)
+2. BalticCoast cell count ∈ `[100, 3000]`.
+3. BalticCoast cells lie SOUTH of (or coastward of) the Mouth centroid mean.
 4. **PR-1 acceptance:** Tornionjoki cell count > Simojoki cell count.
-5. **No orphan reaches:** YAML for each river has exactly 5 entries under `reaches:`. No `Skirvyte`, `Leite`, `Gilija`, `CuronianLagoon` keys.
+5. **No orphan reaches:** YAML for each river has exactly 5 entries under `reaches:`.
 
 ### `tests/test_wgbast_river_extents.py::test_mouth_balticcoast_topology`
 
-For each river, two assertions:
-
-1. **Geometric adjacency:** `mouth_subset.geometry.buffer(1e-7).intersects(balticcoast_union).sum() >= 1` (matches the generator's check).
-2. **Junction graph adjacency:** load the YAML; assert `BalticCoast.upstream_junction == Upper.downstream_junction`. The migration graph (`src/salmopy/modules/migration.py::build_reach_graph`) connects reaches by integer junction matching, NOT by polygon adjacency. Both must agree.
+For each river:
+1. **Geometric adjacency:** `mouth_subset.geometry.buffer(1e-7).intersects(balticcoast_union).sum() >= 1`.
+2. **Junction graph adjacency:** `BalticCoast.upstream_junction == Upper.downstream_junction`.
 
 ### Existing tests
 
-- `tests/test_multi_river_baltic.py::test_fixture_loads_and_runs_3_days`: should keep passing. The 5th reach is materialized; YAML schema unchanged (just smaller after orphan removal). 3-day run won't yet exercise migration into BalticCoast (smolts emigrate later in season), but the fixture must still load.
-- `tests/test_multi_river_baltic.py::test_latitudinal_smolt_age_gradient[Tornionjoki]`: stays xfailed until Workstream B (juvenile-growth calibration) lands. Adding BalticCoast cells does not address that.
+- `tests/test_multi_river_baltic.py::test_fixture_loads_and_runs_3_days`: keeps passing.
+- `tests/test_multi_river_baltic.py::test_latitudinal_smolt_age_gradient[Tornionjoki]`: stays xfailed until Workstream B (juvenile-growth calibration).
+- The Create Model panel's existing `_on_fetch_sea` test (if any — TBC; if absent, NOT in scope to add) keeps passing because the helper extraction is behaviour-preserving.
 
 ## Migration / rollout
 
-- PR-1 ships independently. One-line code change + Tornionjoki fixture regenerate. ~15 min of work.
-- PR-2 ships after PR-1 lands. Larger blast radius: 4 fixtures regenerated, 4 YAMLs cleaned + tuned, new helper module, 3 new test files. The full WGBAST regeneration (`_fetch_wgbast_osm_polylines.py --refresh && _generate_wgbast_physical_domains.py && _wire_wgbast_physical_configs.py`) is idempotent.
-- After PR-2, server deploy uses the existing skill (`/deploy`); fixture refresh is part of Step 6 already.
+- PR-1 ships independently. One-line code change + Tornionjoki fixture regenerate. ~15 min.
+- PR-2 ships after PR-1 lands. Larger blast radius: 4 fixtures regenerated, 4 YAMLs cleaned + tuned, 2 module changes (1 new + 1 refactor), 2 new test files. The full WGBAST regeneration is idempotent.
+- After PR-2, server deploy uses the existing `/deploy` skill.
 
 ## Open questions
 
-1. **Salinity in BalticCoast-TimeSeriesInputs.csv.** The simulation has `salmopy/modules/estuary.py::salinity_survival()` but no salinity column flows in via the per-reach time-series CSV today. Adding one is non-trivial (loader change + per-river salinity data sourcing). Deferred — the Bothnian Bay rivers can use the existing freshwater-temperature column without crashing the model; the marine-zone scaffold (`marine/`) handles salinity-driven mortality independently.
-2. **Marine-zone integration.** The zone-based marine model in `src/salmopy/marine/` uses string literal `"Estuary"` (case-insensitive) in `marine/survival.py:257` for cormorant predation. Adding a reach NAMED `BalticCoast` doesn't collide with this. But: when smolts transit the new BalticCoast cells, they are simultaneously in the zone-based `Estuary`/`Coastal` zones and in the reach-based `BalticCoast` reach. Both apply mortality; this is by design (zone = at-sea survival, reach = local-cell predation), but worth flagging in the eventual implementation plan.
-3. **Hanöbukten vs Bothnian Bay seal density.** The `fish_pred_min` values prescribed in §5b are ballpark (0.95 Bothnian, 0.90 Hanöbukten). Validating against ICES seal-survey data is a separate calibration step; this spec freezes plausible defaults that won't kill all smolts on day 1.
+1. **Salinity in BalticCoast-TimeSeriesInputs.csv.** Same as v2 — deferred.
+2. **Marine-zone integration.** Same as v2 — `marine/survival.py:257` matches "estuary" not "BalticCoast", so no collision. When smolts transit BalticCoast cells they're simultaneously in the zone-based marine pipeline; this is by design.
+_(WFS payload caching was an open question; resolved in v3 — see Components §3a below.)_
 
-## Reviewer findings addressed (v1 → v2)
+## Reviewer findings addressed (v1 → v2 → v3)
 
-| # | v1 issue | v2 resolution |
-|---|---|---|
-| 1 | Invents `Estuary` reach when `BalticCoast` already in YAML/CSVs | Use `BalticCoast` reach name throughout |
-| 2 | Junction integers unspecified → 2-mouth ValueError | YAML already declares `BalticCoast: upstream_junction=5, downstream_junction=6`; no change needed |
-| 3 | `Estuary` collides with marine-zone string match | `BalticCoast` doesn't collide |
-| 4 | `cell_id + len(fresh)` crashes (cell_id is string) | Explicit `f"C{n:0{width}d}"` reformat with adaptive width |
-| 5 | Empty-coastline fallback returns inland disk silently | Removed: empty cache now raises |
-| 6 | BalticCoast `fish_pred_min=0.65` lethal for Bothnian smolts | Per-river tuning: 0.95 Bothnian, 0.90 Hanöbukten |
-| 7 | CSV format vague | Format documented (lines 290–296) and re-expand reuses v0.46.0 H7 algorithm |
-| 8 | Stale Lithuanian template reaches (Skirvyte/Leite/Gilija/CuronianLagoon) not addressed | Drop them in §5a |
-| 9 | source_lon_lat inside disk inverts classifier | Pre-check raises `ValueError` |
-| 10 | UTM zone mismatch between freshwater + marine grids | Both use the same `utm_epsg` (freshwater centroid's zone) |
-| 11 | Two orthogonal fixes bundled | Split into PR-1 + PR-2 |
-| 12 | Cell-count bounds `[200, 2000]` too tight | Widen to `[100, 3000]` |
-| 13 | Per-river estuary fields over-engineered | Module-level constants instead |
-| 14 | Tests cover geometry but not topology | Add junction-graph adjacency assertion |
+| # | v1 issue | v2 resolution | v3 change |
+|---|---|---|---|
+| 1 | Invents `Estuary` reach when `BalticCoast` already in YAML/CSVs | Use `BalticCoast` reach name throughout | Same |
+| 2 | Junction integers unspecified | YAML already declares (5, 6) | Same |
+| 3 | `Estuary` collides with marine-zone string match | `BalticCoast` doesn't collide | Same |
+| 4 | `cell_id + len(fresh)` crashes (cell_id is string) | Adaptive-width string format | Switched to standardised `f"C{i+1:04d}"` from `create_model_panel.py:1153` |
+| 5 | Empty-coastline fallback returns inland disk | Removed: empty cache raises | **Removed entire coastline pipeline** — Marine Regions polygon is sea-only |
+| 6 | BalticCoast `fish_pred_min=0.65` lethal for Bothnian smolts | Per-river tuning: 0.95 / 0.90 | Same |
+| 7 | CSV format vague | Format documented; H7 algorithm reuse | Same |
+| 8 | Stale Lithuanian template reaches | Drop them | Same |
+| 9 | source_lon_lat inside disk inverts classifier | Pre-check raises | **No longer applies** — no land/sea classifier in v3 |
+| 10 | UTM zone mismatch between freshwater + marine grids | Pin both to `freshwater_centroid` UTM | Same |
+| 11 | Two orthogonal fixes bundled | Split into PR-1 + PR-2 | Same |
+| 12 | Cell-count bounds `[200, 2000]` too tight | Widen to `[100, 3000]` | Same |
+| 13 | Per-river estuary fields over-engineered | Module-level constants | Same |
+| 14 | Tests cover geometry but not topology | Junction-graph adjacency assertion | Same |
+
+### v3-specific changes (Create Model framework reuse)
+
+- **A**: Replace OSM coastline + disk-minus-land with Marine Regions WFS + disk-intersect. Eliminates ~150 lines of bespoke coastline-clip code.
+- **B**: Move the helper from `scripts/_wgbast_balticcoast.py` to `app/modules/create_model_marine.py`. Now importable from both UI and batch generator.
+- **C**: Standardise cell-id format on `f"C{i+1:04d}"` (matches `create_model_panel.py:1153`).
+- **D**: Refactor `_query_marine_regions` out of `create_model_panel.py` into the shared module.
+- **E**: Drop the `_fetch_wgbast_osm_polylines.py` coastline-fetch addition that v2 prescribed (no longer needed).
