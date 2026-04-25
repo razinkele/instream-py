@@ -149,3 +149,89 @@ def test_query_named_sea_polygon_returns_none_on_empty_features(monkeypatch):
     monkeypatch.setattr(m.requests, "get", lambda *a, **kw: _EmptyResp())
     result = m.query_named_sea_polygon((0, 0, 1, 1))
     assert result is None
+
+
+def test_create_model_panel_imports_query_named_sea_polygon():
+    """The panel must import the helper and no longer define
+    its own private dict-returning version. Detects (via source-string
+    substring matching, NOT runtime import):
+      - missing absolute import: catches the case where the engineer
+        used `from .create_model_marine` (relative) — the required
+        absolute-import substring would be absent
+      - residual references to the old _query_marine_regions function
+        or its supporting `requests`/MARINE_REGIONS_WFS imports
+
+    Source-read check rather than importing `create_model_panel`,
+    because the panel module loads Shiny `@module.ui` / `@module.server`
+    decorators and deck.gl bindings that may fail outside a Shiny
+    session (no other test imports the panel module)."""
+    panel_src = (ROOT / "app" / "modules" / "create_model_panel.py").read_text(encoding="utf-8")
+
+    # Required: the new import line is present
+    assert "from modules.create_model_marine import query_named_sea_polygon" in panel_src, (
+        "create_model_panel.py missing the import of query_named_sea_polygon — "
+        "Task 2.A.5 Step 1 was incomplete"
+    )
+    # Forbidden: stale references to the old private function
+    assert "_query_marine_regions" not in panel_src, (
+        "stale _query_marine_regions reference still in create_model_panel.py — "
+        "Task 2.A.5 Step 2 (handler rewrite) was incomplete"
+    )
+    # Forbidden: the old WFS endpoint constant
+    assert "MARINE_REGIONS_WFS" not in panel_src, (
+        "stale MARINE_REGIONS_WFS constant still in create_model_panel.py — "
+        "Task 2.A.5 Step 1 (orphan-import cleanup) was incomplete"
+    )
+    # Forbidden: direct use of requests in the panel (handler now uses the helper)
+    assert "requests.get" not in panel_src, (
+        "stale requests.get(...) call still in create_model_panel.py — "
+        "Task 2.A.5 Step 2 (handler rewrite) was incomplete"
+    )
+
+
+def test_query_named_sea_polygon_returns_geodataframe_for_handler(monkeypatch):
+    """Type-contract test on the helper: confirms the return type is
+    a GeoDataFrame (not a dict). The handler in _on_fetch_sea was
+    rewritten in Task 2.A.5 Step 2 to consume a GeoDataFrame directly;
+    if the helper ever regresses to returning a dict, this test fails
+    fast and signals the handler will break.
+
+    Note: this is a CONTRACT test, not a handler integration test —
+    the handler itself runs inside a Shiny session and is not
+    directly invoked here. A regression that broke the handler's
+    interaction with `_sea_gdf` or `_refresh_map` would not be caught;
+    those are exercised by the broader Create Model panel test suite."""
+    from modules import create_model_marine as m
+
+    fake_geoj = {
+        "features": [{
+            "type": "Feature",
+            "properties": {"name": "Mock Sea"},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]],
+            },
+        }],
+    }
+    class _FakeResp:
+        # See note in test_create_model_marine.py — context-manager
+        # protocol required because the helper uses `with requests.get`.
+        headers: dict[str, str] = {}
+        def raise_for_status(self): pass
+        def json(self): return fake_geoj
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+    monkeypatch.setattr(m.requests, "get", lambda *a, **kw: _FakeResp())
+
+    result = m.query_named_sea_polygon((-0.5, -0.5, 0.5, 0.5))
+    # Contract assertions used by _on_fetch_sea:
+    assert result is not None, "helper returned None on success path"
+    import geopandas as gpd
+    assert isinstance(result, gpd.GeoDataFrame), (
+        f"helper returned {type(result).__name__}, not GeoDataFrame"
+    )
+    assert "name" in result.columns
+    assert "geometry" in result.columns
+    # The handler does len(gdf) and gdf.geometry.simplify; both must work
+    assert len(result) >= 1
+    _ = result.geometry.simplify(0.01, preserve_topology=True)

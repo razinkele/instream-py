@@ -13,7 +13,6 @@ import json
 import logging
 
 import geopandas as gpd
-import requests
 from pathlib import Path
 from shapely.validation import make_valid
 from shiny import module, reactive, render, ui
@@ -67,9 +66,6 @@ logger = logging.getLogger(__name__)
 
 BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 
-# Marine Regions WFS (IHO sea areas — marineregions.org, no auth)
-MARINE_REGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
-
 # Reach colour palette — high-contrast, avoids blue (river colour)
 REACH_COLORS = [
     [255, 87, 34, 255],   # deep orange
@@ -83,29 +79,10 @@ REACH_COLORS = [
 ]
 
 
-def _query_marine_regions(bbox_wgs84):
-    """Query Marine Regions WFS for IHO sea area polygons in a bounding box.
-
-    Returns GeoJSON FeatureCollection or None on error.
-    """
-    west, south, east, north = bbox_wgs84
-    # GeoServer uses lon,lat axis order despite WFS 2.0.0 spec
-    params = {
-        "service": "WFS",
-        "version": "2.0.0",
-        "request": "GetFeature",
-        "typeNames": "MarineRegions:iho",
-        "outputFormat": "application/json",
-        "srsName": "EPSG:4326",
-        "bbox": f"{west},{south},{east},{north},EPSG:4326",
-    }
-    try:
-        resp = requests.get(MARINE_REGIONS_WFS, params=params, timeout=60)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.error("Marine Regions query failed: %s", e)
-        return None
+try:
+    from modules.create_model_marine import query_named_sea_polygon
+except ImportError:  # pragma: no cover — matches existing fallback pattern
+    query_named_sea_polygon = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -729,33 +706,24 @@ def create_model_server(input, output, session):
         bbox = _get_view_bbox()
 
         import asyncio
+        # Guard against the helper-module import having failed (matches the
+        # graceful-degradation pattern of other panel imports at lines 25-49)
+        if query_named_sea_polygon is None:
+            _fetch_msg.set(
+                "Marine Regions helper unavailable (create_model_marine module "
+                "failed to import). Sea-fetch disabled."
+            )
+            return
         loop = asyncio.get_running_loop()
-        geoj = await loop.run_in_executor(None, _query_marine_regions, bbox)
-
-        if geoj is None or not geoj.get("features"):
+        gdf = await loop.run_in_executor(None, query_named_sea_polygon, bbox)
+        # query_named_sea_polygon already does the bbox-intersect + centroid-cover
+        # post-filter that this handler used to do inline (see create_model_marine.py).
+        # It returns a GeoDataFrame in EPSG:4326 with columns ['name', 'geometry'],
+        # or None on failure / empty result.
+        if gdf is None or len(gdf) == 0:
             _fetch_msg.set("No sea areas found — try zooming out to see the coast.")
             return
-
-        gdf = gpd.GeoDataFrame.from_features(geoj["features"], crs="EPSG:4326")
-
-        # Post-filter: WFS bbox returns global polygons that merely touch
-        # the bbox. Keep only features whose geometry actually intersects
-        # the bbox interior (not just a shared edge).
-        from shapely.geometry import box as _box
-        view_box = _box(*bbox)
-        gdf = gdf[gdf.geometry.intersects(view_box)].copy()
-        # Prefer features that actually cover the bbox center
-        if len(gdf) > 1:
-            center = view_box.centroid
-            covers = gdf[gdf.geometry.contains(center)]
-            if len(covers) > 0:
-                gdf = covers.copy()
-
-        if len(gdf) == 0:
-            _fetch_msg.set("No sea areas found — try zooming out to see the coast.")
-            return
-
-        # Simplify large sea polygons for display performance
+        gdf = gdf.copy()
         gdf["geometry"] = gdf.geometry.simplify(0.01, preserve_topology=True)
         _sea_gdf.set(gdf)
         names = ", ".join(gdf["name"].dropna().unique()[:5]) if "name" in gdf.columns else ""
