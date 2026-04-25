@@ -70,13 +70,19 @@ MAX_CONNECTED_POLYS = 2000
 # BalticCoast (marine) reach constants. v0.46+ spec §Architecture overview.
 BALTICCOAST_RADIUS_M = 10_000.0       # 10 km clip around river mouth
 
-# Marine cell_size = river.cell_size_m × factor. Per-river so Mörrumsån's
-# 60 m freshwater cells don't produce >5000 marine cells (the 10 km disk
-# at Hanöbukten is mostly open water). Tornionjoki/Simojoki/Byskeälven
-# use factor=4 (river cells 80–150 m → marine 320–600 m).
-# Mörrumsån uses factor=8 (river 60 m → marine 480 m, ~1500 disk cells).
+# Marine cell_size = river.cell_size_m × factor. Per-river overrides keep
+# each disk's cell count in the [100, 5000] band that Section D's gate
+# enforces.
+#   - Tornionjoki uses factor=2 because the 10 km disk at Tornio is mostly
+#     land (head-of-bay geography); only ~20 km² of sea fits inside it,
+#     so finer cells (150 m × 2 = 300 m) are needed to pass the ≥100 floor.
+#   - Simojoki/Byskeälven use the default factor=4 (open Bothnian Bay,
+#     plenty of sea inside the disk).
+#   - Mörrumsån uses factor=8: 60 m freshwater × 4 would blow past the
+#     5000 cap on open Hanöbukten; ×8 → 480 m, ~1500 disk cells.
 BALTICCOAST_CELL_FACTOR_DEFAULT = 4.0
 BALTICCOAST_CELL_FACTOR_OVERRIDE = {
+    "example_tornionjoki": 2.0,
     "example_morrumsan": 8.0,
 }
 
@@ -522,12 +528,10 @@ def write_river_shapefile(river: River) -> Path:
     # zone derived from its own internal centroid logic. Both grids are
     # reprojected to WGS84 by `generate_cells` before they are returned
     # (see app/modules/create_model_grid.py:237 `gdf.to_crs("EPSG:4326")`),
-    # so cross-zone differences are eliminated in the output. The 1e-5°
-    # WGS84 buffer (~1m) absorbs cell-edge round-trip drift, not zone
-    # drift — adjacency between Mouth and BalticCoast cells is
-    # reliable as long as the disk extends to the freshwater shoreline.
-    # (Module-top imports for `pd`, `detect_utm_epsg`, `clip_sea_polygon_to_disk`
-    # were added in Step 2b above.)
+    # so cross-zone differences are eliminated in the output. The
+    # adjacency check at the bottom of this function reprojects to UTM
+    # for a true-meters 5 m buffer test (uniform metres, not anisotropic
+    # at 65°N like a degree-buffer would be).
 
     mouth_lon, mouth_lat = river.waypoints[0]
     utm_epsg = detect_utm_epsg(mouth_lon, mouth_lat)
@@ -540,22 +544,30 @@ def write_river_shapefile(river: River) -> Path:
             f"tests/fixtures/_osm_cache/{river.short_name}_marineregions.json "
             f"if it has gone stale and re-run to re-fetch)."
         )
-    # Pick the sea polygon nearest to the mouth. IHO sea-area polygons end
-    # at the navigational coastline, which can be 0.5-1.5 km offshore from
-    # a river mouth (Simojoki's Gulf of Bothnia boundary ends 0.0085° / ~945m
-    # from its mouth). The plan-prescribed 1e-6° intersect tolerance was too
-    # tight for that real-world gap, so we now select by closest distance
-    # to the mouth point. query_named_sea_polygon already does the
-    # bbox-centroid disambiguation upstream, so sea_gdf is typically a
-    # single polygon; the .distance().idxmin() is robust to either case.
+    # Pick the sea polygon nearest the mouth. Two-stage strategy:
+    #   1. Prefer a polygon that strictly contains the mouth point
+    #      (the natural case — the disk is clearly inside one IHO area).
+    #   2. Fall back to the closest polygon by Euclidean distance when
+    #      the mouth lies inland of the IHO sea-area boundary. The IHO
+    #      navigational coastline can sit 0.5-1.5 km offshore from a
+    #      river mouth (Simojoki's Gulf of Bothnia boundary ends
+    #      0.0085° / ~945 m from its mouth), so a strict-contains check
+    #      alone would spuriously fail. The closest-by-distance fallback
+    #      handles that gap; query_named_sea_polygon already does
+    #      bbox-centroid disambiguation upstream so multi-polygon
+    #      ambiguity is normally resolved before we get here.
     mouth_pt = Point(river.waypoints[0])
-    if sea_gdf.empty:
-        raise RuntimeError(
-            f"{river.river_name}: Marine Regions returned no sea polygon "
-            f"in the mouth bbox. Re-fetch from WFS or move mouth waypoint."
+    candidates = sea_gdf[sea_gdf.geometry.contains(mouth_pt)]
+    if candidates.empty:
+        log.info(
+            "[%s] mouth not strictly inside any sea polygon; "
+            "using closest-distance picker (IHO boundary offset).",
+            river.river_name,
         )
-    nearest_idx = sea_gdf.geometry.distance(mouth_pt).idxmin()
-    sea_polygon = sea_gdf.geometry.loc[nearest_idx]
+        nearest_idx = sea_gdf.geometry.distance(mouth_pt).idxmin()
+        sea_polygon = sea_gdf.geometry.loc[nearest_idx]
+    else:
+        sea_polygon = candidates.geometry.iloc[0]
 
     bc_polygon = clip_sea_polygon_to_disk(
         sea_polygon=sea_polygon,
