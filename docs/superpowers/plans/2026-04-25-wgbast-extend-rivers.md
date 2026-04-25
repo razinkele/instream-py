@@ -2422,6 +2422,15 @@ ROOT = Path(__file__).resolve().parents[1]
 WGBAST = ["example_tornionjoki", "example_simojoki", "example_byskealven", "example_morrumsan"]
 EXPECTED_REACHES = {"Mouth", "Lower", "Middle", "Upper", "BalticCoast"}
 
+# BalticCoast cell-count bounds. Sized so all 4 rivers' clipped disks
+# fit comfortably:
+#   Mörrumsån (240m × factor 8 = 480m hex, open Hanöbukten): ~1500
+#   Tornionjoki/Simojoki (320m): ~1500
+#   Byskeälven (320m): ~1500
+# A future-river-with-different-radius might bump these.
+BALTICCOAST_MIN_CELLS = 100
+BALTICCOAST_MAX_CELLS = 5000
+
 
 # Module-scope cache so the 4 shapefiles are read once across all 22
 # parametrized test cases (was: 20 redundant reads at ~3000-4000 cells
@@ -2454,8 +2463,9 @@ def test_reach_name_set(short_name: str):
 def test_balticcoast_cell_count_in_range(short_name: str):
     gdf, _cfg, reach_col = _load(short_name)
     n_bc = int((gdf[reach_col] == "BalticCoast").sum())
-    assert 100 <= n_bc <= 5000, (
-        f"{short_name}: BalticCoast cell count {n_bc} outside [100, 5000]"
+    assert BALTICCOAST_MIN_CELLS <= n_bc <= BALTICCOAST_MAX_CELLS, (
+        f"{short_name}: BalticCoast cell count {n_bc} outside "
+        f"[{BALTICCOAST_MIN_CELLS}, {BALTICCOAST_MAX_CELLS}]"
     )
 
 
