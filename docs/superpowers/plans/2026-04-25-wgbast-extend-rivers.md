@@ -50,7 +50,15 @@ Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopanda
 
 # Pre-flight check (orchestrator runs ONCE before dispatching any task)
 
-This is NOT a task and should NOT be dispatched to a subagent (no code change, no commit). The orchestrator (or the engineer running this plan inline) verifies external service reachability before starting:
+This is NOT a task and should NOT be dispatched to a subagent (no code change, no commit). The orchestrator (or the engineer running this plan inline) verifies external service reachability + locale settings before starting:
+
+```bash
+# Ensure git commit messages with non-ASCII (Mörrum, Klaipėda, älv, Hanöbukten,
+# Tärnö, Bothnian Bay, etc.) are stored as UTF-8 in the repo even on Windows
+# Git-Bash where the inbound argv encoding is cp1252/cp437 by default.
+git config i18n.commitencoding utf-8
+git config i18n.logoutputencoding utf-8
+```
 
 ```bash
 # 1. Overpass interpreter (used by PR-1's _fetch_wgbast_osm_polylines.py --refresh)
@@ -1379,13 +1387,13 @@ The helper has been moved (as a private helper) into `app/modules/create_model_r
 
 Save the existing fixtures' shapefile metadata as a baseline:
 ```bash
-micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_before.txt 2>&1
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_before.txt 2>&1
 ```
 
 Re-run the generator (it will regenerate all 4 fixtures, but PR-1 already changed Tornionjoki's so we expect Tornionjoki to differ from a hypothetical pre-PR-1 baseline; the right comparison is "post-PR-1 vs post-Section-B"):
 ```bash
 micromamba run -n shiny python scripts/_generate_wgbast_physical_domains.py
-micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_after.txt 2>&1
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_after.txt 2>&1
 diff /tmp/wgbast_extents_before.txt /tmp/wgbast_extents_after.txt
 ```
 
@@ -2535,6 +2543,13 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 17 review loops, convergence confirmed
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loop 27 — more Unicode/locale issues, same class as loop 26
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| MED | 1 | Section B's probe redirects (`_probe_wgbast_river_extents.py > /tmp/...`) lacked UTF-8 enforcement. If the probe ever prints river `name` (Mörrumsån, Byskeälven), Windows Python defaults to cp1252 → UnicodeEncodeError truncates BOTH before/after files at the same point → `diff` returns empty → falsely confirms "Section B is byte-equivalent refactor" while masking real divergence. | Prepended `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` to both invocations. |
+| LOW | 2 | Git commit messages contain raw non-ASCII (`älv`, `Mörrum`, `Klaipėda`, `Hanöbukten`, `Tärnö`). On Windows Git-Bash, argv conversion from console codepage produces mojibake commit messages. | Added `git config i18n.commitencoding utf-8` and `i18n.logoutputencoding utf-8` to the pre-flight check. |
 
 ## Loop 26 — Unicode encoding crash on Windows
 
