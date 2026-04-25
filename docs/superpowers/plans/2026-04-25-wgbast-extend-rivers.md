@@ -32,7 +32,7 @@ Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopanda
 - Create: `tests/test_create_model_marine.py` — unit tests (mocked WFS)
 - Create: `tests/test_create_model_river.py` — unit tests (synthetic geometries)
 - Create: `tests/test_wgbast_river_extents.py` — fixture-shape regression
-- Modify: `app/modules/create_model_panel.py` — re-export `_query_marine_regions` from new module (5 lines)
+- Modify: `app/modules/create_model_panel.py` — replace `_query_marine_regions` with `query_named_sea_polygon` import + rewrite `_on_fetch_sea` to consume GeoDataFrame (~40 lines, type-contract change; see Task 2.A.5 details)
 - Modify: `scripts/_generate_wgbast_physical_domains.py` — import helpers, add BalticCoast generation, add WFS cache (substantial refactor; net thinner)
 - Modify: `scripts/_wire_wgbast_physical_configs.py` — drop orphan reaches, tune BalticCoast, re-expand its CSVs
 - Modify: `configs/example_tornionjoki.yaml` — tune BalticCoast `fish_pred_min`; drop Skirvyte/Leite/Gilija/CuronianLagoon
