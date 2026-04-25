@@ -2016,7 +2016,22 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
     # ... rest of existing rewrite_config body unchanged ...
 ```
 
-**Add at module top if not present** (verified absent today): both `import logging` AND `log = logging.getLogger(__name__)`. Without the import the logger creation will fail with `NameError: name 'logging' is not defined`.
+**Add at module top if not present** (verified absent today):
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger(__name__)
+```
+
+All three pieces are required:
+- `import logging` — without it, the next line errors with `NameError`.
+- `basicConfig(level=INFO, ...)` — without this, Python's root logger defaults to WARNING on `lastResort` handler. `log.info(...)` calls are silently discarded; the audit trail of "dropped orphan reach: %s" never reaches `/tmp/wire_log.txt`. Format string matches the sibling generator script (`_generate_wgbast_physical_domains.py:58`) so verbosity is consistent across the two scripts the engineer runs back-to-back.
+- `log = logging.getLogger(__name__)` — module-scoped logger.
 
 - [ ] **Step 3: Run the wire script and capture pspc warnings**
 
