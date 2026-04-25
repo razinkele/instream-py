@@ -42,7 +42,7 @@ Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopanda
 - Modify (regenerated): `tests/fixtures/example_{tornionjoki,simojoki,byskealven,morrumsan}/Shapefile/*Example.*`
 - Modify (regenerated): `tests/fixtures/example_*/BalticCoast-{Depths,Vels}.csv` (re-expanded to new cell counts)
 - Create (cached payloads): `tests/fixtures/_osm_cache/example_*_marineregions.json`
-- Modify: `pyproject.toml` (version bump)
+- Modify: `pyproject.toml` (version bump + dep floor: `geopandas>=1.0`, explicit `pyproj>=3.4`)
 - Modify: `src/salmopy/__init__.py` (`__version__`)
 - Modify: `CHANGELOG.md` (release note)
 - Modify: `README.md` (mention new BalticCoast reach in WGBAST fixture section)
@@ -2637,7 +2637,7 @@ git commit -m "test: update assertions for 5-reach WGBAST fixtures"
 - Modify: `src/salmopy/__init__.py`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Bump pyproject version**
+- [ ] **Step 1: Bump pyproject version + tighten dependency floors**
 
 In `pyproject.toml`, change:
 ```toml
@@ -2647,6 +2647,10 @@ to:
 ```toml
 version = "0.47.0"
 ```
+
+In the same file's `[project] dependencies` list, also:
+- Raise `geopandas>=0.14` to `geopandas>=1.0` (plan uses `.union_all()`, which doesn't exist in 0.14 and replaces the deprecated `.unary_union` accessor in 1.0+; without this, fresh-clone CI installs will break at test collection time).
+- Add `pyproj>=3.4` explicitly. It's a transitive dep of geopandas today, but the WGBAST generator scripts hard-depend on `to_crs(epsg=utm_epsg)`. Promoting it to an explicit dependency makes the contract clear if future geopandas slimming drops it as a transitive.
 
 - [ ] **Step 2: Bump `__version__`**
 
