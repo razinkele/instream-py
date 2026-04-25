@@ -125,12 +125,14 @@ The bbox `(65.5, 22.8, 68.6, 25.6)` already covers the Muonio basin — no bbox 
 - [ ] **Step 3: Refresh the Tornionjoki cache (line ways + polygons)**
 
 ```bash
-timeout 600 micromamba run -n shiny python scripts/_fetch_wgbast_osm_polylines.py --refresh
+micromamba run -n shiny python scripts/_fetch_wgbast_osm_polylines.py --refresh
 ```
 
-The `--refresh` flag forces a re-fetch even though caches exist. Expected runtime: 30–90 s on the happy path (Overpass-side latency dominates). The hard `timeout 600` (10 min) bound catches degraded Overpass that wasn't surfaced by the pre-flight liveness probe; the script's internal `requests.post` timeout is 200 s × 3 endpoint fallbacks × 8 queries = ~80 min worst case without an outer bound.
+The `--refresh` flag forces a re-fetch even though caches exist. Expected runtime: 30–90 s on the happy path (Overpass-side latency dominates). The script's internal `requests.post` timeout is 200 s × 3 endpoint fallbacks × 8 queries = ~80 min worst case without an outer bound.
 
-If wall-clock exceeds ~3 min on any single river (the script logs each river start), Overpass is degraded — abort with Ctrl-C and **defer PR-1** (same disposition as the pre-flight curl 503 case). Do NOT partially commit `tests/fixtures/_osm_cache/` files: the script writes per-river, so a kill mid-run leaves caches inconsistent with the regex change. Either the full refresh succeeds or you run `git checkout -- tests/fixtures/_osm_cache/` to discard partial writes and retry later.
+**Wall-clock monitoring (manual — not a `timeout` wrapper):** A `timeout 600 ...` shell wrapper would be POSIX-coreutils-only; on Windows PowerShell/cmd.exe, `timeout.exe` is a different binary that sleeps interactively and silently ignores its trailing args (same class of bug as Loop 59's POSIX env-prefix). Instead: **watch the wall-clock yourself**. If runtime exceeds ~3 minutes on any single river (the script logs each river start), Overpass is degraded — abort with Ctrl-C and **defer PR-1** (same disposition as the pre-flight curl 503 case). Do NOT partially commit `tests/fixtures/_osm_cache/` files: the script writes per-river, so a kill mid-run leaves caches inconsistent with the regex change. Either the full refresh succeeds or you run `git checkout -- tests/fixtures/_osm_cache/` to discard partial writes and retry later.
+
+(A future hardening could push a `--max-wallclock` flag into the script itself — `threading.Timer(600, lambda: os._exit(124))` works cross-platform — but that's outside this PR's scope; document only.)
 
 After completion, sanity-check:
 ```bash
