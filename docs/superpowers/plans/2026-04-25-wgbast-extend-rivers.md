@@ -1452,11 +1452,18 @@ def _load_osm_polygons_filtered(
     if not poly_cache.exists():
         return []
     data = json.loads(poly_cache.read_text(encoding="utf-8"))
+    from shapely.errors import GEOSException
+    import logging
+    log = logging.getLogger(__name__)
     raw_polys: list = []
-    for item in data:
+    for idx, item in enumerate(data):
         try:
             poly = shape(item["geometry"])
-        except Exception:
+        except (GEOSException, ValueError, TypeError, KeyError) as exc:
+            log.warning(
+                "%s: skipping cached polygon %d (%s): %s",
+                river.short_name, idx, type(exc).__name__, exc,
+            )
             continue
         if not poly.is_valid or poly.is_empty:
             continue
