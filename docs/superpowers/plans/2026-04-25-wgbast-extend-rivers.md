@@ -2472,9 +2472,19 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history — 12 review loops
+# Plan revision history — 17 review loops, convergence confirmed
 
-TWELVE multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loop 7: 13 cleanup. Loop 8: 2 LOW. Loop 9: 1 IMP + 3 LOW. Loop 10: 3 IMP + 2 LOW. Loop 11 (narrow regression check): **0 findings**. Loop 12 (final broad sweep): 2 IMP — graceful-degradation guard + cache disambiguation.
+SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loops 16 + 17 — CONVERGENCE CONFIRMED
+
+Both loops independently verified:
+- The Step 2b import-placement guidance is factually correct against the real `_generate_wgbast_physical_domains.py` line layout (lines 33-35 third-party, line 38 sys.path.insert, line 42 from-modules).
+- The Y-shape MLS partition test (Task 2.A.4) was traced line-by-line: `_orient_centerline_mouth_to_source`'s disjoint-fallback projects `p_mouth_{a,b}` to ~0.15, `p_mid_{a,b}` to ~1.65, `p_ne` to ~5.48, `p_nw` to ~9.68 along the synthetic LineString. Sort + quartile slicing correctly groups mouth pair into `groups[0]` and branch-end pair into `groups[2]`. Algorithm is sound.
+- Task 2.D.2's `_balticcoast_cell_count` has correctly-paired bounds (raises at `< 100`; test asserts `100 <= n <= 5000`) and defensive guards on missing files / missing reaches.
+- No remaining import-path ambiguities, no remaining type-contract mismatches, no remaining test false-positives, no remaining silent-failure paths.
+
+**Critical-bug trajectory across 17 loops: 4, 3, 0, 3, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.** Eleven consecutive zero-CRIT loops; two consecutive absolute-zero loops.
 
 ## Loop 15 (v14 → v15) — Step 2b import-placement disambiguation
 
@@ -2492,7 +2502,7 @@ TWELVE multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes ma
 
 | Sev | # | Issue | Fix |
 |---|---|---|---|
-| LOW | 1 | Error messages referenced `--refresh-marineregions` CLI flag that does not exist in the plan (line 1511 explicitly notes it's "still to be added") | Softened error messages to point at file-deletion + re-run instead. |
+| LOW | 1 | Error messages referenced `--refresh-marineregions` CLI flag that does not exist | Softened error messages to point at file-deletion + re-run instead. |
 
 ## Loop 12 (v11 → v12) — broad sweep, 2 IMP
 
@@ -2509,8 +2519,6 @@ Verified loop-10 fixes are clean (no regressions, self-consistent, correctly int
 
 ## Loop 10 (v10 → v11) — find any meaningful issue
 
-## Loop 10 (v10 → v11) — find any meaningful issue
-
 | Sev | # | Issue | Fix |
 |---|---|---|---|
 | IMP | 1 | Task 2.A.5 Step 4 commit dropped the new tests (orphaned from semantic commit) | `git add ... tests/test_create_model_marine.py` added to the commit |
@@ -2520,8 +2528,6 @@ Verified loop-10 fixes are clean (no regressions, self-consistent, correctly int
 | LOW | 5 | "~25 tests" arithmetic was wrong (4×5+2=22) | Updated to "22 tests" |
 
 **Critical-bug trajectory across 10 loops: 4, 3, 0, 3, 1, 1, 0, 0, 0, 0.** Four consecutive zero-CRIT loops.
-
-## Loop 9 (v9 → v10) — verifying loop-8 convergence claim
 
 ## Loop 9 (v9 → v10) — verifying loop-8 convergence claim
 
