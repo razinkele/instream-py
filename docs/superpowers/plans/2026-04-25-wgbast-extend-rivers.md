@@ -1594,13 +1594,8 @@ Replace it with:
     # WGS84 buffer (~1m) absorbs cell-edge round-trip drift, not zone
     # drift — adjacency between Mouth and BalticCoast cells is
     # reliable as long as the disk extends to the freshwater shoreline.
-    #
-    # IMPORTANT: also add `from shapely.geometry import Point` and
-    # `from modules.create_model_utils import detect_utm_epsg`,
-    # `from modules.create_model_marine import clip_sea_polygon_to_disk`
-    # at the MODULE TOP of the script (alongside the existing imports
-    # near line 30-42). Importing inside the function works but is
-    # fragile under future refactors.
+    # (Module-top imports for `pd`, `detect_utm_epsg`, `clip_sea_polygon_to_disk`
+    # were added in Step 2b above.)
 
     mouth_lon, mouth_lat = river.waypoints[0]
     utm_epsg = detect_utm_epsg(mouth_lon, mouth_lat)
@@ -1740,10 +1735,19 @@ Replace it with:
     cells["ID_TEXT"] = cells["ID_TEXT"].astype(str)
 ```
 
-Add the missing import at the top of the file if not already present:
+- [ ] **Step 2b: Add module-top imports**
+
+The prescribed code in Step 2 calls `detect_utm_epsg(...)`, `clip_sea_polygon_to_disk(...)`, and `pd.concat(...)` — none of which are imported by `_generate_wgbast_physical_domains.py` today (verified: only `Point` exists at line 34; `detect_utm_epsg` and `clip_sea_polygon_to_disk` are absent from the import block). Add at the module top (alongside the existing `geopandas` / `shapely` imports near line 33–42):
+
 ```python
 import pandas as pd
+from modules.create_model_utils import detect_utm_epsg  # noqa: E402
+from modules.create_model_marine import clip_sea_polygon_to_disk  # noqa: E402
 ```
+
+`Point` is already imported on the existing `from shapely.geometry import LineString, Point, shape` line — no change needed.
+
+Skipping this step makes the smoke test in Step 3 below crash with `NameError: detect_utm_epsg` (or `clip_sea_polygon_to_disk`, or `pd`).
 
 - [ ] **Step 3: Smoke-test the regenerator on Mörrumsån (smallest fixture, fastest)**
 
@@ -2463,6 +2467,12 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 12 review loops
 
 TWELVE multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loop 7: 13 cleanup. Loop 8: 2 LOW. Loop 9: 1 IMP + 3 LOW. Loop 10: 3 IMP + 2 LOW. Loop 11 (narrow regression check): **0 findings**. Loop 12 (final broad sweep): 2 IMP — graceful-degradation guard + cache disambiguation.
+
+## Loop 14 (v13 → v14) — module-top imports made an explicit step
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| IMP | 1 | Module-top imports (`pd`, `detect_utm_epsg`, `clip_sea_polygon_to_disk`) were only mentioned inside a code-block comment, not in a numbered Step. A subagent following the numbered Steps verbatim would crash with NameError. | Added explicit Step 2b "Add module-top imports" before Step 3 smoke-test. |
 
 ## Loop 13 (v12 → v13) — final cleanup, 1 LOW
 
