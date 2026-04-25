@@ -723,7 +723,10 @@ def filter_polygons_by_centerline_connectivity(
     # stable across versions). Without this, the `max_polys` cap could
     # surface a different polygon set on different machines / shapely
     # versions, producing non-byte-identical fixtures.
-    for i in sorted(tree.query(seed_buffered_line)):
+    # tree.query() returns np.ndarray in shapely 2.x; .tolist() converts
+    # to plain list[int] so indexing buffered[i]/polys[i] doesn't see
+    # np.int64 (cleaner; future-proof against numpy dtype tightening).
+    for i in sorted(tree.query(seed_buffered_line).tolist()):
         if visited_count >= max_polys:
             # Cap also enforced during seeding — production case where
             # a long centerline touches more than max_polys polygons
@@ -754,7 +757,7 @@ def filter_polygons_by_centerline_connectivity(
     # function of input polygon order.
     while queue and visited_count < max_polys:
         i = queue.popleft()
-        for j in sorted(tree.query(buffered[i])):
+        for j in sorted(tree.query(buffered[i]).tolist()):
             if visited[j]:
                 continue
             if buffered[i].intersects(buffered[j]):
