@@ -703,8 +703,10 @@ Append to `tests/test_create_model_river.py`:
 
 ```python
 def test_partition_into_4_equal_groups():
-    """10 polygons distributed along a centerline → 4 groups of 3,2,2,3
-    (or similar; the last absorbs the remainder)."""
+    """10 polygons distributed along a centerline → 4 groups whose sizes
+    sum to 10. With n=10, n_reaches=4, q=2.5 the slice math gives
+    [(0,2),(2,5),(5,7),(7,10)] → group sizes [2, 3, 2, 3]. The last
+    slice always extends to n (absorbs rounding remainder)."""
     from modules.create_model_river import partition_polygons_along_channel
 
     centerline = [LineString([(0, 0), (10, 0)])]
@@ -1138,17 +1140,34 @@ def test_create_model_panel_imports_query_named_sea_polygon():
     its own private dict-returning version. Detects:
       - relative-import crashes (ImportError at module load)
       - residual references to the old _query_marine_regions function
-        that we rewrote out in Task 2.A.5"""
-    import sys
-    sys.path.insert(0, str(ROOT / "app"))
-    from modules import create_model_panel
-    from modules.create_model_marine import query_named_sea_polygon
-    # The panel must expose the helper under its public name
-    assert getattr(create_model_panel, "query_named_sea_polygon", None) is query_named_sea_polygon
-    # The old private name must NOT exist (we rewrote the handler;
-    # leaving it would mean the import-replace step was skipped).
-    assert not hasattr(create_model_panel, "_query_marine_regions"), (
-        "stale _query_marine_regions still defined in panel — Step 1 was incomplete"
+        that we rewrote out in Task 2.A.5
+
+    Source-read check (not an import-based check). Importing
+    `create_model_panel` inside pytest would load Shiny decorators
+    that may fail outside a Shiny session — fragile. Reading the file
+    as text and asserting on the source string is robust to any
+    Shiny-side init issues."""
+    panel_src = (ROOT / "app" / "modules" / "create_model_panel.py").read_text(encoding="utf-8")
+
+    # Required: the new import line is present
+    assert "from modules.create_model_marine import query_named_sea_polygon" in panel_src, (
+        "create_model_panel.py missing the import of query_named_sea_polygon — "
+        "Task 2.A.5 Step 1 was incomplete"
+    )
+    # Forbidden: stale references to the old private function
+    assert "_query_marine_regions" not in panel_src, (
+        "stale _query_marine_regions reference still in create_model_panel.py — "
+        "Task 2.A.5 Step 2 (handler rewrite) was incomplete"
+    )
+    # Forbidden: the old WFS endpoint constant
+    assert "MARINE_REGIONS_WFS" not in panel_src, (
+        "stale MARINE_REGIONS_WFS constant still in create_model_panel.py — "
+        "Task 2.A.5 Step 1 (orphan-import cleanup) was incomplete"
+    )
+    # Forbidden: direct use of requests in the panel (handler now uses the helper)
+    assert "requests.get" not in panel_src, (
+        "stale requests.get(...) call still in create_model_panel.py — "
+        "Task 2.A.5 Step 2 (handler rewrite) was incomplete"
     )
 
 
@@ -1326,7 +1345,7 @@ def build_reach_segments_from_polygons(
 
 - [ ] **Step 4: Delete the now-unused `_orient_centerline_mouth_to_source` function from the script**
 
-The helper has been duplicated (privately) inside `app/modules/create_model_river.py`. Find `_orient_centerline_mouth_to_source` in `_generate_wgbast_physical_domains.py` and delete the entire function (it's around 30 lines).
+The helper has been moved (as a private helper) into `app/modules/create_model_river.py` (where `partition_polygons_along_channel` calls it internally). Find `_orient_centerline_mouth_to_source` in `_generate_wgbast_physical_domains.py` and delete the entire function (it's around 30 lines).
 
 - [ ] **Step 5: Verify the regenerator still produces identical output**
 
@@ -1808,6 +1827,10 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
     # (e.g. Klaipėda topology). After orphan reaches are dropped, the
     # chain should be Mouth(1→2) → Lower(2→3) → Middle(3→4) →
     # Upper(4→5) → BalticCoast(5→6).
+    #
+    # Defensive: on the current 4 WGBAST configs this branch is a
+    # no-op (BC.upstream=5 == Upper.downstream=5 already). Kept for
+    # robustness against future config drift or template changes.
     upper = cfg["reaches"].get("Upper", {})
     bc = cfg["reaches"].get("BalticCoast", {})
     if upper and bc:
@@ -2397,20 +2420,29 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history (v1 → v2 → … → v9) — converged at loop 8
+# Plan revision history — 9 review loops, converged
 
-EIGHT multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more including 5 critical bugs the earlier loops missed; loop 7 found 13 workflow-cleanup items (zero runtime bugs); **loop 8 found 2 LOW cosmetic items and a "converged, execute" verdict — genuine convergence.**
+NINE multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more including 5 critical bugs the earlier loops missed; loop 7 found 13 workflow-cleanup items; loop 8 declared convergence; **loop 9 (skeptical re-review) found 1 IMPORTANT test-design issue + 3 LOW cosmetic items — confirming convergence on runtime correctness.**
 
-## Loop 8 (v8 → v9) — CONVERGED
+## Loop 9 (v9 → v10) — verifying loop-8 convergence claim
 
-The architect explicitly verdicted "loop-8 converged, execute" after tracing each prescribed code path, validating the loop-7 cleanup didn't introduce regressions, and confirming no simulation invariants are violated. Two LOW cosmetic items applied:
+Loop 9 was an explicit "prove or disprove convergence" mandate, given that prior reviewers had declared convergence prematurely twice (loops 3 and 8 originally). Result: convergence holds for runtime correctness, but one IMPORTANT test-design issue surfaced.
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| IMP | 1 | `test_create_model_panel_imports_query_named_sea_polygon` imports `create_model_panel` in pytest. The panel module loads Shiny `@module.ui`/`@module.server` decorators and depends on `MapWidget`, deck.gl bindings — never imported in any other test. May fail at module load outside a Shiny session. | Switched to a source-string check (`(ROOT / "app/modules/create_model_panel.py").read_text()` + 4 substring assertions). Robust to any Shiny init issues. |
+| LOW | 2 | `test_partition_into_4_equal_groups` docstring said "3,2,2,3 (or similar)"; actual is `[2, 3, 2, 3]` | Updated docstring with concrete slice math. |
+| LOW | 3 | Section B Step 4 said "_orient_centerline_mouth_to_source has been duplicated (privately)" — actually moved, not duplicated | Corrected wording. |
+| LOW | 4 | Junction fix-up branch (loop-6 IMP-4) is dead code on the current 4 WGBAST configs | Added comment noting it's defensive, not currently exercised. |
+
+**Critical-bug trajectory across 9 loops: 4, 3, 0, 3, 1, 1, 0, 0, 0.** THREE consecutive zero-CRIT loops = convergence robustly confirmed.
+
+## Loop 8 (v8 → v9) — first "converged" verdict
 
 | Sev | # | Issue | Fix |
 |---|---|---|---|
 | LOW | 1 | Vacuous test assertion `assert result.buffer(1e-7).contains(result)` (always trivially true) | Removed |
 | LOW | 2 | Contradictory grep verification text ("only one match" vs "EMPTY") | Rewrote as "Expected: no matches (empty grep output)" |
-
-**Critical-bug trajectory across 8 loops: 4, 3, 0, 3, 1, 1, 0, 0.** Two consecutive zero-CRIT loops = convergence.
 
 ## Loop 7 (v7 → v8) — workflow consistency cleanup, no runtime bugs
 
