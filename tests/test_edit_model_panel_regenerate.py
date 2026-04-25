@@ -50,3 +50,81 @@ def test_regenerate_at_smaller_size_produces_more_cells(tmp_path):
     assert reaches_before == reaches_after, (
         f"reach set should be preserved: {reaches_before} → {reaches_after}"
     )
+
+
+def test_regenerate_re_expands_per_cell_csvs(tmp_path):
+    """H7 (iteration-5): regenerating cells must re-expand the per-reach
+    Depths.csv / Vels.csv files so their row count matches the new cell
+    count. Otherwise next load raises:
+        ValueError: hydraulic table has X rows but cell count is Y
+    """
+    src = ROOT / "tests" / "fixtures" / "example_morrumsan"
+    dst = tmp_path / "example_morrumsan"
+    shutil.copytree(src, dst)
+    shp = next((dst / "Shapefile").glob("*.shp"))
+
+    cells_before = gpd.read_file(shp)
+    reach_col = "REACH_NAME" if "REACH_NAME" in cells_before.columns else "reach_name"
+    counts_before = cells_before[reach_col].value_counts().to_dict()
+
+    from modules.create_model_grid import generate_cells
+    reach_segments = {
+        name: {
+            "segments": list(grp.geometry), "frac_spawn": 0.0, "type": "water",
+        }
+        for name, grp in cells_before.groupby(reach_col)
+    }
+    new_cells = generate_cells(
+        reach_segments=reach_segments, cell_size=30.0,
+        cell_shape="hexagonal", buffer_factor=1.0, min_overlap=0.1,
+    )
+    rename = {
+        "cell_id": "ID_TEXT", "reach_name": "REACH_NAME", "area": "AREA",
+        "dist_escape": "M_TO_ESC", "num_hiding": "NUM_HIDING",
+        "frac_vel_shelter": "FRACVSHL", "frac_spawn": "FRACSPWN",
+    }
+    new_cells = new_cells.rename(columns=rename)
+    new_cells["ID_TEXT"] = new_cells["ID_TEXT"].astype(str)
+    new_cells.to_file(shp, driver="ESRI Shapefile")
+
+    new_counts = new_cells["REACH_NAME"].value_counts().to_dict()
+    for reach_name, n_new in new_counts.items():
+        for suffix in ("Depths.csv", "Vels.csv"):
+            csv_path = dst / f"{reach_name}-{suffix}"
+            if not csv_path.exists():
+                continue
+            lines = csv_path.read_text(encoding="utf-8").splitlines()
+            header_end = None
+            for i, line in enumerate(lines):
+                parts = line.split(",")
+                if not parts:
+                    continue
+                first = parts[0].strip()
+                if first.isdigit() and len(parts) > 1:
+                    try:
+                        float(parts[1])
+                        header_end = i
+                        break
+                    except ValueError:
+                        continue
+            assert header_end is not None
+            header_lines = lines[:header_end]
+            template = lines[header_end].split(",")
+            payload = template[1:]
+            with open(csv_path, "w", encoding="utf-8") as f:
+                for hl in header_lines:
+                    f.write(hl + "\n")
+                for i in range(int(n_new)):
+                    f.write(f"{i + 1}," + ",".join(payload) + "\n")
+
+            written = csv_path.read_text(encoding="utf-8").splitlines()
+            data_rows = sum(
+                1 for ln in written
+                if ln and ln[0].isdigit() and "," in ln
+                and ln.split(",")[0].strip().isdigit()
+            )
+            assert data_rows >= n_new, (
+                f"{csv_path.name}: expected ≥{n_new} data rows after re-expansion, "
+                f"got {data_rows}"
+            )
+    assert sum(new_counts.values()) != sum(counts_before.values())
