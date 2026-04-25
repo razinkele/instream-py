@@ -186,6 +186,15 @@ def edit_model_ui():
                 ui.input_action_button(
                     "lasso_apply", "Apply selection", class_="btn-primary",
                 ),
+                ui.hr(),
+                ui.h5("Regenerate cell grid"),
+                ui.input_numeric(
+                    "regen_cell_size", "Cell size (metres)",
+                    value=80.0, min=10.0, max=2000.0, step=10.0,
+                ),
+                ui.input_action_button(
+                    "regen_apply", "Regenerate + save", class_="btn-danger",
+                ),
                 ui.output_ui("save_status"),
             ),
             ui.column(
@@ -769,3 +778,110 @@ def edit_model_server(input, output, session):
         new_state["cfg"] = cfg
         state.set(new_state)
         last_save.set(f"✓ lasso: {n_inside} cells reassigned to '{new_name}'")
+
+    # ------------------------------------------------------------------
+    # Regenerate cells at a new cell size
+    # ------------------------------------------------------------------
+    @reactive.effect
+    @reactive.event(input.regen_apply)
+    def _regen_apply():
+        s = state()
+        if s["cells"] is None:
+            return
+        new_size = float(input.regen_cell_size() or 0)
+        if new_size < 10:
+            last_save.set("❌ regenerate: cell size must be ≥10 m")
+            return
+
+        from modules.create_model_grid import generate_cells
+        cells = s["cells"]
+        reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
+        reach_segments = {}
+        for name, grp in cells.groupby(reach_col):
+            if "FRACSPWN" in grp.columns:
+                fspawn = float(grp["FRACSPWN"].iloc[0])
+            elif "frac_spawn" in grp.columns:
+                fspawn = float(grp["frac_spawn"].iloc[0])
+            else:
+                fspawn = 0.0
+            reach_segments[name] = {
+                "segments": list(grp.geometry),
+                "frac_spawn": fspawn,
+                "type": "water",
+            }
+        try:
+            new_cells = generate_cells(
+                reach_segments=reach_segments,
+                cell_size=new_size,
+                cell_shape="hexagonal",
+                buffer_factor=1.0,
+                min_overlap=0.1,
+            )
+        except Exception as exc:
+            logger.exception("regenerate failed")
+            last_save.set(f"❌ regenerate failed: {exc}")
+            return
+
+        if new_cells.empty:
+            last_save.set(f"❌ regenerate produced 0 cells at size={new_size} m")
+            return
+
+        rename = {
+            "cell_id": "ID_TEXT", "reach_name": "REACH_NAME", "area": "AREA",
+            "dist_escape": "M_TO_ESC", "num_hiding": "NUM_HIDING",
+            "frac_vel_shelter": "FRACVSHL", "frac_spawn": "FRACSPWN",
+        }
+        new_cells = new_cells.rename(columns=rename)
+        new_cells["ID_TEXT"] = new_cells["ID_TEXT"].astype(str)
+
+        try:
+            new_cells.to_file(s["shp_path"], driver="ESRI Shapefile")
+        except Exception as exc:
+            logger.exception("save failed")
+            last_save.set(f"❌ save failed: {exc}")
+            return
+
+        # H7 (iteration-5 review): per-reach Depths.csv / Vels.csv have one
+        # row per cell. After regenerate the cell counts change → next load
+        # raises "hydraulic table has X rows but cell count is Y". Re-expand
+        # those CSVs to the new counts.
+        fixture_dir = s["shp_path"].parent.parent
+        new_reach_cell_counts = new_cells["REACH_NAME"].value_counts().to_dict()
+        for reach_name, n_new in new_reach_cell_counts.items():
+            for suffix in ("Depths.csv", "Vels.csv"):
+                csv_path = fixture_dir / f"{reach_name}-{suffix}"
+                if not csv_path.exists():
+                    continue
+                lines = csv_path.read_text(encoding="utf-8").splitlines()
+                header_end = None
+                for i, line in enumerate(lines):
+                    parts = line.split(",")
+                    if not parts:
+                        continue
+                    first = parts[0].strip()
+                    if first.isdigit() and len(parts) > 1:
+                        try:
+                            float(parts[1])
+                            header_end = i
+                            break
+                        except ValueError:
+                            continue
+                if header_end is None:
+                    logger.warning("could not locate data rows in %s", csv_path)
+                    continue
+                header_lines = lines[:header_end]
+                template = lines[header_end].split(",")
+                payload = template[1:]
+                with open(csv_path, "w", encoding="utf-8") as f:
+                    for hl in header_lines:
+                        f.write(hl + "\n")
+                    for i in range(int(n_new)):
+                        f.write(f"{i + 1}," + ",".join(payload) + "\n")
+
+        new_state = dict(s)
+        new_state["cells"] = new_cells
+        state.set(new_state)
+        last_save.set(
+            f"✓ regenerated at cell_size={new_size} m: "
+            f"{len(s['cells'])} → {len(new_cells)} cells (CSVs re-expanded)"
+        )
