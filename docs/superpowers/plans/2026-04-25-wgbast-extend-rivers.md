@@ -45,6 +45,7 @@ Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopanda
 - Modify: `pyproject.toml` (version bump)
 - Modify: `src/salmopy/__init__.py` (`__version__`)
 - Modify: `CHANGELOG.md` (release note)
+- Modify: `README.md` (mention new BalticCoast reach in WGBAST fixture section)
 
 ---
 
@@ -2492,6 +2493,21 @@ becomes:
 __version__ = "0.47.0"
 ```
 
+- [ ] **Step 2b: Update README.md WGBAST fixture descriptions**
+
+The README.md has a WGBAST fixture section (lines ~138-153 of the master README at PR-1 baseline) that describes the 4 rivers without mentioning the new BalticCoast marine reach. Append a sentence after each river's bullet noting the shared marine-transit reach added in this release. Also add a forward-compat note for the `### Breaking` orphan-reach removal so README readers see the v0.47.0 pivot.
+
+```bash
+# Open README.md in an editor and locate the WGBAST fixtures section.
+# After each river bullet, append:
+#   "(v0.47.0+: includes a `BalticCoast` marine-transit reach,
+#    ~N hex cells clipped from the IHO Gulf of Bothnia / Baltic Sea
+#    polygon to a 10 km disk at the river mouth.)"
+# Replace N with the actual cell count from the regenerator log.
+```
+
+(README updates are a doc-only change — a subagent dispatched to this step should make the smallest possible README diff. The plan does not prescribe exact wording because the README's fixture-section format may have drifted since this plan was written.)
+
 - [ ] **Step 3: Prepend CHANGELOG entry**
 
 At the top of `CHANGELOG.md` (after the header), prepend:
@@ -2615,7 +2631,7 @@ Expected: same baseline as v0.46.0.
 - [ ] **Step 5: Commit + tag**
 
 ```bash
-git add pyproject.toml src/salmopy/__init__.py CHANGELOG.md
+git add pyproject.toml src/salmopy/__init__.py CHANGELOG.md README.md
 git commit -m "release(v0.47.0): WGBAST extend + BalticCoast cells + helper refactor
 
 PR-1 + PR-2 of the 2026-04-25 wgbast-extend-rivers spec. See CHANGELOG."
