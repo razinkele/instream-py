@@ -228,7 +228,6 @@ def test_clip_sea_polygon_to_disk_basic_intersection():
 
     assert not result.is_empty
     # Result should be inside the sea polygon (with sub-meter tolerance for round-trip)
-    assert result.buffer(1e-7).contains(result)
     assert sea.buffer(1e-6).contains(result), "result not inside sea polygon"
 
 
@@ -1067,7 +1066,7 @@ After the edit, verify with:
 ```bash
 grep -n "import requests\|MARINE_REGIONS_WFS\|requests\.get\|_query_marine_regions" app/modules/create_model_panel.py
 ```
-Expected: only one match — the new import line `from modules.create_model_marine import query_named_sea_polygon` (which doesn't appear in the grep pattern; the grep should return EMPTY). Specifically, no `requests.get(...)` reference must remain — that would mean the body of the original `_query_marine_regions` was left in place when only its `def` line was removed. Strict-mode ruff (CI) flags F401 for unused imports — leaving them in breaks CI.
+Expected: **no matches** (empty grep output). Specifically, no `requests.get(...)` reference must remain — that would mean the body of the original `_query_marine_regions` was left in place when only its `def` line was removed. Strict-mode ruff (CI) flags F401 for unused imports — leaving them in breaks CI.
 
 - [ ] **Step 2: Rewrite the `_on_fetch_sea` handler to consume a GeoDataFrame**
 
@@ -2398,9 +2397,20 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history (v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8)
+# Plan revision history (v1 → v2 → … → v9) — converged at loop 8
 
-SEVEN multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more (5 critical) the earlier loops missed; loop 7 found 13 workflow-cleanup items (zero runtime bugs) — that's genuine convergence.
+EIGHT multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more including 5 critical bugs the earlier loops missed; loop 7 found 13 workflow-cleanup items (zero runtime bugs); **loop 8 found 2 LOW cosmetic items and a "converged, execute" verdict — genuine convergence.**
+
+## Loop 8 (v8 → v9) — CONVERGED
+
+The architect explicitly verdicted "loop-8 converged, execute" after tracing each prescribed code path, validating the loop-7 cleanup didn't introduce regressions, and confirming no simulation invariants are violated. Two LOW cosmetic items applied:
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| LOW | 1 | Vacuous test assertion `assert result.buffer(1e-7).contains(result)` (always trivially true) | Removed |
+| LOW | 2 | Contradictory grep verification text ("only one match" vs "EMPTY") | Rewrote as "Expected: no matches (empty grep output)" |
+
+**Critical-bug trajectory across 8 loops: 4, 3, 0, 3, 1, 1, 0, 0.** Two consecutive zero-CRIT loops = convergence.
 
 ## Loop 7 (v7 → v8) — workflow consistency cleanup, no runtime bugs
 
