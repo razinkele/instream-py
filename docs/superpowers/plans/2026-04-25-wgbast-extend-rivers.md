@@ -1696,8 +1696,14 @@ Replace it with:
     if marine.empty:
         raise RuntimeError(
             f"{river.river_name}: BalticCoast generated 0 cells "
-            f"(disk minus coastline likely too small at "
-            f"radius={BALTICCOAST_RADIUS_M}m)."
+            f"(disk radius={BALTICCOAST_RADIUS_M}m, "
+            f"cell_size={river.cell_size_m * bc_cell_factor:.0f}m). "
+            f"Try: (1) increase BALTICCOAST_RADIUS_M in "
+            f"scripts/_generate_wgbast_physical_domains.py; "
+            f"(2) lower BALTICCOAST_CELL_FACTOR_OVERRIDE for this river "
+            f"(currently {bc_cell_factor}); "
+            f"(3) move mouth waypoint {river.waypoints[0]} seaward if "
+            f"the disk is dominated by land."
         )
 
     # Concat freshwater + marine. pd.concat of two GeoDataFrames may
