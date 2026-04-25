@@ -16,7 +16,7 @@ stock-assessment practice treats Muonio as part of the Tornionjoki
 population.
 
 - Pre: Tornionjoki 860 cells (4 OSM seed polygons → 71 connected, ~150 km centerline).
-- Post: Tornionjoki 3249 cells (18 OSM seed polygons → 392 connected, ~570 km centerline). Now exceeds Simojoki's 3094 cells.
+- Post: Tornionjoki 3364 cells (18 OSM seed polygons → 392 connected, ~570 km centerline). Now exceeds Simojoki's 3094 cells.
 
 ### Added — BalticCoast cells in 4 WGBAST fixtures (PR-2)
 
