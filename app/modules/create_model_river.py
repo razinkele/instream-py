@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Sequence
 
-from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
@@ -116,3 +116,114 @@ def filter_polygons_by_centerline_connectivity(
         label or "<unlabeled>", len(kept), n,
     )
     return kept
+
+
+def partition_polygons_along_channel(
+    centerline: Sequence[LineString] | LineString | MultiLineString,
+    polygons: Sequence[Polygon | MultiPolygon],
+    *,
+    mouth_lon_lat: tuple[float, float],
+    n_reaches: int,
+) -> list[list[Polygon | MultiPolygon]]:
+    """Partition polygons into N groups by ALONG-channel distance from mouth.
+
+    Each polygon's centroid is projected onto the centerline; polygons are
+    sorted by along-line distance from the mouth point and split into N
+    equal-count groups (the last group absorbs any rounding remainder).
+
+    Returns a list of N lists. Caller assigns reach names + frac_spawn
+    afterwards. For len(polygons) < n_reaches, returns mostly-empty
+    lists with the polygons distributed across the first slots.
+    """
+    from shapely.geometry import Point
+
+    if n_reaches < 1:
+        raise ValueError(f"n_reaches must be >= 1, got {n_reaches}")
+    if not polygons:
+        return [[] for _ in range(n_reaches)]
+
+    if isinstance(centerline, (LineString, MultiLineString)):
+        centerline_union = centerline
+    else:
+        centerline_union = unary_union(list(centerline))
+
+    mouth = Point(mouth_lon_lat)
+    oriented = _orient_centerline_mouth_to_source(centerline_union, mouth)
+
+    polys = list(polygons)
+    scored = sorted(
+        ((oriented.project(p.centroid), p) for p in polys),
+        key=lambda t: t[0],
+    )
+
+    n = len(scored)
+    q = n / float(n_reaches)
+    slices = [(int(q * i), int(q * (i + 1))) for i in range(n_reaches)]
+    if slices:
+        slices[-1] = (slices[-1][0], n)
+
+    return [
+        [p for _, p in scored[lo:hi]]
+        for lo, hi in slices
+    ]
+
+
+def _orient_centerline_mouth_to_source(
+    centerline_union: LineString | MultiLineString,
+    mouth: "Point",
+) -> LineString | MultiLineString:
+    """Return centerline oriented mouth → source so that .project()
+    returns 0 at mouth and increases upstream.
+
+    For a LineString: flip if mouth is closer to the end than the start.
+    For a MultiLineString: try shapely.ops.linemerge first — if all
+    sub-lines connect end-to-end the result is a single LineString and
+    we orient it the same way. Otherwise (genuinely disjoint segments,
+    common for OSM way collections like Tornionjoki+Muonio), fall back
+    to a coordinate-based proxy: build a single LineString from the
+    sequence of all sub-line coordinates concatenated, sorted by
+    distance from the mouth. This is approximate but produces a
+    monotone .project() that respects mouth → source ordering for
+    ALL the common WGBAST cases.
+
+    Returning a raw MultiLineString here is a BUG: shapely's
+    MultiLineString.project() returns 0.0 for every input regardless
+    of geometry, which silently scrambles the partition.
+    """
+    from shapely.ops import linemerge
+
+    if centerline_union.geom_type == "LineString":
+        coords = list(centerline_union.coords)
+        d_start = mouth.distance(Point(coords[0]))
+        d_end = mouth.distance(Point(coords[-1]))
+        if d_start > d_end:
+            coords = list(reversed(coords))
+        return LineString(coords)
+
+    # MultiLineString: try linemerge first
+    merged = linemerge(centerline_union)
+    if merged.geom_type == "LineString":
+        coords = list(merged.coords)
+        d_start = mouth.distance(Point(coords[0]))
+        d_end = mouth.distance(Point(coords[-1]))
+        if d_start > d_end:
+            coords = list(reversed(coords))
+        return LineString(coords)
+
+    # Disconnected: concatenate sub-line coordinates sorted by distance
+    # from the mouth. Approximate but produces a monotone .project().
+    all_coords: list[tuple[float, float]] = []
+    for sub in merged.geoms:
+        all_coords.extend(list(sub.coords))
+    # Deduplicate while preserving order
+    seen: set[tuple[float, float]] = set()
+    unique: list[tuple[float, float]] = []
+    for c in all_coords:
+        if c not in seen:
+            seen.add(c)
+            unique.append(c)
+    # Sort by distance from mouth
+    unique.sort(key=lambda c: mouth.distance(Point(c)))
+    if len(unique) < 2:
+        return merged  # fall through; downstream will detect a degenerate input
+    return LineString(unique)
