@@ -2329,13 +2329,23 @@ WGBAST = ["example_tornionjoki", "example_simojoki", "example_byskealven", "exam
 EXPECTED_REACHES = {"Mouth", "Lower", "Middle", "Upper", "BalticCoast"}
 
 
+# Module-scope cache so the 4 shapefiles are read once across all 22
+# parametrized test cases (was: 20 redundant reads at ~3000-4000 cells
+# each + pyogrio + yaml.safe_load overhead).
+_LOAD_CACHE: dict[str, tuple] = {}
+
+
 def _load(short_name: str) -> tuple[gpd.GeoDataFrame, dict, str]:
+    if short_name in _LOAD_CACHE:
+        return _LOAD_CACHE[short_name]
     fix = ROOT / "tests" / "fixtures" / short_name
     shp = next((fix / "Shapefile").glob("*.shp"))
     gdf = gpd.read_file(shp)
     cfg = yaml.safe_load((ROOT / "configs" / f"{short_name}.yaml").read_text(encoding="utf-8"))
     reach_col = "REACH_NAME" if "REACH_NAME" in gdf.columns else "reach_name"
-    return gdf, cfg, reach_col
+    result = (gdf, cfg, reach_col)
+    _LOAD_CACHE[short_name] = result
+    return result
 
 
 @pytest.mark.parametrize("short_name", WGBAST)
