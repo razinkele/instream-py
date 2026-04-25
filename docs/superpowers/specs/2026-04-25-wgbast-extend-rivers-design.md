@@ -1,11 +1,18 @@
-# WGBAST rivers — extend Tornionjoki + materialize BalticCoast cells (design v3)
+# WGBAST rivers — extend Tornionjoki + materialize BalticCoast cells (design v4)
 
-**Date:** 2026-04-25 (v3 after Create Model framework comparison)
+**Date:** 2026-04-25 (v4 after Create Model integration audit)
 **Scope:** Two independent PRs.
 - **PR-1 (Tornionjoki regex):** `scripts/_fetch_wgbast_osm_polylines.py`, regenerated `tests/fixtures/example_tornionjoki/`.
-- **PR-2 (BalticCoast cells + WGBAST yaml cleanup):** new `app/modules/create_model_marine.py` shared helper, `scripts/_generate_wgbast_physical_domains.py`, `scripts/_wire_wgbast_physical_configs.py`, `app/modules/create_model_panel.py` (small refactor), all 4 `configs/example_*.yaml`, regenerated 4 fixtures.
+- **PR-2 (BalticCoast cells + WGBAST yaml cleanup + helper refactor):**
+  - new `app/modules/create_model_marine.py` (sea-polygon helpers; v3-introduced)
+  - **new `app/modules/create_model_river.py`** (connectivity filter + along-channel partition; **v4-introduced**)
+  - `scripts/_generate_wgbast_physical_domains.py` (refactored to import the helpers — net thinner)
+  - `scripts/_wire_wgbast_physical_configs.py` (per-river BalticCoast tuning + orphan reach cleanup)
+  - `app/modules/create_model_panel.py` (small refactor — re-export `_query_marine_regions` from the new module)
+  - all 4 `configs/example_*.yaml` (tune BalticCoast + drop orphan reaches)
+  - regenerated 4 fixtures
 
-**Out of scope:** Tornionjoki juvenile-growth calibration; basin-wide shared marine state; salinity time-series for the new marine cells.
+**Out of scope:** Tornionjoki juvenile-growth calibration; basin-wide shared marine state; salinity time-series for the new marine cells; **new UI buttons consuming the v4 helpers** (deferred to follow-up PR-3); **Create Model CSV export format bug** (deferred to follow-up PR-4 — see "Deferred follow-ups").
 
 ## Why v3 (changes from v2)
 
@@ -17,6 +24,17 @@ The v2 spec invented a per-river OSM-coastline + disk-minus-land pipeline. Compa
 - **A future Create Model "Add a sea reach to my custom river" workflow** wants the same algorithm the WGBAST batch generator needs.
 
 v3 collapses v2's bespoke OSM-coastline pipeline into a thin reuse of the Create Model framework. The disk geometry survives (UTM-accurate, true-meters radius), but the coastline-clip + land-vs-sea classifier is replaced by `sea_polygon.intersection(disk)`, where `sea_polygon` is whatever Marine Regions WFS returns for the bbox. Sea-only by definition.
+
+## Why v4 (changes from v3)
+
+The v3 spec moved the marine-polygon helpers into `app/modules/`. A follow-up audit ("can other WGBAST script logic move into the Create Model framework?") identified two additional pure-Python algorithms in `_generate_wgbast_physical_domains.py` that have no Shiny dependency, are not WGBAST-specific in their geometric semantics, and would be reusable by a future Create Model UI affordance:
+
+- **`_load_osm_polygons_filtered`** (~50 lines) — STRtree-backed BFS that prunes water polygons to the connected component touching a centerline. Today buried in `scripts/`. Naturally a `create_model_*` capability.
+- **`build_reach_segments_from_polygons`** (~40 lines) — partitions polygons into N reaches by along-channel distance from a mouth point. Today hardcodes 4 WGBAST reach names. Naturally generalizes to "give me N polygon groups by along-channel distance."
+
+v4 extracts both into a new `app/modules/create_model_river.py` and rewrites `_generate_wgbast_physical_domains.py` to import them. The WGBAST batch generator becomes thin orchestration; the Create Model framework gains two reusable building blocks. **No new UI buttons in PR-2** — the helpers sit ready for a future PR-3.
+
+While auditing the integration, an empirical probe (`scripts/_probe_create_model_csv_format.py`) also surfaced a **separate latent bug**: `create_model_export.py::export_template_csvs` writes per-reach CSVs in a layout (`flow,cell_id_1,cell_id_2,...` header rows) that `src/salmopy/io/hydraulics_reader.py::_parse_hydraulic_csv` cannot parse (it expects the inSALMO format: comment lines, count line, flow-values line, cell-per-row data lines). Loading raises `ValueError: invalid literal for int() with base 10: 'flow'`. Documented under "Deferred follow-ups"; fix is independent of the WGBAST work.
 
 ## Why v2 (kept from v2 → v3)
 
@@ -67,15 +85,16 @@ tests/fixtures/_osm_cache/                 [MOD]   refresh tornionjoki line cach
 tests/fixtures/example_tornionjoki/        [MOD]   regenerated shapefile (more cells)
 ```
 
-### PR-2 (BalticCoast cells via Marine Regions + WGBAST yaml cleanup)
+### PR-2 (BalticCoast cells via Marine Regions + helper refactor + WGBAST yaml cleanup)
 
 ```
 app/modules/
-├── create_model_marine.py                 [NEW]  query_named_sea_polygon + clip_to_disk
-└── create_model_panel.py                  [MOD]  thin wrapper: re-export from new module
+├── create_model_marine.py                 [NEW]  query_named_sea_polygon + clip_sea_polygon_to_disk
+├── create_model_river.py                  [NEW]  filter_polygons_by_centerline_connectivity + partition_polygons_along_channel
+└── create_model_panel.py                  [MOD]  thin wrapper: re-export from create_model_marine
 
 scripts/
-├── _generate_wgbast_physical_domains.py   [MOD]  BalticCoast segment via create_model_marine
+├── _generate_wgbast_physical_domains.py   [MOD]  imports helpers from create_model_marine + create_model_river (net thinner)
 └── _wire_wgbast_physical_configs.py       [MOD]  per-river BalticCoast tuning + orphan-reach cleanup
 
 configs/
@@ -225,6 +244,72 @@ Key advantages over v2:
 - **No land-vs-sea classifier.** Marine Regions IHO polygons are sea-only.
 - **No `source_lon_lat` parameter.** The disk doesn't need a "land side" to exclude.
 - **Reusable.** The Create Model UI's existing fetch_sea handler can call into the same helper.
+
+### 1b. New `app/modules/create_model_river.py` shared helper (v4)
+
+Two functions extracted from `_generate_wgbast_physical_domains.py`. Both pure-Python (no Shiny dependency, no IO — same constraints as `create_model_grid.py`).
+
+```python
+"""Centerline-driven river-polygon analysis helpers.
+
+Extracted from scripts/_generate_wgbast_physical_domains.py so that
+both the WGBAST batch generator AND a future Create Model UI button
+can share the algorithms.
+"""
+from __future__ import annotations
+from typing import Sequence
+from shapely.geometry import LineString, Point, Polygon, MultiPolygon
+from shapely.ops import unary_union
+
+
+def filter_polygons_by_centerline_connectivity(
+    centerline: list[LineString] | LineString,
+    polygons: Sequence[Polygon | MultiPolygon],
+    tolerance_deg: float = 0.0005,    # ~55 m at typical river latitudes
+    max_polys: int = 2000,
+    label: str | None = None,         # for log messages; e.g. "Tornionjoki"
+) -> list[Polygon | MultiPolygon]:
+    """Return only the polygons in the connected component that touches
+    the centerline.
+
+    Algorithm (graph flood-fill):
+      1. Buffer each polygon by `tolerance_deg` (small bridge over OSM
+         tagging gaps).
+      2. Build an STRtree spatial index for fast neighbor lookup.
+      3. Seed the visited-set with polygons whose buffered envelope
+         intersects the buffered centerline.
+      4. BFS: for each visited polygon, find polygons whose buffered
+         envelope intersects → add to visited.
+      5. Return only visited polygons (capped at `max_polys`).
+
+    The cap protects against the centerline accidentally touching a
+    sea polygon and blowing up the connected component.
+    """
+
+
+def partition_polygons_along_channel(
+    centerline: list[LineString] | LineString,
+    polygons: Sequence[Polygon | MultiPolygon],
+    mouth_lon_lat: tuple[float, float],
+    n_reaches: int,
+) -> list[list[Polygon | MultiPolygon]]:
+    """Partition polygons into N groups by ALONG-channel distance from
+    the mouth.
+
+    Each polygon's centroid is projected onto the centerline; polygons
+    are sorted by along-line distance from the mouth and split into N
+    equal-count quartile groups (the last group absorbs rounding).
+
+    Returns a list of N lists. Caller assigns reach names + frac_spawn.
+    For < N polygons (`len(polygons) < n_reaches`), returns whatever
+    polygons exist with the rest empty; caller decides whether to
+    raise or fall back to a centerline-line split.
+    """
+```
+
+The two functions are extracted by parameterising the existing private functions:
+- `_load_osm_polygons_filtered(river, centerline)` becomes `filter_polygons_by_centerline_connectivity(centerline, polygons, ...)` — the `River` dataclass is removed; the caller passes the polygons directly and a `label` for logging.
+- `build_reach_segments_from_polygons(river, centerline, polygons)` becomes `partition_polygons_along_channel(centerline, polygons, mouth, n_reaches)` — returns N lists of polygons. The WGBAST caller wraps these in the `{"segments": ..., "frac_spawn": ..., "type": "water"}` dict it already expects (see §3b code snippet).
 
 ### 2. `create_model_panel.py` refactor
 
@@ -432,3 +517,40 @@ _(WFS payload caching was an open question; resolved in v3 — see Components §
 - **C**: Standardise cell-id format on `f"C{i+1:04d}"` (matches `create_model_panel.py:1153`).
 - **D**: Refactor `_query_marine_regions` out of `create_model_panel.py` into the shared module.
 - **E**: Drop the `_fetch_wgbast_osm_polylines.py` coastline-fetch addition that v2 prescribed (no longer needed).
+
+### v4-specific changes (continued Create Model integration)
+
+- **F**: Move `_load_osm_polygons_filtered` and `build_reach_segments_from_polygons` from `scripts/_generate_wgbast_physical_domains.py` to a new `app/modules/create_model_river.py`. Both helpers become first-class `create_model_*` capabilities reusable by future UI features.
+- **G**: Generalize `partition_polygons_along_channel` to take an explicit `n_reaches` parameter (drops the WGBAST-specific hardcoded `["Mouth", "Lower", "Middle", "Upper"]` list; caller maps groups to reach names).
+- **H**: WGBAST batch generator becomes thin orchestration: `River` dataclass + per-river YAML wiring + the marine-cell glue. The geometric algorithms live in `app/modules/`.
+- **I**: Surfaced (but **NOT** fixed in this spec): `create_model_export.py::export_template_csvs` writes per-reach CSVs in a layout that `src/salmopy/io/hydraulics_reader.py::_parse_hydraulic_csv` cannot parse. Documented in "Deferred follow-ups" → PR-4.
+
+## Deferred follow-ups (intentionally out of scope for PR-2)
+
+**PR-3: Wire Create Model UI buttons to the v4 helpers.** New affordances on the existing Create Model panel that consume the now-shared algorithms. Sketch:
+
+- "Auto-extract main river system" button on the OSM-fetch panel: takes the user's currently-selected centerline + all fetched water polygons, runs `filter_polygons_by_centerline_connectivity`, replaces the polygon set with the connected component. Eliminates the manual "click each polygon to keep" workflow for users with > ~50 polygons.
+- "Auto-split into N reaches" slider + button: takes the user's current polygon set, runs `partition_polygons_along_channel` with the chosen N, names the resulting reaches sequentially (e.g. "R1"…"RN"), and assigns frac_spawn from a default schedule.
+- "Find by name" search box on the OSM fetch panel: post-filters `query_waterways` results by a name regex. Mirrors the WGBAST Overpass `name~` query but uses the local PBF.
+
+Estimated work: 300–500 lines across `create_model_panel.py` (UI), `create_model_river.py` (already in PR-2, minor signature additions if needed), and tests. Independent of PR-2; ships when the underlying helpers are stable.
+
+**PR-4: Fix `create_model_export.py` CSV format.** `export_template_csvs` currently writes:
+
+```
+flow,C0001,C0002,...
+0.5,0.234,0.198,...
+1.0,0.288,0.243,...
+```
+
+But `_parse_hydraulic_csv` (the simulation loader) expects:
+
+```
+;comment
+N,Number of flows in table,...
+,0.5,1.0,...
+C0001,0.234,0.288,...
+C0002,0.198,0.243,...
+```
+
+A fixture exported from the Create Model UI today raises `ValueError: invalid literal for int() with base 10: 'flow'` when loaded. Fix: rewrite `export_template_csvs` to emit the inSALMO format (using `_expand_per_cell_csv` from `_wire_wgbast_physical_configs.py:211` as a working reference, or extracting it to a third shared helper). Add a test that exports a Create Model fixture and round-trips it through `SalmopyModel.__init__`. Unblocks any user who has ever attempted to use a Create-Model-built model in simulation. ~50 lines of code + a regression test. Probe at `scripts/_probe_create_model_csv_format.py` confirms the bug; ships from there directly. Independent of PR-2.
