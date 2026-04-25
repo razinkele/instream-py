@@ -2440,7 +2440,8 @@ def test_tornionjoki_larger_than_simojoki():
     )
 
 
-def test_balticcoast_offset_from_mouth():
+@pytest.mark.parametrize("short_name", WGBAST)
+def test_balticcoast_offset_from_mouth(short_name: str):
     """Sanity: BalticCoast centroid is at least 1 km away from Mouth
     centroid. The 0.01° threshold (~1 km) detects "BalticCoast disk
     centred ON the mouth" or "disk spuriously inland" — both bug
@@ -2450,22 +2451,26 @@ def test_balticcoast_offset_from_mouth():
     an earlier draft, but Byskeälven's mouth opens east-southeast into
     Byskefjärden — the marine disk centroid lies east of the mouth and
     can be at the same latitude or slightly north. Distance-only is
-    the correct generic invariant."""
-    for short_name in WGBAST:
-        gdf, _cfg, reach_col = _load(short_name)
-        mouth = gdf[gdf[reach_col] == "Mouth"]
-        bc = gdf[gdf[reach_col] == "BalticCoast"]
-        if mouth.empty or bc.empty:
-            continue
-        # union_all() per GeoPandas 1.0+ (unary_union accessor deprecated)
-        mouth_centroid = mouth.geometry.union_all().centroid
-        bc_centroid = bc.geometry.union_all().centroid
-        dist_deg = mouth_centroid.distance(bc_centroid)
-        assert dist_deg > 0.01, (
-            f"{short_name}: BalticCoast centroid {dist_deg:.4f}° from Mouth "
-            f"centroid (expected > 0.01° = ~1 km). Disk likely centred on "
-            f"land or on the mouth itself."
-        )
+    the correct generic invariant.
+
+    Parametrized (was a manual for-loop with silent `continue` on
+    empty reaches — a bug that dropped BalticCoast for ONE river
+    would have silently passed this test with zero assertions
+    executed for that river)."""
+    gdf, _cfg, reach_col = _load(short_name)
+    mouth = gdf[gdf[reach_col] == "Mouth"]
+    bc = gdf[gdf[reach_col] == "BalticCoast"]
+    assert not mouth.empty, f"{short_name}: Mouth reach missing"
+    assert not bc.empty, f"{short_name}: BalticCoast reach missing"
+    # union_all() per GeoPandas 1.0+ (unary_union accessor deprecated)
+    mouth_centroid = mouth.geometry.union_all().centroid
+    bc_centroid = bc.geometry.union_all().centroid
+    dist_deg = mouth_centroid.distance(bc_centroid)
+    assert dist_deg > 0.01, (
+        f"{short_name}: BalticCoast centroid {dist_deg:.4f}° from Mouth "
+        f"centroid (expected > 0.01° = ~1 km). Disk likely centred on "
+        f"land or on the mouth itself."
+    )
 ```
 
 - [ ] **Step 2: Run the tests**
