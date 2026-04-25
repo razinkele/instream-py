@@ -995,6 +995,16 @@ from modules.create_model_marine import query_named_sea_polygon  # noqa: E402
 
 Note we do NOT alias as `_query_marine_regions` — the consumer is being rewritten in Step 2 below to consume a GeoDataFrame directly.
 
+**Also remove now-orphaned imports/constants from `create_model_panel.py`:**
+- Line 16: `import requests` — no longer used after Step 2 (handler uses the helper, not `requests` directly).
+- Line 71: `MARINE_REGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"` — moved into `create_model_marine.py`.
+
+After the edit, verify with:
+```bash
+grep -n "import requests\|MARINE_REGIONS_WFS" app/modules/create_model_panel.py
+```
+Expected: no matches. Strict-mode ruff (CI) flags F401 for unused imports — leaving them in breaks CI.
+
 - [ ] **Step 2: Rewrite the `_on_fetch_sea` handler to consume a GeoDataFrame**
 
 The current handler (lines 727–763) is shaped for a dict return:
@@ -1079,11 +1089,18 @@ def test_create_model_panel_imports_query_named_sea_polygon():
     )
 
 
-def test_query_named_sea_polygon_handler_contract(monkeypatch):
-    """The handler in _on_fetch_sea consumes a GeoDataFrame from
-    query_named_sea_polygon, NOT a dict. This test exercises the
-    failure mode that loop-4 review caught: if the helper still
-    returns a dict, downstream gdf operations fail."""
+def test_query_named_sea_polygon_returns_geodataframe_for_handler(monkeypatch):
+    """Type-contract test on the helper: confirms the return type is
+    a GeoDataFrame (not a dict). The handler in _on_fetch_sea was
+    rewritten in Task 2.A.5 Step 2 to consume a GeoDataFrame directly;
+    if the helper ever regresses to returning a dict, this test fails
+    fast and signals the handler will break.
+
+    Note: this is a CONTRACT test, not a handler integration test —
+    the handler itself runs inside a Shiny session and is not
+    directly invoked here. A regression that broke the handler's
+    interaction with `_sea_gdf` or `_refresh_map` would not be caught;
+    those are exercised by the broader Create Model panel test suite."""
     from modules import create_model_marine as m
 
     fake_geoj = {
@@ -1477,8 +1494,13 @@ Replace it with:
             f"{river.river_name}: Marine Regions returned no sea polygon. "
             f"Re-run when WFS recovers (or run with --refresh-marineregions)."
         )
+    # Use a tiny buffer + intersects rather than strict contains.
+    # The mouth waypoint often lies exactly on the IHO sea-area boundary
+    # (river mouths ARE coastlines); strict contains() returns False on
+    # boundary points and would raise a spurious "no sea polygon" error.
     mouth_pt = Point(river.waypoints[0])
-    sea_gdf = sea_gdf[sea_gdf.geometry.contains(mouth_pt)]
+    mouth_buffered = mouth_pt.buffer(1e-6)  # ~10 cm tolerance for boundary cases
+    sea_gdf = sea_gdf[sea_gdf.geometry.intersects(mouth_buffered)]
     if sea_gdf.empty:
         raise RuntimeError(
             f"{river.river_name}: no sea polygon contains the mouth point "
@@ -1495,16 +1517,10 @@ Replace it with:
     # The intersection can return a MultiPolygon if the disk straddles
     # an island, peninsula, or skerry (e.g., Tärnö near Mörrum, the many
     # small skerries near Tornio). Pass the geoms separately to
-    # generate_cells so each piece tessellates independently.
-    #
-    # Known limitation (not fixed in this PR — see PR-3 follow-up):
-    # `create_model_grid.generate_cells` uses `geom.exterior` for sea
-    # reaches, which silently drops INTERIOR HOLES in a Polygon. If the
-    # disk-clip yields a Polygon with an island as an interior hole,
-    # cells will be generated INSIDE the island. Acceptable for the 4
-    # WGBAST rivers (Tärnö-class skerries are <0.1% of disk area) but
-    # the generator should be enhanced to pass holes as negative-space
-    # exclusions in a future PR.
+    # generate_cells so each piece tessellates independently. Polygon-
+    # with-holes is also handled correctly by generate_cells (line 173
+    # uses combined_buffer.intersection(poly) which preserves holes —
+    # cells inside an island get empty intersection and are dropped).
     if bc_polygon.geom_type == "MultiPolygon":
         bc_segments = list(bc_polygon.geoms)
     else:
@@ -1554,14 +1570,21 @@ Replace it with:
             f"{river.river_name}: 0 cells assigned to 'Mouth' reach — "
             f"check REACH_NAMES + partition output."
         )
-    marine_union = marine_subset.geometry.unary_union
-    if marine_union is None or marine_union.is_empty:
+    # Quick empty check before the UTM reproject + adjacency math
+    if marine_subset.geometry.union_all().is_empty:
         raise RuntimeError(
             f"{river.river_name}: BalticCoast geometry empty after concat."
         )
-    # Use a 1m buffer (≈1e-5° at WGS84 latitudes) to absorb sub-meter
-    # UTM↔WGS84 round-trip drift between the freshwater and marine grids.
-    hits = mouth_subset.geometry.buffer(1e-5).intersects(marine_union).sum()
+    # Project both subsets to UTM for a true-meters adjacency check.
+    # A WGS84-degree buffer is anisotropic at high latitudes (1e-5° is
+    # ~0.45 m east-west at 65°N, ~1.1 m north-south) — the Tornio coast
+    # runs roughly N-S so a degree-buffer's E-W slack would be the
+    # constraint. UTM gives uniform meters; 5 m absorbs UTM↔WGS84
+    # round-trip drift comfortably without false-positives.
+    mouth_utm = mouth_subset.to_crs(epsg=utm_epsg)
+    marine_utm = marine_subset.to_crs(epsg=utm_epsg)
+    marine_union_utm = marine_utm.geometry.union_all()
+    hits = mouth_utm.geometry.buffer(5.0).intersects(marine_union_utm).sum()
     if hits == 0:
         raise RuntimeError(
             f"{river.river_name}: BalticCoast not adjacent to Mouth — "
@@ -1816,6 +1839,14 @@ micromamba run -n shiny python -m pytest tests/test_multi_river_baltic.py::test_
 
 Expected: 4 PASS (one per WGBAST fixture).
 
+**WORKFLOW NOTE — DO NOT STAGE FIXTURE FILES BETWEEN GENERATOR AND WIRE-SCRIPT RUNS.**
+The CSV files (`tests/fixtures/example_*/BalticCoast-*.csv`) are modified by BOTH:
+- `_generate_wgbast_physical_domains.py` (writes the shapefile; CSV row counts mismatch)
+- `_wire_wgbast_physical_configs.py` (re-expands the CSVs to match the new cell counts)
+Both must complete before any `git add` of fixture files. If you stage between the two scripts, the committed CSVs will have the WRONG row count. The `Step 5` simulation-load test will then fail mid-way through the commit cycle.
+
+Sequencing: regenerator → wire script → simulation-load test → `git add` → commit.
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -1903,10 +1934,22 @@ def test_balticcoast_geometric_adjacency_to_mouth(short_name: str):
     bc = gdf[gdf[reach_col] == "BalticCoast"]
     assert not mouth.empty
     assert not bc.empty
-    bc_union = bc.geometry.unary_union
-    hits = mouth.geometry.buffer(1e-7).intersects(bc_union).sum()
+    # Project to UTM for a true-meters adjacency check, matching the
+    # generator's tolerance (5 m). A WGS84-degree buffer here would be
+    # anisotropic at Bothnian Bay latitudes and could spuriously fail.
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(ROOT / "app"))
+    from modules.create_model_utils import detect_utm_epsg
+    mouth_centroid = mouth.geometry.union_all().centroid
+    utm_epsg = detect_utm_epsg(mouth_centroid.x, mouth_centroid.y)
+    mouth_utm = mouth.to_crs(epsg=utm_epsg)
+    bc_utm = bc.to_crs(epsg=utm_epsg)
+    bc_union_utm = bc_utm.geometry.union_all()
+    hits = mouth_utm.geometry.buffer(5.0).intersects(bc_union_utm).sum()
     assert hits >= 1, (
-        f"{short_name}: no Mouth↔BalticCoast geometric adjacency"
+        f"{short_name}: no Mouth↔BalticCoast geometric adjacency "
+        f"(within 5 m UTM tolerance)"
     )
 
 
@@ -1956,8 +1999,9 @@ def test_balticcoast_offset_from_mouth():
         bc = gdf[gdf[reach_col] == "BalticCoast"]
         if mouth.empty or bc.empty:
             continue
-        mouth_centroid = mouth.geometry.unary_union.centroid
-        bc_centroid = bc.geometry.unary_union.centroid
+        # union_all() per GeoPandas 1.0+ (unary_union accessor deprecated)
+        mouth_centroid = mouth.geometry.union_all().centroid
+        bc_centroid = bc.geometry.union_all().centroid
         dist_deg = mouth_centroid.distance(bc_centroid)
         assert dist_deg > 0.01, (
             f"{short_name}: BalticCoast centroid {dist_deg:.4f}° from Mouth "
@@ -2203,9 +2247,25 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history (v1 → v2 → v3 → v4 → v5)
+# Plan revision history (v1 → v2 → v3 → v4 → v5 → v6)
 
-The plan went through FOUR multi-tool review loops. Loop 1: 14 findings (4 critical), all applied. Loop 2: 16 findings (3 critical/high), 10 applied. Loop 3: 3 polish items, all applied. **Loop 4 (CRUCIAL): 8 findings (3 CRITICAL bugs that all 3 prior loops missed) — convergence had been declared prematurely.**
+The plan went through FIVE multi-tool review loops. Loops 1-3 surfaced 33 findings; loop 4 (fresh-eyes mandate) found 3 more critical bugs all 3 prior loops missed. Loop 5 (continued fresh-eyes mandate) found 1 critical + 4 important + 2 low — convergence still not achieved.
+
+## Loop 5 (v5 → v6) — fresh-eyes continued
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| CRIT | 1 | **Adjacency `buffer(1e-5)` anisotropic at 65°N** (~0.45m east-west, only ~1.1m north-south) — Tornio coast is N-S so E-W axis is the constraint. Test used `1e-7` (~1cm) — even worse. Both reviewers (architect + numerical) flagged independently. | Switched to UTM-projected buffer of 5 m in both generator and test. True meters, isotropic. |
+| IMP | 2 | **Orphaned `import requests` and `MARINE_REGIONS_WFS` constant** in `create_model_panel.py` after Task 2.A.5 — strict-mode ruff F401 fails CI. | Task 2.A.5 Step 1 now explicitly removes both. |
+| IMP | 3 | **`contains(mouth_pt)` boundary semantics** — river-mouth waypoints often lie ON IHO sea-area boundary, `contains()` returns False, raising spurious "no sea polygon" error. | Switched to `intersects(mouth_pt.buffer(1e-6))` (~10cm tolerance) for boundary cases. |
+| IMP | 4 | **Test name dishonest** — `test_query_named_sea_polygon_handler_contract` doesn't test the handler, only the helper return type. | Renamed to `test_query_named_sea_polygon_returns_geodataframe_for_handler`; docstring states the test scope honestly. |
+| IMP | 5 | **Step ordering between regenerator and wire-script** — staging fixture files between the two scripts commits short CSVs. | Added explicit "DO NOT STAGE BETWEEN GENERATOR AND WIRE-SCRIPT RUNS" workflow note to Section D. |
+| LOW | 6 | `gdf.geometry.unary_union` deprecated in GeoPandas 1.0+ | Switched to `.union_all()` in the test file (loop-5 fix only; the generator already used `union_all()` after the buffer fix). |
+| INFO | 7 | Plan's loop-4 INFO-8 claim that `geom.exterior` drops holes during cell generation is WRONG — verified `generate_cells` line 173 uses `combined_buffer.intersection(poly)` which preserves holes. The note should be removed/updated. | Revision history table corrected; the original loop-4 INFO-8 entry is annotated. |
+
+## Loop 4 (v4 → v5) — fresh-eyes architect found bugs all 3 prior loops missed
+
+The architect (Opus) was given an explicit "fresh eyes, look for what prior reviewers missed" mandate. This produced findings of much higher severity than loops 2-3.
 
 ## Loop 4 (v4 → v5) — fresh-eyes architect found bugs all 3 prior loops missed
 
@@ -2220,7 +2280,7 @@ The architect (Opus) was given an explicit "fresh eyes, look for what prior revi
 | IMP | 5 | **No task DAG for parallel/serial dispatch**: subagents could race on shared files | Added a "Task dependency DAG" block to PR-2 preamble. |
 | IMP | 6 | **No rollback / partial-failure handling**: half-converted state across 4 fixtures | Added rollback strategy note to Task 2.C.2. |
 | IMP | 7 | **`cells["ID_TEXT"].astype(str)` line dropped** from prescribed code | Restored. |
-| INFO | 8 | **Polygon-with-holes (interior islands) silently dropped** by `geom.exterior` in `generate_cells` | Documented as known limitation (acceptable for our 4 rivers; future PR enhances generator). |
+| INFO | 8 | ~~Polygon-with-holes (interior islands) silently dropped by `geom.exterior` in `generate_cells`~~ — **CORRECTED in loop 5**: `generate_cells` line 173 uses `combined_buffer.intersection(poly)` which DOES preserve holes; cells inside an island are dropped via empty intersection. The `geom.exterior` usage at line 137 is for endpoint collection only (used by `dist_escape`). The loop-4 finding was a misread; documented for transparency. | No-op; misread in loop 4. |
 
 ## Loop 3 (v3 → v4) — 4 polish items
 
