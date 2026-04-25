@@ -51,6 +51,8 @@ Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopanda
 
 # Pre-flight check (orchestrator runs ONCE before dispatching any task)
 
+**Shell contract.** All ` ```bash ` fenced blocks in this plan assume a POSIX shell (Git-Bash on Windows, or any Unix shell). They use idioms that do NOT work natively in PowerShell or `cmd.exe`: `/tmp/...`, `tee`, `find`, `grep -E`, `for ... in ... do ... done`, `[ -f "$f" ]`, `$(...)`, `2>/dev/null`, `|| true`. Loops 59 + 60 fixed two cases where Python-side action was the right portability answer (encoding, wallclock); the rest of this plan stays POSIX-bash by design (writing every block triple-shell-portable would triple plan length). On a Windows machine whose default terminal is PowerShell, wrap each bash block with `bash -lc '...'` or open Git-Bash explicitly.
+
 This is NOT a task and should NOT be dispatched to a subagent (no code change, no commit). The orchestrator (or the engineer running this plan inline) verifies external service reachability + locale settings + dependency presence before starting:
 
 ```bash
