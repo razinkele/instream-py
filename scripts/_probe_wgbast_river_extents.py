@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 RIVERS = ["example_tornionjoki", "example_simojoki", "example_byskealven", "example_morrumsan"]
 
-print(f"{'river':<25} {'reaches':<35} {'cells':>6} {'lon range':<25} {'lat range':<25}")
+print(f"{'river':<25} {'reaches':<70} {'cells':>6} {'lon range':<25} {'lat range':<25}")
 print("-" * 130)
 for r in RIVERS:
     shp_dir = ROOT / "tests" / "fixtures" / r / "Shapefile"
@@ -23,7 +23,7 @@ for r in RIVERS:
     bx = gdf.total_bounds
     lon_r = f"{bx[0]:.3f}..{bx[2]:.3f}"
     lat_r = f"{bx[1]:.3f}..{bx[3]:.3f}"
-    print(f"{r:<25} {reaches_str:<35} {len(gdf):>6} {lon_r:<25} {lat_r:<25}")
+    print(f"{r:<25} {reaches_str:<70} {len(gdf):>6} {lon_r:<25} {lat_r:<25}")
 print()
 
 # Also report OSM cache file sizes / lengths (line + polygon)
