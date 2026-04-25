@@ -650,9 +650,11 @@ def filter_polygons_by_centerline_connectivity(
     queue: list[int] = []
 
     seed_buffered_line = centerline_union.buffer(tolerance_deg)
+    visited_count = 0
     for i in tree.query(seed_buffered_line):
         if seed_buffered_line.intersects(buffered[i]) and not visited[i]:
             visited[i] = True
+            visited_count += 1
             queue.append(i)
 
     if not queue:
@@ -662,13 +664,18 @@ def filter_polygons_by_centerline_connectivity(
         )
         return []
 
-    while queue and sum(visited) < max_polys:
+    # Track visited_count incrementally instead of `sum(visited)` per
+    # iteration — sum() is O(n) per call, making the BFS O(n²). For
+    # Tornionjoki at ~9000 polygons, that's ~80M boolean sums per
+    # regenerate. Incremental counter restores O(n log n + E).
+    while queue and visited_count < max_polys:
         i = queue.pop()
         for j in tree.query(buffered[i]):
             if visited[j]:
                 continue
             if buffered[i].intersects(buffered[j]):
                 visited[j] = True
+                visited_count += 1
                 queue.append(j)
 
     kept = [polys[i] for i, v in enumerate(visited) if v]
@@ -1733,8 +1740,11 @@ Replace it with:
             f"{river.river_name}: 0 cells assigned to 'Mouth' reach — "
             f"check REACH_NAMES + partition output."
         )
-    # Quick empty check before the UTM reproject + adjacency math
-    if marine_subset.geometry.union_all().is_empty:
+    # Quick empty check before the UTM reproject + adjacency math.
+    # Use the row-level emptiness rather than a union (cheaper; the
+    # full union is computed in UTM 8 lines below for the actual
+    # adjacency test).
+    if marine_subset.empty or marine_subset.geometry.is_empty.all():
         raise RuntimeError(
             f"{river.river_name}: BalticCoast geometry empty after concat."
         )
