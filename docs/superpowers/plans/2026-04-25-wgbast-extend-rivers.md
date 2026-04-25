@@ -51,14 +51,33 @@ Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopanda
 
 # Pre-flight check (orchestrator runs ONCE before dispatching any task)
 
-This is NOT a task and should NOT be dispatched to a subagent (no code change, no commit). The orchestrator (or the engineer running this plan inline) verifies external service reachability + locale settings before starting:
+This is NOT a task and should NOT be dispatched to a subagent (no code change, no commit). The orchestrator (or the engineer running this plan inline) verifies external service reachability + locale settings + dependency presence before starting:
 
 ```bash
-# Ensure git commit messages with non-ASCII (Mörrum, Klaipėda, älv, Hanöbukten,
-# Tärnö, Bothnian Bay, etc.) are stored as UTF-8 in the repo even on Windows
-# Git-Bash where the inbound argv encoding is cp1252/cp437 by default.
+# 1. Locale: ensure git commit messages with non-ASCII (Mörrum, Klaipėda,
+# älv, Hanöbukten, Tärnö, Bothnian Bay, etc.) are stored as UTF-8 in
+# the repo even on Windows Git-Bash where the inbound argv encoding is
+# cp1252/cp437 by default.
 git config i18n.commitencoding utf-8
 git config i18n.logoutputencoding utf-8
+
+# 2. Dependency: verify `requests` is importable in the test environment.
+# Task 2.A.1 introduces app/modules/create_model_marine.py with a top-level
+# `import requests`. tests/test_create_model_marine.py imports that module
+# at collection time — if `requests` isn't in the env, pytest will ImportError
+# at collection (failing the entire run, not just the new tests).
+micromamba run -n shiny python -c "import requests; print('requests', requests.__version__)"
+# Expected: prints requests >= 2.x. If it errors, run:
+#   micromamba install -n shiny -c conda-forge requests
+# (or whatever package manager the project uses).
+
+# 3. Shapefile size: PR-2 regenerates 4 fixtures. Tornionjoki's Muonio
+# extension grows it ~3-4x. Check that no resulting shapefile exceeds
+# 25 MB (GitHub warns at 50 MB, errors at 100 MB; we leave headroom).
+# This check runs AFTER regeneration in Step 4b — flagged here as a
+# pre-flight orientation note.
+ls -lh tests/fixtures/example_*/Shapefile/*.shp 2>/dev/null
+# If any single .shp is currently > 20 MB, plan ahead for git-lfs setup.
 ```
 
 ```bash
@@ -1893,6 +1912,16 @@ for ext in shp shx dbf prj; do
     fi
 done
 echo "OK: all 4 WGBAST shapefiles regenerated (all 4 sibling extensions present)"
+
+# Size guard: GitHub warns at 50 MB and rejects at 100 MB per file.
+# Even at git-lfs threshold, oversize shapefiles slow CI clone + cache.
+# Flag any single .shp over 25 MB so the engineer can choose to either
+# (a) coarsen cell sizes, (b) split the fixture, or (c) move to git-lfs.
+oversize=$(find tests/fixtures/example_*/Shapefile/ -name "*.shp" -size +25M 2>/dev/null)
+if [ -n "$oversize" ]; then
+    echo "WARNING: shapefiles exceeding 25 MB (consider git-lfs):"
+    echo "$oversize"
+fi
 ```
 
 If this fails: do NOT proceed to Step 5. Re-run Step 1 (the regenerator) until all 4 rivers complete. The regenerator IS idempotent on individual rivers — re-running overwrites cleanly.
