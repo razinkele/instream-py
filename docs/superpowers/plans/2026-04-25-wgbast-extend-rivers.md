@@ -1786,7 +1786,7 @@ write_river_shapefile(mor)
 Expected log output:
 - `Generated XXXX cells (fresh=489 + BalticCoast=NNN)`
 - Per-reach distribution shows 5 reaches: BalticCoast, Lower, Middle, Mouth, Upper
-- BalticCoast cell count between 100 and 3000
+- BalticCoast cell count between 100 and 5000
 
 - [ ] **Step 4: Re-run the diagnostic probe**
 
@@ -1794,7 +1794,7 @@ Expected log output:
 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py
 ```
 
-Expected: each river now lists 5 reaches. If any river's BalticCoast cell count is 0 or > 3000, the disk radius / cell factor needs adjusting.
+Expected: each river now lists 5 reaches. If any river's BalticCoast cell count is 0 or > 5000, the disk radius / cell factor needs adjusting. (Mörrumsån specifically uses cell-factor 8.0 to keep its open-Hanöbukten count under 5000.)
 
 - [ ] **Step 5: Commit**
 
@@ -2518,6 +2518,14 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 17 review loops, convergence confirmed
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loop 24 — TWO more stale `3000` cell-count references that loop 7 missed
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| MED | 1 | Smoke-test prose at lines 1789 + 1797 said `between 100 and 3000` / `> 3000`. The actual integration test asserts `[100, 5000]` (loop 6 widened it because Mörrumsån's 480m cells trip 3000). Loop 7's "swept all references to the widened bound" claim missed these because they're not formatted as `Expected:` lines (one is a bullet, one is prose after "5 reaches"). | Updated both to `5000`. Added explanation about Mörrumsån's cell-factor 8.0. |
+
+**Lesson reinforced:** "swept all references" sweeps are unreliable when stale references are in different prose forms (bullet vs Expected vs comment). Future sweeps should grep for the literal stale value (`3000` here), not for `Expected:` patterns.
 
 ## Loop 23 — third stale-Expected, same class as loops 21+22
 
