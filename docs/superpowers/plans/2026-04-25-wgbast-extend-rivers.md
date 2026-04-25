@@ -1492,21 +1492,36 @@ def build_reach_segments_from_polygons(
 
 The helper has been moved (as a private helper) into `app/modules/create_model_river.py` (where `partition_polygons_along_channel` calls it internally). Find `_orient_centerline_mouth_to_source` in `_generate_wgbast_physical_domains.py` and delete the entire function (it's around 30 lines).
 
-- [ ] **Step 5: Verify the regenerator still produces identical output**
+- [ ] **Step 5: Verify the regenerator's behavioural parity (NOT byte-identity)**
+
+Section B is NOT a strictly byte-equivalent refactor. The new algorithm differs from the original in three ways that materially affect Tornionjoki specifically (where MAX_CONNECTED_POLYS=2000 fires against ~9000 candidate polygons):
+- BFS via `deque.popleft()` (was DFS via `list.pop()`)
+- `sorted()` over `tree.query().tolist()` for deterministic visit order
+- `predicate="intersects"` pushed into the spatial index (was bbox-overlap + Python intersects post-filter)
+
+Combined effect: when the cap fires, the surviving 2000-polygon subset is **deterministic but different** from the old algorithm's. For the other 3 rivers (Simojoki ~87, Byskeälven ~32, Mörrumsån ~26 connected polygons — all far below the cap), the surviving set is identical.
 
 Save the existing fixtures' shapefile metadata as a baseline:
 ```bash
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_before.txt 2>&1
 ```
 
-Re-run the generator (it will regenerate all 4 fixtures, but PR-1 already changed Tornionjoki's so we expect Tornionjoki to differ from a hypothetical pre-PR-1 baseline; the right comparison is "post-PR-1 vs post-Section-B"):
+Re-run the generator (only Section B changes are applied — Section C's BalticCoast generation hasn't landed yet):
 ```bash
-micromamba run -n shiny python scripts/_generate_wgbast_physical_domains.py
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_generate_wgbast_physical_domains.py
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py > /tmp/wgbast_extents_after.txt 2>&1
 diff /tmp/wgbast_extents_before.txt /tmp/wgbast_extents_after.txt
 ```
 
-Expected: empty diff (Section B is a pure refactor).
+Expected diff:
+- Simojoki, Byskeälven, Mörrumsån: empty diff (cap doesn't fire).
+- Tornionjoki: cell count may differ slightly (different 2000-polygon subset).
+
+The parity bar is NOT byte-identity but BEHAVIOURAL parity — `test_fixture_loads_and_runs_3_days` must still PASS for all 4 rivers:
+```bash
+micromamba run -n shiny python -m pytest tests/test_multi_river_baltic.py::test_fixture_loads_and_runs_3_days -v
+```
+Expected: 4 PASS. If this fails (e.g., the new Tornionjoki subset is missing crucial reaches), revert Section B and investigate before proceeding.
 
 - [ ] **Step 6: Commit**
 
