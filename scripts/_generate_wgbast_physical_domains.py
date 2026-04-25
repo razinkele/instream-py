@@ -64,6 +64,19 @@ POLY_CONNECT_TOL_DEG = 0.0005
 # memory if the centerline accidentally touches a major sea polygon.
 MAX_CONNECTED_POLYS = 2000
 
+# BalticCoast (marine) reach constants. v0.46+ spec §Architecture overview.
+BALTICCOAST_RADIUS_M = 10_000.0       # 10 km clip around river mouth
+
+# Marine cell_size = river.cell_size_m × factor. Per-river so Mörrumsån's
+# 60 m freshwater cells don't produce >5000 marine cells (the 10 km disk
+# at Hanöbukten is mostly open water). Tornionjoki/Simojoki/Byskeälven
+# use factor=4 (river cells 80–150 m → marine 320–600 m).
+# Mörrumsån uses factor=8 (river 60 m → marine 480 m, ~1500 disk cells).
+BALTICCOAST_CELL_FACTOR_DEFAULT = 4.0
+BALTICCOAST_CELL_FACTOR_OVERRIDE = {
+    "example_morrumsan": 8.0,
+}
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
 
@@ -205,6 +218,90 @@ def _load_osm_ways(river: River) -> list[LineString] | None:
         except Exception as exc:
             log.debug("skipping malformed OSM way %s: %s", w.get("id"), exc)
     return lines or None
+
+
+def _load_or_fetch_marineregions(
+    river: River,
+    refresh: bool = False,
+    bbox_pad_deg: float = 0.5,
+) -> "gpd.GeoDataFrame | None":
+    """Return the Marine Regions IHO polygons for `river`, cached at
+    tests/fixtures/_osm_cache/<short_name>_marineregions.json.
+
+    On first call (or when `refresh=True`), queries Marine Regions WFS
+    via `create_model_marine.query_named_sea_polygon`. Caches the
+    response as a flat list of GeoJSON features (matching the existing
+    OSM line/polygon cache shape).
+
+    Returns None if WFS fetch fails on a fresh attempt.
+    """
+    cache = OSM_CACHE / f"{river.short_name}_marineregions.json"
+    if not refresh and cache.exists():
+        data = json.loads(cache.read_text(encoding="utf-8"))
+        if not data:
+            # An empty cache file is never a legitimate state — we only
+            # write the cache when WFS returned a non-empty result.
+            # Surface this as a hard error rather than silently returning
+            # None (which would mask the real cause: the cache was
+            # corrupted, manually emptied, or written by an old buggy
+            # version of this script).
+            raise RuntimeError(
+                f"Cache file {cache} is empty (never a legitimate state). "
+                f"Delete it and re-run the generator (it will re-fetch from "
+                f"WFS), or copy a known-good cache from another developer's "
+                f"machine."
+            )
+        gdf = gpd.GeoDataFrame.from_features(data, crs="EPSG:4326")
+        # Drop null / invalid geometries (defensive — caches could be
+        # corrupted by external editing or version drift).
+        gdf = gdf[gdf.geometry.notna() & gdf.geometry.is_valid].copy()
+        if gdf.empty:
+            return None
+        return gdf[["name", "geometry"]] if "name" in gdf.columns else gdf
+
+    from modules.create_model_marine import query_named_sea_polygon
+    mouth_lon, mouth_lat = river.waypoints[0]
+    bbox = (
+        mouth_lon - bbox_pad_deg, mouth_lat - bbox_pad_deg,
+        mouth_lon + bbox_pad_deg, mouth_lat + bbox_pad_deg,
+    )
+    gdf = query_named_sea_polygon(bbox)
+    if gdf is None or gdf.empty:
+        # WFS unreachable or empty result — do NOT write an empty cache
+        # file. Future calls will see "no cache" and retry the WFS,
+        # rather than seeing a corrupt empty cache.
+        return None
+    # Cache as a list of GeoJSON features (always non-empty here)
+    payload = json.loads(gdf.to_json())["features"]
+    if not payload:
+        # Defensive: gdf was non-empty but to_json round-trip yielded
+        # no features. Don't write a misleading empty cache.
+        return gdf
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    # Atomic write: PID+thread-unique tmp file, then os.replace.
+    # Defeats OneDrive sync / Defender real-time scan read-locks that
+    # could otherwise cause PermissionError [WinError 32] on the second
+    # write of the 4-river loop. os.replace is atomic on NTFS and Linux.
+    # The try/except cleans up the .tmp file if os.replace fails
+    # (Defender lock, permission denied), preventing orphan files in
+    # the cache dir.
+    #
+    # PID+thread-unique suffix prevents tmp-file collision when two
+    # concurrent processes (regenerator + Shiny session both calling
+    # query_named_sea_polygon, or a CI run + dev machine on shared
+    # storage) both miss the cache and race to write it.
+    import os
+    import threading
+    tmp = cache.with_suffix(
+        f".{os.getpid()}.{threading.get_ident()}.tmp"
+    )
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, cache)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    return gdf
 
 
 def _load_osm_polygons_filtered(
