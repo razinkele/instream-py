@@ -5,6 +5,126 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.47.0] — 2026-04-26
+
+### Fixed — Tornionjoki extent (PR-1)
+
+`scripts/_fetch_wgbast_osm_polylines.py` Tornionjoki name regex now
+matches Muonionjoki tributary names. The Tornionjoki main stem only
+spans ~150 km; the basin extends another ~150 km along Muonio. WGBAST
+stock-assessment practice treats Muonio as part of the Tornionjoki
+population.
+
+- Pre: Tornionjoki 860 cells (4 OSM seed polygons → 71 connected, ~150 km centerline).
+- Post: Tornionjoki 3249 cells (18 OSM seed polygons → 392 connected, ~570 km centerline). Now exceeds Simojoki's 3094 cells.
+
+### Added — BalticCoast cells in 4 WGBAST fixtures (PR-2)
+
+Each WGBAST fixture (Tornionjoki, Simojoki, Byskeälven, Mörrumsån) now
+has shapefile cells under the existing `BalticCoast` reach. The 10 km
+coastline-clipped marine disk at each river mouth is built from
+Marine Regions IHO sea polygons (`Gulf of Bothnia` for the 3 northern
+rivers; `Baltic Sea` for Mörrumsån) clipped to a true-meters disk in UTM.
+Smolts now have a marine transit zone before they leave the model into
+the zone-based marine pipeline.
+
+Per-river BalticCoast cell counts: Tornionjoki 164, Simojoki 499,
+Byskeälven 300, Mörrumsån 163.
+
+Per-river `BalticCoast.fish_pred_min` tuned to match regional predator
+regime: 0.95 for Bothnian Bay (lower historical seal density), 0.90 for
+Hanöbukten (Mörrumsån). The previous value of 0.65 (Klaipėda seal-dense
+zone) would have eliminated all smolts in days.
+
+### Refactored — 4 algorithms moved to `app/modules/`
+
+To support the same UI/batch sharing pattern v0.46 introduced for
+edit-model panel, four pure-Python helpers moved out of WGBAST scripts:
+
+- `app/modules/create_model_marine.py`:
+  - `query_named_sea_polygon(bbox)` — Marine Regions WFS query
+    (extracted from `create_model_panel.py::_query_marine_regions`)
+  - `clip_sea_polygon_to_disk(...)` — UTM-disk clip
+- `app/modules/create_model_river.py`:
+  - `filter_polygons_by_centerline_connectivity(...)` — STRtree BFS
+    (extracted from `_generate_wgbast_physical_domains.py::_load_osm_polygons_filtered`)
+  - `partition_polygons_along_channel(...)` — quartile by along-channel distance
+    (extracted from `build_reach_segments_from_polygons`)
+
+The Create Model UI's 🌊 Sea button is unchanged behaviourally; it just
+now imports from the shared module. The WGBAST batch generator is
+thinner — geometric algorithms live in `app/modules/`.
+
+### Breaking — orphan Lithuanian template reaches removed from WGBAST yamls
+
+Each WGBAST yaml inherited 4 stale reaches from the original
+`example_baltic` template (`Skirvyte`, `Leite`, `Gilija`, `CuronianLagoon`)
+that don't represent the WGBAST rivers. Removed; each WGBAST yaml now has
+exactly 5 reaches.
+
+**Downstream impact:** Any user code or analysis pinned to those reach
+names in `example_tornionjoki.yaml` / `example_simojoki.yaml` /
+`example_byskealven.yaml` / `example_morrumsan.yaml` will see KeyError.
+
+These reaches had **no shapefile cells attached**, so the spatial
+simulation was unaffected by their presence. The corresponding
+per-reach CSVs (`Skirvyte-*.csv`, `Leite-*.csv`, `Gilija-*.csv`,
+`CuronianLagoon-*.csv`) are also deleted from each fixture directory
+in this commit (48 files: 4 rivers × 4 reaches × 3 file types),
+so config and filesystem now agree. However, **some carry non-zero
+`pspc_smolts_per_year` values** that contributed to stock accounting:
+
+- `example_tornionjoki.yaml`:
+  - `Skirvyte.pspc_smolts_per_year = 130000`
+  - `Leite.pspc_smolts_per_year = 105000`
+  - `Gilija.pspc_smolts_per_year = 105000`
+  - **Total dropped: 340,000 smolts/yr**
+- `example_byskealven.yaml`:
+  - `Skirvyte.pspc_smolts_per_year = 13000`
+- `example_simojoki.yaml`, `example_morrumsan.yaml`:
+  - All orphan reaches had `pspc_smolts_per_year = 0`; no stock impact.
+
+If a user-facing analysis depended on these `pspc_smolts_per_year`
+values, the impact is a corresponding reduction in total smolts/year
+modelled for that river. `example_baltic.yaml` retains the reaches —
+they represent real Curonian Lagoon distributaries there.
+
+### Required dependency
+
+- **GeoPandas ≥ 1.0** (uses `.union_all()`; the `.unary_union`
+  accessor is deprecated in 1.0 and removed in 2.0). The `shiny`
+  conda env on developer machines and the laguna server must be
+  updated before installing this release.
+- **pyproj ≥ 3.4** is now an explicit dependency (was transitive via
+  geopandas). WGBAST scripts hard-depend on `to_crs(epsg=utm_epsg)`.
+
+### Verified
+
+- New tests under `tests/test_create_model_marine.py` (8),
+  `tests/test_create_model_river.py` (9),
+  `tests/test_wgbast_river_extents.py` (25) — 42 new cases total.
+- Full WGBAST fixture-loading suite (4 rivers × test_fixture_loads_and_runs_3_days) passes.
+- Pytest suite reached 62% with all green before timing out on heavy
+  fixture-driven tests; focused subset on WGBAST-affected tests
+  (46 cases) all PASS.
+
+### Internal changes
+
+- `_wire_wgbast_physical_configs.rewrite_config` now verifies and
+  fixes `BalticCoast.upstream_junction` to match
+  `Upper.downstream_junction` after orphan-reach removal.
+- `_wire_wgbast_physical_configs._balticcoast_cell_count` raises
+  `RuntimeError` if BalticCoast cells are absent or below 100.
+- `BalticCoast-{Depths,Vels,TimeSeriesInputs}.csv` presence is now
+  required and verified before CSV expansion; missing files raise
+  `RuntimeError` with a pointer to the prototype to copy from.
+- `BALTICCOAST_CELL_FACTOR_OVERRIDE["example_tornionjoki"] = 2.0` (was
+  default 4.0) — the 10 km disk at Tornio is mostly land within
+  Bothnian Bay's head, requiring finer cells to reach the 100-cell floor.
+- Sea-polygon picker now prefers `contains(mouth)` then falls back to
+  closest-distance — handles the case where the IHO sea-area boundary
+  sits offshore from the river mouth (Simojoki: ~945 m gap).
+
 ## [0.46.0] — 2026-04-25
 
 ### Added — Edit Model panel feature additions

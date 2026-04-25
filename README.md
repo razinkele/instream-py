@@ -152,6 +152,16 @@ Each fixture is latitude-and-discharge calibrated vs the Nemunas template
 and wired for Arc K (PSPC output) + Arc L (M74 year-effect). See the
 **WGBAST roadmap** section below for the full feature set.
 
+**v0.47.0+:** each WGBAST fixture also includes a `BalticCoast` marine-transit
+reach with hex cells clipped from the IHO Gulf of Bothnia / Baltic Sea
+polygon (Marine Regions WFS) to a 10 km disk at the river mouth. Smolts now
+have a coastal transit zone before they leave the model into the marine
+pipeline. Per-river BalticCoast cell counts: Tornionjoki 164, Simojoki 499,
+Byskeälven 300, Mörrumsån 163. **Breaking change in v0.47.0:** four orphan
+Lithuanian-template reaches (Skirvyte, Leite, Gilija, CuronianLagoon) were
+removed from each WGBAST yaml; downstream code that pinned to those names
+will see KeyError.
+
 ---
 
 ## WGBAST-comparability stack (v0.34.0 → v0.41.0)
