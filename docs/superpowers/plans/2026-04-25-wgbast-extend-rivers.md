@@ -1137,13 +1137,20 @@ await _refresh_map()
 
 This is a behaviour-preserving rewrite: the bbox-intersect + centroid-cover filter is now in `query_named_sea_polygon` instead of inline. Net effect: the handler is ~10 lines shorter, and the helper does the geographic filtering once for both UI and batch callers.
 
-- [ ] **Step 2b: Verify no other call sites of `_query_marine_regions` exist**
+- [ ] **Step 2b: Verify no remaining references to `_query_marine_regions` exist**
 
 ```bash
 grep -rn "_query_marine_regions" app/ scripts/
 ```
 
-Expected: only the import at line 86 and the call at line 733 (or thereabouts) in the same file. If anything else references it, update the import accordingly.
+**Expected: no matches** (empty grep output across both `app/` and `scripts/`).
+
+After Step 1 deletes the helper definition AND Step 2 rewrites `_on_fetch_sea` to call `query_named_sea_polygon` directly, the name `_query_marine_regions` should be entirely gone from the codebase. Any match means:
+- Step 1 was partial (helper definition not fully removed) — re-run Step 1; or
+- Step 2 was partial (handler still calls the old name) — re-run Step 2; or
+- A previously-unknown caller exists in `scripts/` — update its import to use `query_named_sea_polygon` from `modules.create_model_marine` instead.
+
+(This Step's expected output was wrong in pre-loop-22 versions of the plan; it reflected a pre-rewrite world where the helper was renamed in place.)
 
 - [ ] **Step 3: Smoke-test the panel module imports cleanly + handler is callable**
 
@@ -2507,6 +2514,12 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 17 review loops, convergence confirmed
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loop 22 — another stale "Expected" inverted-logic, same class as loop 21
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| HIGH | 1 | Task 2.A.5 Step 2b's `grep -rn "_query_marine_regions"` had an "Expected: only the import at line 86 and the call at line 733" message — but loop-18's Step 1+2 rewrite REMOVES both of those references entirely (the helper is replaced by `query_named_sea_polygon`, and the call site is rewritten to use the new name). The correct expected output is now ZERO matches. An engineer seeing the old "expected: 2 matches" message would interpret a partial Step 1 (helper still defined) as "expected" and proceed. | Rewrote the expected-output message to "no matches (empty grep)" with three concrete failure-mode interpretations. |
 
 ## Loop 21 — bug introduced by loop-18's fix
 
