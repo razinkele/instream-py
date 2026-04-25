@@ -1072,7 +1072,9 @@ Expected: **no matches** (empty grep output). Specifically, no `requests.get(...
 
 - [ ] **Step 2: Rewrite the `_on_fetch_sea` handler to consume a GeoDataFrame**
 
-The current handler (lines 727–763) is shaped for a dict return:
+The current handler is at lines 727–763 of `app/modules/create_model_panel.py`. The function signature `async def _on_fetch_sea():` is at line 727; KEEP that line and the next two (`_fetch_msg.set("Fetching ...")` + `bbox = _get_view_bbox()`). REPLACE the body from `import asyncio` through `await _refresh_map()` (approximately lines 731–763).
+
+The current handler body is shaped for a dict return:
 
 ```python
 geoj = await loop.run_in_executor(None, _query_marine_regions, bbox)
@@ -1099,7 +1101,7 @@ _fetch_msg.set(f"Loaded {len(gdf)} sea areas. {names}")
 await _refresh_map()
 ```
 
-Replace lines 727–763 (the entire body of `_on_fetch_sea` after the initial `_fetch_msg.set("Fetching ...")` and `bbox = _get_view_bbox()` lines) with:
+Replace the body of `_on_fetch_sea` (the lines AFTER `bbox = _get_view_bbox()` through the end of the handler — keeping the `async def` signature and the first two body lines intact) with:
 
 ```python
 import asyncio
@@ -1137,16 +1139,18 @@ Append to `tests/test_create_model_marine.py`:
 ```python
 def test_create_model_panel_imports_query_named_sea_polygon():
     """The panel must import the helper and no longer define
-    its own private dict-returning version. Detects:
-      - relative-import crashes (ImportError at module load)
+    its own private dict-returning version. Detects (via source-string
+    substring matching, NOT runtime import):
+      - missing absolute import: catches the case where the engineer
+        used `from .create_model_marine` (relative) — the required
+        absolute-import substring would be absent
       - residual references to the old _query_marine_regions function
-        that we rewrote out in Task 2.A.5
+        or its supporting `requests`/MARINE_REGIONS_WFS imports
 
-    Source-read check (not an import-based check). Importing
-    `create_model_panel` inside pytest would load Shiny decorators
-    that may fail outside a Shiny session — fragile. Reading the file
-    as text and asserting on the source string is robust to any
-    Shiny-side init issues."""
+    Source-read check rather than importing `create_model_panel`,
+    because the panel module loads Shiny `@module.ui` / `@module.server`
+    decorators and deck.gl bindings that may fail outside a Shiny
+    session (no other test imports the panel module)."""
     panel_src = (ROOT / "app" / "modules" / "create_model_panel.py").read_text(encoding="utf-8")
 
     # Required: the new import line is present
@@ -1233,7 +1237,7 @@ Expected: same pre-task baseline + 8 new tests in test_create_model_marine.py.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add app/modules/create_model_panel.py
+git add app/modules/create_model_panel.py tests/test_create_model_marine.py
 git commit -m "refactor(create_model_panel): use shared query_named_sea_polygon
 
 Replaces the private _query_marine_regions with a re-export from
@@ -1921,16 +1925,19 @@ def copy_reach_csvs(short_name: str, stem: str) -> None:
     """... existing docstring ..."""
     # ... existing body ...
 
-    # Re-expand BalticCoast Depths/Vels to match the new cell count
+    # Re-expand BalticCoast Depths/Vels to match the new cell count.
+    # Match the integration test's lower bound (100): below that, the
+    # disk geometry is too small to be useful and Section E will fail
+    # anyway with a less-actionable error. Raise here so the engineer
+    # gets a clear pointer to fix Section C (radius / waypoint).
     n_bc = _balticcoast_cell_count(short_name)
-    if n_bc <= 0:
-        # Reach is in the YAML but has no shapefile cells — Section C
-        # likely failed for this river. Bail loudly so the engineer
-        # re-runs Section C rather than committing a broken fixture.
+    if n_bc < 100:
         raise RuntimeError(
-            f"[{short_name}] BalticCoast reach has 0 shapefile cells. "
-            f"Section C (BalticCoast cell generation) must run successfully "
-            f"before Section D's CSV expansion."
+            f"[{short_name}] BalticCoast has only {n_bc} cells; "
+            f"expected ≥100 (matches test_balticcoast_cell_count_in_range). "
+            f"Section C disk geometry is too small — increase "
+            f"BALTICCOAST_RADIUS_M or move the mouth waypoint seaward, "
+            f"then re-run Section C before retrying Section D."
         )
     fix_dir = ROOT / "tests" / "fixtures" / short_name
     # Verify the per-reach CSVs exist. Existing fixtures all ship them
@@ -2170,7 +2177,7 @@ def test_balticcoast_offset_from_mouth():
 micromamba run -n shiny python -m pytest tests/test_wgbast_river_extents.py -v
 ```
 
-Expected: all PASS (~25 tests across 4 rivers × 5 parametrized cases + 2 standalone).
+Expected: all PASS (22 tests = 4 rivers × 5 parametrized cases + 2 standalone).
 
 - [ ] **Step 3: Commit**
 
@@ -2420,9 +2427,23 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history — 9 review loops, converged
+# Plan revision history — 10 review loops
 
-NINE multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more including 5 critical bugs the earlier loops missed; loop 7 found 13 workflow-cleanup items; loop 8 declared convergence; **loop 9 (skeptical re-review) found 1 IMPORTANT test-design issue + 3 LOW cosmetic items — confirming convergence on runtime correctness.**
+TEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loop 7: 13 cleanup items. Loop 8: 2 LOW + first "converged" verdict. Loop 9 (skeptical re-review): 1 IMP + 3 LOW. **Loop 10 (broad mandate "find ANY meaningful issue"): 3 IMP + 2 LOW — none CRIT, but real polish items the earlier loops missed.**
+
+## Loop 10 (v10 → v11) — find any meaningful issue
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| IMP | 1 | Task 2.A.5 Step 4 commit dropped the new tests (orphaned from semantic commit) | `git add ... tests/test_create_model_marine.py` added to the commit |
+| IMP | 2 | Task 2.A.5 Step 2 line range "727-763" includes the `async def` signature but instructions say "after the initial _fetch_msg.set" — internally inconsistent. Engineer could delete the def line. | Clarified to "KEEP signature + first 2 body lines; REPLACE body from `import asyncio` through `await _refresh_map()`" |
+| IMP | 3 | `_balticcoast_cell_count` raised only at <=0, but integration test requires >=100. A 1-99 cell case passes Section D silently → fails Section E with no clue. | Tightened lower bound to <100 with actionable error message pointing at radius/waypoint |
+| LOW | 4 | Test docstring claimed "Detects ImportError" but the test is a source-string check (no import) | Rephrased to "Detects via source-string substring matching" with concrete failure modes |
+| LOW | 5 | "~25 tests" arithmetic was wrong (4×5+2=22) | Updated to "22 tests" |
+
+**Critical-bug trajectory across 10 loops: 4, 3, 0, 3, 1, 1, 0, 0, 0, 0.** Four consecutive zero-CRIT loops.
+
+## Loop 9 (v9 → v10) — verifying loop-8 convergence claim
 
 ## Loop 9 (v9 → v10) — verifying loop-8 convergence claim
 
