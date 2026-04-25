@@ -26,6 +26,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import geopandas as gpd
 import yaml
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
@@ -97,6 +98,22 @@ BALTICCOAST_OVERRIDES = {
 # Reaches inherited from the example_baltic Lithuanian template that
 # don't apply to the WGBAST rivers; remove them from each WGBAST yaml.
 ORPHAN_REACHES = ("Skirvyte", "Leite", "Gilija", "CuronianLagoon")
+
+
+def _balticcoast_cell_count(short_name: str) -> int:
+    fix_dir = ROOT / "tests" / "fixtures" / short_name
+    try:
+        shp = next((fix_dir / "Shapefile").glob("*.shp"))
+    except StopIteration:
+        raise FileNotFoundError(
+            f"No shapefile in {fix_dir / 'Shapefile'} — Section C "
+            f"(BalticCoast cell generation) likely never ran for "
+            f"{short_name}. Re-run scripts/_generate_wgbast_physical_domains.py "
+            f"before retrying Section D."
+        ) from None
+    gdf = gpd.read_file(shp)
+    reach_col = "REACH_NAME" if "REACH_NAME" in gdf.columns else "reach_name"
+    return int((gdf[reach_col] == "BalticCoast").sum())
 
 
 def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
@@ -243,8 +260,6 @@ def copy_reach_csvs(short_name: str, stem: str) -> None:
     N cells. This preserves the published channel-mean hydraulics while
     matching the new cell-count contract required by the loader.
     """
-    import geopandas as gpd
-
     fixture_dir = ROOT / "tests" / "fixtures" / short_name
     shp_path = fixture_dir / "Shapefile" / f"{stem}.shp"
     if not shp_path.exists():
@@ -276,6 +291,43 @@ def copy_reach_csvs(short_name: str, stem: str) -> None:
             src = fixture_dir / f"{proto}-{suffix}.csv"
             dst = fixture_dir / f"{new_name}-{suffix}.csv"
             _expand_per_cell_csv(src, dst, n_new)
+
+    # Re-expand BalticCoast Depths/Vels to match the new cell count.
+    # Match the integration test's lower bound (100): below that, the
+    # disk geometry is too small to be useful and Section E will fail
+    # anyway with a less-actionable error. Raise here so the engineer
+    # gets a clear pointer to fix Section C (radius / waypoint).
+    n_bc = _balticcoast_cell_count(short_name)
+    if n_bc < 100:
+        raise RuntimeError(
+            f"[{short_name}] BalticCoast has only {n_bc} cells; "
+            f"expected >=100 (matches test_balticcoast_cell_count_in_range). "
+            f"Section C disk geometry is too small — increase "
+            f"BALTICCOAST_RADIUS_M or move the mouth waypoint seaward, "
+            f"then re-run Section C before retrying Section D."
+        )
+    fix_dir = ROOT / "tests" / "fixtures" / short_name
+    # Verify the per-reach CSVs exist. Existing fixtures all ship them
+    # (template-inherited from example_baltic), but a future river may
+    # not — surface the missing-file case explicitly.
+    required_csvs = ("Depths.csv", "Vels.csv", "TimeSeriesInputs.csv")
+    missing = [s for s in required_csvs
+               if not (fix_dir / f"BalticCoast-{s}").exists()]
+    if missing:
+        raise RuntimeError(
+            f"[{short_name}] missing BalticCoast CSVs: {missing}. "
+            f"Copy from configs/example_baltic.yaml's fixture template "
+            f"or generate via _wire_wgbast_physical_configs.py's "
+            f"`copy_reach_csvs` extended for BalticCoast."
+        )
+    for suffix in ("Depths.csv", "Vels.csv"):
+        path = fix_dir / f"BalticCoast-{suffix}"
+        _expand_per_cell_csv(path, path, n_bc)
+        log.info("[%s] re-expanded BalticCoast-%s to %d rows",
+                 short_name, suffix, n_bc)
+    # BalticCoast-TimeSeriesInputs.csv is per-reach (not per-cell), so
+    # its row count doesn't change with cell count. Verify presence
+    # but don't modify.
 
 
 def _expand_per_cell_csv(src: Path, dst: Path, n_cells: int) -> None:
