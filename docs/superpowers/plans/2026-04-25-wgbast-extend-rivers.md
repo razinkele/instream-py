@@ -1069,11 +1069,15 @@ The smoke-test in Step 3 below uses source-string substring matching that still 
 - Line 16: `import requests` — no longer used after Step 2 (handler uses the helper, not `requests` directly).
 - Line 71: `MARINE_REGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"` — moved into `create_model_marine.py`.
 
-After the edit, verify with:
+After the edit, verify Step 1's deletions with a narrow grep:
 ```bash
-grep -n "import requests\|MARINE_REGIONS_WFS\|requests\.get\|_query_marine_regions" app/modules/create_model_panel.py
+grep -n "import requests\|MARINE_REGIONS_WFS\|^def _query_marine_regions" app/modules/create_model_panel.py
 ```
-Expected: **no matches** (empty grep output). Specifically, no `requests.get(...)` reference must remain — that would mean the body of the original `_query_marine_regions` was left in place when only its `def` line was removed. Strict-mode ruff (CI) flags F401 for unused imports — leaving them in breaks CI.
+Expected: **no matches** (empty grep output). This checks ONLY the things Step 1 removes (the `import requests` line, the `MARINE_REGIONS_WFS` constant, and the `_query_marine_regions` function definition).
+
+`requests.get(...)` and `_query_marine_regions(bbox)` may STILL appear in the file at this point — they live inside `_on_fetch_sea` which gets rewritten in Step 2. The post-Step-2 grep at Step 2b confirms those are gone.
+
+Strict-mode ruff (CI) flags F401 for unused imports — leaving any of the three Step-1 targets in breaks CI.
 
 - [ ] **Step 2: Rewrite the `_on_fetch_sea` handler to consume a GeoDataFrame**
 
@@ -2514,6 +2518,14 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 17 review loops, convergence confirmed
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loop 23 — third stale-Expected, same class as loops 21+22
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| HIGH | 1 | Task 2.A.5 Step 1's grep verification included `requests.get` and `_query_marine_regions` patterns and asserted "Expected: no matches" — but those references live inside `_on_fetch_sea` which Step 1 doesn't touch (Step 2 rewrites the handler). At Step 1's verification point, both still match. | Narrowed Step 1's grep to only what Step 1 actually cleans (`import requests`, `MARINE_REGIONS_WFS`, `^def _query_marine_regions`). Step 2b's broader grep handles the post-Step-2 verification. |
+
+**Pattern observed across loops 21+22+23: every "verification step" added in a fix needs its Expected output traced against the actual file state AT THAT POINT in the task sequence.** Easy class of bug to introduce when iterating on plans; loop reviewers should specifically grep for `Expected:` lines and dry-run each one mentally.
 
 ## Loop 22 — another stale "Expected" inverted-logic, same class as loop 21
 
