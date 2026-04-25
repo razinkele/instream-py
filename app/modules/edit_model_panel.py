@@ -174,6 +174,18 @@ def edit_model_ui():
                 ui.input_action_button(
                     "split_apply", "Apply split", class_="btn-primary",
                 ),
+                ui.hr(),
+                ui.h5("Lasso-select cells → reassign"),
+                ui.input_text(
+                    "lasso_new_name", "Assign selected cells to reach",
+                    placeholder="e.g. Side-Channel",
+                ),
+                ui.input_action_button(
+                    "lasso_start", "Start drawing polygon", class_="btn-warning",
+                ),
+                ui.input_action_button(
+                    "lasso_apply", "Apply selection", class_="btn-primary",
+                ),
                 ui.output_ui("save_status"),
             ),
             ui.column(
@@ -659,3 +671,101 @@ def edit_model_server(input, output, session):
             f"✓ split '{target}' into '{north_name}' ({n_north} cells) "
             f"and '{south_name}' ({n_south} cells)"
         )
+
+    # ------------------------------------------------------------------
+    # Lasso-select cells + bulk reassign
+    # ------------------------------------------------------------------
+    @reactive.effect
+    @reactive.event(input.lasso_start)
+    async def _lasso_start():
+        try:
+            await _widget.enable_draw(
+                session,
+                modes=["draw_polygon"],
+                default_mode="draw_polygon",
+            )
+        except Exception as exc:
+            last_save.set(f"❌ enable_draw failed: {exc}")
+            return
+        last_save.set(
+            "lasso: draw a polygon enclosing the cells to reassign, then Apply"
+        )
+
+    @reactive.effect
+    @reactive.event(input.lasso_apply)
+    async def _lasso_apply():
+        s = state()
+        new_name = (input.lasso_new_name() or "").strip()
+        if not new_name:
+            last_save.set("❌ lasso: enter a reach name")
+            return
+        if s["cells"] is None:
+            return
+        try:
+            await _widget.get_drawn_features(session)
+        except Exception as exc:
+            last_save.set(f"❌ get_drawn_features trigger failed: {exc}")
+            return
+        try:
+            features = getattr(input, _widget.drawn_features_input_id)()
+        except Exception:
+            features = None
+        polys = [
+            shape(f["geometry"]) for f in (features or [])
+            if f.get("geometry", {}).get("type") in ("Polygon", "MultiPolygon")
+        ]
+        if not polys:
+            last_save.set("❌ lasso: no polygon found in drawn features")
+            return
+        from shapely.ops import unary_union
+        lasso = unary_union(polys)
+
+        cells = s["cells"].copy()
+        reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
+        inside_mask = cells.geometry.centroid.within(lasso)
+        n_inside = int(inside_mask.sum())
+        if n_inside == 0:
+            last_save.set("❌ lasso: no cell centroids inside the drawn polygon")
+            return
+
+        old_reaches = cells.loc[inside_mask, reach_col].value_counts().to_dict()
+        cells.loc[inside_mask, reach_col] = new_name
+
+        cfg = dict(s["cfg"])
+        if "reaches" in cfg and new_name not in cfg["reaches"]:
+            donor = max(old_reaches, key=old_reaches.get)
+            entry = dict(cfg["reaches"].get(donor, {}))
+            entry["time_series_input_file"] = f"{new_name}-TimeSeriesInputs.csv"
+            entry["depth_file"] = f"{new_name}-Depths.csv"
+            entry["velocity_file"] = f"{new_name}-Vels.csv"
+            cfg["reaches"][new_name] = entry
+            fixture_dir = s["shp_path"].parent.parent
+            for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
+                src = fixture_dir / f"{donor}-{suffix}"
+                if src.exists():
+                    shutil.copy2(src, fixture_dir / f"{new_name}-{suffix}")
+
+        try:
+            cells.to_file(s["shp_path"], driver="ESRI Shapefile")
+            with open(s["cfg_path"], "w", encoding="utf-8") as f:
+                f.write(
+                    f"# {s['short_name']} — lasso-edited via Edit Model panel.\n"
+                    f"# {n_inside} cells reassigned to '{new_name}'.\n#\n"
+                )
+                yaml.safe_dump(cfg, f, sort_keys=False, default_flow_style=False)
+        except Exception as exc:
+            logger.exception("lasso save failed")
+            last_save.set(f"❌ save failed: {exc}")
+            return
+
+        try:
+            await _widget.delete_drawn_features(session)
+            await _widget.disable_draw(session)
+        except Exception:
+            pass
+
+        new_state = dict(s)
+        new_state["cells"] = cells
+        new_state["cfg"] = cfg
+        state.set(new_state)
+        last_save.set(f"✓ lasso: {n_inside} cells reassigned to '{new_name}'")
