@@ -2055,8 +2055,23 @@ Sequencing: regenerator → wire script → simulation-load test → `git add` �
 
 - [ ] **Step 6: Commit**
 
+**IMPORTANT — stage ALL per-reach CSVs, not just BalticCoast.** `copy_reach_csvs` in the wire script re-expands every per-reach `Depths.csv`/`Vels.csv`/`TimeSeriesInputs.csv` for each river to match the new shapefile cell counts. Tornionjoki's freshwater reaches (Mouth/Lower/Middle/Upper) shifted due to the Muonio extension (PR-1 cache refresh + PR-2 Section C regenerate); the other 3 rivers may also have minor count shifts due to UTM-zone changes in Section C. Staging only `BalticCoast-*.csv` would commit a release with stale per-reach CSVs that don't match the shapefile, breaking `test_fixture_loads_and_runs_3_days` for anyone who clones fresh.
+
 ```bash
-git add scripts/_wire_wgbast_physical_configs.py configs/example_*.yaml tests/fixtures/example_*/BalticCoast-*.csv tests/fixtures/example_*/Shapefile/
+# Stage entire fixture directories (catches all regenerated CSVs + shapefiles).
+# git add no-ops on unchanged files, so the broader pattern is safe.
+git add scripts/_wire_wgbast_physical_configs.py \
+        configs/example_*.yaml \
+        tests/fixtures/example_tornionjoki/ \
+        tests/fixtures/example_simojoki/ \
+        tests/fixtures/example_byskealven/ \
+        tests/fixtures/example_morrumsan/
+
+# Verification: no per-reach CSV under example_* is left unstaged
+git status tests/fixtures/example_*/*.csv tests/fixtures/example_*/Shapefile/ 2>&1 | tee /tmp/wgbast_git_status.txt
+grep -E "modified:|new file:" /tmp/wgbast_git_status.txt && echo "ERROR: unstaged fixture changes" && exit 1
+echo "OK: all fixture changes staged"
+
 git commit -m "feat(wgbast): regenerate fixtures with BalticCoast cells + tuned configs
 
 Per-river:
@@ -2476,15 +2491,24 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
 
-## Loops 16 + 17 — CONVERGENCE CONFIRMED
+## Loop 18 (final → final2) — release-blocker found after two zero-finding loops
+
+**Loop 18 found 1 IMP that loops 16 and 17 both missed.** This is the second time "convergence" was declared prematurely in this plan's history (loop 8 was the first). Lesson: cross-task workflow gaps slip past task-by-task review.
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| IMP | 1 | Task 2.D.2 Step 6 `git add` glob staged only `BalticCoast-*.csv`, but `copy_reach_csvs` also re-expands `Mouth/Lower/Middle/Upper-{Depths,Vels,TimeSeriesInputs}.csv` for every river (matching the regenerated shapefile cell counts). The release commit + tag at Task 2.F.1 would have shipped stale per-reach CSVs whose row counts don't match the committed shapefile — a fresh clone would fail `test_fixture_loads_and_runs_3_days` immediately. Section D Step 5's local simulation-load test passes because the on-disk filesystem state is consistent; the bug is purely "what gets committed". | Changed Step 6 git add to stage entire `tests/fixtures/example_<name>/` directories (catches all regenerated files; no-ops on unchanged). Added a `git status` verification step that fails the build if any modified fixture file remains unstaged. |
+
+**Critical-bug trajectory across 18 loops: 4, 3, 0, 3, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.** Twelve consecutive zero-CRIT loops; the loop-18 finding is IMP, not CRIT (release-quality issue, not runtime crash).
+
+## Loops 16 + 17 — CONVERGENCE CLAIMED (later disproven by loop 18)
 
 Both loops independently verified:
 - The Step 2b import-placement guidance is factually correct against the real `_generate_wgbast_physical_domains.py` line layout (lines 33-35 third-party, line 38 sys.path.insert, line 42 from-modules).
 - The Y-shape MLS partition test (Task 2.A.4) was traced line-by-line: `_orient_centerline_mouth_to_source`'s disjoint-fallback projects `p_mouth_{a,b}` to ~0.15, `p_mid_{a,b}` to ~1.65, `p_ne` to ~5.48, `p_nw` to ~9.68 along the synthetic LineString. Sort + quartile slicing correctly groups mouth pair into `groups[0]` and branch-end pair into `groups[2]`. Algorithm is sound.
 - Task 2.D.2's `_balticcoast_cell_count` has correctly-paired bounds (raises at `< 100`; test asserts `100 <= n <= 5000`) and defensive guards on missing files / missing reaches.
-- No remaining import-path ambiguities, no remaining type-contract mismatches, no remaining test false-positives, no remaining silent-failure paths.
 
-**Critical-bug trajectory across 17 loops: 4, 3, 0, 3, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.** Eleven consecutive zero-CRIT loops; two consecutive absolute-zero loops.
+**Both reviewers focused on individual-task correctness and missed the cross-task workflow gap (release commit's git-add scope) that loop 18 caught.** Pattern: convergence claims based on individual-task correctness are fragile; cross-cutting concerns require dedicated framing.
 
 ## Loop 15 (v14 → v15) — Step 2b import-placement disambiguation
 
