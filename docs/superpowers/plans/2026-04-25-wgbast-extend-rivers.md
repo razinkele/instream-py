@@ -1513,9 +1513,11 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_prob
 diff /tmp/wgbast_extents_before.txt /tmp/wgbast_extents_after.txt
 ```
 
-Expected diff:
-- Simojoki, Byskeälven, Mörrumsån: empty diff (cap doesn't fire).
-- Tornionjoki: cell count may differ slightly (different 2000-polygon subset).
+Expected diff (verified empirically against current OSM caches):
+- **Simojoki**: empty diff. The 10 OSM ways linemerge into a single LineString — old and new helpers produce identical orientation. Cap doesn't fire (~87 connected polygons << 2000).
+- **Byskeälven**: empty diff. Only 3 OSM ways → falls below the `<4` cutoff in `_load_osm_polygons_filtered`, uses the line-buffer fallback path that doesn't call `partition_polygons_along_channel`. The new BFS algorithm changes don't reach it.
+- **Mörrumsån**: per-reach cell counts WILL differ. The 36-way centerline does NOT linemerge into a single LineString, so the original helper returned a raw `MultiLineString` whose `.project()` always returns 0.0 (latent bug — polygons sorted by insertion order). The new helper's coordinate-concat fallback gives a monotone projection, reassigning polys across the 4 reaches. **This is the bugfix landing, not a regression.**
+- **Tornionjoki**: cell count and reach distribution will differ (Muonio regex extension + the same MultiLineString fix + cap may fire on the larger candidate set).
 
 The parity bar is NOT byte-identity but BEHAVIOURAL parity — `test_fixture_loads_and_runs_3_days` must still PASS for all 4 rivers:
 ```bash
