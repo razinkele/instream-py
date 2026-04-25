@@ -336,6 +336,7 @@ MARINE_REGIONS_WFS = "https://geo.vliz.be/geoserver/MarineRegions/wfs"
 def clip_sea_polygon_to_disk(
     sea_polygon: Polygon | MultiPolygon,
     mouth_lon_lat: tuple[float, float],
+    *,
     radius_m: float,
     utm_epsg: int,
 ) -> Polygon | MultiPolygon:
@@ -693,6 +694,7 @@ log = logging.getLogger(__name__)
 def filter_polygons_by_centerline_connectivity(
     centerline: Sequence[LineString] | LineString | MultiLineString,
     polygons: Sequence[Polygon | MultiPolygon],
+    *,
     tolerance_deg: float = 0.0005,
     max_polys: int = 2000,
     label: Optional[str] = None,
@@ -919,6 +921,7 @@ Append to `app/modules/create_model_river.py`:
 def partition_polygons_along_channel(
     centerline: Sequence[LineString] | LineString | MultiLineString,
     polygons: Sequence[Polygon | MultiPolygon],
+    *,
     mouth_lon_lat: tuple[float, float],
     n_reaches: int,
 ) -> list[list[Polygon | MultiPolygon]]:
