@@ -139,6 +139,14 @@ def edit_model_ui():
                     choices=fixtures or ["(none — generate one first)"],
                     selected=fixtures[0] if fixtures else None,
                 ),
+                ui.row(
+                    ui.column(6, ui.input_action_button(
+                        "undo", "↶ Undo", class_="btn-secondary btn-sm",
+                    )),
+                    ui.column(6, ui.input_action_button(
+                        "redo", "↷ Redo", class_="btn-secondary btn-sm",
+                    )),
+                ),
                 ui.output_ui("reach_table"),
                 ui.hr(),
                 ui.h5("Rename reach"),
@@ -232,6 +240,23 @@ def edit_model_server(input, output, session):
 
     # Split state: idle -> drawing
     split_state = reactive.value({"phase": "idle"})
+
+    # Undo/redo: list of {cells, cfg} snapshots, capped at 10
+    history_undo = reactive.value([])
+    history_redo = reactive.value([])
+
+    def _push_undo_snapshot():
+        s = state()
+        if s["cells"] is None:
+            return
+        snap = {"cells": s["cells"].copy(), "cfg": dict(s["cfg"])}
+        stack = list(history_undo())
+        stack.append(snap)
+        if len(stack) > 10:
+            stack = stack[-10:]
+        history_undo.set(stack)
+        # Any new edit clears the redo stack
+        history_redo.set([])
 
     @reactive.effect
     def _load_on_select():
@@ -378,6 +403,7 @@ def edit_model_server(input, output, session):
             last_save.set(f"❌ '{new}' already exists — pick another name")
             return
 
+        _push_undo_snapshot()
         cells = cells.copy()
         cells.loc[cells[reach_col] == old, reach_col] = new
         cfg = dict(s["cfg"])
@@ -490,6 +516,7 @@ def edit_model_server(input, output, session):
             return
         if s["cells"] is None:
             return
+        _push_undo_snapshot()
         a, b = ms["reach_a"], ms["reach_b"]
         cells = s["cells"].copy()
         reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
@@ -601,6 +628,7 @@ def edit_model_server(input, output, session):
             )
             return
 
+        _push_undo_snapshot()
         cells = s["cells"].copy()
         reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
         target_mask = cells[reach_col] == target
@@ -729,6 +757,7 @@ def edit_model_server(input, output, session):
         from shapely.ops import unary_union
         lasso = unary_union(polys)
 
+        _push_undo_snapshot()
         cells = s["cells"].copy()
         reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
         inside_mask = cells.geometry.centroid.within(lasso)
@@ -793,6 +822,7 @@ def edit_model_server(input, output, session):
             last_save.set("❌ regenerate: cell size must be ≥10 m")
             return
 
+        _push_undo_snapshot()
         from modules.create_model_grid import generate_cells
         cells = s["cells"]
         reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
@@ -885,3 +915,58 @@ def edit_model_server(input, output, session):
             f"✓ regenerated at cell_size={new_size} m: "
             f"{len(s['cells'])} → {len(new_cells)} cells (CSVs re-expanded)"
         )
+
+    # ------------------------------------------------------------------
+    # Undo / redo
+    # ------------------------------------------------------------------
+    @reactive.effect
+    @reactive.event(input.undo)
+    def _undo():
+        stack = list(history_undo())
+        if not stack:
+            last_save.set("nothing to undo")
+            return
+        snap = stack.pop()
+        history_undo.set(stack)
+        s = state()
+        redo_stack = list(history_redo())
+        redo_stack.append({"cells": s["cells"].copy(), "cfg": dict(s["cfg"])})
+        history_redo.set(redo_stack)
+        new_state = dict(s)
+        new_state["cells"] = snap["cells"]
+        new_state["cfg"] = snap["cfg"]
+        state.set(new_state)
+        try:
+            snap["cells"].to_file(s["shp_path"], driver="ESRI Shapefile")
+            with open(s["cfg_path"], "w", encoding="utf-8") as f:
+                yaml.safe_dump(snap["cfg"], f, sort_keys=False, default_flow_style=False)
+        except Exception as exc:
+            last_save.set(f"❌ undo save failed: {exc}")
+            return
+        last_save.set(f"↶ undo ok ({len(stack)} more available)")
+
+    @reactive.effect
+    @reactive.event(input.redo)
+    def _redo():
+        stack = list(history_redo())
+        if not stack:
+            last_save.set("nothing to redo")
+            return
+        snap = stack.pop()
+        history_redo.set(stack)
+        s = state()
+        undo_stack = list(history_undo())
+        undo_stack.append({"cells": s["cells"].copy(), "cfg": dict(s["cfg"])})
+        history_undo.set(undo_stack)
+        new_state = dict(s)
+        new_state["cells"] = snap["cells"]
+        new_state["cfg"] = snap["cfg"]
+        state.set(new_state)
+        try:
+            snap["cells"].to_file(s["shp_path"], driver="ESRI Shapefile")
+            with open(s["cfg_path"], "w", encoding="utf-8") as f:
+                yaml.safe_dump(snap["cfg"], f, sort_keys=False, default_flow_style=False)
+        except Exception as exc:
+            last_save.set(f"❌ redo save failed: {exc}")
+            return
+        last_save.set(f"↷ redo ok ({len(stack)} more available)")
