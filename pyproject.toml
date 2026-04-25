@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "salmopy"
-version = "0.46.0"
+version = "0.47.0"
 description = "Python conversion of inSTREAM/inSALMO 7.4 individual-based salmonid model"
 authors = [{name = "Salmopy Team"}]
 readme = "README.md"
@@ -19,13 +19,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "geopandas>=0.14",
+    "geopandas>=1.0",  # uses .union_all(); .unary_union accessor deprecated in 1.0, removed in 2.0
     "mesa>=3.1",
     "meshio>=5.3",
     "networkx>=3.0",  # mesa.discrete_space.network transitive dep; not pinned by mesa itself
     "numpy>=1.24",
     "pandas>=2.0",
     "pydantic>=2.0",
+    "pyproj>=3.4",  # explicit (was transitive via geopandas); WGBAST scripts hard-depend on .to_crs(epsg=...)
     "pyyaml>=6.0",
     "requests>=2.28",  # used by scripts/generate_baltic_example.py; also test_marineregions_cache
     "scipy>=1.11",

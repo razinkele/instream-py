@@ -23,14 +23,20 @@ This is idempotent — re-running overwrites existing shapefiles.
 """
 from __future__ import annotations
 
+import sys
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import json
 import logging
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 from shapely.geometry import LineString, Point, shape
 from shapely.ops import unary_union
 
@@ -40,6 +46,12 @@ sys.path.insert(0, str(ROOT / "app"))
 # Borrow the Create-Model hex-cell infrastructure so the output is schema-
 # compatible with what the Shiny UI produces and what SalmopyModel loads.
 from modules.create_model_grid import generate_cells  # noqa: E402
+from modules.create_model_utils import detect_utm_epsg  # noqa: E402
+from modules.create_model_marine import clip_sea_polygon_to_disk  # noqa: E402
+from modules.create_model_river import (  # noqa: E402
+    filter_polygons_by_centerline_connectivity,
+    partition_polygons_along_channel,
+)
 
 OSM_CACHE = ROOT / "tests" / "fixtures" / "_osm_cache"
 
@@ -54,6 +66,25 @@ POLY_CONNECT_TOL_DEG = 0.0005
 # Maximum reach polygons to keep (largest connected component). Caps
 # memory if the centerline accidentally touches a major sea polygon.
 MAX_CONNECTED_POLYS = 2000
+
+# BalticCoast (marine) reach constants. v0.46+ spec §Architecture overview.
+BALTICCOAST_RADIUS_M = 10_000.0       # 10 km clip around river mouth
+
+# Marine cell_size = river.cell_size_m × factor. Per-river overrides keep
+# each disk's cell count in the [100, 5000] band that Section D's gate
+# enforces.
+#   - Tornionjoki uses factor=2 because the 10 km disk at Tornio is mostly
+#     land (head-of-bay geography); only ~20 km² of sea fits inside it,
+#     so finer cells (150 m × 2 = 300 m) are needed to pass the ≥100 floor.
+#   - Simojoki/Byskeälven use the default factor=4 (open Bothnian Bay,
+#     plenty of sea inside the disk).
+#   - Mörrumsån uses factor=8: 60 m freshwater × 4 would blow past the
+#     5000 cap on open Hanöbukten; ×8 → 480 m, ~1500 disk cells.
+BALTICCOAST_CELL_FACTOR_DEFAULT = 4.0
+BALTICCOAST_CELL_FACTOR_OVERRIDE = {
+    "example_tornionjoki": 2.0,
+    "example_morrumsan": 8.0,
+}
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -198,92 +229,127 @@ def _load_osm_ways(river: River) -> list[LineString] | None:
     return lines or None
 
 
+def _load_or_fetch_marineregions(
+    river: River,
+    refresh: bool = False,
+    bbox_pad_deg: float = 0.5,
+) -> "gpd.GeoDataFrame | None":
+    """Return the Marine Regions IHO polygons for `river`, cached at
+    tests/fixtures/_osm_cache/<short_name>_marineregions.json.
+
+    On first call (or when `refresh=True`), queries Marine Regions WFS
+    via `create_model_marine.query_named_sea_polygon`. Caches the
+    response as a flat list of GeoJSON features (matching the existing
+    OSM line/polygon cache shape).
+
+    Returns None if WFS fetch fails on a fresh attempt.
+    """
+    cache = OSM_CACHE / f"{river.short_name}_marineregions.json"
+    if not refresh and cache.exists():
+        data = json.loads(cache.read_text(encoding="utf-8"))
+        if not data:
+            # An empty cache file is never a legitimate state — we only
+            # write the cache when WFS returned a non-empty result.
+            # Surface this as a hard error rather than silently returning
+            # None (which would mask the real cause: the cache was
+            # corrupted, manually emptied, or written by an old buggy
+            # version of this script).
+            raise RuntimeError(
+                f"Cache file {cache} is empty (never a legitimate state). "
+                f"Delete it and re-run the generator (it will re-fetch from "
+                f"WFS), or copy a known-good cache from another developer's "
+                f"machine."
+            )
+        gdf = gpd.GeoDataFrame.from_features(data, crs="EPSG:4326")
+        # Drop null / invalid geometries (defensive — caches could be
+        # corrupted by external editing or version drift).
+        gdf = gdf[gdf.geometry.notna() & gdf.geometry.is_valid].copy()
+        if gdf.empty:
+            return None
+        return gdf[["name", "geometry"]] if "name" in gdf.columns else gdf
+
+    from modules.create_model_marine import query_named_sea_polygon
+    mouth_lon, mouth_lat = river.waypoints[0]
+    bbox = (
+        mouth_lon - bbox_pad_deg, mouth_lat - bbox_pad_deg,
+        mouth_lon + bbox_pad_deg, mouth_lat + bbox_pad_deg,
+    )
+    gdf = query_named_sea_polygon(bbox)
+    if gdf is None or gdf.empty:
+        # WFS unreachable or empty result — do NOT write an empty cache
+        # file. Future calls will see "no cache" and retry the WFS,
+        # rather than seeing a corrupt empty cache.
+        return None
+    # Cache as a list of GeoJSON features (always non-empty here)
+    payload = json.loads(gdf.to_json())["features"]
+    if not payload:
+        # Defensive: gdf was non-empty but to_json round-trip yielded
+        # no features. Don't write a misleading empty cache.
+        return gdf
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    # Atomic write: PID+thread-unique tmp file, then os.replace.
+    # Defeats OneDrive sync / Defender real-time scan read-locks that
+    # could otherwise cause PermissionError [WinError 32] on the second
+    # write of the 4-river loop. os.replace is atomic on NTFS and Linux.
+    # The try/except cleans up the .tmp file if os.replace fails
+    # (Defender lock, permission denied), preventing orphan files in
+    # the cache dir.
+    #
+    # PID+thread-unique suffix prevents tmp-file collision when two
+    # concurrent processes (regenerator + Shiny session both calling
+    # query_named_sea_polygon, or a CI run + dev machine on shared
+    # storage) both miss the cache and race to write it.
+    import os
+    import threading
+    tmp = cache.with_suffix(
+        f".{os.getpid()}.{threading.get_ident()}.tmp"
+    )
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, cache)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    return gdf
+
+
 def _load_osm_polygons_filtered(
     river: River, centerline: list[LineString]
 ) -> list:
     """Load cached OSM water polygons, keep only the connected component
     that touches the centerline.
 
-    Algorithm (graph flood-fill):
-      1. Load all candidate polygons from cache.
-      2. Buffer each polygon by POLY_CONNECT_TOL_DEG (small bridge over
-         OSM tagging gaps).
-      3. Build an STRtree spatial index for fast neighbor lookup.
-      4. Seed the visited-set with polygons that intersect the merged
-         centerline (waterway=river ways).
-      5. BFS: for each visited polygon, find polygons whose buffered
-         envelope intersects → add to visited.
-      6. Return only visited polygons.
-
-    This eliminates disconnected lakes/ponds inside the bbox while
-    keeping the river system + tributaries + small connected lakes.
+    Thin wrapper around create_model_river.filter_polygons_by_centerline_connectivity.
     """
     poly_cache = OSM_CACHE / f"{river.short_name}_polygons.json"
     if not poly_cache.exists():
         return []
     data = json.loads(poly_cache.read_text(encoding="utf-8"))
-
-    # Parse all polygons
-    raw_polys = []
-    for item in data:
+    from shapely.errors import GEOSException
+    import logging
+    log = logging.getLogger(__name__)
+    raw_polys: list = []
+    for idx, item in enumerate(data):
         try:
             poly = shape(item["geometry"])
-        except Exception:
+        except (GEOSException, ValueError, TypeError, KeyError) as exc:
+            log.warning(
+                "%s: skipping cached polygon %d (%s): %s",
+                river.short_name, idx, type(exc).__name__, exc,
+            )
             continue
         if not poly.is_valid or poly.is_empty:
             continue
         if poly.geom_type not in ("Polygon", "MultiPolygon"):
             continue
         raw_polys.append(poly)
-
-    if not raw_polys:
-        return []
-
-    centerline_union = unary_union(centerline)
-    # Buffer each polygon by the connectivity tolerance for "touches"
-    buffered = [p.buffer(POLY_CONNECT_TOL_DEG) for p in raw_polys]
-
-    # Use STRtree for O(log n) spatial queries
-    from shapely.strtree import STRtree
-    tree = STRtree(buffered)
-
-    n = len(raw_polys)
-    visited = [False] * n
-    queue = []
-
-    # Seed: all polygons whose buffered envelope intersects the centerline
-    seed_buffered_line = centerline_union.buffer(POLY_CONNECT_TOL_DEG)
-    for i in tree.query(seed_buffered_line):
-        if seed_buffered_line.intersects(buffered[i]):
-            if not visited[i]:
-                visited[i] = True
-                queue.append(i)
-
-    if not queue:
-        log.warning(
-            "[%s] no polygons touch the centerline within %.4f deg — "
-            "centerline may be entirely outside any OSM water polygon",
-            river.river_name, POLY_CONNECT_TOL_DEG,
-        )
-        return []
-
-    # BFS to grow the connected component
-    while queue and sum(visited) < MAX_CONNECTED_POLYS:
-        i = queue.pop()
-        # Find any unvisited polygons whose buffer touches this one's
-        for j in tree.query(buffered[i]):
-            if visited[j]:
-                continue
-            if buffered[i].intersects(buffered[j]):
-                visited[j] = True
-                queue.append(j)
-
-    kept = [raw_polys[i] for i, v in enumerate(visited) if v]
-    log.info(
-        "[%s] connectivity filter: %d/%d polygons in the centerline-connected component",
-        river.river_name, len(kept), n,
+    return filter_polygons_by_centerline_connectivity(
+        centerline=centerline,
+        polygons=raw_polys,
+        tolerance_deg=POLY_CONNECT_TOL_DEG,
+        max_polys=MAX_CONNECTED_POLYS,
+        label=river.river_name,
     )
-    return kept
 
 
 def build_reach_segments_from_waypoints(river: River) -> dict:
@@ -362,54 +428,11 @@ def build_reach_segments_from_osm(
     return segments
 
 
-def _orient_centerline_mouth_to_source(
-    centerline_union, mouth: Point
-):
-    """Return a LineString or MultiLineString oriented from mouth → source
-    so that LineString.project(p) returns 0 at the mouth and increases
-    upstream.
-
-    For a single LineString: flip if the mouth is closer to the end
-    coordinate than the start.
-    For a MultiLineString: order constituent lines by their nearest-
-    endpoint distance to the mouth and concatenate (best-effort — the
-    OSM way collection is rarely a single connected chain, but the
-    quartile splits are robust to this).
-    """
-    if centerline_union.geom_type == "LineString":
-        coords = list(centerline_union.coords)
-        # Distance to mouth from each endpoint
-        d_start = mouth.distance(Point(coords[0]))
-        d_end = mouth.distance(Point(coords[-1]))
-        if d_start > d_end:
-            coords = list(reversed(coords))
-        return LineString(coords)
-    # MultiLineString: best-effort sequential concat by nearest endpoint
-    lines = list(centerline_union.geoms)
-    # Sort by nearest endpoint distance to mouth
-    lines.sort(key=lambda ln: min(
-        mouth.distance(Point(ln.coords[0])),
-        mouth.distance(Point(ln.coords[-1])),
-    ))
-    # Just concatenate as MultiLineString — project() works on it
-    return centerline_union  # MultiLineString.project() is supported
-
-
 def build_reach_segments_from_polygons(
     river: River, centerline: list[LineString], polygons: list
 ) -> dict:
-    """Partition water polygons into 4 reaches by ALONG-CHANNEL distance.
-
-    Improvement over v0.45.2 (which used straight-line distance from the
-    mouth): we project each polygon's centroid onto the centerline, then
-    sort by along-line distance. This handles meandering rivers and rivers
-    where some upstream polygons are physically close to the mouth but
-    far along the channel.
-
-    Each reach is a MultiPolygon of actual water surface from the
-    centerline-connected component (filtered earlier).
-    `generate_cells` sees `type='water'` and uses the polygons directly
-    without buffering — hex cells tessellate the real water shape.
+    """Partition water polygons into 4 reaches by along-channel distance,
+    delegating geometry to create_model_river.partition_polygons_along_channel.
     """
     if len(polygons) < 4:
         log.warning(
@@ -418,36 +441,23 @@ def build_reach_segments_from_polygons(
         )
         return build_reach_segments_from_osm(river, centerline)
 
-    mouth = Point(river.waypoints[0])
-    centerline_union = unary_union(centerline)
-    oriented = _orient_centerline_mouth_to_source(centerline_union, mouth)
-
-    # Score each polygon by its centroid's along-line distance from the
-    # mouth. project() returns the parametric distance along the line.
-    scored = sorted(
-        ((oriented.project(p.centroid), p) for p in polygons),
-        key=lambda t: t[0],
+    groups = partition_polygons_along_channel(
+        centerline=centerline,
+        polygons=polygons,
+        mouth_lon_lat=river.waypoints[0],
+        n_reaches=len(REACH_NAMES),  # 4
     )
-    n = len(scored)
-    q = n / 4.0
-    slices = [(int(q * i), int(q * (i + 1))) for i in range(4)]
-    slices[-1] = (slices[-1][0], n)
 
     segments: dict = {}
-    for i, name in enumerate(REACH_NAMES):
-        lo, hi = slices[i]
-        reach_polys = [p for _, p in scored[lo:hi]]
-        if not reach_polys:
+    for name, frac, group in zip(REACH_NAMES, FRAC_SPAWN, groups):
+        if not group:
             continue
-        d_lo = scored[lo][0]
-        d_hi = scored[hi - 1][0]
         segments[name] = {
-            "segments": reach_polys,
-            "frac_spawn": FRAC_SPAWN[i],
-            "type": "water",  # tells generate_cells to use polygons directly
+            "segments": group,
+            "frac_spawn": frac,
+            "type": "water",
         }
-        log.info("  [%s] %d polys, along-line distance %.4f → %.4f deg",
-                 name, len(reach_polys), d_lo, d_hi)
+        log.info("  [%s] %d polys", name, len(group))
     return segments
 
 
@@ -493,29 +503,191 @@ def write_river_shapefile(river: River) -> Path:
     log.info("Main channel length (degrees): %.4f  [~%s km at this lat]",
              total_len, int(total_len * 111))
 
-    cells = generate_cells(
+    fresh = generate_cells(
         reach_segments=reach_segments,
         cell_size=river.cell_size_m,
         cell_shape="hexagonal",
         buffer_factor=river.buffer_factor,
         min_overlap=0.1,
     )
-
-    if cells.empty:
+    if fresh.empty:
         raise RuntimeError(
-            f"{river.short_name}: generate_cells returned 0 cells. "
+            f"{river.short_name}: generate_cells returned 0 freshwater cells. "
             f"Increase buffer_factor or cell_size and re-run."
         )
 
-    log.info("Generated %d cells", len(cells))
+    # --- BalticCoast marine reach -----------------------------------------
+    # Pin the marine disk to the MOUTH's UTM zone (NOT the freshwater
+    # centroid's zone). The mouth is where the disk is centred, and for
+    # Tornionjoki the mouth lon=24.142° is in zone 35 while the centerline
+    # centroid is at ~23.77° (zone 34); using the freshwater zone for a
+    # mouth-centred disk would push the entire disk to the far edge of
+    # the wrong zone where UTM scale distortion grows.
+    #
+    # The freshwater grid was already generated by `generate_cells` in a
+    # zone derived from its own internal centroid logic. Both grids are
+    # reprojected to WGS84 by `generate_cells` before they are returned
+    # (see app/modules/create_model_grid.py:237 `gdf.to_crs("EPSG:4326")`),
+    # so cross-zone differences are eliminated in the output. The
+    # adjacency check at the bottom of this function reprojects to UTM
+    # for a true-meters 5 m buffer test (uniform metres, not anisotropic
+    # at 65°N like a degree-buffer would be).
+
+    mouth_lon, mouth_lat = river.waypoints[0]
+    utm_epsg = detect_utm_epsg(mouth_lon, mouth_lat)
+
+    sea_gdf = _load_or_fetch_marineregions(river)
+    if sea_gdf is None or sea_gdf.empty:
+        raise RuntimeError(
+            f"{river.river_name}: Marine Regions returned no sea polygon. "
+            f"Re-run when WFS recovers (or delete the cached payload at "
+            f"tests/fixtures/_osm_cache/{river.short_name}_marineregions.json "
+            f"if it has gone stale and re-run to re-fetch)."
+        )
+    # Pick the sea polygon nearest the mouth. Two-stage strategy:
+    #   1. Prefer a polygon that strictly contains the mouth point
+    #      (the natural case — the disk is clearly inside one IHO area).
+    #   2. Fall back to the closest polygon by Euclidean distance when
+    #      the mouth lies inland of the IHO sea-area boundary. The IHO
+    #      navigational coastline can sit 0.5-1.5 km offshore from a
+    #      river mouth (Simojoki's Gulf of Bothnia boundary ends
+    #      0.0085° / ~945 m from its mouth), so a strict-contains check
+    #      alone would spuriously fail. The closest-by-distance fallback
+    #      handles that gap; query_named_sea_polygon already does
+    #      bbox-centroid disambiguation upstream so multi-polygon
+    #      ambiguity is normally resolved before we get here.
+    mouth_pt = Point(river.waypoints[0])
+    candidates = sea_gdf[sea_gdf.geometry.contains(mouth_pt)]
+    if candidates.empty:
+        log.info(
+            "[%s] mouth not strictly inside any sea polygon; "
+            "using closest-distance picker (IHO boundary offset).",
+            river.river_name,
+        )
+        nearest_idx = sea_gdf.geometry.distance(mouth_pt).idxmin()
+        sea_polygon = sea_gdf.geometry.loc[nearest_idx]
+    else:
+        sea_polygon = candidates.geometry.iloc[0]
+
+    bc_polygon = clip_sea_polygon_to_disk(
+        sea_polygon=sea_polygon,
+        mouth_lon_lat=river.waypoints[0],
+        radius_m=BALTICCOAST_RADIUS_M,
+        utm_epsg=utm_epsg,
+    )
+    # The intersection can return a MultiPolygon if the disk straddles
+    # an island, peninsula, or skerry (e.g., Tärnö near Mörrum, the many
+    # small skerries near Tornio). Pass the geoms separately to
+    # generate_cells so each piece tessellates independently. Polygon-
+    # with-holes is also handled correctly by generate_cells (line 173
+    # uses combined_buffer.intersection(poly) which preserves holes —
+    # cells inside an island get empty intersection and are dropped).
+    #
+    # Edge case: shapely's intersection can return a GeometryCollection
+    # when the disk and sea polygon share an exact boundary segment.
+    # Filter to (Multi)Polygon members so generate_cells doesn't get
+    # passed a degenerate Point/LineString that would silently produce
+    # zero cells.
+    if bc_polygon.geom_type == "MultiPolygon":
+        bc_segments = list(bc_polygon.geoms)
+    elif bc_polygon.geom_type == "Polygon":
+        bc_segments = [bc_polygon]
+    elif bc_polygon.geom_type == "GeometryCollection":
+        bc_segments = [
+            g for g in bc_polygon.geoms
+            if g.geom_type in ("Polygon", "MultiPolygon")
+        ]
+        if not bc_segments:
+            raise RuntimeError(
+                f"{river.river_name}: BalticCoast intersection returned a "
+                f"GeometryCollection with no polygon members "
+                f"(only points/lines). Disk likely tangent to coastline."
+            )
+    else:
+        raise RuntimeError(
+            f"{river.river_name}: unexpected geometry type "
+            f"{bc_polygon.geom_type!r} from clip_sea_polygon_to_disk"
+        )
+    bc_segment = {"segments": bc_segments, "frac_spawn": 0.0, "type": "sea"}
+    bc_cell_factor = BALTICCOAST_CELL_FACTOR_OVERRIDE.get(
+        river.short_name, BALTICCOAST_CELL_FACTOR_DEFAULT,
+    )
+    marine = generate_cells(
+        reach_segments={"BalticCoast": bc_segment},
+        cell_size=river.cell_size_m * bc_cell_factor,
+        cell_shape="hexagonal",
+        buffer_factor=1.0,
+        min_overlap=0.1,
+    )
+    if marine.empty:
+        raise RuntimeError(
+            f"{river.river_name}: BalticCoast generated 0 cells "
+            f"(disk radius={BALTICCOAST_RADIUS_M}m, "
+            f"cell_size={river.cell_size_m * bc_cell_factor:.0f}m). "
+            f"Try: (1) increase BALTICCOAST_RADIUS_M in "
+            f"scripts/_generate_wgbast_physical_domains.py; "
+            f"(2) lower BALTICCOAST_CELL_FACTOR_OVERRIDE for this river "
+            f"(currently {bc_cell_factor}); "
+            f"(3) move mouth waypoint {river.waypoints[0]} seaward if "
+            f"the disk is dominated by land."
+        )
+
+    # Concat freshwater + marine. pd.concat of two GeoDataFrames may
+    # return a plain DataFrame (CRS lost) on older geopandas — wrap
+    # explicitly so downstream .geometry.buffer() and .to_file() work.
+    cells = gpd.GeoDataFrame(
+        pd.concat([fresh, marine], ignore_index=True),
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    # Renumber cell_ids with width adapted to the total count
+    # (so C00001 and C99999 sort lexically).
+    width = max(4, len(str(len(cells))))
+    cells["cell_id"] = [f"C{i+1:0{width}d}" for i in range(len(cells))]
+
+    log.info("Generated %d cells (fresh=%d + BalticCoast=%d)",
+             len(cells), len(fresh), len(marine))
     log.info("Per-reach distribution:")
     for reach, count in cells["reach_name"].value_counts().sort_index().items():
-        log.info("  %-8s %d cells", reach, count)
+        log.info("  %-12s %d cells", reach, count)
+
+    # --- Adjacency sanity check ------------------------------------------
+    mouth_subset = cells[cells["reach_name"] == "Mouth"]
+    marine_subset = cells[cells["reach_name"] == "BalticCoast"]
+    if mouth_subset.empty:
+        raise RuntimeError(
+            f"{river.river_name}: 0 cells assigned to 'Mouth' reach — "
+            f"check REACH_NAMES + partition output."
+        )
+    # Quick empty check before the UTM reproject + adjacency math.
+    # Use the row-level emptiness rather than a union (cheaper; the
+    # full union is computed in UTM 8 lines below for the actual
+    # adjacency test).
+    if marine_subset.empty or marine_subset.geometry.is_empty.all():
+        raise RuntimeError(
+            f"{river.river_name}: BalticCoast geometry empty after concat."
+        )
+    # Project both subsets to UTM for a true-meters adjacency check.
+    # A WGS84-degree buffer is anisotropic at high latitudes (1e-5° is
+    # ~0.45 m east-west at 65°N, ~1.1 m north-south) — the Tornio coast
+    # runs roughly N-S so a degree-buffer's E-W slack would be the
+    # constraint. UTM gives uniform meters; 5 m absorbs UTM↔WGS84
+    # round-trip drift comfortably without false-positives.
+    mouth_utm = mouth_subset.to_crs(epsg=utm_epsg)
+    marine_utm = marine_subset.to_crs(epsg=utm_epsg)
+    marine_union_utm = marine_utm.geometry.union_all()
+    hits = mouth_utm.geometry.buffer(5.0).intersects(marine_union_utm).sum()
+    if hits == 0:
+        raise RuntimeError(
+            f"{river.river_name}: BalticCoast not adjacent to Mouth — "
+            f"disk geometry leaves a gap (radius {BALTICCOAST_RADIUS_M}m). "
+            f"Increase radius or move mouth waypoint seaward."
+        )
 
     # Rename columns to match the shapefile-loader contract
     cells = cells.rename(columns=COLUMN_RENAME)
-
-    # Coerce to str for the ID column (loader expects string IDs)
+    # Re-cast ID_TEXT to string explicitly — pandas can demote dtype
+    # across concat; this keeps the DBF column type consistent.
     cells["ID_TEXT"] = cells["ID_TEXT"].astype(str)
 
     # Clear any stale Shapefile/* from a prior run (Nemunas leftover)

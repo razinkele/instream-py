@@ -61,7 +61,7 @@ QUERIES: list[RiverQuery] = [
         # Covers mouth at Tornio up through Muonionjoki confluence and beyond.
         # The main stem becomes Muonionjoki then Könkämäeno going north.
         bbox=(65.5, 22.8, 68.6, 25.6),
-        name_regex="^(Tornionjoki|Torne älv|Torneälven|Torneå älv|Torne)$",
+        name_regex="^(Tornionjoki|Torne älv|Torneälven|Torneå älv|Torne|Muonionjoki|Muonio älv|Muonio)$",
         mouth_lon_lat=(24.142, 65.881),
     ),
     RiverQuery(

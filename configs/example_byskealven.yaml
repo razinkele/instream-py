@@ -1,4 +1,4 @@
-# Byskealven — physical-geography domain (v0.45).
+# Byskealven -- physical-geography domain (v0.45).
 # 4 reaches (Mouth/Lower/Middle/Upper) along the real river
 # centerline. Shapefile generated via
 # scripts/_generate_wgbast_physical_domains.py.
@@ -241,87 +241,6 @@ reaches:
     velocity_file: Upper-Vels.csv
     pspc_smolts_per_year: 7500
     river_name: Byskealven
-  Skirvyte:
-    drift_conc: 3.0e-09
-    search_prod: 5.0e-07
-    shelter_speed_frac: 0.25
-    prey_energy_density: 3200
-    drift_regen_distance: 800
-    shading: 0.65
-    fish_pred_min: 0.95
-    terr_pred_min: 0.955
-    light_turbid_coef: 0.004
-    light_turbid_const: 0.002
-    max_spawn_flow: 8
-    shear_A: 0.005
-    shear_B: 0.25
-    upstream_junction: 1
-    downstream_junction: 5
-    time_series_input_file: Skirvyte-TimeSeriesInputs.csv
-    depth_file: Skirvyte-Depths.csv
-    velocity_file: Skirvyte-Vels.csv
-    pspc_smolts_per_year: 13000
-    river_name: Byskealven
-  Leite:
-    drift_conc: 3.5e-09
-    search_prod: 5.5e-07
-    shelter_speed_frac: 0.12
-    prey_energy_density: 3000
-    drift_regen_distance: 1200
-    shading: 0.45
-    fish_pred_min: 0.955
-    terr_pred_min: 0.96
-    light_turbid_coef: 0.0035
-    light_turbid_const: 0.0015
-    max_spawn_flow: 10
-    shear_A: 0.006
-    shear_B: 0.28
-    upstream_junction: 1
-    downstream_junction: 5
-    time_series_input_file: Leite-TimeSeriesInputs.csv
-    depth_file: Leite-Depths.csv
-    velocity_file: Leite-Vels.csv
-    river_name: Byskealven
-  Gilija:
-    drift_conc: 3.5e-09
-    search_prod: 5.5e-07
-    shelter_speed_frac: 0.12
-    prey_energy_density: 3000
-    drift_regen_distance: 1200
-    shading: 0.45
-    fish_pred_min: 0.955
-    terr_pred_min: 0.96
-    light_turbid_coef: 0.0035
-    light_turbid_const: 0.0015
-    max_spawn_flow: 10
-    shear_A: 0.006
-    shear_B: 0.28
-    upstream_junction: 1
-    downstream_junction: 5
-    time_series_input_file: Gilija-TimeSeriesInputs.csv
-    depth_file: Gilija-Depths.csv
-    velocity_file: Gilija-Vels.csv
-    river_name: Byskealven
-  CuronianLagoon:
-    drift_conc: 1.0e-09
-    search_prod: 3.0e-07
-    shelter_speed_frac: 0.03
-    prey_energy_density: 2500
-    drift_regen_distance: 5000
-    shading: 0.1
-    fish_pred_min: 0.8
-    terr_pred_min: 0.94
-    light_turbid_coef: 0.005
-    light_turbid_const: 0.003
-    max_spawn_flow: 999
-    shear_A: 0.002
-    shear_B: 0.2
-    upstream_junction: 2
-    downstream_junction: 5
-    time_series_input_file: CuronianLagoon-TimeSeriesInputs.csv
-    depth_file: CuronianLagoon-Depths.csv
-    velocity_file: CuronianLagoon-Vels.csv
-    river_name: Byskealven
   BalticCoast:
     drift_conc: 2.0e-10
     search_prod: 1.0e-07
@@ -329,7 +248,7 @@ reaches:
     prey_energy_density: 1500
     drift_regen_distance: 20000
     shading: 0.02
-    fish_pred_min: 0.65
+    fish_pred_min: 0.95
     terr_pred_min: 0.995
     light_turbid_coef: 0.007
     light_turbid_const: 0.004
