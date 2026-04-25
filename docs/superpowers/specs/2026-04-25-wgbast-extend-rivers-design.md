@@ -457,6 +457,18 @@ Mock the requests.get response with a fake WFS GeoJSON payload to exercise the p
 1. Multiple polygons, one contains bbox centroid → only that one returned.
 2. WFS returns 500 → returns None.
 
+### `tests/test_create_model_river.py` (new, v4)
+
+Pure-Python unit tests of the two river-helper functions added in v4 (`filter_polygons_by_centerline_connectivity` and `partition_polygons_along_channel`), using synthetic shapely geometries (no IO, no fixture data):
+
+1. **Connectivity filter** — keeps polygons touching the centerline; respects `max_polys` cap; returns `[]` on empty input.
+2. **Partition along channel** — splits N polygons into N reach groups by along-channel distance; ordering is mouth → source; handles `len < n_reaches` (some groups empty); handles `MultiLineString` centerlines in three shapes:
+   - Linemerge-clean (sub-lines share endpoints) → single oriented LineString.
+   - Disjoint (no shared endpoints) → coordinate-concat fallback.
+   - Y-shaped (branching, e.g. Tornionjoki + Muonio) → fallback still orders polys mouth→source.
+
+(Algorithmic detail in §Components.1b. Tests verify both the merge-success path and the three fallback paths.)
+
 ### `tests/test_wgbast_river_extents.py` (new)
 
 For each of the 4 rivers, after running the generator end-to-end:
