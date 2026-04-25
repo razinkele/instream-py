@@ -2074,9 +2074,19 @@ git add scripts/_wire_wgbast_physical_configs.py \
         tests/fixtures/example_byskealven/ \
         tests/fixtures/example_morrumsan/
 
-# Verification: no per-reach CSV under example_* is left unstaged
-git status tests/fixtures/example_*/*.csv tests/fixtures/example_*/Shapefile/ 2>&1 | tee /tmp/wgbast_git_status.txt
-grep -E "modified:|new file:" /tmp/wgbast_git_status.txt && echo "ERROR: unstaged fixture changes" && exit 1
+# Verification: no per-reach CSV / Shapefile under example_* is left unstaged.
+# Use git status --porcelain (machine-parseable) and filter the
+# second-column codes that indicate UNSTAGED state:
+#   ' M' = modified, not staged
+#   ' D' = deleted, not staged
+#   '??' = untracked
+# (The first-column codes like 'M ' / 'A ' are STAGED — we want those to be ignored.)
+unstaged=$(git status --porcelain tests/fixtures/example_*/ | grep -E '^( M| D|\?\?)' || true)
+if [ -n "$unstaged" ]; then
+    echo "ERROR: unstaged fixture changes:"
+    echo "$unstaged"
+    exit 1
+fi
 echo "OK: all fixture changes staged"
 
 git commit -m "feat(wgbast): regenerate fixtures with BalticCoast cells + tuned configs
@@ -2497,6 +2507,14 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 17 review loops, convergence confirmed
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loop 21 — bug introduced by loop-18's fix
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| IMP | 1 | Loop-18 added a verification step at Task 2.D.2 Step 6 that grep'd `git status` for `"modified:"|"new file:"` to detect unstaged fixture changes. But after `git add` succeeds, `git status` shows the just-staged files under "Changes to be committed:" with the SAME `modified:`/`new file:` prefixes. The grep cannot distinguish staged vs unstaged sections, fires on every clean run, and aborts the happy path. | Switched to `git status --porcelain` with a second-column filter (` M`/` D`/`??` = unstaged; `M `/`A ` = staged). Now correctly detects ONLY unstaged fixture changes. |
+
+**Lesson:** even fixes need verification. Loop 18 added a "safety check" that itself had the wrong logic; loops 19-20 reviewed `git add` scope but didn't dry-run the verification command's output. A 30-second mental trace of `git status` post-`git add` would have caught it.
 
 ## Loop 19 — same git-add-scope pattern in 2 more tasks
 
