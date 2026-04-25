@@ -368,12 +368,25 @@ def query_named_sea_polygon(
     try:
         resp = requests.get(MARINE_REGIONS_WFS, params=params, timeout=timeout_s)
         resp.raise_for_status()
+        # Belt-and-suspenders: cap on payload size. The shiny machine
+        # has 16 GB RAM and ~100 GB free disk per CLAUDE.md; a 50 MB
+        # cap on a single WFS response is comfortably above the
+        # expected ~1-5 MB for an IHO sea-area query and below any
+        # OOM risk from a misbehaving endpoint.
+        if int(resp.headers.get("Content-Length", 0) or 0) > 50_000_000:
+            return None
         geoj = resp.json()
     except Exception:
         return None
     if not geoj.get("features"):
         return None
     gdf = gpd.GeoDataFrame.from_features(geoj["features"], crs="EPSG:4326")
+    # Drop null / invalid geometries before any spatial op. Marine
+    # Regions WFS occasionally returns features with `"geometry": null`
+    # on bbox-edge cases, which would NaN-propagate through the filter.
+    gdf = gdf[gdf.geometry.notna() & gdf.geometry.is_valid].copy()
+    if gdf.empty:
+        return None
     view_box = box(*bbox_wgs84)
     gdf = gdf[gdf.geometry.intersects(view_box)].copy()
     if len(gdf) > 1:
@@ -1491,6 +1504,11 @@ def _load_or_fetch_marineregions(
                 f"machine."
             )
         gdf = gpd.GeoDataFrame.from_features(data, crs="EPSG:4326")
+        # Drop null / invalid geometries (defensive — caches could be
+        # corrupted by external editing or version drift).
+        gdf = gdf[gdf.geometry.notna() & gdf.geometry.is_valid].copy()
+        if gdf.empty:
+            return None
         return gdf[["name", "geometry"]] if "name" in gdf.columns else gdf
 
     from modules.create_model_marine import query_named_sea_polygon
