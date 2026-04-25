@@ -596,10 +596,17 @@ def test_filter_keeps_polygons_touching_centerline():
 
 
 def test_filter_caps_at_max_polys():
-    """If the connected component is huge, return at most max_polys."""
+    """If the connected component is huge, return at most max_polys.
+    Test design: only ONE polygon touches the centerline directly; the
+    rest chain via mutual buffer overlap, forcing the cap to fire
+    during BFS traversal (not just during seeding). Without this
+    distinction, a centerline that touched many polygons at once
+    would seed past the cap before the BFS while-loop ran."""
     from modules.create_model_river import filter_polygons_by_centerline_connectivity
 
-    centerline = [LineString([(0, 0), (100, 0)])]
+    # Centerline is a tiny segment touching only polys[0]
+    centerline = [LineString([(0.4, 0.0), (0.6, 0.0)])]
+    # 20 unit squares chained edge-to-edge from x=0..20
     polys = [
         Polygon([(i, -0.5), (i + 1, -0.5), (i + 1, 0.5), (i, 0.5)])
         for i in range(20)
@@ -607,10 +614,11 @@ def test_filter_caps_at_max_polys():
     kept = filter_polygons_by_centerline_connectivity(
         centerline=centerline,
         polygons=polys,
-        tolerance_deg=0.001,
+        tolerance_deg=0.001,  # ~110m — enough to bridge edge-touching squares
         max_polys=5,
     )
     assert len(kept) <= 5
+    assert len(kept) >= 1, "should have kept at least the seed polygon"
 
 
 def test_filter_empty_polygons_returns_empty():
@@ -701,6 +709,11 @@ def filter_polygons_by_centerline_connectivity(
     # surface a different polygon set on different machines / shapely
     # versions, producing non-byte-identical fixtures.
     for i in sorted(tree.query(seed_buffered_line)):
+        if visited_count >= max_polys:
+            # Cap also enforced during seeding — production case where
+            # a long centerline touches more than max_polys polygons
+            # directly (e.g., a dense lake-and-river network).
+            break
         if seed_buffered_line.intersects(buffered[i]) and not visited[i]:
             visited[i] = True
             visited_count += 1
