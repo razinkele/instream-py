@@ -663,11 +663,17 @@ def filter_polygons_by_centerline_connectivity(
     tree = STRtree(buffered)
     n = len(polys)
     visited = [False] * n
-    queue: list[int] = []
+    from collections import deque
+    queue: deque[int] = deque()
 
     seed_buffered_line = centerline_union.buffer(tolerance_deg)
     visited_count = 0
-    for i in tree.query(seed_buffered_line):
+    # Sort tree.query() output so visit order is deterministic across
+    # shapely builds (STRtree internal iteration order is not guaranteed
+    # stable across versions). Without this, the `max_polys` cap could
+    # surface a different polygon set on different machines / shapely
+    # versions, producing non-byte-identical fixtures.
+    for i in sorted(tree.query(seed_buffered_line)):
         if seed_buffered_line.intersects(buffered[i]) and not visited[i]:
             visited[i] = True
             visited_count += 1
@@ -684,9 +690,16 @@ def filter_polygons_by_centerline_connectivity(
     # iteration — sum() is O(n) per call, making the BFS O(n²). For
     # Tornionjoki at ~9000 polygons, that's ~80M boolean sums per
     # regenerate. Incremental counter restores O(n log n + E).
+    #
+    # Use FIFO popleft (deque, declared above) for true BFS order —
+    # a list.pop() from the end would visit polygons in DFS order
+    # which interacts badly with the max_polys cap (different
+    # polygons could survive depending on traversal direction).
+    # Combined with the sorted() above, the traversal is now a pure
+    # function of input polygon order.
     while queue and visited_count < max_polys:
-        i = queue.pop()
-        for j in tree.query(buffered[i]):
+        i = queue.popleft()
+        for j in sorted(tree.query(buffered[i])):
             if visited[j]:
                 continue
             if buffered[i].intersects(buffered[j]):
@@ -694,6 +707,8 @@ def filter_polygons_by_centerline_connectivity(
                 visited_count += 1
                 queue.append(j)
 
+    # Reorder kept output by sorted index so the result is also
+    # order-deterministic regardless of BFS visit order.
     kept = [polys[i] for i, v in enumerate(visited) if v]
     log.info(
         "[%s] connectivity filter: %d/%d polygons in the centerline-connected component",
