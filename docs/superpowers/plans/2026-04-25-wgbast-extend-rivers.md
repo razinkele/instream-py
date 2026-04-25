@@ -366,16 +366,19 @@ def query_named_sea_polygon(
         "bbox": f"{west},{south},{east},{north},EPSG:4326",
     }
     try:
-        resp = requests.get(MARINE_REGIONS_WFS, params=params, timeout=timeout_s)
-        resp.raise_for_status()
-        # Belt-and-suspenders: cap on payload size. The shiny machine
-        # has 16 GB RAM and ~100 GB free disk per CLAUDE.md; a 50 MB
-        # cap on a single WFS response is comfortably above the
-        # expected ~1-5 MB for an IHO sea-area query and below any
-        # OOM risk from a misbehaving endpoint.
-        if int(resp.headers.get("Content-Length", 0) or 0) > 50_000_000:
-            return None
-        geoj = resp.json()
+        # `with` ensures the connection-pool socket is returned to the
+        # pool on every exit path (size-cap return, exception, success).
+        # Without it, repeated retries on Windows can stall on socket
+        # exhaustion until GC runs.
+        with requests.get(MARINE_REGIONS_WFS, params=params, timeout=timeout_s) as resp:
+            resp.raise_for_status()
+            # Belt-and-suspenders: cap on payload size. The shiny
+            # machine has 16 GB RAM and ~100 GB free disk per CLAUDE.md;
+            # a 50 MB cap is comfortably above the expected ~1-5 MB for
+            # an IHO sea-area query and below OOM risk.
+            if int(resp.headers.get("Content-Length", 0) or 0) > 50_000_000:
+                return None
+            geoj = resp.json()
     except Exception:
         return None
     if not geoj.get("features"):
@@ -1533,11 +1536,17 @@ def _load_or_fetch_marineregions(
     # Atomic write: tmp file then os.replace. Defeats OneDrive sync /
     # Defender real-time scan read-locks that could otherwise cause
     # PermissionError [WinError 32] on the second write of the 4-river
-    # loop. os.replace is atomic on NTFS and Linux.
+    # loop. os.replace is atomic on NTFS and Linux. The try/finally
+    # cleans up the .tmp file if os.replace fails (Defender lock,
+    # permission denied), preventing orphan files in the cache dir.
     import os
     tmp = cache.with_suffix(cache.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    os.replace(tmp, cache)
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, cache)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
     return gdf
 ```
 
