@@ -44,6 +44,34 @@
 
 ---
 
+# Pre-flight (run before either PR)
+
+## Task 0: Verify external services are reachable
+
+PR-1 depends on Overpass; PR-2 depends on Marine Regions WFS. Both are external services. Failures from network timeouts mid-task waste a lot of time. Check up-front:
+
+- [ ] **Step 1: Verify Overpass is reachable**
+
+```bash
+curl -sf -o /dev/null -w "%{http_code}" --max-time 10 https://overpass-api.de/api/status
+```
+
+Expected: `200`. If anything else, try the kumi or osm.ch endpoints (`scripts/_fetch_wgbast_osm_polylines.py:38-41` lists them) before aborting. If all three fail, defer PR-1 until later.
+
+- [ ] **Step 2: Verify Marine Regions WFS is reachable**
+
+```bash
+curl -sf -o /dev/null -w "%{http_code}" --max-time 30 "https://geo.vliz.be/geoserver/MarineRegions/wfs?service=WFS&version=2.0.0&request=GetCapabilities"
+```
+
+Expected: `200`. If `503` or timeout, defer PR-2.
+
+- [ ] **Step 3: No commit; this is a pre-flight gate.**
+
+If both services are up, proceed to PR-1. Otherwise wait and retry.
+
+---
+
 # PR-1 — Tornionjoki regex extension
 
 ## Task 1.1: Extend Tornionjoki OSM regex to capture Muonionjoki
@@ -186,7 +214,7 @@ def test_clip_sea_polygon_to_disk_basic_intersection():
     sea = box(-1.0, -1.0, 1.0, 1.0)
     mouth = (0.5, 0.5)
     radius_m = 50_000  # 50 km
-    utm_epsg = 32633   # any equator-region UTM works for this synthetic test
+    utm_epsg = 32631   # lon 0.5° lies in UTM zone 31 (0°E–6°E central meridian 3°E)
 
     result = clip_sea_polygon_to_disk(
         sea_polygon=sea,
@@ -806,9 +834,22 @@ def _orient_centerline_mouth_to_source(
     returns 0 at mouth and increases upstream.
 
     For a LineString: flip if mouth is closer to the end than the start.
-    For a MultiLineString: leave as-is (project() works either way; the
-    quartile splits are robust to MLS ordering for our use case).
+    For a MultiLineString: try shapely.ops.linemerge first — if all
+    sub-lines connect end-to-end the result is a single LineString and
+    we orient it the same way. Otherwise (genuinely disjoint segments,
+    common for OSM way collections like Tornionjoki+Muonio), fall back
+    to a coordinate-based proxy: build a single LineString from the
+    sequence of all sub-line coordinates concatenated, sorted by
+    distance from the mouth. This is approximate but produces a
+    monotone .project() that respects mouth → source ordering for
+    ALL the common WGBAST cases.
+
+    Returning a raw MultiLineString here is a BUG: shapely's
+    MultiLineString.project() returns 0.0 for every input regardless
+    of geometry, which silently scrambles the partition.
     """
+    from shapely.ops import linemerge
+
     if centerline_union.geom_type == "LineString":
         coords = list(centerline_union.coords)
         d_start = mouth.distance(Point(coords[0]))
@@ -816,7 +857,63 @@ def _orient_centerline_mouth_to_source(
         if d_start > d_end:
             coords = list(reversed(coords))
         return LineString(coords)
-    return centerline_union
+
+    # MultiLineString: try linemerge first
+    merged = linemerge(centerline_union)
+    if merged.geom_type == "LineString":
+        coords = list(merged.coords)
+        d_start = mouth.distance(Point(coords[0]))
+        d_end = mouth.distance(Point(coords[-1]))
+        if d_start > d_end:
+            coords = list(reversed(coords))
+        return LineString(coords)
+
+    # Disconnected: concatenate sub-line coordinates sorted by distance
+    # from the mouth. Approximate but produces a monotone .project().
+    all_coords: list[tuple[float, float]] = []
+    for sub in merged.geoms:
+        all_coords.extend(list(sub.coords))
+    # Deduplicate while preserving order
+    seen: set[tuple[float, float]] = set()
+    unique: list[tuple[float, float]] = []
+    for c in all_coords:
+        if c not in seen:
+            seen.add(c)
+            unique.append(c)
+    # Sort by distance from mouth
+    unique.sort(key=lambda c: mouth.distance(Point(c)))
+    if len(unique) < 2:
+        return merged  # fall through; downstream will detect a degenerate input
+    return LineString(unique)
+```
+
+**Add a unit test** that exercises the MultiLineString path. Append to `tests/test_create_model_river.py`:
+
+```python
+def test_partition_handles_multilinestring_centerline():
+    """Tornionjoki centerline is a MultiLineString; project() on a raw
+    MultiLineString returns 0.0 for every point. Verify partition
+    still orders polygons mouth → source after linemerge / coordinate
+    concatenation."""
+    from shapely.geometry import MultiLineString
+    from modules.create_model_river import partition_polygons_along_channel
+
+    # Two sub-lines that merge cleanly into a single LineString
+    cl = MultiLineString([
+        [(0, 0), (5, 0)],
+        [(5, 0), (10, 0)],
+    ])
+    near_mouth = Polygon([(0, -0.5), (1, -0.5), (1, 0.5), (0, 0.5)])
+    far = Polygon([(9, -0.5), (10, -0.5), (10, 0.5), (9, 0.5)])
+
+    groups = partition_polygons_along_channel(
+        centerline=cl,
+        polygons=[far, near_mouth],
+        mouth_lon_lat=(0.0, 0.0),
+        n_reaches=2,
+    )
+    assert near_mouth in groups[0], "near-mouth polygon not in first group"
+    assert far in groups[1], "far polygon not in last group"
 ```
 
 Add to the existing imports at the top of the file:
@@ -864,8 +961,10 @@ def _query_marine_regions(bbox_wgs84):
 Replace those lines (86–108) with:
 
 ```python
-from .create_model_marine import query_named_sea_polygon as _query_marine_regions  # noqa: E402
+from modules.create_model_marine import query_named_sea_polygon as _query_marine_regions  # noqa: E402
 ```
+
+**IMPORTANT**: this is an ABSOLUTE import (`from modules.create_model_marine`), NOT a relative import (`from .create_model_marine`). The Shiny app loads `create_model_panel.py` as a top-level module, not as part of a package — `__package__` is `None`, so a leading-dot import would raise `ImportError: attempted relative import with no known parent package` at startup. This matches the pattern of every other internal import in `create_model_panel.py` (verified at lines 26–65: `from modules.create_model_grid import ...`, `from modules.create_model_osm import ...`, etc.).
 
 This preserves the existing call site `_query_marine_regions(bbox)` at line 733 (`_on_fetch_sea` handler) without further edits.
 
@@ -877,15 +976,39 @@ grep -rn "_query_marine_regions" app/ scripts/
 
 Expected: only the import at line 86 and the call at line 733 (or thereabouts) in the same file. If anything else references it, update the import accordingly.
 
-- [ ] **Step 3: Run the existing Create Model panel tests (regression check)**
+- [ ] **Step 3: Smoke-test the panel module imports cleanly**
 
-```bash
-micromamba run -n shiny python -m pytest tests/test_create_model_panel.py -v 2>&1 | tail -20
+There is no dedicated `tests/test_create_model_panel.py` covering `_query_marine_regions` (verified by grep). Add a minimal smoke test as part of this step. Append to `tests/test_create_model_marine.py`:
+
+```python
+def test_create_model_panel_reexport_intact():
+    """Behaviour-preserving extraction: create_model_panel must still
+    expose _query_marine_regions as before, now resolved via the
+    shared module."""
+    import sys
+    sys.path.insert(0, str(ROOT / "app"))
+    from modules import create_model_panel
+    assert hasattr(create_model_panel, "_query_marine_regions")
+    # Same callable as the new public name
+    from modules.create_model_marine import query_named_sea_polygon
+    assert create_model_panel._query_marine_regions is query_named_sea_polygon
 ```
 
-Expected: same pass/fail counts as before this task. If any previously-passing test now fails, the import shape is wrong.
+Run:
 
-(If `tests/test_create_model_panel.py` doesn't exist or doesn't cover the sea-fetch handler, look for it in `tests/test_create_model_*.py` more broadly.)
+```bash
+micromamba run -n shiny python -m pytest tests/test_create_model_marine.py::test_create_model_panel_reexport_intact -v
+```
+
+Expected: PASS. If it fails with `ImportError: attempted relative import with no known parent package`, the import in Step 1 used a leading `.` — fix to absolute.
+
+Also run the broader Create Model test surface to catch any other regression:
+
+```bash
+micromamba run -n shiny python -m pytest tests/ -k create_model -v 2>&1 | tail -20
+```
+
+Expected: same pass/fail counts as before this task.
 
 - [ ] **Step 4: Commit**
 
@@ -1052,7 +1175,16 @@ After the existing `MAX_CONNECTED_POLYS = 2000` line in `_generate_wgbast_physic
 ```python
 # BalticCoast (marine) reach constants. v0.46+ spec §Architecture overview.
 BALTICCOAST_RADIUS_M = 10_000.0       # 10 km clip around river mouth
-BALTICCOAST_CELL_FACTOR = 4.0          # marine cell_size = river.cell_size_m × this
+
+# Marine cell_size = river.cell_size_m × factor. Per-river so Mörrumsån's
+# 60 m freshwater cells don't produce >5000 marine cells (the 10 km disk
+# at Hanöbukten is mostly open water). Tornionjoki/Simojoki/Byskeälven
+# use factor=4 (river cells 80–150 m → marine 320–600 m).
+# Mörrumsån uses factor=8 (river 60 m → marine 480 m, ~1500 disk cells).
+BALTICCOAST_CELL_FACTOR_DEFAULT = 4.0
+BALTICCOAST_CELL_FACTOR_OVERRIDE = {
+    "example_morrumsan": 8.0,
+}
 ```
 
 - [ ] **Step 2: Add the WFS-payload cache helper**
@@ -1108,18 +1240,32 @@ git add scripts/_generate_wgbast_physical_domains.py
 git commit -m "feat(wgbast): add BalticCoast constants + Marine Regions cache helper
 
 Constants:
-  BALTICCOAST_RADIUS_M = 10_000.0       (10 km disk at river mouth)
-  BALTICCOAST_CELL_FACTOR = 4.0         (marine cells coarser than river)
+  BALTICCOAST_RADIUS_M = 10_000.0                (10 km disk at river mouth)
+  BALTICCOAST_CELL_FACTOR_DEFAULT = 4.0          (marine cells coarser than river)
+  BALTICCOAST_CELL_FACTOR_OVERRIDE['example_morrumsan'] = 8.0
+                                                 (Mörrumsån's open Hanöbukten
+                                                 would otherwise blow past
+                                                 the cell-count cap)
 
 _load_or_fetch_marineregions caches the WFS response to
 tests/fixtures/_osm_cache/<short_name>_marineregions.json so the
-regenerator is offline-clean after first run with network."
+regenerator is offline-clean after the first run with network."
 ```
+
+**Important — commit the cached payloads in this same PR.** Once Task 2.C.2 has run successfully and produced the 4 `_marineregions.json` files in `tests/fixtures/_osm_cache/`, those are committed alongside the regenerated shapefiles. Future re-runs of the generator and CI test runs are then fully offline-clean. The `--refresh` flag (still to be added; see _fetch_wgbast_osm_polylines.py for the existing pattern) is the only trigger to re-fetch.
 
 ### Task 2.C.2: Add BalticCoast cell-generation step to the generator
 
 **Files:**
 - Modify: `scripts/_generate_wgbast_physical_domains.py`
+
+**Note on commit granularity:** the prescribed replacement adds ~90 lines to `write_river_shapefile`. To keep bisection narrow if the smoke-test fails, decompose into THREE commits within this task:
+
+- Commit A: Convert `cells = generate_cells(...)` → `fresh = generate_cells(...)` (pure rename, no behaviour change). Add `import pandas as pd` to module-level imports if absent. Run smoke test on Mörrumsån; expected: identical cell count.
+- Commit B: Add the BalticCoast geometry block (UTM detect, WFS load via `_load_or_fetch_marineregions`, mouth containment, `clip_sea_polygon_to_disk`, second `generate_cells` call). Concat `fresh + marine` into `cells`. Run smoke test; expected: 5 reaches per fixture, BalticCoast non-empty.
+- Commit C: Add the cell_id renumber + adjacency sanity check + the empty-Mouth guard. Run smoke test; expected: same 5 reaches, no RuntimeError.
+
+The Steps below describe the FINAL state after all 3 commits. Engineer applies each commit incrementally, smoke-testing between them.
 
 - [ ] **Step 1: Locate the `write_river_shapefile` function**
 
@@ -1169,9 +1315,12 @@ Replace it with:
     # --- BalticCoast marine reach -----------------------------------------
     # Pin both grids to the SAME UTM zone (freshwater centroid's zone)
     # so the adjacency check below sees no UTM↔WGS84 round-trip drift.
-    from modules.create_model_utils import detect_utm_epsg
-    from modules.create_model_marine import clip_sea_polygon_to_disk
-    from shapely.geometry import Point
+    # IMPORTANT: also add `from shapely.geometry import Point` and
+    # `from modules.create_model_utils import detect_utm_epsg`,
+    # `from modules.create_model_marine import clip_sea_polygon_to_disk`
+    # at the MODULE TOP of the script (alongside the existing imports
+    # near line 30-42). Importing inside the function works but is
+    # fragile under future refactors.
 
     fresh_geoms = []
     for info in reach_segments.values():
@@ -1201,9 +1350,12 @@ Replace it with:
         utm_epsg=utm_epsg,
     )
     bc_segment = {"segments": [bc_polygon], "frac_spawn": 0.0, "type": "sea"}
+    bc_cell_factor = BALTICCOAST_CELL_FACTOR_OVERRIDE.get(
+        river.short_name, BALTICCOAST_CELL_FACTOR_DEFAULT,
+    )
     marine = generate_cells(
         reach_segments={"BalticCoast": bc_segment},
-        cell_size=river.cell_size_m * BALTICCOAST_CELL_FACTOR,
+        cell_size=river.cell_size_m * bc_cell_factor,
         cell_shape="hexagonal",
         buffer_factor=1.0,
         min_overlap=0.1,
@@ -1215,9 +1367,11 @@ Replace it with:
             f"radius={BALTICCOAST_RADIUS_M}m)."
         )
 
-    # Concat freshwater + marine, renumber cell_ids to standardised format
+    # Concat freshwater + marine, renumber cell_ids with width adapted
+    # to the total count (so C00001 and C99999 sort lexically).
     cells = pd.concat([fresh, marine], ignore_index=True)
-    cells["cell_id"] = [f"C{i+1:04d}" for i in range(len(cells))]
+    width = max(4, len(str(len(cells))))
+    cells["cell_id"] = [f"C{i+1:0{width}d}" for i in range(len(cells))]
 
     log.info("Generated %d cells (fresh=%d + BalticCoast=%d)",
              len(cells), len(fresh), len(marine))
@@ -1228,12 +1382,19 @@ Replace it with:
     # --- Adjacency sanity check ------------------------------------------
     mouth_subset = cells[cells["reach_name"] == "Mouth"]
     marine_subset = cells[cells["reach_name"] == "BalticCoast"]
+    if mouth_subset.empty:
+        raise RuntimeError(
+            f"{river.river_name}: 0 cells assigned to 'Mouth' reach — "
+            f"check REACH_NAMES + partition output."
+        )
     marine_union = marine_subset.geometry.unary_union
     if marine_union is None or marine_union.is_empty:
         raise RuntimeError(
             f"{river.river_name}: BalticCoast geometry empty after concat."
         )
-    hits = mouth_subset.geometry.buffer(1e-7).intersects(marine_union).sum()
+    # Use a 1m buffer (≈1e-5° at WGS84 latitudes) to absorb sub-meter
+    # UTM↔WGS84 round-trip drift between the freshwater and marine grids.
+    hits = mouth_subset.geometry.buffer(1e-5).intersects(marine_union).sum()
     if hits == 0:
         raise RuntimeError(
             f"{river.river_name}: BalticCoast not adjacent to Mouth — "
@@ -1357,7 +1518,7 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
     # ... rest of existing rewrite_config body unchanged ...
 ```
 
-(Add a `log = logging.getLogger(__name__)` at module top if not present.)
+**Add at module top if not present** (verified absent today): both `import logging` AND `log = logging.getLogger(__name__)`. Without the import the logger creation will fail with `NameError: name 'logging' is not defined`.
 
 - [ ] **Step 3: Commit**
 
@@ -1530,8 +1691,8 @@ def test_reach_name_set(short_name: str):
 def test_balticcoast_cell_count_in_range(short_name: str):
     gdf, _cfg, reach_col = _load(short_name)
     n_bc = int((gdf[reach_col] == "BalticCoast").sum())
-    assert 100 <= n_bc <= 3000, (
-        f"{short_name}: BalticCoast cell count {n_bc} outside [100, 3000]"
+    assert 100 <= n_bc <= 5000, (
+        f"{short_name}: BalticCoast cell count {n_bc} outside [100, 5000]"
     )
 
 
@@ -1578,19 +1739,29 @@ def test_tornionjoki_larger_than_simojoki():
     )
 
 
-def test_balticcoast_southward_of_mouth():
-    """Sanity: marine cells are coastward (~south) of the river mouth."""
+def test_balticcoast_coastward_of_mouth():
+    """Sanity: BalticCoast centroid is at least 1 km away from Mouth
+    centroid (in any direction). For Bothnian Bay rivers the bay is
+    south of the mouth; for Mörrumsån, also south. The 0.01° threshold
+    (~1 km) detects "BalticCoast disk centred ON the mouth" or "disk
+    spuriously inland" — both bug modes."""
     for short_name in WGBAST:
         gdf, _cfg, reach_col = _load(short_name)
         mouth = gdf[gdf[reach_col] == "Mouth"]
         bc = gdf[gdf[reach_col] == "BalticCoast"]
         if mouth.empty or bc.empty:
             continue
-        mouth_lat = mouth.geometry.centroid.y.mean()
-        bc_lat = bc.geometry.centroid.y.mean()
-        assert bc_lat < mouth_lat + 0.05, (
-            f"{short_name}: BalticCoast centroid latitude ({bc_lat:.3f}) "
-            f"not south of Mouth ({mouth_lat:.3f})"
+        mouth_centroid = mouth.geometry.unary_union.centroid
+        bc_centroid = bc.geometry.unary_union.centroid
+        dist_deg = mouth_centroid.distance(bc_centroid)
+        assert dist_deg > 0.01, (
+            f"{short_name}: BalticCoast centroid {dist_deg:.4f}° from Mouth "
+            f"centroid (expected > 0.01° = ~1 km)"
+        )
+        # Bothnian Bay rivers + Mörrumsån all open SOUTH of the mouth
+        assert bc_centroid.y < mouth_centroid.y, (
+            f"{short_name}: BalticCoast centroid lat {bc_centroid.y:.4f} "
+            f"is not south of Mouth lat {mouth_centroid.y:.4f}"
         )
 ```
 
@@ -1725,12 +1896,20 @@ The Create Model UI's 🌊 Sea button is unchanged behaviourally; it just
 now imports from the shared module. The WGBAST batch generator is
 thinner — geometric algorithms live in `app/modules/`.
 
-### Removed — orphan Lithuanian template reaches
+### Breaking — orphan Lithuanian template reaches removed from WGBAST yamls
 
 Each WGBAST yaml inherited 4 stale reaches from the original
 `example_baltic` template (`Skirvyte`, `Leite`, `Gilija`, `CuronianLagoon`)
 that don't represent the WGBAST rivers. Removed; each WGBAST yaml now has
 exactly 5 reaches.
+
+**Downstream impact:** Any user code or analysis pinned to those reach
+names in `example_tornionjoki.yaml` / `example_simojoki.yaml` /
+`example_byskealven.yaml` / `example_morrumsan.yaml` will see KeyError.
+The reaches contributed nothing to the simulation (no shapefile cells,
+no spawn weight). They were carried as dead config from the original
+template-copy. `example_baltic.yaml` retains them since they represent
+real Curonian Lagoon distributaries.
 
 ### Verified
 
@@ -1796,8 +1975,31 @@ No gaps.
 - `filter_polygons_by_centerline_connectivity(centerline, polygons, tolerance_deg, max_polys, label)` — Tasks 2.A.3 + 2.B.1
 - `partition_polygons_along_channel(centerline, polygons, mouth_lon_lat, n_reaches)` — Tasks 2.A.4 + 2.B.1
 
-Constant names consistent: `BALTICCOAST_RADIUS_M = 10_000.0` and `BALTICCOAST_CELL_FACTOR = 4.0` in Task 2.C.1, used in 2.C.2.
+Constant names consistent: `BALTICCOAST_RADIUS_M = 10_000.0`, `BALTICCOAST_CELL_FACTOR_DEFAULT = 4.0`, and `BALTICCOAST_CELL_FACTOR_OVERRIDE = {"example_morrumsan": 8.0}` in Task 2.C.1, used in 2.C.2 via `BALTICCOAST_CELL_FACTOR_OVERRIDE.get(river.short_name, BALTICCOAST_CELL_FACTOR_DEFAULT)`.
 
 Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Section D + E.
 
 **Placeholder scan:** Each `[ ]` step has a concrete action. No "TBD"/"TODO"/"similar to". Every code block is complete and self-contained. Commit messages follow the existing repo convention.
+
+---
+
+# Plan revision history (v1 → v2)
+
+The original plan went through a multi-tool review (4 reviewers in parallel: codebase-fidelity, logic, numerical, skeptical-architect). 14 findings surfaced, all applied inline:
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| CRIT | 1 | Task 2.A.5 relative import `from .create_model_marine` would crash Shiny panel | Switched to absolute `from modules.create_model_marine import ...`; added warning |
+| CRIT | 2 | `MultiLineString.project()` returns 0 → Tornionjoki partition silently mis-ordered | `_orient_centerline_mouth_to_source` now does `linemerge` first, then coordinate-concat fallback for genuinely disjoint MLS; added unit test |
+| CRIT | 3 | Mörrumsån 240m cells × open Hanöbukten disk would trip `[100, 3000]` upper bound | Per-river `BALTICCOAST_CELL_FACTOR_OVERRIDE` (Mörrumsån: 8.0); test bound widened to `[100, 5000]` |
+| CRIT | 4 | Task 2.C.2 was one 90-line replacement with no bisection target | Decomposed into 3 commits (rename → BalticCoast block → checks) within the same task |
+| IMP | 5 | Test #1 used UTM zone 32633 for lon=0.5° (correct: 32631) | Fixed |
+| IMP | 6 | Cell-id width hardcoded `:04d`; overflows past 9999 | Adaptive width: `max(4, len(str(len(cells))))` |
+| IMP | 7 | Empty Mouth reach → misleading "no adjacency" error | Explicit `if mouth_subset.empty: raise` guard before the adjacency check |
+| IMP | 8 | `bc_lat < mouth_lat + 0.05` test trivially true | Tightened to `dist > 0.01°` AND `bc_lat < mouth_lat` |
+| IMP | 9 | UI regression test pointed at "the existing tests" with no file | Added explicit `test_create_model_panel_reexport_intact` |
+| IMP | 10 | Orphan removal silent breaking change | CHANGELOG entry promoted from `### Removed` to `### Breaking` with downstream-impact note |
+| IMP | 11 | WFS dependency with no fallback | Added Task 0 pre-flight + explicit "commit cached payloads" instruction |
+| INFO | 12 | No pre-flight Overpass check | Added Task 0 |
+| INFO | 13 | `_wire_wgbast_physical_configs.py` missing `import logging` | Plan now says to add both `import logging` and the logger |
+| INFO | 14 | `Point` imported only inside `write_river_shapefile` | Plan tells engineer to add at module top |
