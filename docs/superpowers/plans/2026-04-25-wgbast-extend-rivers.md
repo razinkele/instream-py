@@ -157,7 +157,7 @@ PR-2 has six sections (A–F). Sections A and B are pure refactors with no behav
 2.A.1 (create_model_marine + clip_sea + 3 tests)
 2.A.2 (mock-WFS tests)                    ← depends on 2.A.1
 2.A.3 (create_model_river + filter)
-2.A.4 (partition + 4 tests)               ← depends on 2.A.3
+2.A.4 (partition + 6 tests)               ← depends on 2.A.3
 2.A.5 (panel refactor + handler rewrite)  ← depends on 2.A.1
 
 2.B.1 (generator refactor)                ← depends on 2.A.3 + 2.A.4
@@ -1121,7 +1121,7 @@ await _refresh_map()
 
 This is a behaviour-preserving rewrite: the bbox-intersect + centroid-cover filter is now in `query_named_sea_polygon` instead of inline. Net effect: the handler is ~10 lines shorter, and the helper does the geographic filtering once for both UI and batch callers.
 
-- [ ] **Step 2: Verify no other call sites of `_query_marine_regions` exist**
+- [ ] **Step 2b: Verify no other call sites of `_query_marine_regions` exist**
 
 ```bash
 grep -rn "_query_marine_regions" app/ scripts/
@@ -1734,7 +1734,8 @@ Algorithm:
   2. Clip the polygon to a true-meters disk at the mouth (UTM, then back
      to WGS84). Both grids pinned to the same UTM zone for clean adjacency.
   3. generate_cells(..., type='sea') with the clipped polygon.
-  4. Concat fresh + marine, renumber cell_ids as f'C{i+1:04d}',
+  4. Concat fresh + marine, renumber cell_ids with adaptive width
+     (max(4, len(str(total_cells)))),
      run an adjacency sanity check.
 
 Existing BalticCoast YAML entry + per-reach CSVs (already shipped in
@@ -1864,7 +1865,7 @@ Bothnian smolts). Per-river overrides:
 
 - [ ] **Step 1: Locate the existing CSV-expansion helper**
 
-`_expand_per_cell_csv(src, dst, n_cells)` exists at line 211 of the file. It reads a Depths/Vels CSV, preserves the header lines (lines starting with `;` plus the count + flow-values rows), and replicates the first data row N times.
+`_expand_per_cell_csv(src, dst, n_cells)` exists in `scripts/_wire_wgbast_physical_configs.py`. (Line number was 211 in master pre-PR-2; after Task 2.D.1 lands new module-level constants and a junction-fix-up block, the line shifts. Locate by name.) It reads a Depths/Vels CSV, preserves the header lines (lines starting with `;` plus the count + flow-values rows), and replicates the first data row N times.
 
 **Module-level imports needed for the new helpers:** `_wire_wgbast_physical_configs.py` currently imports only `shutil`, `sys`, `pathlib.Path`, and `yaml` at module level (lines 22–28). `geopandas` is currently imported INSIDE `copy_reach_csvs` as a local. The new `_balticcoast_cell_count` helper needs `geopandas` at MODULE level — add `import geopandas as gpd` to the top-of-file imports BEFORE pasting the new helper. The local `import geopandas as gpd` inside `copy_reach_csvs` can stay or be removed (harmless duplicate).
 
@@ -1949,17 +1950,17 @@ import yaml
 from pathlib import Path
 for r in ['tornionjoki', 'simojoki', 'byskealven', 'morrumsan']:
     cfg = yaml.safe_load(Path(f'configs/example_{r}.yaml').read_text(encoding='utf-8'))
-    reaches = list(cfg['reaches'].keys())
+    reaches = sorted(cfg['reaches'].keys())  # sorted for stable comparison
     bc = cfg['reaches'].get('BalticCoast', {})
     print(f'{r:12s} reaches={reaches} fish_pred_min={bc.get(\"fish_pred_min\")}')"
 ```
 
-Expected:
+Expected (reaches printed in sorted order; YAML insertion order may differ but the SET must match):
 ```
-tornionjoki  reaches=['Mouth', 'Lower', 'Middle', 'Upper', 'BalticCoast'] fish_pred_min=0.95
-simojoki     reaches=['Mouth', 'Lower', 'Middle', 'Upper', 'BalticCoast'] fish_pred_min=0.95
-byskealven   reaches=['Mouth', 'Lower', 'Middle', 'Upper', 'BalticCoast'] fish_pred_min=0.95
-morrumsan    reaches=['Mouth', 'Lower', 'Middle', 'Upper', 'BalticCoast'] fish_pred_min=0.90
+tornionjoki  reaches=['BalticCoast', 'Lower', 'Middle', 'Mouth', 'Upper'] fish_pred_min=0.95
+simojoki     reaches=['BalticCoast', 'Lower', 'Middle', 'Mouth', 'Upper'] fish_pred_min=0.95
+byskealven   reaches=['BalticCoast', 'Lower', 'Middle', 'Mouth', 'Upper'] fish_pred_min=0.95
+morrumsan    reaches=['BalticCoast', 'Lower', 'Middle', 'Mouth', 'Upper'] fish_pred_min=0.90
 ```
 
 - [ ] **Step 5: Verify the simulation can still load each fixture**
@@ -2171,12 +2172,12 @@ micromamba run -n shiny python -m pytest tests/ -m "not slow" --ignore=tests/_de
 
 Runtime: ~25-30 minutes per CLAUDE.md memory.
 
-Expected: v0.46.0 baseline + ~36 new tests:
+Expected: v0.46.0 baseline + ~39 new tests:
 - `test_create_model_marine.py`: 8 (3 from 2.A.1 + 3 from 2.A.2 + 2 from 2.A.5)
-- `test_create_model_river.py`: 8 (3 from 2.A.3 + 3 from 2.A.4 + 2 MLS tests)
+- `test_create_model_river.py`: 9 (3 from 2.A.3 + 3 partition from 2.A.4 + 1 MLS-merge + 1 MLS-disjoint + 1 Y-shape)
 - `test_wgbast_river_extents.py`: 22 (4 rivers × 5 parametrized + 2 standalone)
 
-Total ≈ `1123 passed, 52 skipped, 64 deselected, 2 xfailed`. Treat as expected the new ~36 passes. Any pre-existing test that now FAILS must be diagnosed before proceeding.
+Total ≈ `1126 passed, 52 skipped, 64 deselected, 2 xfailed`. Treat as expected the new ~39 passes. Any pre-existing test that now FAILS must be diagnosed before proceeding.
 
 - [ ] **Step 2: If a previously-passing test fails, debug**
 
@@ -2306,12 +2307,31 @@ values, the impact is a corresponding reduction in total smolts/year
 modelled for that river. `example_baltic.yaml` retains the reaches —
 they represent real Curonian Lagoon distributaries there.
 
+### Required dependency
+
+- **GeoPandas ≥ 1.0** (uses `.union_all()`; the `.unary_union`
+  accessor is deprecated in 1.0 and removed in 2.0). The `shiny`
+  conda env on developer machines and the laguna server must be
+  updated before installing this release.
+
 ### Verified
 
-- New tests under `tests/test_create_model_marine.py`,
-  `tests/test_create_model_river.py`,
-  `tests/test_wgbast_river_extents.py` (~25 cases).
+- New tests under `tests/test_create_model_marine.py` (8),
+  `tests/test_create_model_river.py` (9),
+  `tests/test_wgbast_river_extents.py` (22) — 39 new cases total.
 - Full suite: same xfail/skip baseline as v0.46.0.
+
+### Internal changes
+
+- `_wire_wgbast_physical_configs.rewrite_config` now verifies and
+  fixes `BalticCoast.upstream_junction` to match
+  `Upper.downstream_junction` after orphan-reach removal.
+- `_wire_wgbast_physical_configs._balticcoast_cell_count` raises
+  `RuntimeError` if BalticCoast cells are absent (previously returned
+  0 silently and skipped CSV expansion).
+- `BalticCoast-{Depths,Vels,TimeSeriesInputs}.csv` presence is now
+  required and verified before CSV expansion; missing files raise
+  `RuntimeError` with a pointer to the prototype to copy from.
 ```
 
 - [ ] **Step 4: Run the full suite once more**
@@ -2378,9 +2398,23 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history (v1 → v2 → v3 → v4 → v5 → v6 → v7)
+# Plan revision history (v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8)
 
-SIX multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more, including 5 critical bugs the earlier loops missed entirely.
+SEVEN multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more (5 critical) the earlier loops missed; loop 7 found 13 workflow-cleanup items (zero runtime bugs) — that's genuine convergence.
+
+## Loop 7 (v7 → v8) — workflow consistency cleanup, no runtime bugs
+
+Architect-only review (numerical/logic reviewers' surface area covered exhaustively in prior loops). No runtime bugs surfaced.
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| HIGH | 1 | Duplicate "Step 2" in Task 2.A.5 (loop-4 fix inserted a new Step 2 in front of existing one) | Renumbered second occurrence to "Step 2b" |
+| HIGH | 2 | Test count math inconsistent across DAG, plan, self-review (8 vs 9 vs ~36 vs ~39) | Swept all references to: 9 in test_create_model_river.py, 39 new total, 1126 expected pass count |
+| HIGH | 3 | Stale commit message in Task 2.C.2 Step 5 — said `:04d` but code uses adaptive width | Updated commit message |
+| HIGH | 4 | CHANGELOG missing loop-6 additions (junction fix-up, required-CSV check, GeoPandas 1.0 dependency) | Added "Required dependency" + "Internal changes" subsections |
+| IMP | 5 | Stale absolute line citations after multiple fixes drift them | Switched to "locate by name" instructions |
+| IMP | 6 | Section D dict-key order assertion was fragile (relied on YAML insertion order) | Use `sorted()` for stable comparison |
+| LOW | 7 | Duplicate revision-history headers from prior edit conflicts | Deduped Loop 4 + Loop 5 headers |
 
 ## Loop 6 (v6 → v7) — fresh-eyes continued
 
@@ -2398,8 +2432,6 @@ SIX multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-ey
 
 ## Loop 5 (v5 → v6) — fresh-eyes continued
 
-## Loop 5 (v5 → v6) — fresh-eyes continued
-
 | Sev | # | Issue | Fix |
 |---|---|---|---|
 | CRIT | 1 | **Adjacency `buffer(1e-5)` anisotropic at 65°N** (~0.45m east-west, only ~1.1m north-south) — Tornio coast is N-S so E-W axis is the constraint. Test used `1e-7` (~1cm) — even worse. Both reviewers (architect + numerical) flagged independently. | Switched to UTM-projected buffer of 5 m in both generator and test. True meters, isotropic. |
@@ -2409,10 +2441,6 @@ SIX multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-ey
 | IMP | 5 | **Step ordering between regenerator and wire-script** — staging fixture files between the two scripts commits short CSVs. | Added explicit "DO NOT STAGE BETWEEN GENERATOR AND WIRE-SCRIPT RUNS" workflow note to Section D. |
 | LOW | 6 | `gdf.geometry.unary_union` deprecated in GeoPandas 1.0+ | Switched to `.union_all()` in the test file (loop-5 fix only; the generator already used `union_all()` after the buffer fix). |
 | INFO | 7 | Plan's loop-4 INFO-8 claim that `geom.exterior` drops holes during cell generation is WRONG — verified `generate_cells` line 173 uses `combined_buffer.intersection(poly)` which preserves holes. The note should be removed/updated. | Revision history table corrected; the original loop-4 INFO-8 entry is annotated. |
-
-## Loop 4 (v4 → v5) — fresh-eyes architect found bugs all 3 prior loops missed
-
-The architect (Opus) was given an explicit "fresh eyes, look for what prior reviewers missed" mandate. This produced findings of much higher severity than loops 2-3.
 
 ## Loop 4 (v4 → v5) — fresh-eyes architect found bugs all 3 prior loops missed
 
