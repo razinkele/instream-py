@@ -1512,7 +1512,14 @@ def _load_or_fetch_marineregions(
         # no features. Don't write a misleading empty cache.
         return gdf
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    # Atomic write: tmp file then os.replace. Defeats OneDrive sync /
+    # Defender real-time scan read-locks that could otherwise cause
+    # PermissionError [WinError 32] on the second write of the 4-river
+    # loop. os.replace is atomic on NTFS and Linux.
+    import os
+    tmp = cache.with_suffix(cache.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    os.replace(tmp, cache)
     return gdf
 ```
 
@@ -1827,16 +1834,22 @@ Expected: each river now lists 5 reaches. If any river's BalticCoast cell count 
 The regenerator iterates 4 rivers; a transient WFS hiccup or OneDrive sync lock on river #3 could leave a mixed state (rivers 1-2 post-regen, river 3 half-written or empty, river 4 still pre-regen). Section D's `_balticcoast_cell_count` will then raise opaque `FileNotFoundError` for the broken river. Catch this BEFORE Section D:
 
 ```bash
-# All 4 fixtures must show modified .shp files in git status
-git status --porcelain tests/fixtures/example_*/Shapefile/*.shp 2>&1 | tee /tmp/wgbast_shp_status.txt
-modified_count=$(grep -c "^.M" /tmp/wgbast_shp_status.txt || echo 0)
-if [ "$modified_count" != "4" ]; then
-    echo "ERROR: expected 4 modified .shp files (one per WGBAST river), got $modified_count"
-    echo "Partial regeneration — re-run the regenerator before proceeding."
-    cat /tmp/wgbast_shp_status.txt
-    exit 1
-fi
-echo "OK: all 4 WGBAST shapefiles regenerated"
+# All 4 fixtures must show modified .shp files in git status,
+# AND each shapefile's sibling files (.shx, .dbf, .prj) must also
+# be modified — otherwise the regenerator wrote .shp but OneDrive
+# sync locked a sibling, leaving a mismatched fixture.
+for ext in shp shx dbf prj; do
+    git status --porcelain tests/fixtures/example_*/Shapefile/*.${ext} 2>&1 \
+        > /tmp/wgbast_${ext}_status.txt
+    count=$(grep -c "^.M" /tmp/wgbast_${ext}_status.txt 2>/dev/null || echo 0)
+    if [ "$count" != "4" ]; then
+        echo "ERROR: expected 4 modified .${ext} files (one per WGBAST river), got $count"
+        echo "Partial regeneration — re-run the regenerator before proceeding."
+        cat /tmp/wgbast_${ext}_status.txt
+        exit 1
+    fi
+done
+echo "OK: all 4 WGBAST shapefiles regenerated (all 4 sibling extensions present)"
 ```
 
 If this fails: do NOT proceed to Step 5. Re-run Step 1 (the regenerator) until all 4 rivers complete. The regenerator IS idempotent on individual rivers — re-running overwrites cleanly.
