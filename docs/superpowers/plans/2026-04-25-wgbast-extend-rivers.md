@@ -399,7 +399,14 @@ def query_named_sea_polygon(
             if int(resp.headers.get("Content-Length", 0) or 0) > 50_000_000:
                 return None
             geoj = resp.json()
-    except Exception:
+    except Exception as exc:
+        # Log the exception class+message before swallowing so a CI
+        # failure has a hint (DNS vs 503 vs malformed JSON vs timeout).
+        import logging
+        logging.warning(
+            "Marine Regions WFS query failed (%s): %s",
+            type(exc).__name__, exc,
+        )
         return None
     if not geoj.get("features"):
         return None
