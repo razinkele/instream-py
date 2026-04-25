@@ -65,3 +65,87 @@ def test_clip_sea_polygon_to_disk_empty_sea_raises():
             radius_m=10_000,
             utm_epsg=32633,
         )
+
+
+def test_query_named_sea_polygon_post_filters_centroid_match(monkeypatch):
+    """Among multiple polygons returned by WFS, only the one containing
+    the bbox centroid should be returned."""
+    from modules import create_model_marine as m
+
+    # Two polygons — one covers the bbox centre, one only touches the bbox edge.
+    fake_geoj = {
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": "True Match"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-2, -2], [2, -2], [2, 2], [-2, 2], [-2, -2]
+                    ]],
+                },
+            },
+            {
+                "type": "Feature",
+                "properties": {"name": "Edge Toucher"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [1, 1], [3, 1], [3, 3], [1, 3], [1, 1]
+                    ]],
+                },
+            },
+        ],
+    }
+
+    class _FakeResp:
+        # __enter__/__exit__ required: query_named_sea_polygon uses
+        # `with requests.get(...) as resp:` (loop-35 fix for socket
+        # leak). Without context-manager protocol, the `with` raises
+        # TypeError before any of the helper's logic runs.
+        # `headers` empty dict satisfies the Content-Length lookup
+        # (loop-34 size cap).
+        headers: dict[str, str] = {}
+        def raise_for_status(self): pass
+        def json(self): return fake_geoj
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+
+    monkeypatch.setattr(m.requests, "get", lambda *a, **kw: _FakeResp())
+
+    result = m.query_named_sea_polygon((-1.0, -1.0, 1.0, 1.0))
+    assert result is not None
+    assert len(result) == 1
+    assert result.iloc[0]["name"] == "True Match"
+
+
+def test_query_named_sea_polygon_returns_none_on_http_error(monkeypatch):
+    """HTTP error → None (no exception)."""
+    from modules import create_model_marine as m
+
+    class _FailResp:
+        headers: dict[str, str] = {}
+        def raise_for_status(self):
+            raise RuntimeError("HTTP 500")
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+
+    monkeypatch.setattr(m.requests, "get", lambda *a, **kw: _FailResp())
+    result = m.query_named_sea_polygon((0, 0, 1, 1))
+    assert result is None
+
+
+def test_query_named_sea_polygon_returns_none_on_empty_features(monkeypatch):
+    """Empty WFS response → None."""
+    from modules import create_model_marine as m
+
+    class _EmptyResp:
+        headers: dict[str, str] = {}
+        def raise_for_status(self): pass
+        def json(self): return {"features": []}
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+
+    monkeypatch.setattr(m.requests, "get", lambda *a, **kw: _EmptyResp())
+    result = m.query_named_sea_polygon((0, 0, 1, 1))
+    assert result is None
