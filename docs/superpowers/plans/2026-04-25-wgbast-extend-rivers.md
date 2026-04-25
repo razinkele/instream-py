@@ -2563,6 +2563,13 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
 
+## Loop 29 — test-isolation concerns, both LOW (deferred)
+
+| Sev | # | Issue | Disposition |
+|---|---|---|---|
+| LOW | 1 | Each new test file does `sys.path.insert(0, ROOT/"app")` at module import time, mutating `sys.path` globally for the rest of the pytest session. Could collide with future test that names a top-level module `modules`. | **Deferred** — matches the existing codebase pattern (verified `tests/test_create_model_grid.py` does the same per loop-1 code-explorer finding). Fix would refactor ~10 existing test files; out of scope for this PR. Documented for future cleanup. |
+| LOW | 2 | `_load_or_fetch_marineregions` cache is an on-disk file under `tests/fixtures/_osm_cache/`. No test currently exercises this helper directly, but a future test that does would pollute committed fixture data. | **Deferred** — hypothetical. If a future test adds direct exercise of the helper, redirect `OSM_CACHE` via monkeypatch at that point. |
+
 ## Loop 28 — idempotency gap in regenerator partial-failure
 
 | Sev | # | Issue | Fix |
