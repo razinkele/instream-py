@@ -2499,7 +2499,7 @@ def test_balticcoast_offset_from_mouth(short_name: str):
 micromamba run -n shiny python -m pytest tests/test_wgbast_river_extents.py -v
 ```
 
-Expected: all PASS (22 tests = 4 rivers × 5 parametrized cases + 2 standalone).
+Expected: all PASS (25 tests = 4 rivers × 6 parametrized cases + 1 standalone).
 
 - [ ] **Step 3: Commit**
 
@@ -2523,12 +2523,12 @@ micromamba run -n shiny python -m pytest tests/ -m "not slow" --ignore=tests/_de
 
 Runtime: ~25-30 minutes per CLAUDE.md memory.
 
-Expected: v0.46.0 baseline + ~39 new tests:
+Expected: v0.46.0 baseline + ~42 new tests:
 - `test_create_model_marine.py`: 8 (3 from 2.A.1 + 3 from 2.A.2 + 2 from 2.A.5)
 - `test_create_model_river.py`: 9 (3 from 2.A.3 + 3 partition from 2.A.4 + 1 MLS-merge + 1 MLS-disjoint + 1 Y-shape)
-- `test_wgbast_river_extents.py`: 22 (4 rivers × 5 parametrized + 2 standalone)
+- `test_wgbast_river_extents.py`: 25 (4 rivers × 6 parametrized + 1 standalone)
 
-Total ≈ `1126 passed, 52 skipped, 64 deselected, 2 xfailed`. Treat as expected the new ~39 passes. Any pre-existing test that now FAILS must be diagnosed before proceeding.
+Total ≈ `1129 passed, 52 skipped, 64 deselected, 2 xfailed`. Treat as expected the new ~42 passes. Any pre-existing test that now FAILS must be diagnosed before proceeding.
 
 - [ ] **Step 2: If a previously-passing test fails, debug**
 
@@ -2688,7 +2688,7 @@ they represent real Curonian Lagoon distributaries there.
 
 - New tests under `tests/test_create_model_marine.py` (8),
   `tests/test_create_model_river.py` (9),
-  `tests/test_wgbast_river_extents.py` (22) — 39 new cases total.
+  `tests/test_wgbast_river_extents.py` (25) — 42 new cases total.
 - Full suite: same xfail/skip baseline as v0.46.0.
 
 ### Internal changes
