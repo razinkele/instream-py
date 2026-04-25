@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.3] — 2026-04-25
+
+### Fixed — connectivity-based polygon filter + along-channel reach split
+
+The v0.45.2 polygon filter used a fixed 0.02° (~2 km) buffer around the
+centerline. Result: any pond/lake within 2 km of the river got included
+even if hydrologically disconnected. Most visible on Mörrumsån (southern
+Sweden, dense lake density): 92 polygons of which many were unrelated.
+
+Fix:
+1. **Connectivity-based filter** (`_load_osm_polygons_filtered`):
+   STRtree-backed BFS from the centerline. Two polygons "touch" if their
+   distance is below `POLY_CONNECT_TOL_DEG = 0.0005°` (~55 m at the
+   target latitudes). Only polygons in the centerline-connected component
+   are kept. Capped at 2000 polygons to avoid pathological sea-grab.
+2. **Along-channel reach projection** (`_orient_centerline_mouth_to_source`
+   + `LineString.project()`): each polygon's centroid is projected onto
+   the centerline; reach quartiles split by along-line distance instead
+   of straight-line distance from the mouth. Fixes meandering rivers
+   where physically-close polygons are along-channel far apart.
+
+### Polygon counts before → after
+
+| River | v0.45.2 | v0.45.3 | Cells |
+|---|---|---|---|
+| Tornionjoki | 63 | 71 | 860 |
+| Simojoki | 132 | 87 | 2595 |
+| Byskealven | 65 | 32 | 925 |
+| **Morrumsan** | **92** | **26** | **489** |
+
+Mörrumsån's 92 → 26 reduction is the most dramatic — most of those 66
+extra polygons were disconnected lakes/ponds in the same bbox.
+
+### Added — Edit Model panel (MVP)
+
+New top-level navigation tab "Edit Model" (`bi-pencil-square` icon).
+Lets users:
+- Select an existing fixture from the dropdown (any fixture with both a
+  config and a shapefile)
+- See the reach polygons rendered on a deck.gl map, color-coded by reach
+- View a table of reach name / cell count / area in km²
+- **Rename a reach**: pick the old name, type the new name, hit Apply +
+  Save. Updates the shapefile, the YAML config (renames the reaches[old]
+  key), and renames the per-reach hydrology CSV stems
+  (`{old}-TimeSeriesInputs.csv` → `{new}-TimeSeriesInputs.csv`, etc.).
+
+Future iterations (v0.46+):
+- Merge / split reaches by clicking on the map
+- Adjust reach boundaries (lasso select)
+- Regenerate cells with a new cell size
+
+### Verified
+
+- All 4 Baltic-river fixtures pass `test_fixture_loads_and_runs_3_days`
+  (58s total).
+- `discover_fixtures()` returns all 7 expected fixtures (example_a,
+  example_b, example_baltic + 4 Baltic rivers).
+
 ## [0.45.2] — 2026-04-25
 
 ### Fixed — river grid now fills real water polygons, not line-buffer strips

@@ -43,10 +43,17 @@ from modules.create_model_grid import generate_cells  # noqa: E402
 
 OSM_CACHE = ROOT / "tests" / "fixtures" / "_osm_cache"
 
-# Polygon-filter radius around the waterway=river centerline (degrees).
-# 0.02° ≈ 2.2 km — keeps the river channel + connected small lakes,
-# excludes sea, distant unconnected lakes, etc.
-POLY_NEAR_CENTERLINE_DEG = 0.02
+# Polygon connectivity tolerance (degrees). Two polygons "touch" if their
+# distance is below this threshold. Generous enough to handle the small
+# gaps OSM tagging sometimes leaves between adjacent water polygons
+# (e.g. a road crossing tagged as a separate way). 0.0005° ≈ 55 m at
+# our latitudes — small enough to exclude unconnected ponds 100+ m away
+# but large enough to bridge OSM-tagging gaps within the river system.
+POLY_CONNECT_TOL_DEG = 0.0005
+
+# Maximum reach polygons to keep (largest connected component). Caps
+# memory if the centerline accidentally touches a major sea polygon.
+MAX_CONNECTED_POLYS = 2000
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -194,25 +201,30 @@ def _load_osm_ways(river: River) -> list[LineString] | None:
 def _load_osm_polygons_filtered(
     river: River, centerline: list[LineString]
 ) -> list:
-    """Load cached OSM water polygons, filter to those near the centerline.
+    """Load cached OSM water polygons, keep only the connected component
+    that touches the centerline.
 
-    The raw polygon fetch includes any water within the bbox — sea,
-    distant lakes, unconnected ponds. We keep only polygons that
-    intersect the centerline buffered by POLY_NEAR_CENTERLINE_DEG
-    (~2 km). This leaves the river's main channel + connected tributary
-    channels + small lakes the river flows through.
+    Algorithm (graph flood-fill):
+      1. Load all candidate polygons from cache.
+      2. Buffer each polygon by POLY_CONNECT_TOL_DEG (small bridge over
+         OSM tagging gaps).
+      3. Build an STRtree spatial index for fast neighbor lookup.
+      4. Seed the visited-set with polygons that intersect the merged
+         centerline (waterway=river ways).
+      5. BFS: for each visited polygon, find polygons whose buffered
+         envelope intersects → add to visited.
+      6. Return only visited polygons.
+
+    This eliminates disconnected lakes/ponds inside the bbox while
+    keeping the river system + tributaries + small connected lakes.
     """
     poly_cache = OSM_CACHE / f"{river.short_name}_polygons.json"
     if not poly_cache.exists():
         return []
     data = json.loads(poly_cache.read_text(encoding="utf-8"))
 
-    # Assemble centerline buffer (in WGS84 degrees — crude but fine as a
-    # near-filter; precise area work happens later in UTM inside generate_cells)
-    merged_line = unary_union(centerline)
-    near = merged_line.buffer(POLY_NEAR_CENTERLINE_DEG)
-
-    kept = []
+    # Parse all polygons
+    raw_polys = []
     for item in data:
         try:
             poly = shape(item["geometry"])
@@ -220,14 +232,57 @@ def _load_osm_polygons_filtered(
             continue
         if not poly.is_valid or poly.is_empty:
             continue
-        if near.intersects(poly):
-            # Clip to the near-buffer so we don't drag in half-a-sea when
-            # a coastal polygon just grazes the buffer
-            clipped = near.intersection(poly)
-            if not clipped.is_empty and clipped.geom_type in (
-                "Polygon", "MultiPolygon"
-            ):
-                kept.append(clipped)
+        if poly.geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        raw_polys.append(poly)
+
+    if not raw_polys:
+        return []
+
+    centerline_union = unary_union(centerline)
+    # Buffer each polygon by the connectivity tolerance for "touches"
+    buffered = [p.buffer(POLY_CONNECT_TOL_DEG) for p in raw_polys]
+
+    # Use STRtree for O(log n) spatial queries
+    from shapely.strtree import STRtree
+    tree = STRtree(buffered)
+
+    n = len(raw_polys)
+    visited = [False] * n
+    queue = []
+
+    # Seed: all polygons whose buffered envelope intersects the centerline
+    seed_buffered_line = centerline_union.buffer(POLY_CONNECT_TOL_DEG)
+    for i in tree.query(seed_buffered_line):
+        if seed_buffered_line.intersects(buffered[i]):
+            if not visited[i]:
+                visited[i] = True
+                queue.append(i)
+
+    if not queue:
+        log.warning(
+            "[%s] no polygons touch the centerline within %.4f deg — "
+            "centerline may be entirely outside any OSM water polygon",
+            river.river_name, POLY_CONNECT_TOL_DEG,
+        )
+        return []
+
+    # BFS to grow the connected component
+    while queue and sum(visited) < MAX_CONNECTED_POLYS:
+        i = queue.pop()
+        # Find any unvisited polygons whose buffer touches this one's
+        for j in tree.query(buffered[i]):
+            if visited[j]:
+                continue
+            if buffered[i].intersects(buffered[j]):
+                visited[j] = True
+                queue.append(j)
+
+    kept = [raw_polys[i] for i, v in enumerate(visited) if v]
+    log.info(
+        "[%s] connectivity filter: %d/%d polygons in the centerline-connected component",
+        river.river_name, len(kept), n,
+    )
     return kept
 
 
@@ -307,17 +362,54 @@ def build_reach_segments_from_osm(
     return segments
 
 
+def _orient_centerline_mouth_to_source(
+    centerline_union, mouth: Point
+):
+    """Return a LineString or MultiLineString oriented from mouth → source
+    so that LineString.project(p) returns 0 at the mouth and increases
+    upstream.
+
+    For a single LineString: flip if the mouth is closer to the end
+    coordinate than the start.
+    For a MultiLineString: order constituent lines by their nearest-
+    endpoint distance to the mouth and concatenate (best-effort — the
+    OSM way collection is rarely a single connected chain, but the
+    quartile splits are robust to this).
+    """
+    if centerline_union.geom_type == "LineString":
+        coords = list(centerline_union.coords)
+        # Distance to mouth from each endpoint
+        d_start = mouth.distance(Point(coords[0]))
+        d_end = mouth.distance(Point(coords[-1]))
+        if d_start > d_end:
+            coords = list(reversed(coords))
+        return LineString(coords)
+    # MultiLineString: best-effort sequential concat by nearest endpoint
+    lines = list(centerline_union.geoms)
+    # Sort by nearest endpoint distance to mouth
+    lines.sort(key=lambda ln: min(
+        mouth.distance(Point(ln.coords[0])),
+        mouth.distance(Point(ln.coords[-1])),
+    ))
+    # Just concatenate as MultiLineString — project() works on it
+    return centerline_union  # MultiLineString.project() is supported
+
+
 def build_reach_segments_from_polygons(
     river: River, centerline: list[LineString], polygons: list
 ) -> dict:
-    """Partition water polygons into 4 reaches by centroid distance from mouth.
+    """Partition water polygons into 4 reaches by ALONG-CHANNEL distance.
 
-    This is the highest-fidelity representation: each reach is a
-    MultiPolygon of actual water surface (channel, side channels, small
-    connected lakes), clipped to within POLY_NEAR_CENTERLINE_DEG of the
-    centerline. `generate_cells` sees a Polygon reach and uses it
-    directly without buffering — hex cells tessellate the real water
-    body's shape.
+    Improvement over v0.45.2 (which used straight-line distance from the
+    mouth): we project each polygon's centroid onto the centerline, then
+    sort by along-line distance. This handles meandering rivers and rivers
+    where some upstream polygons are physically close to the mouth but
+    far along the channel.
+
+    Each reach is a MultiPolygon of actual water surface from the
+    centerline-connected component (filtered earlier).
+    `generate_cells` sees `type='water'` and uses the polygons directly
+    without buffering — hex cells tessellate the real water shape.
     """
     if len(polygons) < 4:
         log.warning(
@@ -327,8 +419,13 @@ def build_reach_segments_from_polygons(
         return build_reach_segments_from_osm(river, centerline)
 
     mouth = Point(river.waypoints[0])
+    centerline_union = unary_union(centerline)
+    oriented = _orient_centerline_mouth_to_source(centerline_union, mouth)
+
+    # Score each polygon by its centroid's along-line distance from the
+    # mouth. project() returns the parametric distance along the line.
     scored = sorted(
-        ((p.centroid.distance(mouth), p) for p in polygons),
+        ((oriented.project(p.centroid), p) for p in polygons),
         key=lambda t: t[0],
     )
     n = len(scored)
@@ -340,18 +437,17 @@ def build_reach_segments_from_polygons(
     for i, name in enumerate(REACH_NAMES):
         lo, hi = slices[i]
         reach_polys = [p for _, p in scored[lo:hi]]
+        if not reach_polys:
+            continue
+        d_lo = scored[lo][0]
+        d_hi = scored[hi - 1][0]
         segments[name] = {
             "segments": reach_polys,
             "frac_spawn": FRAC_SPAWN[i],
             "type": "water",  # tells generate_cells to use polygons directly
         }
-        # Area summary
-        total_area_m2 = sum(
-            p.area * 111000 * 111000 for p in reach_polys
-        )  # rough conversion; real area computed in UTM later
-        log.info("  [%s] %d polys, ~%.1f degree² raw",
-                 name, len(reach_polys),
-                 sum(p.area for p in reach_polys))
+        log.info("  [%s] %d polys, along-line distance %.4f → %.4f deg",
+                 name, len(reach_polys), d_lo, d_hi)
     return segments
 
 
@@ -369,10 +465,9 @@ def build_reach_segments(river: River) -> dict:
 
     polygons = _load_osm_polygons_filtered(river, ways)
     if polygons:
-        log.info("[%s] using %d OSM water polygons (filtered to within %.3f° of "
-                 "centerline) + %d line ways as center reference.",
-                 river.river_name, len(polygons),
-                 POLY_NEAR_CENTERLINE_DEG, len(ways))
+        log.info("[%s] using %d OSM water polygons (centerline-connected "
+                 "component) + %d line ways as center reference.",
+                 river.river_name, len(polygons), len(ways))
         return build_reach_segments_from_polygons(river, ways, polygons)
 
     log.info("[%s] no polygons available; using %d OSM line ways.",
