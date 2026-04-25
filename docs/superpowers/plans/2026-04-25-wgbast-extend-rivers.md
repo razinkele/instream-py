@@ -2046,9 +2046,26 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ```
 
+- [ ] **Step 3b: Delete the orphan-reach CSVs from disk**
+
+The YAML edits in Step 2 drop `Skirvyte`, `Leite`, `Gilija`, `CuronianLagoon` from each river's `reaches:` block. But each fixture directory still contains 12 orphan CSVs (3 files × 4 reaches): `*-Depths.csv`, `*-TimeSeriesInputs.csv`, `*-Vels.csv`. Without explicit deletion, the CHANGELOG `### Breaking` claim is incomplete — config says the reaches don't exist, filesystem says they do, and a future user copying the fixture as a template inherits the cruft.
+
+```bash
+for river in tornionjoki simojoki byskealven morrumsan; do
+  for reach in Skirvyte Leite Gilija CuronianLagoon; do
+    for suffix in Depths TimeSeriesInputs Vels; do
+      f="tests/fixtures/example_${river}/${reach}-${suffix}.csv"
+      [ -f "$f" ] && git rm -f "$f" || true
+    done
+  done
+done
+```
+
+This stages 48 deletions for the next commit. (Verify with `git status --porcelain | grep '^D'` — expect 48 lines.)
+
 - [ ] **Step 4: Commit**
 
-Stage the SCRIPT (which drives the rewrite) AND the YAML files (which it just wrote). Without staging the YAMLs, this commit lands as "feat: ... drop orphan reaches" with a diff that contains zero reach drops — bisecting against this commit would be misleading.
+Stage the SCRIPT (which drives the rewrite) AND the YAML files (which it just wrote). Without staging the YAMLs, this commit lands as "feat: ... drop orphan reaches" with a diff that contains zero reach drops — bisecting against this commit would be misleading. Step 3b's `git rm` already staged the 48 orphan-CSV deletions.
 
 ```bash
 git add scripts/_wire_wgbast_physical_configs.py configs/example_*.yaml
@@ -2524,7 +2541,11 @@ names in `example_tornionjoki.yaml` / `example_simojoki.yaml` /
 `example_byskealven.yaml` / `example_morrumsan.yaml` will see KeyError.
 
 These reaches had **no shapefile cells attached**, so the spatial
-simulation was unaffected by their presence. However, **some do carry
+simulation was unaffected by their presence. The corresponding
+per-reach CSVs (`Skirvyte-*.csv`, `Leite-*.csv`, `Gilija-*.csv`,
+`CuronianLagoon-*.csv`) are also deleted from each fixture directory
+in this commit (48 files total: 4 rivers × 4 reaches × 3 file types),
+so config and filesystem now agree. However, **some do carry
 non-zero `pspc_smolts_per_year` values** that contributed to stock
 accounting:
 
