@@ -1457,9 +1457,10 @@ def _load_or_fetch_marineregions(
             # corrupted, manually emptied, or written by an old buggy
             # version of this script).
             raise RuntimeError(
-                f"Cache file {cache} is empty. Delete it and re-run "
-                f"with --refresh-marineregions, or copy a known-good "
-                f"cache from another developer's machine."
+                f"Cache file {cache} is empty (never a legitimate state). "
+                f"Delete it and re-run the generator (it will re-fetch from "
+                f"WFS), or copy a known-good cache from another developer's "
+                f"machine."
             )
         gdf = gpd.GeoDataFrame.from_features(data, crs="EPSG:4326")
         return gdf[["name", "geometry"]] if "name" in gdf.columns else gdf
@@ -1608,7 +1609,9 @@ Replace it with:
     if sea_gdf is None or sea_gdf.empty:
         raise RuntimeError(
             f"{river.river_name}: Marine Regions returned no sea polygon. "
-            f"Re-run when WFS recovers (or run with --refresh-marineregions)."
+            f"Re-run when WFS recovers (or delete the cached payload at "
+            f"tests/fixtures/_osm_cache/{river.short_name}_marineregions.json "
+            f"if it has gone stale and re-run to re-fetch)."
         )
     # Use a tiny buffer + intersects rather than strict contains.
     # The mouth waypoint often lies exactly on the IHO sea-area boundary
@@ -2460,6 +2463,12 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 12 review loops
 
 TWELVE multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loop 7: 13 cleanup. Loop 8: 2 LOW. Loop 9: 1 IMP + 3 LOW. Loop 10: 3 IMP + 2 LOW. Loop 11 (narrow regression check): **0 findings**. Loop 12 (final broad sweep): 2 IMP — graceful-degradation guard + cache disambiguation.
+
+## Loop 13 (v12 → v13) — final cleanup, 1 LOW
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| LOW | 1 | Error messages referenced `--refresh-marineregions` CLI flag that does not exist in the plan (line 1511 explicitly notes it's "still to be added") | Softened error messages to point at file-deletion + re-run instead. |
 
 ## Loop 12 (v11 → v12) — broad sweep, 2 IMP
 
