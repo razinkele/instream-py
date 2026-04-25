@@ -723,16 +723,22 @@ def filter_polygons_by_centerline_connectivity(
     # stable across versions). Without this, the `max_polys` cap could
     # surface a different polygon set on different machines / shapely
     # versions, producing non-byte-identical fixtures.
-    # tree.query() returns np.ndarray in shapely 2.x; .tolist() converts
-    # to plain list[int] so indexing buffered[i]/polys[i] doesn't see
-    # np.int64 (cleaner; future-proof against numpy dtype tightening).
-    for i in sorted(tree.query(seed_buffered_line).tolist()):
+    # `predicate="intersects"` (shapely ≥2.0) pushes the intersect
+    # check into GEOS's spatial index — returns only true-intersect
+    # hits, not bbox-envelope-overlap. Drops the redundant Python-side
+    # .intersects() check below and is materially faster on dense
+    # polygon networks (Tornionjoki ~9000 polygons). Without this,
+    # the max_polys cap could fire on bbox-overlap noise rather than
+    # real adjacency.
+    # .tolist() converts the np.ndarray to plain list[int] so
+    # indexing buffered[i]/polys[i] doesn't see np.int64.
+    for i in sorted(tree.query(seed_buffered_line, predicate="intersects").tolist()):
         if visited_count >= max_polys:
             # Cap also enforced during seeding — production case where
             # a long centerline touches more than max_polys polygons
             # directly (e.g., a dense lake-and-river network).
             break
-        if seed_buffered_line.intersects(buffered[i]) and not visited[i]:
+        if not visited[i]:
             visited[i] = True
             visited_count += 1
             queue.append(i)
@@ -757,13 +763,13 @@ def filter_polygons_by_centerline_connectivity(
     # function of input polygon order.
     while queue and visited_count < max_polys:
         i = queue.popleft()
-        for j in sorted(tree.query(buffered[i]).tolist()):
+        # Same predicate="intersects" optimization as the seed loop.
+        for j in sorted(tree.query(buffered[i], predicate="intersects").tolist()):
             if visited[j]:
                 continue
-            if buffered[i].intersects(buffered[j]):
-                visited[j] = True
-                visited_count += 1
-                queue.append(j)
+            visited[j] = True
+            visited_count += 1
+            queue.append(j)
 
     # Reorder kept output by sorted index so the result is also
     # order-deterministic regardless of BFS visit order.
