@@ -6,7 +6,11 @@
 
 **Architecture:** Two independent PRs. PR-1 is a one-line OSM-regex change to `scripts/_fetch_wgbast_osm_polylines.py` plus a Tornionjoki fixture regeneration. PR-2 introduces 2 new pure-Python helper modules (`create_model_marine.py`, `create_model_river.py`), refactors the WGBAST batch generator to import from them, adds Marine Regions WFS-clipped BalticCoast cells via `sea_polygon.intersection(disk)`, tunes per-river BalticCoast YAML parameters for Bothnian Bay vs Hanöbukten predator regimes, drops 4 orphan Lithuanian template reaches, and regenerates all 4 fixtures.
 
-**Tech Stack:** Python 3.11+, geopandas, shapely, pyproj, pandas, requests, pyyaml, pytest. Project conda env: `shiny` (per `CLAUDE.md`).
+**Tech Stack:** Python 3.11+, **geopandas ≥ 1.0** (uses `.union_all()`; the `.unary_union` accessor is deprecated in 1.0 and removed in 2.0), shapely ≥ 2.0, pyproj, pandas, requests, pyyaml, pytest. Project conda env: `shiny` (per `CLAUDE.md`). Verify the env meets the geopandas lower bound before starting:
+```bash
+micromamba run -n shiny python -c "import geopandas; print(geopandas.__version__)"
+```
+Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopandas` first.
 
 **Spec:** `docs/superpowers/specs/2026-04-25-wgbast-extend-rivers-design.md` (v4)
 
@@ -743,24 +747,37 @@ def test_partition_with_too_few_polygons():
 
 def test_partition_orders_by_along_channel_distance():
     """First group contains polygons closest to mouth; last group contains
-    polygons furthest from mouth."""
+    polygons furthest from mouth.
+
+    Uses 6 polygons over 3 reaches (2 per group) so the assertion
+    actually exercises the partition algorithm, not just len-1 slicing.
+    With 3 polys / 3 reaches each group would have exactly 1 polygon
+    and the assertion `near_mouth in groups[0]` would pass even with
+    a buggy zero-everything `.project()` because Python's stable sort
+    preserves insertion order — a false-positive."""
     from modules.create_model_river import partition_polygons_along_channel
 
-    centerline = [LineString([(0, 0), (10, 0)])]
-    near_mouth = Polygon([(0, -0.5), (1, -0.5), (1, 0.5), (0, 0.5)])
-    middle = Polygon([(4, -0.5), (5, -0.5), (5, 0.5), (4, 0.5)])
-    far = Polygon([(9, -0.5), (10, -0.5), (10, 0.5), (9, 0.5)])
+    centerline = [LineString([(0, 0), (12, 0)])]
+    p_a = Polygon([(0.5, -0.3), (1.5, -0.3), (1.5, 0.3), (0.5, 0.3)])    # near
+    p_b = Polygon([(2.5, -0.3), (3.5, -0.3), (3.5, 0.3), (2.5, 0.3)])    # near-mid
+    p_c = Polygon([(4.5, -0.3), (5.5, -0.3), (5.5, 0.3), (4.5, 0.3)])    # mid-low
+    p_d = Polygon([(6.5, -0.3), (7.5, -0.3), (7.5, 0.3), (6.5, 0.3)])    # mid-high
+    p_e = Polygon([(8.5, -0.3), (9.5, -0.3), (9.5, 0.3), (8.5, 0.3)])    # far-low
+    p_f = Polygon([(10.5, -0.3), (11.5, -0.3), (11.5, 0.3), (10.5, 0.3)])  # far
 
     groups = partition_polygons_along_channel(
         centerline=centerline,
-        polygons=[far, near_mouth, middle],   # input order shuffled
+        polygons=[p_f, p_d, p_b, p_a, p_e, p_c],   # input shuffled
         mouth_lon_lat=(0.0, 0.0),
         n_reaches=3,
     )
     assert len(groups) == 3
-    # First group should contain near_mouth
-    assert near_mouth in groups[0]
-    assert far in groups[2]
+    # First group should contain the two nearest (p_a, p_b)
+    assert p_a in groups[0] and p_b in groups[0]
+    # Middle group should contain p_c, p_d
+    assert p_c in groups[1] and p_d in groups[1]
+    # Last group should contain p_e, p_f
+    assert p_e in groups[2] and p_f in groups[2]
 ```
 
 - [ ] **Step 2: Run the new tests to confirm they fail**
@@ -939,6 +956,53 @@ def test_partition_handles_disjoint_multilinestring():
     )
     assert near_mouth in groups[0], "near-mouth polygon not in first group (disjoint MLS)"
     assert far in groups[1], "far polygon not in last group (disjoint MLS)"
+
+
+def test_partition_handles_y_shaped_multilinestring():
+    """Y-junction case (real Tornionjoki+Muonio shape): mouth at one end,
+    centerline branches in two directions. The fallback's
+    Euclidean-distance sort produces a self-crossing synthetic
+    LineString — verify partition still places near-mouth polygons in
+    the first reach group regardless of which branch they're on.
+
+    This is the case the prior tests (1-D colinear segments) cannot
+    surface: real branching geometry where Euclidean distance from
+    mouth ≠ along-channel distance."""
+    from shapely.geometry import MultiLineString
+    from modules.create_model_river import partition_polygons_along_channel
+
+    # Trunk going north, then branches NE (Torne main) and NW (Muonio)
+    # Mouth at (0, 0). Trunk: (0,0)→(0,3). NE branch: (0,3)→(2,5). NW: (0,3)→(-2,5).
+    cl = MultiLineString([
+        [(0, 0), (0, 3)],     # trunk (mouth → confluence)
+        [(0, 3), (2, 5)],     # NE branch (Torne main)
+        [(0, 3), (-2, 5)],    # NW branch (Muonio)
+    ])
+    # 6 polygons: 2 near mouth, 2 mid-trunk, 1 each on NE and NW branches
+    p_mouth_a = Polygon([(0.1, 0.0), (0.4, 0.0), (0.4, 0.3), (0.1, 0.3)])
+    p_mouth_b = Polygon([(-0.4, 0.0), (-0.1, 0.0), (-0.1, 0.3), (-0.4, 0.3)])
+    p_mid_a = Polygon([(0.1, 1.5), (0.4, 1.5), (0.4, 1.8), (0.1, 1.8)])
+    p_mid_b = Polygon([(-0.4, 1.5), (-0.1, 1.5), (-0.1, 1.8), (-0.4, 1.8)])
+    p_ne = Polygon([(1.7, 4.5), (2.0, 4.5), (2.0, 4.8), (1.7, 4.8)])
+    p_nw = Polygon([(-2.0, 4.5), (-1.7, 4.5), (-1.7, 4.8), (-2.0, 4.8)])
+
+    groups = partition_polygons_along_channel(
+        centerline=cl,
+        polygons=[p_ne, p_nw, p_mid_a, p_mid_b, p_mouth_a, p_mouth_b],
+        mouth_lon_lat=(0.0, 0.0),
+        n_reaches=3,
+    )
+    # First group must contain BOTH near-mouth polygons (they're closer
+    # to mouth than mid-trunk, regardless of which branch they sit on).
+    assert p_mouth_a in groups[0] and p_mouth_b in groups[0], (
+        "near-mouth polygons not in first group (Y-shaped MLS): "
+        f"groups[0]={groups[0]}"
+    )
+    # Last group must contain BOTH branch-end polygons.
+    assert p_ne in groups[2] and p_nw in groups[2], (
+        "branch-end polygons not in last group (Y-shaped MLS): "
+        f"groups[2]={groups[2]}"
+    )
 ```
 
 Add to the existing imports at the top of the file:
@@ -952,7 +1016,7 @@ from shapely.geometry import Point  # noqa: F401  (used inside _orient_centerlin
 micromamba run -n shiny python -m pytest tests/test_create_model_river.py -v
 ```
 
-Expected: 8 PASS (3 from Task 2.A.3 + 3 partition tests + 1 MLS-merge test + 1 MLS-disjoint test).
+Expected: 9 PASS (3 from Task 2.A.3 + 3 partition tests + 1 MLS-merge + 1 MLS-disjoint + 1 Y-shape).
 
 - [ ] **Step 5: Commit**
 
@@ -1001,9 +1065,9 @@ Note we do NOT alias as `_query_marine_regions` — the consumer is being rewrit
 
 After the edit, verify with:
 ```bash
-grep -n "import requests\|MARINE_REGIONS_WFS" app/modules/create_model_panel.py
+grep -n "import requests\|MARINE_REGIONS_WFS\|requests\.get\|_query_marine_regions" app/modules/create_model_panel.py
 ```
-Expected: no matches. Strict-mode ruff (CI) flags F401 for unused imports — leaving them in breaks CI.
+Expected: only one match — the new import line `from modules.create_model_marine import query_named_sea_polygon` (which doesn't appear in the grep pattern; the grep should return EMPTY). Specifically, no `requests.get(...)` reference must remain — that would mean the body of the original `_query_marine_regions` was left in place when only its `def` line was removed. Strict-mode ruff (CI) flags F401 for unused imports — leaving them in breaks CI.
 
 - [ ] **Step 2: Rewrite the `_on_fetch_sea` handler to consume a GeoDataFrame**
 
@@ -1521,10 +1585,32 @@ Replace it with:
     # with-holes is also handled correctly by generate_cells (line 173
     # uses combined_buffer.intersection(poly) which preserves holes —
     # cells inside an island get empty intersection and are dropped).
+    #
+    # Edge case: shapely's intersection can return a GeometryCollection
+    # when the disk and sea polygon share an exact boundary segment.
+    # Filter to (Multi)Polygon members so generate_cells doesn't get
+    # passed a degenerate Point/LineString that would silently produce
+    # zero cells.
     if bc_polygon.geom_type == "MultiPolygon":
         bc_segments = list(bc_polygon.geoms)
-    else:
+    elif bc_polygon.geom_type == "Polygon":
         bc_segments = [bc_polygon]
+    elif bc_polygon.geom_type == "GeometryCollection":
+        bc_segments = [
+            g for g in bc_polygon.geoms
+            if g.geom_type in ("Polygon", "MultiPolygon")
+        ]
+        if not bc_segments:
+            raise RuntimeError(
+                f"{river.river_name}: BalticCoast intersection returned a "
+                f"GeometryCollection with no polygon members "
+                f"(only points/lines). Disk likely tangent to coastline."
+            )
+    else:
+        raise RuntimeError(
+            f"{river.river_name}: unexpected geometry type "
+            f"{bc_polygon.geom_type!r} from clip_sea_polygon_to_disk"
+        )
     bc_segment = {"segments": bc_segments, "frac_spawn": 0.0, "type": "sea"}
     bc_cell_factor = BALTICCOAST_CELL_FACTOR_OVERRIDE.get(
         river.short_name, BALTICCOAST_CELL_FACTOR_DEFAULT,
@@ -1717,6 +1803,28 @@ def rewrite_config(cfg_path: Path, stem: str, pspc_total: int) -> None:
             cfg["reaches"]["BalticCoast"][k] = v
         log.info("[%s] BalticCoast overrides applied: %s", short_name, overrides)
 
+    # Verify BalticCoast junction integers connect to Upper.downstream.
+    # Pre-existing template-inherited reaches may have stale junctions
+    # (e.g. Klaipėda topology). After orphan reaches are dropped, the
+    # chain should be Mouth(1→2) → Lower(2→3) → Middle(3→4) →
+    # Upper(4→5) → BalticCoast(5→6).
+    upper = cfg["reaches"].get("Upper", {})
+    bc = cfg["reaches"].get("BalticCoast", {})
+    if upper and bc:
+        upper_dn = upper.get("downstream_junction")
+        bc_up = bc.get("upstream_junction")
+        if upper_dn != bc_up:
+            log.warning(
+                "[%s] BalticCoast.upstream_junction=%s != Upper.downstream_junction=%s; "
+                "fixing to match",
+                short_name, bc_up, upper_dn,
+            )
+            cfg["reaches"]["BalticCoast"]["upstream_junction"] = upper_dn
+            # downstream_junction stays as 6 (or whatever next-int is) —
+            # BalticCoast is the terminal reach
+            if cfg["reaches"]["BalticCoast"].get("downstream_junction") in (None, upper_dn):
+                cfg["reaches"]["BalticCoast"]["downstream_junction"] = upper_dn + 1
+
     # ... rest of existing rewrite_config body unchanged ...
 ```
 
@@ -1792,14 +1900,37 @@ def copy_reach_csvs(short_name: str, stem: str) -> None:
 
     # Re-expand BalticCoast Depths/Vels to match the new cell count
     n_bc = _balticcoast_cell_count(short_name)
-    if n_bc > 0:
-        fix_dir = ROOT / "tests" / "fixtures" / short_name
-        for suffix in ("Depths.csv", "Vels.csv"):
-            path = fix_dir / f"BalticCoast-{suffix}"
-            if path.exists():
-                _expand_per_cell_csv(path, path, n_bc)
-                log.info("[%s] re-expanded BalticCoast-%s to %d rows",
-                         short_name, suffix, n_bc)
+    if n_bc <= 0:
+        # Reach is in the YAML but has no shapefile cells — Section C
+        # likely failed for this river. Bail loudly so the engineer
+        # re-runs Section C rather than committing a broken fixture.
+        raise RuntimeError(
+            f"[{short_name}] BalticCoast reach has 0 shapefile cells. "
+            f"Section C (BalticCoast cell generation) must run successfully "
+            f"before Section D's CSV expansion."
+        )
+    fix_dir = ROOT / "tests" / "fixtures" / short_name
+    # Verify the per-reach CSVs exist. Existing fixtures all ship them
+    # (template-inherited from example_baltic), but a future river may
+    # not — surface the missing-file case explicitly.
+    required_csvs = ("Depths.csv", "Vels.csv", "TimeSeriesInputs.csv")
+    missing = [s for s in required_csvs
+               if not (fix_dir / f"BalticCoast-{s}").exists()]
+    if missing:
+        raise RuntimeError(
+            f"[{short_name}] missing BalticCoast CSVs: {missing}. "
+            f"Copy from configs/example_baltic.yaml's fixture template "
+            f"or generate via _wire_wgbast_physical_configs.py's "
+            f"`copy_reach_csvs` extended for BalticCoast."
+        )
+    for suffix in ("Depths.csv", "Vels.csv"):
+        path = fix_dir / f"BalticCoast-{suffix}"
+        _expand_per_cell_csv(path, path, n_bc)
+        log.info("[%s] re-expanded BalticCoast-%s to %d rows",
+                 short_name, suffix, n_bc)
+    # BalticCoast-TimeSeriesInputs.csv is per-reach (not per-cell), so
+    # its row count doesn't change with cell count. Verify presence
+    # but don't modify.
 ```
 
 - [ ] **Step 3: Run the wire script for all 4 rivers**
@@ -1881,7 +2012,7 @@ Create `tests/test_wgbast_river_extents.py`:
 
 Asserts post-regeneration invariants:
   - Each fixture has exactly 5 reaches: {Mouth, Lower, Middle, Upper, BalticCoast}
-  - BalticCoast cell count is in [100, 3000]
+  - BalticCoast cell count is in [100, 5000]
   - BalticCoast cells are spatially adjacent to Mouth cells
   - YAML reaches: section has exactly 5 entries (no orphans)
   - Tornionjoki has more cells than Simojoki (PR-1 acceptance)
@@ -2025,7 +2156,7 @@ git add tests/test_wgbast_river_extents.py
 git commit -m "test(wgbast): fixture-shape regression for 5-reach WGBAST fixtures
 
 Asserts each fixture has {Mouth, Lower, Middle, Upper, BalticCoast},
-BalticCoast cell count in [100, 3000], BalticCoast adjacent to Mouth
+BalticCoast cell count in [100, 5000], BalticCoast adjacent to Mouth
 both geometrically and via junction integers, and Tornionjoki > Simojoki
 in cell count (PR-1 acceptance)."
 ```
@@ -2247,9 +2378,25 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 
 ---
 
-# Plan revision history (v1 → v2 → v3 → v4 → v5 → v6)
+# Plan revision history (v1 → v2 → v3 → v4 → v5 → v6 → v7)
 
-The plan went through FIVE multi-tool review loops. Loops 1-3 surfaced 33 findings; loop 4 (fresh-eyes mandate) found 3 more critical bugs all 3 prior loops missed. Loop 5 (continued fresh-eyes mandate) found 1 critical + 4 important + 2 low — convergence still not achieved.
+SIX multi-tool review loops. Loops 1-3 surfaced 33 findings; loops 4-6 (fresh-eyes mandate) found 24 more, including 5 critical bugs the earlier loops missed entirely.
+
+## Loop 6 (v6 → v7) — fresh-eyes continued
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| CRIT | 1 | **Y-shape MLS test missing** — disjoint-MLS test used 1-D colinear segments. Real Tornionjoki+Muonio Y-junction would silently mis-partition (Euclidean-distance sort interleaves branches). | Added `test_partition_handles_y_shaped_multilinestring` with explicit Y-geometry; updated test count to 9. |
+| IMP | 2 | `[100, 3000]` cell count range mismatch in test docstring + commit message (test asserts 5000) | Swept all references to the widened bound. |
+| IMP | 3 | `test_partition_orders_by_along_channel_distance` was vacuous (3 polys / 3 reaches → 1 each, stable sort). | Rewrote with 6 polys / 3 reaches; tests middle group too. |
+| IMP | 4 | BalticCoast `upstream_junction` not verified to match `Upper.downstream_junction` after orphan-reach removal. | Added junction-graph fix-up logic in `rewrite_config`. |
+| IMP | 5 | BalticCoast-TimeSeriesInputs.csv presence not verified (only Depths/Vels). | Added required-file verification + raise on missing. Wire script now raises if BalticCoast cells = 0 (instead of silently skipping). |
+| IMP | 6 | `union_all()` requires GeoPandas ≥1.0; project's lower bound was 0.14. | Added explicit GeoPandas ≥1.0 requirement to Tech Stack + version-check command. |
+| IMP | 7 | Task 2.A.5 deletion boundary unclear — could leave `requests.get(...)` if engineer mis-bounds the replacement. | Verification grep extended to also check for `requests.get` and `_query_marine_regions`. |
+| IMP | 8 | `bc_polygon` could be `GeometryCollection` (disk-coastline tangent case) — guard didn't cover. | Added explicit branch: GeometryCollection → filter polygons; else → raise on unexpected type. |
+| LOW | 9 | `_balticcoast_cell_count` returned 0 silently if cells absent | Now raises `RuntimeError` with re-run instruction. |
+
+## Loop 5 (v5 → v6) — fresh-eyes continued
 
 ## Loop 5 (v5 → v6) — fresh-eyes continued
 
