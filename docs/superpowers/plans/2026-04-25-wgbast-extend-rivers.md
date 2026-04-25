@@ -1799,10 +1799,29 @@ Expected log output:
 - [ ] **Step 4: Re-run the diagnostic probe**
 
 ```bash
-micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 micromamba run -n shiny python scripts/_probe_wgbast_river_extents.py
 ```
 
 Expected: each river now lists 5 reaches. If any river's BalticCoast cell count is 0 or > 5000, the disk radius / cell factor needs adjusting. (Mörrumsån specifically uses cell-factor 8.0 to keep its open-Hanöbukten count under 5000.)
+
+- [ ] **Step 4b: Atomic-regenerate sanity check (catches partial-failure)**
+
+The regenerator iterates 4 rivers; a transient WFS hiccup or OneDrive sync lock on river #3 could leave a mixed state (rivers 1-2 post-regen, river 3 half-written or empty, river 4 still pre-regen). Section D's `_balticcoast_cell_count` will then raise opaque `FileNotFoundError` for the broken river. Catch this BEFORE Section D:
+
+```bash
+# All 4 fixtures must show modified .shp files in git status
+git status --porcelain tests/fixtures/example_*/Shapefile/*.shp 2>&1 | tee /tmp/wgbast_shp_status.txt
+modified_count=$(grep -c "^.M" /tmp/wgbast_shp_status.txt || echo 0)
+if [ "$modified_count" != "4" ]; then
+    echo "ERROR: expected 4 modified .shp files (one per WGBAST river), got $modified_count"
+    echo "Partial regeneration — re-run the regenerator before proceeding."
+    cat /tmp/wgbast_shp_status.txt
+    exit 1
+fi
+echo "OK: all 4 WGBAST shapefiles regenerated"
+```
+
+If this fails: do NOT proceed to Step 5. Re-run Step 1 (the regenerator) until all 4 rivers complete. The regenerator IS idempotent on individual rivers — re-running overwrites cleanly.
 
 - [ ] **Step 5: Commit**
 
@@ -2543,6 +2562,12 @@ Reach name set `{Mouth, Lower, Middle, Upper, BalticCoast}` consistent across Se
 # Plan revision history — 17 review loops, convergence confirmed
 
 SEVENTEEN multi-tool review loops. Loops 1-3: 33 findings. Loops 4-6 (fresh-eyes mandate): 24 more (5 critical). Loops 7-15: 30 more findings (mostly polish + a few non-CRIT correctness items). **Loops 16 + 17: ZERO findings each — convergence confirmed by two consecutive absolute-zero loops.**
+
+## Loop 28 — idempotency gap in regenerator partial-failure
+
+| Sev | # | Issue | Fix |
+|---|---|---|---|
+| MED | 1 | Regenerator iterates 4 rivers; a transient WFS/OneDrive issue on river #3 could leave mixed state (1-2 regenerated, 3 half-written, 4 unchanged). Section D's `_balticcoast_cell_count` then fails opaquely on river 3. Recovery via `git reset` doesn't apply because the regenerator commit hasn't happened yet. | Added Step 4b that runs `git status --porcelain` against all 4 fixture `.shp` files; fails fast with explicit "partial regeneration" error if not all 4 are modified. |
 
 ## Loop 27 — more Unicode/locale issues, same class as loop 26
 
