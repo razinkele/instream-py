@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from pathlib import Path
 
 import geopandas as gpd
 import yaml
+from shapely.geometry import shape
 from shiny import module, reactive, render, ui
 from shiny_deckgl import MapWidget, geojson_layer
 
@@ -145,6 +147,16 @@ def edit_model_ui():
                 ui.input_action_button(
                     "do_rename", "Apply rename + save", class_="btn-primary",
                 ),
+                ui.hr(),
+                ui.h5("Merge two reaches"),
+                ui.input_action_button(
+                    "merge_start", "Start merge: click reach A", class_="btn-warning",
+                ),
+                ui.output_ui("merge_status"),
+                ui.input_text("merge_new_name", "New combined name", placeholder="e.g. Estuary"),
+                ui.input_action_button(
+                    "merge_apply", "Apply merge", class_="btn-primary",
+                ),
                 ui.output_ui("save_status"),
             ),
             ui.column(
@@ -176,6 +188,9 @@ def edit_model_server(input, output, session):
         "shp_path": None,
     })
     last_save = reactive.value("")
+
+    # Merge state machine: idle -> pick_a -> pick_b -> ready
+    merge_state = reactive.value({"phase": "idle", "reach_a": None})
 
     @reactive.effect
     def _load_on_select():
@@ -354,3 +369,131 @@ def edit_model_server(input, output, session):
         new_state["cfg"] = cfg
         state.set(new_state)
         last_save.set(f"✓ renamed '{old}' → '{new}' and saved")
+
+    # ------------------------------------------------------------------
+    # Merge two reaches (click-click)
+    # ------------------------------------------------------------------
+    @reactive.effect
+    @reactive.event(input.merge_start)
+    def _merge_start():
+        s = state()
+        if s["cells"] is not None:
+            reach_col = "REACH_NAME" if "REACH_NAME" in s["cells"].columns else "reach_name"
+            n_reaches = s["cells"][reach_col].nunique()
+            if n_reaches < 2:
+                last_save.set(
+                    f"❌ merge: fixture has only {n_reaches} reach — "
+                    "need at least 2 to merge. Use rename or lasso instead."
+                )
+                return
+        merge_state.set({"phase": "pick_a", "reach_a": None})
+        last_save.set("merge: click any cell of the first reach")
+
+    @reactive.effect
+    def _merge_on_click():
+        click_input_name = _widget.feature_click_input_id
+        try:
+            payload = getattr(input, click_input_name)()
+        except Exception:
+            return
+        if not payload:
+            return
+        ms = merge_state()
+        if ms["phase"] not in ("pick_a", "pick_b"):
+            return
+        feature = payload.get("object") if isinstance(payload, dict) else None
+        if not feature:
+            return
+        props = feature.get("properties", {})
+        clicked_reach = props.get("REACH_NAME") or props.get("reach_name")
+        if not clicked_reach:
+            return
+        if ms["phase"] == "pick_a":
+            merge_state.set({"phase": "pick_b", "reach_a": clicked_reach})
+            last_save.set(f"reach A = {clicked_reach}; click reach B")
+        elif ms["phase"] == "pick_b":
+            if clicked_reach == ms["reach_a"]:
+                last_save.set("❌ same reach picked twice; cancel and retry")
+                return
+            merge_state.set({
+                "phase": "ready", "reach_a": ms["reach_a"], "reach_b": clicked_reach,
+            })
+            last_save.set(
+                f"reach A = {ms['reach_a']}, reach B = {clicked_reach}; "
+                "type a new name and Apply"
+            )
+
+    @output
+    @render.ui
+    def merge_status():
+        ms = merge_state()
+        if ms["phase"] == "idle":
+            return ui.HTML("")
+        return ui.div(
+            {"class": "alert alert-info", "style": "padding:6px;"},
+            f"phase: {ms['phase']}, A={ms.get('reach_a')}, B={ms.get('reach_b','-')}",
+        )
+
+    @reactive.effect
+    @reactive.event(input.merge_apply)
+    def _merge_apply():
+        s = state()
+        ms = merge_state()
+        new_name = (input.merge_new_name() or "").strip()
+        if ms["phase"] != "ready" or not new_name:
+            last_save.set("❌ merge: pick A and B then enter a new name")
+            return
+        if s["cells"] is None:
+            return
+        a, b = ms["reach_a"], ms["reach_b"]
+        cells = s["cells"].copy()
+        reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
+        cells.loc[cells[reach_col].isin([a, b]), reach_col] = new_name
+
+        cfg = dict(s["cfg"])
+        if "reaches" in cfg:
+            new_reaches = {}
+            merged_in = False
+            for k, v in cfg["reaches"].items():
+                if k in (a, b):
+                    if not merged_in:
+                        new_reaches[new_name] = dict(cfg["reaches"][a])
+                        merged_in = True
+                else:
+                    new_reaches[k] = v
+            r = new_reaches.get(new_name, {})
+            for fk in ("time_series_input_file", "depth_file", "velocity_file"):
+                v = r.get(fk, "")
+                if isinstance(v, str) and v.startswith(f"{a}-"):
+                    r[fk] = v.replace(f"{a}-", f"{new_name}-", 1)
+            cfg["reaches"] = new_reaches
+
+            fixture_dir = s["shp_path"].parent.parent
+            for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
+                src = fixture_dir / f"{a}-{suffix}"
+                if src.exists():
+                    dst = fixture_dir / f"{new_name}-{suffix}"
+                    if dst.exists() and dst != src:
+                        dst.unlink()
+                    src.rename(dst)
+                # b's CSVs become orphaned — leave on disk for manual cleanup
+
+        try:
+            cells.to_file(s["shp_path"], driver="ESRI Shapefile")
+            with open(s["cfg_path"], "w", encoding="utf-8") as f:
+                f.write(
+                    f"# {s['short_name']} — merged via Edit Model panel.\n"
+                    f"# Reaches '{a}' and '{b}' combined into '{new_name}'.\n#\n"
+                )
+                yaml.safe_dump(cfg, f, sort_keys=False, default_flow_style=False)
+        except Exception as exc:
+            logger.exception("merge save failed")
+            last_save.set(f"❌ save failed: {exc}")
+            return
+
+        new_state = dict(s)
+        new_state["cells"] = cells
+        new_state["cfg"] = cfg
+        state.set(new_state)
+        merge_state.set({"phase": "idle", "reach_a": None})
+        last_save.set(f"✓ merged '{a}' + '{b}' → '{new_name}' and saved")
