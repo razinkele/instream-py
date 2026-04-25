@@ -53,6 +53,12 @@ Expected: ≥ 1.0. If lower, `micromamba update -n shiny -c conda-forge geopanda
 
 **Shell contract.** All ` ```bash ` fenced blocks in this plan assume a POSIX shell (Git-Bash on Windows, or any Unix shell). They use idioms that do NOT work natively in PowerShell or `cmd.exe`: `/tmp/...`, `tee`, `find`, `grep -E`, `for ... in ... do ... done`, `[ -f "$f" ]`, `$(...)`, `2>/dev/null`, `|| true`. Loops 59 + 60 fixed two cases where Python-side action was the right portability answer (encoding, wallclock); the rest of this plan stays POSIX-bash by design (writing every block triple-shell-portable would triple plan length). On a Windows machine whose default terminal is PowerShell, wrap each bash block with `bash -lc '...'` or open Git-Bash explicitly.
 
+**Stale-tempfile hygiene.** Several bash blocks redirect into `/tmp/wgbast_*` files (preflight Overpass JSON, Section B before/after extent dumps, Section D wire-log, Step 4b per-extension status). Stale files from a prior failed run can mask later runs' regressions (`diff` vs an old `_before.txt` returns empty even if the new run also failed). Run this once at the start of any retry:
+
+```bash
+rm -f /tmp/wgbast_*.txt /tmp/wgbast_*.json /tmp/wire_log.txt /tmp/preflight_overpass.json
+```
+
 This is NOT a task and should NOT be dispatched to a subagent (no code change, no commit). The orchestrator (or the engineer running this plan inline) verifies external service reachability + locale settings + dependency presence before starting:
 
 ```bash
