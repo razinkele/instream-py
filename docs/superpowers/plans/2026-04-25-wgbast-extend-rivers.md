@@ -1370,14 +1370,14 @@ Expected: same pre-task baseline + 8 new tests in test_create_model_marine.py.
 
 ```bash
 git add app/modules/create_model_panel.py tests/test_create_model_marine.py
-git commit -m "refactor(create_model_panel): use shared query_named_sea_polygon
+git commit -m "refactor(create_model_panel): adopt shared query_named_sea_polygon
 
-Replaces the private _query_marine_regions with a re-export from
-app/modules/create_model_marine.py. The 🌊 Sea button at line 229 keeps
-its existing behaviour — same call site at line 733, just resolved
-via the new shared module.
-
-Behaviour-preserving."
+Replaces the private dict-returning _query_marine_regions with the
+shared GeoDataFrame-returning query_named_sea_polygon from
+app/modules/create_model_marine.py. The 🌊 Sea button at line 229
+keeps its observable behaviour; internally the _on_fetch_sea handler
+was rewritten to consume a GeoDataFrame (consumer-side refactor,
+~10 lines shorter). Type contract changed: dict → GeoDataFrame."
 ```
 
 ## Section B — WGBAST generator refactor (extraction only)
@@ -1985,7 +1985,10 @@ Algorithm:
   1. Marine Regions WFS returns the IHO polygon for the bbox
      (Gulf of Bothnia for the 3 northern rivers; Baltic Sea for Morrumsan).
   2. Clip the polygon to a true-meters disk at the mouth (UTM, then back
-     to WGS84). Both grids pinned to the same UTM zone for clean adjacency.
+     to WGS84). Marine disk pinned to the MOUTH's UTM zone; freshwater
+     grid retains its own centroid's UTM zone (set by generate_cells).
+     Cross-zone differences reconciled via WGS84 reprojection +
+     5m-UTM adjacency buffer.
   3. generate_cells(..., type='sea') with the clipped polygon.
   4. Concat fresh + marine, renumber cell_ids with adaptive width
      (max(4, len(str(total_cells)))),
