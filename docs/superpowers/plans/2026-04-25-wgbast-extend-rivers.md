@@ -2417,6 +2417,7 @@ Asserts post-regeneration invariants:
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import geopandas as gpd
@@ -2424,6 +2425,13 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+# Hoisted from test-function-local scope so it runs once per session,
+# not on every parametrized invocation. Required for `from modules.X`
+# imports below (matches existing test-suite pattern in
+# tests/test_create_model_grid.py).
+sys.path.insert(0, str(ROOT / "app"))
+
+from modules.create_model_utils import detect_utm_epsg  # noqa: E402
 
 WGBAST = ["example_tornionjoki", "example_simojoki", "example_byskealven", "example_morrumsan"]
 EXPECTED_REACHES = {"Mouth", "Lower", "Middle", "Upper", "BalticCoast"}
@@ -2485,10 +2493,7 @@ def test_balticcoast_geometric_adjacency_to_mouth(short_name: str):
     # Project to UTM for a true-meters adjacency check, matching the
     # generator's tolerance (5 m). A WGS84-degree buffer here would be
     # anisotropic at Bothnian Bay latitudes and could spuriously fail.
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(ROOT / "app"))
-    from modules.create_model_utils import detect_utm_epsg
+    # (`detect_utm_epsg` is imported once at module top — see header.)
     mouth_centroid = mouth.geometry.union_all().centroid
     utm_epsg = detect_utm_epsg(mouth_centroid.x, mouth_centroid.y)
     mouth_utm = mouth.to_crs(epsg=utm_epsg)
