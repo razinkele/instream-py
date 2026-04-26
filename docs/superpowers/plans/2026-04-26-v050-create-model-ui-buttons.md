@@ -185,8 +185,21 @@ _ISO_TO_GEOFABRIK: dict[str, str] = {
     "fi": "finland",
     "no": "norway",
     "dk": "denmark",
-    "ru": "russia",
 }
+# Note: ISO "ru" intentionally NOT mapped — `GEOFABRIK_REGIONS` only has
+# "kaliningrad" for Russia (see create_model_osm.py:54). A user typing a
+# place in Russia outside Kaliningrad gets the (None, bbox) "no Geofabrik
+# extract" fallback path.
+
+# Sanity: every ISO mapping resolves to a known Geofabrik country at import
+# time so a future bad addition fails loudly here, not silently in
+# ui.update_select.
+try:
+    from modules.create_model_osm import GEOFABRIK_COUNTRIES as _GFC
+    _bad = [v for v in _ISO_TO_GEOFABRIK.values() if v not in _GFC]
+    assert not _bad, f"_ISO_TO_GEOFABRIK contains unknown Geofabrik names: {_bad}"
+except ImportError:
+    pass  # tests may import this module without the panel siblings
 
 try:
     from salmopy import __version__
@@ -383,7 +396,7 @@ except ImportError:  # pragma: no cover
     lookup_place_bbox = None  # type: ignore[assignment]
 ```
 
-- [ ] **Step 3.3: Add UI controls** — find the closing `</div>` of the existing single `cm-toolbar` div in `create_model_ui()` (after the existing buttons, around line 268). Insert a SECOND `cm-toolbar` div directly below:
+- [ ] **Step 3.3: Add UI controls** — find the closing of the existing single `cm-toolbar` div in `create_model_ui()` (the div containing the existing fetch/select/action buttons + sliders, ending after the `toolbar_badges` output). Insert a SECOND `cm-toolbar` div directly after that one closes:
 
 ```python
 ui.div(
@@ -421,7 +434,7 @@ ui.div(
     _finding = reactive.value(False)             # Find debounce
 ```
 
-- [ ] **Step 3.5: Refactor `_on_fetch_rivers`** — split the existing handler body (panel lines 593-674). Replace lines 593-674 with:
+- [ ] **Step 3.5: Refactor `_on_fetch_rivers`** — find the existing `@reactive.event(input.fetch_rivers)` handler `_on_fetch_rivers` (currently ~80 lines starting with `country = input.osm_country()`). Replace the entire decorator + function with:
 
 ```python
     async def _do_fetch_rivers():
@@ -513,7 +526,7 @@ ui.div(
         await _do_fetch_rivers()
 ```
 
-- [ ] **Step 3.6: Refactor `_on_fetch_water`** — replace existing lines 676-696 with:
+- [ ] **Step 3.6: Refactor `_on_fetch_water`** — find the existing `@reactive.event(input.fetch_water)` handler `_on_fetch_water` (~20 lines). Replace the entire decorator + function with:
 
 ```python
     async def _do_fetch_water():
@@ -686,14 +699,10 @@ def _sea_gdf(polygon):
 def test_pick_mouth_returns_endpoint_near_sea_offshore_gap():
     """Endpoint sits ~1 km outside the sea polygon, simulating the
     Simojoki regression where the v0.47.0 batch generator's centerline
-    endpoint was 945 m offshore. Polygon offset to (2.015, 2.015) so
+    endpoint was 945 m offshore. Polygon offset to (2.005-2.05) so
     (2.0, 2.0) is OUTSIDE the polygon's nearest edge."""
     from modules.create_model_panel import _pick_mouth_from_sea
     line = LineString([(1.0, 1.0), (2.0, 2.0)])
-    sea = Polygon([
-        (1.99, 1.99), (2.04, 1.99), (2.04, 2.04), (1.99, 2.04), (1.99, 1.99)
-    ]).buffer(0.005)  # offset slightly so (2.0, 2.0) is just outside
-    # Actually use a clearly-offshore polygon:
     sea = Polygon([
         (2.005, 2.005), (2.05, 2.005), (2.05, 2.05), (2.005, 2.05), (2.005, 2.005)
     ])
@@ -765,13 +774,25 @@ def _pick_mouth_from_sea(centerline_geoms, sea_gdf):
       (lon, lat) WGS84 of the closest endpoint, or None if all endpoints
       are >5 km from any sea polygon, or if `detect_utm_epsg` is unavailable.
     """
+    from shapely.ops import linemerge
     if detect_utm_epsg is None:
         return None
     if not centerline_geoms or len(sea_gdf) == 0:
         return None
 
     centerline = unary_union(centerline_geoms)
-    sea_union = unary_union(list(sea_gdf.geometry))
+    # linemerge collapses end-to-end-connected sub-lines into single LineStrings
+    # so we don't enumerate interior-junction endpoints (e.g. tributary forks)
+    # as candidate mouths.
+    if centerline.geom_type == "MultiLineString":
+        centerline = linemerge(centerline)
+
+    # Filter null/empty sea polygons defensively (Marine Regions WFS occasionally
+    # returns null geometries on bbox-edge cases).
+    sea_geoms = [g for g in sea_gdf.geometry if g is not None and not g.is_empty]
+    if not sea_geoms:
+        return None
+    sea_union = unary_union(sea_geoms)
 
     if centerline.geom_type == "LineString":
         endpoints = [Point(centerline.coords[0]), Point(centerline.coords[-1])]
@@ -903,11 +924,20 @@ except ImportError:  # pragma: no cover
             return
 
         n_reaches = int(input.auto_split_n() or 4)
+        if n_reaches < 1:
+            ui.notification_show("N must be ≥ 1", type="warning")
+            return
         rivers_gdf = _rivers_gdf()
         water_gdf  = _water_gdf()
 
         centerline_mask = rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
         centerline_geoms = list(rivers_gdf[centerline_mask].geometry)
+        if not centerline_geoms:
+            ui.notification_show(
+                "Rivers layer has no LineString geometries — cannot Auto-split",
+                type="warning",
+            )
+            return
         polys_list = list(water_gdf.geometry)
 
         if n_reaches > len(polys_list):
@@ -966,7 +996,15 @@ except ImportError:  # pragma: no cover
         )
 ```
 
-- [ ] **Step 5.4: Edit `_on_map_click`** — insert mouth_pick branch between the existing `if not sel:` early-return at panel line 883 and the `from shapely.geometry import Point as _Pt` at line 885:
+**State machine note** (no code changes needed): `_on_strahler_change`,
+`_on_fetch_rivers`, `_on_fetch_water`, `_on_fetch_sea`, `_on_sel_river`,
+`_on_sel_lagoon`, `_on_sel_sea`, and `_on_find` do NOT need to read or
+update `_selection_mode == "mouth_pick"`. Per the spec's state-machine
+table, mouth_pick mode is silently overwritten by sel_* button presses
+(via `_toggle_selection_mode`) and persists across other handlers. No
+guards needed in those existing handlers.
+
+- [ ] **Step 5.4: Edit `_on_map_click`** — find the existing `if not sel: ... return` early-return block (followed by the `from shapely.geometry import Point as _Pt` line). Insert the mouth_pick branch BETWEEN those two — i.e., after the `if not sel:` early-return and BEFORE the `Point` local import:
 
 ```python
         # NEW: mouth_pick branch handled before reach_name guard (no associated reach)
@@ -979,7 +1017,7 @@ except ImportError:  # pragma: no cover
             return
 ```
 
-- [ ] **Step 5.5: Edit `_on_clear_reaches`** — find the existing handler at panel line 783-790. Insert `_mouth_lon_lat.set(None)` immediately after the existing `_selection_mode.set("")` line (was line 787):
+- [ ] **Step 5.5: Edit `_on_clear_reaches`** — find the existing handler decorated with `@reactive.event(input.clear_reaches_btn)`. Insert `_mouth_lon_lat.set(None)` immediately after the existing `_selection_mode.set("")` line:
 
 ```python
         _reaches_dict.set({})
