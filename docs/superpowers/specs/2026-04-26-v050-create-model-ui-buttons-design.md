@@ -39,9 +39,21 @@ Auto:  [text input: Place name        ] 🔍 Find  ·  ✨ Auto-extract  ·  ⚡
 ```
 
 **Three new reactive event handlers** in `app/modules/create_model_panel.py`
-(one per button), all soft-fail with `ui.notification_show` toasts. No new
-reactive vars — the existing `fetched_rivers()`, `fetched_water()`, `fetched_sea()`
-flags are reused for prerequisite checks.
+(one per button), all soft-fail with `ui.notification_show` toasts.
+
+**Reactive vars reused** (verified against `create_model_panel.py:324-350`):
+- `_rivers_gdf = reactive.value(None)` — Rivers OSM GDF (truthy via `is not None`).
+- `_water_gdf = reactive.value(None)` — Water OSM GDF.
+- `_sea_gdf = reactive.value(None)` — Sea polygon GDF.
+- `_reaches_dict = reactive.value({})` — `{reach_name: [LineString, ...]}` — Auto-split writes here.
+- `_selection_mode = reactive.value("")` — currently `""/"river"/"lagoon"/"sea"`; add fourth value `"mouth_pick"` for click-mouth fallback (mutual exclusion with existing values is automatic).
+- `_pending_fly_to = reactive.value(None)` — `(lon, lat, zoom)` tuple — existing
+  mechanism for programmatic map navigation. Find handler writes here.
+
+**One new reactive var** added:
+- `_auto_extract_done = reactive.value(False)` — set to True after Auto-extract
+  successfully runs; reset to False when `_water_gdf` is reassigned by a fresh
+  fetch_water click. Auto-split's prereq check reads this flag.
 
 **One new helper module** `app/modules/create_model_geocode.py` (~80 LOC):
 
@@ -53,7 +65,7 @@ flags are reused for prerequisite checks.
   name (e.g., `"lt" → "lithuania"`). Coverage matches the existing
   `GEOFABRIK_COUNTRIES` set in `create_model_osm.py`.
 - Pattern mirrors `query_named_sea_polygon` from v0.47.0:
-  - User-Agent header per Nominatim ToS (`"inSTREAM-py/<version> (arturas.razinkovas-baziukas@ku.lt)"`).
+  - User-Agent header per Nominatim ToS, format: `f"inSTREAM-py/{salmopy.__version__} (arturas.razinkovas-baziukas@ku.lt)"`. The version is read once at module import time from `src/salmopy/__init__.py`.
   - `requests.get` with `timeout_s` and `with`-block to ensure connection-pool
     socket return on Windows.
   - Content-Length cap (5 MB — Nominatim responses are typically <50 KB).
@@ -77,28 +89,34 @@ lookup_place_bbox("Klaipėda")
   → returns ("lithuania", (21.05, 55.65, 21.25, 55.78))
   ↓
 1. ui.update_select("osm_country", selected="lithuania")
-2. await _widget.update(session, layers=[...]) at bbox center, zoom=10
-3. set programmatic-trigger reactive var → existing fetch_rivers handler fires
-4. set programmatic-trigger reactive var → existing fetch_water handler fires
+2. _pending_fly_to.set((bbox_center_lon, bbox_center_lat, 10))
+   — the existing fly-to effect handler at create_model_panel.py:758 picks this
+   up and calls _widget.update(session, layers, view_state=…)
+3. await _do_fetch_rivers(session)  # see refactor note below
+4. await _do_fetch_water(session)
   ↓
 Toast: "Loaded Klaipėda, Lithuania (lat 55.71, lon 21.15). Fetching rivers and water…"
 ```
 
-Implementation note: the existing `@reactive.event(input.fetch_rivers)` handler
-watches a button counter. To trigger it programmatically without a real
-click, introduce a separate `_programmatic_fetch_rivers = reactive.value(0)`
-counter and a second `@reactive.event(_programmatic_fetch_rivers)` handler
-that calls the same internal coroutine. (Or simpler: refactor the existing
-handler body into a `_do_fetch_rivers()` async function that both handlers
-call.) The plan will lock this in.
+**Implementation note — programmatic fetch trigger**: the existing
+`@reactive.event(input.fetch_rivers)` handler (panel line 593) and
+`input.fetch_water` handler (line 676) need to be callable from the Find
+handler without simulating a button click. The plan refactors each handler
+body into a `async def _do_fetch_rivers(session)` (and `_do_fetch_water`)
+helper that takes the session as an argument and updates `_rivers_gdf` /
+`_water_gdf`. The original `@reactive.event` handlers shrink to a one-line
+delegating call: `await _do_fetch_rivers(session)`. The Find handler awaits
+both helpers sequentially. **No new reactive counter vars** — direct
+function calls only. Risk is small (the refactor is purely lifting code into
+a function); the regression test is the manual checklist (steps 1–6).
 
 ### ✨ Auto-extract
 
 ```
-Prereq: fetched_rivers() AND fetched_water() both True
+Prereq: _rivers_gdf() is not None AND _water_gdf() is not None
   ↓
-centerline = current rivers GeoDataFrame.geometry  (already in reactive state)
-polygons   = current water GeoDataFrame.geometry   (already in reactive state)
+centerline = _rivers_gdf().geometry  (LineString sequence)
+polygons   = _water_gdf().geometry   (Polygon/MultiPolygon sequence)
   ↓
 filter_polygons_by_centerline_connectivity(
     centerline, polygons,
@@ -107,8 +125,10 @@ filter_polygons_by_centerline_connectivity(
     label="auto-extract",
 )  → returns kept polygons
   ↓
-Replace fetched_water reactive var GDF with kept polygons
-Re-render water layer on map (existing helper)
+filtered_gdf = gpd.GeoDataFrame(geometry=kept_polygons, crs=_water_gdf().crs)
+_water_gdf.set(filtered_gdf)
+_auto_extract_done.set(True)
+  → existing render_water_layer effect (panel line ~595) re-fires on _water_gdf change
   ↓
 Toast: "Kept 26 of 92 polygons in the main river system."
 ```
@@ -116,24 +136,36 @@ Toast: "Kept 26 of 92 polygons in the main river system."
 ### ⚡ Auto-split
 
 ```
-Prereq: Auto-extract has run (fetched_water is the filtered subset)
+Prereq: _auto_extract_done() is True
   ↓
-mouth_lon_lat = pick from Sea polygon if fetched_sea() else enter "click mouth" mode
+mouth_lon_lat = pick from _sea_gdf() if _sea_gdf() is not None
+                else enter "click mouth" mode (set _selection_mode("mouth_pick"))
   ↓
 groups = partition_polygons_along_channel(
-    centerline, polygons,
+    _rivers_gdf().geometry, _water_gdf().geometry,
     mouth_lon_lat=mouth,
     n_reaches=int(input.auto_split_n()),
 )
-names = default_reach_names(N)
+names = default_reach_names(N)  # ["Mouth","Lower","Middle","Upper"] for N=4
   ↓
-Update reaches reactive var: list of {name, polygons, color} dicts
-  (one entry per reach, polygons = groups[i], color = matplotlib tab10[i])
-Re-render map: each reach in a different color
-Update reach table at bottom of panel
+reaches = {names[i]: groups[i] for i in range(N) if groups[i]}
+_reaches_dict.set(reaches)  # existing reactive var; render_reach_layer
+                            # effect re-fires on change
   ↓
 Toast: "Split into 4 reaches: Mouth (12), Lower (15), Middle (8), Upper (5)."
 ```
+
+**Reach color palette**: a hardcoded module-level constant in
+`create_model_panel.py`:
+```python
+_REACH_COLORS = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
+    "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
+    "#bcbd22", "#17becf",  # matplotlib tab10 hex values, no dependency
+]
+```
+Indexed cyclically by reach order (`_REACH_COLORS[i % 10]`). No matplotlib
+import needed.
 
 **Mouth-from-Sea-polygon algorithm** (when fetched_sea() is True):
 
@@ -150,21 +182,29 @@ This needs `_orient_centerline_mouth_to_source` to be promoted to a public
 function (rename: drop the leading underscore) — it's already battle-tested
 by the WGBAST batch generator since v0.47.0.
 
-**Click-mouth mode** (Auto-split fallback when fetched_sea() is False):
+**Click-mouth mode** (Auto-split fallback when `_sea_gdf() is None`):
 
 ```
-Initial:   normal map clicks → existing behavior (sel_river_btn etc.)
-After ⚡ click with no Sea polygon:
-  → set mouth_click_mode reactive flag = True
-  → toolbar shows status text: "Click on the map to set the river mouth, then ⚡ again"
-  → next map click sets mouth_lon_lat reactive var, clears flag
-  → next ⚡ click runs split with the stored mouth
+Initial:   _selection_mode() == "" or "river"/"lagoon"/"sea"
+After ⚡ click with _sea_gdf() is None:
+  → _selection_mode.set("mouth_pick")
+  → status text: "Click on the map to set the river mouth, then ⚡ again"
+  → existing @reactive.event(input.map_click_trigger) handler at panel line 859
+    branches on _selection_mode() — add "mouth_pick" branch that:
+      1. captures click lon/lat into a new reactive var _mouth_lon_lat
+      2. resets _selection_mode.set("")
+  → next ⚡ click reads _mouth_lon_lat() and runs split
 ```
 
-Piggybacks on the existing `map_click_trigger` JS bridge (the same pattern
-the `sel_*_btn` selection modes already use — proven since v0.30.x). Click
-mode auto-clears if any other selection mode button is pressed (mutual
-exclusion with `sel_river_btn` / `sel_lagoon_btn` / `sel_sea_btn`).
+Piggybacks on the existing `_selection_mode` reactive var (panel line 348)
+and `map_click_trigger` JS bridge — same pattern as `sel_river_btn` /
+`sel_lagoon_btn` / `sel_sea_btn` (proven since v0.30.x). Mutual exclusion
+with the three sel_* modes is automatic since they all write to the same
+reactive var.
+
+**One additional reactive var** added for click-mouth mode:
+- `_mouth_lon_lat = reactive.value(None)` — `(lon, lat)` tuple set by the
+  click-mode handler. Read by Auto-split when `_sea_gdf() is None`.
 
 ## Error handling
 
@@ -182,20 +222,21 @@ exclusion with `sel_river_btn` / `sel_lagoon_btn` / `sel_sea_btn`).
 
 | Case | Behavior |
 |------|----------|
-| `fetched_rivers()` False | Toast "Click 🌊 Rivers first to load the centerline" |
-| `fetched_water()` False | Toast "Click 💧 Water first to load polygons" |
-| BFS returns empty (centerline doesn't touch any polygon) | Toast "No connected polygons — try lowering Strahler threshold or checking that Rivers + Water cover the same area" |
-| Single polygon (no-op) | Run anyway; toast "Kept 1 of 1 polygons" |
+| `_rivers_gdf() is None` | Toast "Click 🌊 Rivers first to load the centerline" |
+| `_water_gdf() is None` | Toast "Click 💧 Water first to load polygons" |
+| BFS returns empty (centerline doesn't touch any polygon) | Toast "No connected polygons — try lowering Strahler threshold or checking that Rivers + Water cover the same area"; `_auto_extract_done` stays False |
+| Single polygon (no-op) | Run anyway; toast "Kept 1 of 1 polygons"; `_auto_extract_done.set(True)` |
 
 ### Auto-split
 
 | Case | Behavior |
 |------|----------|
-| Auto-extract not yet run (water polygons still unfiltered) | Toast "Click ✨ Auto-extract first" |
+| `_auto_extract_done() is False` | Toast "Click ✨ Auto-extract first" |
+| `_sea_gdf() is None and _mouth_lon_lat() is None` (no Sea, no prior click) | Set `_selection_mode.set("mouth_pick")`; status text "Click on the map to set the river mouth, then ⚡ again". Skip split this time. |
 | N > polygon count | Helper returns mostly-empty groups; toast warning "Only M polygons found — last (N–M) reaches will be empty. Try fewer reaches." Non-fatal. |
 | N=1 | Single reach with all polygons; toast "Created 1 reach (try N≥2 for spatial split)" |
-| Mouth-click mode timeout | If user enters click mode but doesn't click within 30 s, exit silently (state flag clears on next button press). No timer; just state-driven. |
-| Re-running Auto-split | Overwrites prior reach assignment; toast "Re-split into N reaches (previous split discarded)" |
+| Re-running Auto-split | Overwrites `_reaches_dict`; toast "Re-split into N reaches (previous split discarded)" |
+| `fetch_water` clicked after Auto-extract (resets `_water_gdf`) | Existing `_water_gdf` watch effect resets `_auto_extract_done.set(False)` — Auto-split prereq fails until user re-runs Auto-extract |
 
 ## Testing
 
@@ -251,8 +292,32 @@ No new dependencies. Uses already-present:
 
 ## Risks / open questions for plan-time review
 
-1. **Programmatic fetch trigger**: introducing a 2nd reactive var per fetch button is mild plumbing. Plan must spell out exactly how the existing `_do_fetch_rivers` body gets refactored into a callable. Risk: regressing the existing button click path.
-2. **`_orient_centerline_mouth_to_source` promotion**: the helper is private in `create_model_river.py`. Promoting it to public means it's part of the v0.50.0 API contract; future changes need backwards-compat. Acceptable risk — the function is small and the algorithm is stable.
-3. **Click-mouth state machine** mutual exclusion with selection modes: must verify that pressing `sel_river_btn` while in mouth-click mode clears the flag (and vice versa). Visual test in the plan covers this.
-4. **Nominatim ToS compliance**: User-Agent header must include contact info. Hard-coded with the user's email per CLAUDE.md identity is acceptable; alternative is to read from a config file (out of scope).
-5. **Map zoom after Find**: the existing `_widget.update(session, layers, view_state=...)` call requires a `view_state` dict. The exact shape of the dict (zoom level, bearing, pitch defaults) is in the panel already — plan must reference the existing zoom-after-fetch_sea path which already does this.
+1. **Fetch handler refactor**: extracting `_do_fetch_rivers(session)` and
+   `_do_fetch_water(session)` from the existing `@reactive.event` handlers
+   (panel lines 593, 676) is a mechanical lift. Risk: capturing closure
+   variables (e.g., `input.osm_country()`, `input.strahler_min()`) — the
+   helpers must read these from `input` directly, not from a captured snapshot.
+   Plan to verify by reading lines 593–700 in detail before refactoring.
+2. **`_orient_centerline_mouth_to_source` promotion**: the helper is private
+   in `create_model_river.py`. Promoting to public means it's part of the
+   v0.50.0 API contract; future changes need backwards-compat. Acceptable
+   risk — the function is small and the algorithm is stable since v0.45.3.
+   Plan to add a one-line module docstring entry noting the public surface.
+3. **`_auto_extract_done` reset on fresh fetch**: the spec says fetch_water
+   re-running resets `_auto_extract_done` to False. The plan must add this
+   reset either as an explicit `_auto_extract_done.set(False)` line at the
+   end of `_do_fetch_water`, or via a separate `@reactive.effect` that
+   watches `_water_gdf` and resets the flag on any change other than
+   Auto-extract's own assignment (using a "this assignment is from auto-extract"
+   sentinel — fragile). Plan picks the explicit reset (option A).
+4. **Nominatim ToS compliance**: User-Agent must include contact info.
+   `f"inSTREAM-py/{salmopy.__version__} (arturas.razinkovas-baziukas@ku.lt)"`
+   per CLAUDE.md identity. Plan must verify import path
+   (`from salmopy import __version__` works from `app/modules/`).
+5. **Map fly-to mechanism**: existing `_pending_fly_to = reactive.value(None)`
+   at panel line 738 is the contract; Find handler writes
+   `_pending_fly_to.set((lon, lat, zoom))`. Plan to read the consumer effect
+   handler around line 758 to confirm the signature exactly.
+6. **`_REACH_COLORS` placement**: a module-level constant in
+   `create_model_panel.py` near the top (after imports). Plan to verify no
+   name collision with existing constants.
