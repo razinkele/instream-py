@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.0] — 2026-04-26
+
+### Fixed — Create Model CSV export format
+
+`app/modules/create_model_export.py::export_template_csvs` now produces
+per-cell hydraulic CSVs in the format expected by
+`salmopy.io.hydraulics_reader._parse_hydraulic_csv`. Pre-v0.49 exports
+were transposed (flows as rows, cells as columns) and lacked the
+required comment/count/flow-values header — feeding an exported
+fixture back into the simulation failed with
+`ValueError: invalid literal for int() with base 10: 'flow'`.
+
+Fix: new `_write_hydraulic_csv` helper writes the canonical
+example_baltic-style format (5 comment lines including a positional-
+contract warning + count line + flow-values line + n_cells data rows ×
+n_flows columns). The TimeSeriesInputs.csv writer (separate format,
+already loader-compatible) is unchanged.
+
+Synthetic placeholder values (depth = log-of-flow scaled by per-cell
+hash variation, velocity = linear-in-flow with same variation) are
+semantically preserved across the format change. The Create Model UI's
+"Download ZIP" button now produces a directly-loadable fixture.
+
+**Hidden positional contract surfaced in output**: every exported CSV
+now includes a `; IMPORTANT: row order must match shapefile cell order
+within this reach.` comment line. The simulation indexes hydraulic
+values positionally against the shapefile (not by cell_id string), so
+users who manually edit the templates before calibration must preserve
+row order. This contract was previously undocumented; v0.49.0 makes
+it visible in every export.
+
+### Verified
+
+New regression test `tests/test_create_model_export.py::test_export_template_csvs_round_trips_through_hydraulic_reader`
+exports a 3-cell single-reach template and loads it via the production
+hydraulic reader. Locks in the contract permanently: shape, cell_ids,
+TEMPLATE_FLOWS values, and matrix-variation sanity all asserted.
+
+### Required dependency
+
+No new dependencies; floors unchanged from v0.48.0.
+
 ## [0.48.0] — 2026-04-26
 
 ### Internal changes — repo cleanup
