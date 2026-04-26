@@ -288,7 +288,17 @@ def copy_reach_csvs(short_name: str, stem: str) -> None:
                 f"{short_name}: reach '{new_name}' has 0 cells in shapefile"
             )
         for suffix in ("Depths", "Vels"):
-            src = fixture_dir / f"{proto}-{suffix}.csv"
+            # v0.48.0: source from example_baltic (canonical Lithuanian template).
+            # WGBAST fixtures no longer ship {proto}-Depths/Vels.csv as residue.
+            # TimeSeriesInputs (above) still sources from fixture_dir because
+            # _scaffold_wgbast_rivers.py writes per-river T/Q calibration into it.
+            src = ROOT / "tests" / "fixtures" / "example_baltic" / f"{proto}-{suffix}.csv"
+            if not src.exists():
+                raise FileNotFoundError(
+                    f"WGBAST wire script source missing: {src}. "
+                    f"example_baltic is the canonical Lithuanian template — "
+                    f"did it get cleaned up by mistake?"
+                )
             dst = fixture_dir / f"{new_name}-{suffix}.csv"
             _expand_per_cell_csv(src, dst, n_new)
 

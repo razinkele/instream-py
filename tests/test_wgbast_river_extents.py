@@ -159,3 +159,75 @@ def test_balticcoast_offset_from_mouth(short_name: str):
         f"centroid (expected > 0.01° = ~1 km). Disk likely centred on "
         f"land or on the mouth itself."
     )
+
+
+# v0.48.0 cleanup: PROTO names that ship in example_baltic and were
+# inherited as residue by each WGBAST fixture. Their Depths/Vels CSVs
+# are pure source-template residue — the wire script reads from
+# example_baltic now, so they're never needed in WGBAST fixtures.
+# TimeSeriesInputs are NOT in the residue set: scripts/_scaffold_wgbast_rivers.py
+# writes per-river T/Q calibration into them and the wire script copies
+# the calibrated content to {Mouth,Lower,Middle,Upper}-TimeSeriesInputs.csv.
+PROTO_REACHES_DEPTHS_VELS = [
+    (proto, suffix)
+    for proto in ("Nemunas", "Atmata", "Minija", "Sysa")
+    for suffix in ("Depths", "Vels")
+]
+
+# v0.48.0 cleanup: FULLY_ORPHAN names — Lithuanian distributaries with
+# no WGBAST counterpart. Their TimeSeriesInputs were git-deleted in
+# v0.47.0 (commit fc08578). All 3 file types are forbidden.
+FULLY_ORPHAN_REACHES_ALL = [
+    (proto, suffix)
+    for proto in ("Skirvyte", "Leite", "Gilija", "CuronianLagoon")
+    for suffix in ("Depths", "Vels", "TimeSeriesInputs")
+]
+
+ALL_FORBIDDEN_PROTO_FILES = PROTO_REACHES_DEPTHS_VELS + FULLY_ORPHAN_REACHES_ALL
+
+
+@pytest.mark.parametrize("river", WGBAST)
+@pytest.mark.parametrize("proto,suffix", ALL_FORBIDDEN_PROTO_FILES)
+def test_no_orphan_prototype_csvs(river: str, proto: str, suffix: str):
+    """No prototype-named CSV residue in WGBAST fixture directories.
+
+    PROTO cases (32: Nemunas/Atmata/Minija/Sysa × Depths/Vels × 4 rivers)
+    drive the v0.48.0 cleanup itself: wire script now sources Depths/Vels
+    from example_baltic directly. PROTO TimeSeriesInputs are intentionally
+    kept (per-river T/Q calibration; see _scaffold_wgbast_rivers.py).
+
+    FULLY_ORPHAN cases (48: Skirvyte/Leite/Gilija/CuronianLagoon × all 3
+    suffixes × 4 rivers) are trivially-PASS today (v0.47.0 fc08578 already
+    deleted them) — they exist as forward regression guards against
+    future re-scaffolds without the deletion loop.
+    """
+    fixture_dir = ROOT / "tests" / "fixtures" / river
+    forbidden = fixture_dir / f"{proto}-{suffix}.csv"
+    assert not forbidden.exists(), (
+        f"{forbidden.relative_to(ROOT)} is template residue and should not "
+        f"exist in a v0.48+ WGBAST fixture. Re-run scripts/_scaffold_wgbast_rivers.py "
+        f"to regenerate cleanly, or delete the file manually."
+    )
+
+
+PROTO_BALTIC_CSVS = [
+    (proto, suffix)
+    for proto in ("Nemunas", "Atmata", "Minija", "Sysa")
+    for suffix in ("Depths", "Vels")
+]
+
+
+@pytest.mark.parametrize("proto,suffix", PROTO_BALTIC_CSVS)
+def test_example_baltic_prototype_csvs_present(proto: str, suffix: str):
+    """example_baltic must keep the 4 PROTO Depths/Vels CSVs.
+
+    The wire script (_wire_wgbast_physical_configs.py:291) reads these
+    as the canonical source when expanding per-cell hydraulics for
+    each WGBAST river. If example_baltic is ever cleaned up, this test
+    fails first and gives a clear pointer.
+    """
+    src = ROOT / "tests" / "fixtures" / "example_baltic" / f"{proto}-{suffix}.csv"
+    assert src.exists(), (
+        f"{src.relative_to(ROOT)} missing — wire script source. "
+        f"Did example_baltic get cleaned up by mistake?"
+    )

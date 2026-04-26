@@ -162,6 +162,12 @@ Lithuanian-template reaches (Skirvyte, Leite, Gilija, CuronianLagoon) were
 removed from each WGBAST yaml; downstream code that pinned to those names
 will see KeyError.
 
+**v0.48.0:** prototype-named Depths/Vels CSVs (Atmata/Minija/Nemunas/Sysa)
+removed from WGBAST fixture directories — the wire script now reads these
+from `example_baltic` directly. Marine-region caches de-duplicated to two
+IHO-keyed files (`gulf_of_bothnia_marineregions.json` +
+`baltic_sea_marineregions.json`); saves ~34 MB.
+
 ---
 
 ## WGBAST-comparability stack (v0.34.0 → v0.41.0)
