@@ -250,3 +250,15 @@ def test_partition_handles_y_shaped_multilinestring():
         "branch-end polygons not in last group (Y-shaped MLS): "
         f"groups[2]={groups[2]}"
     )
+
+
+def test_default_reach_names_n4():
+    from modules.create_model_river import default_reach_names
+    assert default_reach_names(4) == ["Mouth", "Lower", "Middle", "Upper"]
+
+
+def test_default_reach_names_other_n():
+    from modules.create_model_river import default_reach_names
+    assert default_reach_names(2) == ["Reach1", "Reach2"]
+    assert default_reach_names(3) == ["Reach1", "Reach2", "Reach3"]
+    assert default_reach_names(8) == [f"Reach{i}" for i in range(1, 9)]
