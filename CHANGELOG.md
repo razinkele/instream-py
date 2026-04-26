@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.50.0] — 2026-04-26
+
+### Added — Create Model UI buttons
+
+Three new buttons in the Create Model panel wire the v0.47.0 helpers
+(`create_model_marine.py`, `create_model_river.py`) into a discoverable UX:
+
+- **🔍 Find by name** — Nominatim place lookup → auto-sets Region dropdown
+  → zooms map → auto-loads Rivers + Water for the matched country.
+- **✨ Auto-extract** — Filters loaded water polygons to the
+  centerline-connected component (BFS from rivers, 0.0005° tolerance).
+  Drops disconnected lakes and orphan polygons.
+- **⚡ Auto-split** — Partitions extracted polygons into N reaches by
+  along-channel distance from the river mouth. Mouth auto-detected from
+  Sea polygon (UTM-meters distance, 5km threshold) if Sea fetched, else
+  click-mouth fallback. Smart-default reach names: Mouth/Lower/Middle/Upper
+  for N=4 (WGBAST convention), Reach1..ReachN otherwise.
+
+### Added — supporting modules
+
+- New `app/modules/create_model_geocode.py` — Nominatim wrapper with
+  ToS-compliant User-Agent (override via `INSTREAM_NOMINATIM_CONTACT` env
+  var), 5 MB content-length cap, exception-logging fallback.
+- New `default_reach_names(n_reaches)` helper in `create_model_river.py`.
+- New module-level `_pick_mouth_from_sea` helper in `create_model_panel.py`
+  (linemerge-aware, multi-LineString safe, UTM-meters distance).
+
+### Tests
+
+- 7 cases for `lookup_place_bbox` (Klaipėda happy path, empty results,
+  unknown ISO-2, network error, empty input, special chars, addressdetails
+  param).
+- 2 cases for `default_reach_names`.
+- 5 cases for `_pick_mouth_from_sea` (offshore-gap Simojoki regression,
+  far-from-sea rejection, connected MultiLineString, disjoint MultiLineString,
+  detect_utm_epsg=None graceful degradation).
+
+### Notes
+
+- Closes PR-3 deferred from v0.47.0 follow-ups list.
+- v0.51.0 (next): use these buttons end-to-end to add the Danė river to
+  `example_baltic`.
+
 ## [0.49.0] — 2026-04-26
 
 ### Fixed — Create Model CSV export format
