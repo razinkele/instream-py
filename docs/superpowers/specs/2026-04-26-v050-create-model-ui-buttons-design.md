@@ -208,8 +208,12 @@ Plus:
 - `_ISO_TO_GEOFABRIK: dict[str, str]` — ISO 3166-1 alpha-2 to Geofabrik country
   name. Initial coverage: WGBAST + Baltic countries (`"lt": "lithuania"`,
   `"lv": "latvia"`, `"ee": "estonia"`, `"pl": "poland"`, `"de": "germany"`,
-  `"se": "sweden"`, `"fi": "finland"`, `"no": "norway"`, `"dk": "denmark"`,
-  `"ru": "russia"`). Plan task verifies via `assert all(v in GEOFABRIK_COUNTRIES for v in _ISO_TO_GEOFABRIK.values())` at module import.
+  `"se": "sweden"`, `"fi": "finland"`, `"no": "norway"`, `"dk": "denmark"`).
+  ISO `"ru"` is intentionally NOT mapped — `GEOFABRIK_REGIONS` only has
+  `"kaliningrad"` for Russia (see `create_model_osm.py:54`); Russian places
+  outside Kaliningrad fall through to the `(None, bbox)` "no Geofabrik
+  extract" path. The module's import-time `assert all(v in GEOFABRIK_COUNTRIES
+  for v in _ISO_TO_GEOFABRIK.values())` guards against future bad additions.
 - `_USER_AGENT: str` — module-level constant computed from
   `f"inSTREAM-py/{__version__} ({_CONTACT})"` where `__version__` is loaded
   with a fallback: `try: from salmopy import __version__; except ImportError: __version__ = "dev"`. `_CONTACT` reads from env var `INSTREAM_NOMINATIM_CONTACT`

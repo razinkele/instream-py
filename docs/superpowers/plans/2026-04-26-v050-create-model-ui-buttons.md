@@ -387,7 +387,7 @@ from shapely.geometry import Point
 from shapely.ops import unary_union
 ```
 
-- [ ] **Step 3.2: Add geocoder import** — locate the existing helper-import try/except block (panel lines 82-85, around `query_named_sea_polygon`). Add a parallel block:
+- [ ] **Step 3.2: Add geocoder import** — locate the existing helper-import `try: from modules.create_model_marine import query_named_sea_polygon` block. Add a parallel block immediately after it:
 
 ```python
 try:
@@ -426,7 +426,7 @@ ui.div(
 ),
 ```
 
-- [ ] **Step 3.4: Add three new reactive vars** — locate the existing reactive var block in `create_model_server` around panel line 350 (after `_workflow_msg`). Insert:
+- [ ] **Step 3.4: Add three new reactive vars** — locate the existing reactive var block in `create_model_server` (the lines defining `_rivers_gdf`, `_water_gdf`, `_sea_gdf`, etc., ending with `_workflow_msg = reactive.value("")`). Insert immediately after `_workflow_msg`:
 
 ```python
     _auto_extract_done = reactive.value(False)  # Auto-split prereq
@@ -724,7 +724,9 @@ def test_pick_mouth_returns_none_if_far_from_sea():
     assert result is None
 
 
-def test_pick_mouth_handles_multilinestring():
+def test_pick_mouth_handles_connected_multilinestring():
+    """Two end-to-end sub-LineStrings: linemerge collapses them into one,
+    so the LineString branch handles endpoint enumeration."""
     from modules.create_model_panel import _pick_mouth_from_sea
     line1 = LineString([(0.0, 0.0), (1.0, 1.0)])
     line2 = LineString([(1.0, 1.0), (2.0, 2.0)])
@@ -735,7 +737,29 @@ def test_pick_mouth_handles_multilinestring():
     result = _pick_mouth_from_sea([mls], _sea_gdf(sea))
     assert result is not None
     lon, lat = result
-    # Should pick the (2.0, 2.0) endpoint of the MultiLineString — the closest one to sea
+    # After linemerge → LineString (0,0)→(2,2). Endpoints are (0,0) and (2,2);
+    # (2,2) is closer to sea.
+    assert lon == pytest.approx(2.0, abs=0.001)
+    assert lat == pytest.approx(2.0, abs=0.001)
+
+
+def test_pick_mouth_handles_disjoint_multilinestring():
+    """Two DISJOINT sub-LineStrings: linemerge cannot collapse → result
+    stays a MultiLineString, so the MultiLineString endpoint-enumeration
+    branch is exercised. Without the linemerge step, this would have
+    enumerated 4 endpoints from a connected MultiLineString and risked
+    selecting an interior junction."""
+    from modules.create_model_panel import _pick_mouth_from_sea
+    line1 = LineString([(0.0, 0.0), (0.5, 0.5)])
+    line2 = LineString([(1.5, 1.5), (2.0, 2.0)])  # gap at (0.5,0.5)→(1.5,1.5)
+    mls = MultiLineString([line1, line2])
+    sea = Polygon([
+        (2.005, 2.005), (2.05, 2.005), (2.05, 2.05), (2.005, 2.05), (2.005, 2.005)
+    ])
+    result = _pick_mouth_from_sea([mls], _sea_gdf(sea))
+    assert result is not None
+    lon, lat = result
+    # 4 endpoints: (0,0), (0.5,0.5), (1.5,1.5), (2,2). Closest to sea = (2,2).
     assert lon == pytest.approx(2.0, abs=0.001)
     assert lat == pytest.approx(2.0, abs=0.001)
 
