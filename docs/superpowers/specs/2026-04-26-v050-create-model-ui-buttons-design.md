@@ -643,7 +643,7 @@ NOMINATIM_KLAIPEDA = [{
 | `test_default_reach_names_n4` | helper returns `["Mouth", "Lower", "Middle", "Upper"]` |
 | `test_default_reach_names_other_n` | N=3 → `["Reach1", "Reach2", "Reach3"]`; N=8 → `["Reach1", …, "Reach8"]`; N=2 → `["Reach1", "Reach2"]` |
 
-### `_pick_mouth_from_sea` test — new file `tests/test_pick_mouth_from_sea.py` (+3 cases)
+### `_pick_mouth_from_sea` test — new file `tests/test_pick_mouth_from_sea.py` (+4 cases)
 
 `_pick_mouth_from_sea` is defined inside `create_model_server`; for
 testability the spec promotes it to a module-level helper at the top of
@@ -651,7 +651,7 @@ testability the spec promotes it to a module-level helper at the top of
 
 | Test | Setup | Asserts |
 |------|-------|---------|
-| `test_pick_mouth_returns_endpoint_near_sea` | Single LineString centerline (1.0,1.0)→(2.0,2.0); sea polygon as a 0.05° square (~5 km in mid-latitude UTM) centered on (2.0,2.0). Polygon size deliberately >945 m to cover the Simojoki-class regression where the v0.47.0 batch generator's centerline endpoint sat 945 m offshore. | returns `(2.0, 2.0)` (river-end endpoint closer to sea) |
+| `test_pick_mouth_returns_endpoint_near_sea_offshore_gap` | Single LineString centerline (1.0,1.0)→(2.0,2.0); sea polygon offset so the (2.0,2.0) endpoint sits ~1 km OUTSIDE the polygon's nearest edge (e.g., polygon = 0.05° square centered on (2.015, 2.015) — endpoint→edge distance ~1 km in mid-latitude UTM, well within the 5 km threshold). This setup exercises the Simojoki-class regression where the v0.47.0 batch generator's centerline endpoint sat 945 m offshore from its IHO sea polygon (NOT inside the polygon). | returns `(2.0, 2.0)` — the offshore endpoint, distance > 0 but < 5 km |
 | `test_pick_mouth_returns_none_if_far_from_sea` | LineString centerline well inland; sea polygon >>5 km away in UTM meters | returns `None` |
 | `test_pick_mouth_handles_multilinestring` | MultiLineString with 2 sub-segments, one near sea | returns the sub-segment endpoint nearest the sea |
 | `test_pick_mouth_handles_unavailable_detect_utm_epsg` | Patch `create_model_panel.detect_utm_epsg = None` (simulating import failure); call with valid centerline + sea inputs | returns `None` (graceful degradation; verifies the safety net for the panel's try/except detect_utm_epsg import at line 46-48) |
@@ -678,7 +678,7 @@ Run before commit (and again post-deploy on laguna):
 Per the v0.47–v0.49 pattern:
 
 1. `feat(create_model_geocode): add lookup_place_bbox helper + tests` (new module `app/modules/create_model_geocode.py` + `tests/test_create_model_geocode.py` 7 cases)
-2. `feat(create_model_river): add default_reach_names helper + extend test file` (1 new function in existing `app/modules/create_model_river.py` + 2 cases in `tests/test_create_model_river.py`). **Must come BEFORE commit 4** — the helper-import try/except in commit 3 references `default_reach_names`; without this commit, the panel falls back to None and silently disables Auto-split.
+2. `feat(create_model_river): add default_reach_names helper + extend test file` (1 new function in existing `app/modules/create_model_river.py` + 2 cases in `tests/test_create_model_river.py`). **Must come BEFORE commit 4** — the helper-import try/except in commit 4 references `default_reach_names`; without this commit, the panel falls back to None and silently disables Auto-split.
 3. `feat(create_model_panel): add 🔍 Find by name button` (Find handler + `_do_fetch_rivers` / `_do_fetch_water` body lift + new reactive vars `_finding`)
 4. `feat(create_model_panel): add ✨ Auto-extract + ⚡ Auto-split buttons + _pick_mouth_from_sea` (extract + split handlers + module-level `_pick_mouth_from_sea` + click-mode state machine + tests `tests/test_pick_mouth_from_sea.py` 4 cases + edits to `_on_map_click` and `_on_clear_reaches`)
 5. `release(v0.50.0): Create Model UI buttons` (version bump + CHANGELOG + annotated tag)
