@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.48.0] — 2026-04-26
+
+### Internal changes — repo cleanup
+
+No simulation behavior change, no breaking change for downstream users.
+
+- Deleted 32 prototype Depths/Vels CSVs from 4 WGBAST fixture directories
+  (`{Atmata,Minija,Nemunas,Sysa}-{Depths,Vels}.csv`). Wire script now
+  sources these from `example_baltic` directly. The 16
+  `{proto}-TimeSeriesInputs.csv` files are kept (per-river T/Q calibration).
+- De-duplicated 4 marine-region cache files to 2 IHO-keyed files
+  (`gulf_of_bothnia_marineregions.json` + `baltic_sea_marineregions.json`).
+  Saves ~34 MB of repo footprint. New helper
+  `_marineregions_cache_path(river)` centralises the IHO-name lookup +
+  path derivation.
+- Both cleanups protected by new regression tests
+  (`test_no_orphan_prototype_csvs`, `test_example_baltic_prototype_csvs_present`,
+  `test_marineregions_cache_path_returns_iho_keyed_path`,
+  `test_iho_cache_paths_collapse_to_unique_slugs`).
+
+### Required dependency
+
+No new dependencies; floors unchanged from v0.47.0.
+
+### Verified
+
+All 80 + 8 + 4 + 1 = 93 new test cases PASS. Pre-existing test cases
+unchanged (no behavior change). Per-river BalticCoast cell counts
+byte-stable across v0.47.0 → v0.48.0 (Tornionjoki 164, Simojoki 499,
+Byskeälven 300, Mörrumsån 163).
+
 ## [0.47.0] — 2026-04-26
 
 ### Fixed — Tornionjoki extent (PR-1)
