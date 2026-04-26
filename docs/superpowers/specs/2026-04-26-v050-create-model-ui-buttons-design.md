@@ -40,6 +40,39 @@ below the existing one (NOT a wrapped continuation of the same div — the exist
 Auto:  [text input: Place name        ] 🔍 Find  ·  ✨ Auto-extract  ·  ⚡ Auto-split  [N: 4 ⬍]
 ```
 
+### Required panel module-level imports
+
+Add to `create_model_panel.py` near the existing imports (after line 17):
+
+```python
+from shapely.geometry import Point          # used by _pick_mouth_from_sea
+from shapely.ops import unary_union         # used by _pick_mouth_from_sea
+```
+
+`asyncio` and `math` are imported LOCALLY inside the `_on_find` handler body
+to match the existing per-handler `import asyncio` pattern (panel:336, 600,
+683, 708, 767, 1075, 1300).
+
+And extend the existing helper-import try/except block (already has
+`query_named_sea_polygon` from `create_model_marine`):
+
+```python
+try:
+    from modules.create_model_river import (
+        filter_polygons_by_centerline_connectivity,
+        partition_polygons_along_channel,
+        default_reach_names,
+    )
+except ImportError:  # pragma: no cover
+    filter_polygons_by_centerline_connectivity = None
+    partition_polygons_along_channel = None
+    default_reach_names = None
+```
+
+The Auto-extract / Auto-split handlers must guard with
+`if filter_polygons_by_centerline_connectivity is None: ui.notification_show(...); return`
+on entry — same pattern as `query_named_sea_polygon`.
+
 ### UI controls (concrete declarations)
 
 Inside `create_model_ui()`, after the existing toolbar div closes (line ~268)
@@ -94,17 +127,22 @@ existing `REACH_COLORS` palette at panel line 70).
   Auto-split indexes this cyclically (`REACH_COLORS[i % len(REACH_COLORS)]`).
   **No new color constant.**
 
-**Two new reactive vars** added:
+**Three new reactive vars** added (declared near the existing var block at
+panel line ~351, after `_workflow_msg`):
+
 - `_auto_extract_done = reactive.value(False)` — Auto-split's prereq flag.
   Reset rules:
-  - Set `True` on successful Auto-extract (regardless of whether polygons were
-    already filtered).
-  - Set `False` ONLY in the original `@reactive.event(input.fetch_water)` and
-    `@reactive.event(input.fetch_rivers)` handlers (NOT in the lifted
-    `_do_fetch_water()` / `_do_fetch_rivers()` helpers, which are also called
-    by Find — Find should not invalidate Auto-extract state).
+  - Set `True` on successful Auto-extract.
+  - Set `False` inside the lifted `_do_fetch_rivers()` and `_do_fetch_water()`
+    helpers (NOT in the `@reactive.event` wrappers). Reason: Find calls the
+    helpers directly to refetch fresh data; that fresh data invalidates the
+    prior Auto-extract result, so the flag MUST reset whether the trigger
+    was a button click or a Find call. The helpers are the single source of
+    truth for "fresh data was loaded".
 - `_mouth_lon_lat = reactive.value(None)` — `(lon, lat)` tuple set by the
   mouth-pick branch of `_on_map_click`. Read by Auto-split when `_sea_gdf() is None`.
+- `_finding = reactive.value(False)` — debounce guard for 🔍 Find (Nominatim
+  1 req/sec ToS).
 
 **One new helper module** `app/modules/create_model_geocode.py` (~100 LOC):
 
@@ -191,7 +229,12 @@ Plus:
 @reactive.effect
 @reactive.event(input.find_btn)
 async def _on_find():
-    # Debounce: ignore re-clicks while a previous Find is in flight (Nominatim 1 req/sec ToS)
+    import asyncio  # local imports match existing handlers (panel:336,600,683,...)
+    import math
+
+    # Debounce: ignore re-clicks while a previous Find is in flight (Nominatim 1 req/sec ToS).
+    # Shiny's single-threaded asyncio event loop makes the check-then-set safe; rapid double
+    # clicks queue rather than race.
     if _finding():
         return
     _finding.set(True)
@@ -245,26 +288,24 @@ async def _on_find():
 ```
 
 **Implementation note — handler refactor**: the existing
-`@reactive.event(input.fetch_rivers)` handler (panel line 593) is renamed
-internally — the body lifts to `async def _do_fetch_rivers()` (no args; uses
-closure for `input`, `session`, reactive vars). The original
-`@reactive.event` handler shrinks to:
+`@reactive.event(input.fetch_rivers)` handler body (panel lines 595–674)
+lifts into a nested `async def _do_fetch_rivers()` defined INSIDE
+`create_model_server` (so it captures `input`, `session`, and the reactive
+vars via closure). The function takes no arguments. **`_do_fetch_rivers`
+sets `_auto_extract_done.set(False)` as its first line** — fresh data
+invalidates any prior Auto-extract result. The original `@reactive.event`
+wrapper shrinks to:
 
 ```python
 @reactive.effect
 @reactive.event(input.fetch_rivers)
 async def _on_fetch_rivers():
-    _auto_extract_done.set(False)  # explicit reset on user click
     await _do_fetch_rivers()
 ```
 
-Same pattern for `input.fetch_water` → `_do_fetch_water()`. **The reset is
-ONLY in the `@reactive.event` handler bodies, NOT in the helpers.** Find
-calls the helpers directly, so it does not invalidate `_auto_extract_done`.
-
-**One new reactive var** for debounce:
-- `_finding = reactive.value(False)` — guards against rapid re-clicks of 🔍
-  Find (Nominatim 1 req/sec ToS).
+Same pattern for `input.fetch_water` → `_do_fetch_water()`. The reset lives
+in the helpers (single source of truth — both manual button clicks AND Find
+trigger fresh fetches that invalidate the flag).
 
 ### ✨ Auto-extract
 
@@ -279,12 +320,28 @@ async def _on_auto_extract():
         ui.notification_show("Click 💧 Water first to load polygons", type="warning")
         return
 
+    if filter_polygons_by_centerline_connectivity is None:
+        ui.notification_show("create_model_river module not available", type="error")
+        return
+
     rivers_gdf = _rivers_gdf()
     water_gdf  = _water_gdf()
     n_before   = len(water_gdf)
 
+    # Filter rivers GDF to LineStrings only — _rivers_gdf may contain
+    # both Polygons and LineStrings (OSM rivers can be tagged either way),
+    # but the connectivity helper expects centerline geometries only.
+    centerline_mask = rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
+    centerline_geoms = list(rivers_gdf[centerline_mask].geometry)
+    if not centerline_geoms:
+        ui.notification_show(
+            "Rivers layer has no LineString geometries — cannot extract main system",
+            type="warning",
+        )
+        return
+
     kept = filter_polygons_by_centerline_connectivity(
-        list(rivers_gdf.geometry),
+        centerline_geoms,
         list(water_gdf.geometry),
         tolerance_deg=0.0005,
         max_polys=2000,
@@ -320,6 +377,9 @@ async def _on_auto_extract():
 @reactive.effect
 @reactive.event(input.auto_split_btn)
 async def _on_auto_split():
+    if partition_polygons_along_channel is None or default_reach_names is None:
+        ui.notification_show("create_model_river module not available", type="error")
+        return
     if not _auto_extract_done():
         ui.notification_show("Click ✨ Auto-extract first", type="warning")
         return
@@ -328,15 +388,29 @@ async def _on_auto_split():
     rivers_gdf = _rivers_gdf()
     water_gdf  = _water_gdf()
 
+    # Same LineString filter as Auto-extract — partition needs centerline only
+    centerline_mask = rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
+    centerline_geoms = list(rivers_gdf[centerline_mask].geometry)
+    polys_list = list(water_gdf.geometry)
+
+    # Warn upfront if N exceeds polygon count (would produce interleaved-empty groups)
+    if n_reaches > len(polys_list):
+        ui.notification_show(
+            f"N={n_reaches} exceeds polygon count ({len(polys_list)}); "
+            f"some reaches will be empty. Consider lowering N.",
+            type="warning",
+        )
+
     # Determine mouth waypoint
     sea_gdf = _sea_gdf()
     if sea_gdf is not None and len(sea_gdf) > 0:
-        mouth = _pick_mouth_from_sea(rivers_gdf, sea_gdf)
+        mouth = _pick_mouth_from_sea(centerline_geoms, sea_gdf)
         if mouth is None:
             ui.notification_show(
-                "River centerline doesn't reach any sea polygon — clicking on map for mouth",
+                "River centerline doesn't reach any sea polygon — click on map to set mouth",
                 type="warning",
             )
+            _current_reach_name.set("")  # clear any stale auto-named reach
             _selection_mode.set("mouth_pick")
             _workflow_msg.set("Click on the map to set the river mouth, then ⚡ Auto-split again")
             return
@@ -344,13 +418,14 @@ async def _on_auto_split():
         mouth = _mouth_lon_lat()
     else:
         # First ⚡ click with no Sea fetched → arm click-mouth mode
+        _current_reach_name.set("")  # clear any stale auto-named reach
         _selection_mode.set("mouth_pick")
         _workflow_msg.set("Click on the map to set the river mouth, then ⚡ Auto-split again")
         return
 
     groups = partition_polygons_along_channel(
-        list(rivers_gdf.geometry),
-        list(water_gdf.geometry),
+        centerline_geoms,
+        polys_list,
         mouth_lon_lat=mouth,
         n_reaches=n_reaches,
     )
@@ -387,48 +462,77 @@ constant.** This matches the format `_build_reach_layers` expects (panel
 line 493) and the format used by the existing manual-click path
 (panel line 900).
 
-**Mouth-from-Sea-polygon algorithm** (`_pick_mouth_from_sea` private helper
-inside `create_model_panel.py`):
+**Mouth-from-Sea-polygon algorithm** (`_pick_mouth_from_sea` — defined as a
+**module-level** function at the top of `create_model_panel.py` after the
+`REACH_COLORS` constant block, so it's importable by unit tests; the
+function takes its inputs as explicit arguments rather than capturing
+reactive state):
 
 ```python
-def _pick_mouth_from_sea(rivers_gdf, sea_gdf) -> tuple[float, float] | None:
+def _pick_mouth_from_sea(
+    centerline_geoms: list,
+    sea_gdf: gpd.GeoDataFrame,
+) -> tuple[float, float] | None:
     """Pick the centerline endpoint closest to any sea polygon.
-    Returns (lon, lat) in WGS84, or None if all endpoints are >5km from sea."""
-    centerline = unary_union(list(rivers_gdf.geometry))
-    # If multiple sea polygons returned, union them — distance to nearest
+
+    Args:
+      centerline_geoms: list of LineString / MultiLineString from rivers GDF
+        (already filtered to lines-only by the caller).
+      sea_gdf: GeoDataFrame of one or more sea polygons.
+
+    Returns:
+      (lon, lat) in WGS84 of the closest endpoint, or None if all endpoints
+      are >5 km from any sea polygon, or if `detect_utm_epsg` is unavailable.
+    """
+    if detect_utm_epsg is None:
+        return None  # graceful degradation; caller falls back to click mode
+    if not centerline_geoms or len(sea_gdf) == 0:
+        return None
+
+    centerline = unary_union(centerline_geoms)
     sea_union = unary_union(list(sea_gdf.geometry))
 
-    # Get all endpoints from the centerline (LineString or MultiLineString)
+    # Collect endpoints from the centerline (LineString or MultiLineString)
     if centerline.geom_type == "LineString":
         endpoints = [Point(centerline.coords[0]), Point(centerline.coords[-1])]
-    else:
-        # MultiLineString: collect endpoints of each component
+    elif centerline.geom_type == "MultiLineString":
         endpoints = []
         for sub in centerline.geoms:
             endpoints.append(Point(sub.coords[0]))
             endpoints.append(Point(sub.coords[-1]))
+    else:
+        # GeometryCollection or other — defensive fallback
+        return None
 
     # Reproject to UTM for true-meters distance
-    utm_epsg = detect_utm_epsg(rivers_gdf.geometry.iloc[0].centroid)
-    ep_gdf = gpd.GeoDataFrame(geometry=endpoints, crs="EPSG:4326").to_crs(epsg=utm_epsg)
-    sea_utm = gpd.GeoDataFrame(geometry=[sea_union], crs="EPSG:4326").to_crs(epsg=utm_epsg)
+    centroid = centerline.centroid
+    utm_epsg = detect_utm_epsg(centroid.x, centroid.y)  # signature: (lon, lat)
+    ep_gdf = gpd.GeoDataFrame(
+        geometry=endpoints, crs="EPSG:4326"
+    ).to_crs(epsg=utm_epsg).reset_index(drop=True)
+    sea_utm = gpd.GeoDataFrame(
+        geometry=[sea_union], crs="EPSG:4326"
+    ).to_crs(epsg=utm_epsg)
     distances = ep_gdf.geometry.distance(sea_utm.geometry.iloc[0])
-    min_idx = distances.idxmin()
-    if distances.iloc[min_idx] > 5000:  # 5 km threshold
+
+    # argmin returns POSITION (not label); reset_index above keeps position == label,
+    # but argmin is the safer primitive against future refactors.
+    min_pos = int(distances.values.argmin())
+    if distances.iloc[min_pos] > 5000:  # 5 km threshold
         return None
-    closest = endpoints[min_idx]
+    closest = endpoints[min_pos]
     return (closest.x, closest.y)
 ```
 
-Uses the existing `detect_utm_epsg` helper (panel line 47 import) for
-true-meters distance computation. Multi-polygon sea is handled by `unary_union`
-— the closest endpoint to ANY sea polygon wins.
+`detect_utm_epsg` signature is `(center_lon: float, center_lat: float) -> int`
+(verified at `app/modules/create_model_utils.py:9`). The call passes
+`centroid.x` and `centroid.y` explicitly. Module-level `None` guard handles
+the panel's import-failure fallback (panel line 46-48).
 
-**Helper visibility**: the spec previously proposed promoting
-`_orient_centerline_mouth_to_source` to public. **Rescinded** — it's already
-called only inside `create_model_river.py:151` and the new `_pick_mouth_from_sea`
-in this spec doesn't need it (uses raw endpoints + UTM distance instead).
-Keep it private. No rename required.
+**Helper visibility**: the earlier proposal to promote
+`_orient_centerline_mouth_to_source` to public is **rescinded** — it's used
+only inside `create_model_river.py:151` and `_pick_mouth_from_sea` doesn't
+need it (raw endpoints + UTM distance is simpler). Keep private. No rename.
 
 **Click-mouth mode** (Auto-split fallback when `_sea_gdf() is None`):
 
@@ -461,13 +565,18 @@ Concrete edit to `_on_map_click` (insert after line 883, before line 885):
 | Clicks 🔍 Find | Find handler does NOT touch `_selection_mode`; runs normally. mouth_pick persists; the user's pending mouth pick will be discarded if they click on a new map area unrelated to the river they previously had loaded. Toast warns: not added — out of scope for v0.50.0; documented as a known minor edge. |
 | Clicks 🌊 Rivers / 💧 Water / 🌊 Sea (fetch) | Fetch handlers do NOT touch `_selection_mode`. mouth_pick persists. Existing handlers reset `_rivers_gdf`/`_water_gdf`/`_sea_gdf` — Auto-split's prereq check (`_auto_extract_done`) will fail anyway, forcing the user to re-run Auto-extract. mouth_pick stays armed silently. |
 | Clicks 🏞️ River / 💧 Lagoon / 🌊 Sea (selection) | `_toggle_selection_mode("river"/"lagoon"/"sea")` reads `current = _selection_mode()`, finds `"mouth_pick"` (truthy), `current != mode` → enters the else branch: writes new mode + auto-names a reach. **mouth_pick is silently overwritten** with no warning toast. Acceptable: user explicitly chose another selection mode. |
-| Clicks 🗑 Clear | `_on_clear_reaches` already resets `_selection_mode.set("")` (panel line 787); mouth_pick clears. `_mouth_lon_lat` should also reset — add `_mouth_lon_lat.set(None)` to that handler. |
+| Clicks 🗑 Clear | `_on_clear_reaches` already resets `_selection_mode.set("")` (panel line 787); mouth_pick clears. **Required edit**: insert `_mouth_lon_lat.set(None)` immediately after the existing `_selection_mode.set("")` line at panel line 787 (within `_on_clear_reaches`). |
+| Strahler slider change | `_on_strahler_change` (panel line 773-776) calls `_refresh_map()` only; does NOT touch `_selection_mode`. mouth_pick mode persists across Strahler changes. |
 | Never clicks anywhere | Mode persists indefinitely. No timeout. The next ⚡ Auto-split click will see `_selection_mode == "mouth_pick"` and `_mouth_lon_lat() is None` → re-arms the mode and re-toasts. Idempotent; no error. |
 
-Existing pickability flags at panel lines 452 and 471 (`pickable=(sel ==
-"lagoon"|"sea")`) ignore the new `mouth_pick` value — water and sea
-polygons are pickable in mouth_pick mode anyway. Acceptable: mouth_pick
-records ANY map click, not just clicks on specific layers.
+Existing pickability flags at panel lines 464 and 480 (`pickable=(sel ==
+"lagoon")` and `pickable=(sel == "sea")`) evaluate to `False` when
+`sel == "mouth_pick"` — neither water nor sea polygons are individually
+pickable in this mode. **This is acceptable** because mouth_pick captures
+the raw `(lon, lat)` from the map's click bridge (panel line 875: `lon =
+data.get("longitude")`), not from a specific feature's properties. The
+click is captured at the map level via the JS bridge regardless of any
+layer's `pickable` setting.
 
 ## Error handling
 
@@ -532,7 +641,19 @@ NOMINATIM_KLAIPEDA = [{
 | Test | Asserts |
 |------|---------|
 | `test_default_reach_names_n4` | helper returns `["Mouth", "Lower", "Middle", "Upper"]` |
-| `test_default_reach_names_other_n` | N=3 → `["Reach1", "Reach2", "Reach3"]`; N=9 → `["Reach1", …, "Reach9"]`; N=2 → `["Reach1", "Reach2"]` |
+| `test_default_reach_names_other_n` | N=3 → `["Reach1", "Reach2", "Reach3"]`; N=8 → `["Reach1", …, "Reach8"]`; N=2 → `["Reach1", "Reach2"]` |
+
+### `_pick_mouth_from_sea` test — new file `tests/test_pick_mouth_from_sea.py` (+3 cases)
+
+`_pick_mouth_from_sea` is defined inside `create_model_server`; for
+testability the spec promotes it to a module-level helper at the top of
+`create_model_panel.py` (after `REACH_COLORS`). Tests import it directly.
+
+| Test | Setup | Asserts |
+|------|-------|---------|
+| `test_pick_mouth_returns_endpoint_near_sea` | Single LineString centerline (1.0,1.0)→(2.0,2.0); sea polygon containing (2.0,2.0) | returns `(2.0, 2.0)` (the river-end-of-line endpoint, closer to sea) |
+| `test_pick_mouth_returns_none_if_far_from_sea` | LineString centerline well inland; sea polygon >>5 km away | returns `None` |
+| `test_pick_mouth_handles_multilinestring` | MultiLineString with 2 sub-segments, one near sea | returns the sub-segment endpoint nearest the sea |
 
 ### Reused tests (no changes needed)
 
