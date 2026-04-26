@@ -39,7 +39,7 @@
 ```bash
 # 1. Confirm branch state
 git status                           # expect: only `tmp/` untracked, possibly
-git log -1 --format="%H %s"          # expect: 353e215 spec(v0.49.0): incorporate Loop 1-4 review fixes
+git log master..HEAD --oneline | wc -l  # expect: 3 (2 spec commits + 1 plan commit)
 git rev-parse --abbrev-ref HEAD      # expect: v049-csv-format-fix
 
 # 2. Confirm Python env versions (Marine Regions WFS NOT needed for v0.49.0)
@@ -285,7 +285,12 @@ Expected: `syntax OK`, then `3` (1 def + 2 calls), then `0` (the broken `pd.Data
 micromamba run -n shiny python scripts/_probe_create_model_csv_format.py
 ```
 
-Expected: NO `ValueError`. The probe should print the parsed `flows`, `values shape`, and `cell_ids` cleanly. This is the empirical confirmation the bug is fixed.
+Expected: NO `ValueError`. The probe should print:
+- `flows: [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]`
+- `values shape: (3, 10)` ← MUST be `(3, 10)`, NOT `(10, 3)`. If you see `(10, 3)`, the matrix is transposed the wrong way — STOP and re-check Task 1's helper + Task 2's caller refactor before proceeding.
+- `cell_ids: ['C0001', 'C0002', 'C0003']`
+
+This is the empirical confirmation the bug is fixed. Note: the probe doesn't assert these values; the agent must visually compare. The shape-asserting test in Task 3 catches a transposition error definitively, but Task 2's probe check is the earliest catch.
 
 - [ ] **Step 6: Do NOT commit yet** — Task 4 commits the bundle.
 
@@ -452,7 +457,7 @@ git status --porcelain | head -10
 micromamba run -n shiny python -m pytest tests/test_create_model_export.py -v 2>&1 | tail -5
 ```
 
-Expected: 3 staged changes (M scripts, M tests, D probe). 3 PASS.
+Expected: exactly 3 staged entries — `M  app/modules/create_model_export.py`, `M  tests/test_create_model_export.py`, `D  scripts/_probe_create_model_csv_format.py`. Plus 3 PASS from pytest.
 
 - [ ] **Step 5: Commit**
 
@@ -637,11 +642,11 @@ git tag -a v0.49.0 -m "v0.49.0: Create Model CSV export format fix"
 
 ```bash
 git tag -l v0.49.0
-git log -3 --format="%H %s"
+git log -5 --format="%H %s"
 git rev-parse v0.49.0^{}
 ```
 
-Expected: tag `v0.49.0` exists; `git log -3` shows the 2 implementation commits + the spec/plan commits; `git rev-parse v0.49.0^{}` resolves to the release commit (Task 5's commit SHA).
+Expected: tag `v0.49.0` exists; `git log -5` shows (newest first) the release commit (Task 5), the fix commit (Task 4), the plan commit, and the 2 spec commits; `git rev-parse v0.49.0^{}` resolves to the release commit (Task 5's SHA).
 
 ---
 
@@ -661,6 +666,6 @@ Expected: all PASS (3 + existing create_model_grid + create_model + 8 marine + 9
 git log master..HEAD --oneline
 ```
 
-Expected: 4 commits — 2 spec commits (`e5e3d5f` + `353e215`), the implementation commit (Task 4), and the release commit (Task 5).
+Expected: 5 commits — 2 spec commits (`e5e3d5f` + `353e215`), 1 plan commit (`4657d55`), the implementation commit (Task 4), and the release commit (Task 5).
 
 After this, follow the project's release flow (per the v0.47.0 / v0.48.0 precedent): merge to master via `--no-ff`, then optionally deploy to laguna using the `.claude/skills/deploy/` skill.
