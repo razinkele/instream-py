@@ -67,6 +67,21 @@ def scaffold_river(short_name: str, spec: dict) -> None:
     print(f"[{short_name}] copying template...")
     shutil.copytree(TEMPLATE, out_dir)
 
+    # v0.48.0: strip prototype Depths/Vels — wire script reads these from
+    # example_baltic directly. Keep PROTO TimeSeriesInputs (Mouth/Lower/
+    # Middle/Upper sources for per-river T/Q calibration applied below).
+    # Fully drop FULLY_ORPHAN reaches (Lithuanian distributary names that
+    # have no WGBAST counterpart) — their TimeSeriesInputs were git-deleted
+    # in v0.47.0 (fc08578) and must not be re-introduced by re-runs.
+    PROTO = ("Nemunas", "Atmata", "Minija", "Sysa")
+    FULLY_ORPHAN = ("Skirvyte", "Leite", "Gilija", "CuronianLagoon")
+    for proto in PROTO:
+        for suffix in ("Depths", "Vels"):
+            (out_dir / f"{proto}-{suffix}.csv").unlink(missing_ok=True)
+    for orphan in FULLY_ORPHAN:
+        for suffix in ("Depths", "Vels", "TimeSeriesInputs"):
+            (out_dir / f"{orphan}-{suffix}.csv").unlink(missing_ok=True)
+
     # 1. Apply temperature offset + flow multiplier to each freshwater-reach
     #    TimeSeriesInputs.csv
     for reach in NEMUNAS_FRESHWATER_REACHES:
