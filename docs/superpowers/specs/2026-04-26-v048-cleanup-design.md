@@ -166,7 +166,7 @@ If WFS is unreachable at regen time, defer commit 2 until WFS recovers — the h
 
 **`scripts/_generate_wgbast_physical_domains.py` — new module-level dict and helper:**
 
-Place these after the `RIVERS` list (around line 192), colocated with `BALTICCOAST_*` constants:
+Place these after the `RIVERS` list (line 193), before `COLUMN_RENAME` (line ~196). The `BALTICCOAST_*` constants are at lines 71–87 and are deliberately NOT colocated — the new dict references `river.short_name` values that are first introduced by the `RIVERS` list, so it reads better immediately after that list.
 
 ```python
 # Map each WGBAST river to the IHO sea-area name returned by Marine
@@ -222,7 +222,7 @@ def _marineregions_cache_path(river: "River") -> Path:
 
 3. **Line 238 (docstring of `_load_or_fetch_marineregions`)** — update the path format example to reference `<iho_slug>_marineregions.json` instead of `<short_name>_marineregions.json`.
 
-**Empty-IHO-name guard on cache-miss** — in `_load_or_fetch_marineregions`, after the WFS returns the gdf, if `gdf["name"].iloc[0]` is empty or whitespace, raise:
+**Empty-IHO-name guard on cache-miss** — placed on the WFS-fetch branch only (NOT the cache-load branch — an empty-name response would have triggered the guard at first-fetch time and never been written to disk). After the WFS returns a non-empty gdf, but before writing the cache file: if `gdf["name"].iloc[0]` is empty or whitespace, raise:
 
 ```python
 RuntimeError(
@@ -236,7 +236,18 @@ This catches the WFS-schema-change scenario where `query_named_sea_polygon` retu
 
 ### Tests added in commit 2
 
-Both extend the existing file `tests/test_marineregions_cache.py` (NOT a new file):
+Both extend the existing file `tests/test_marineregions_cache.py` (NOT a new file). The current file imports only from `generate_baltic_example` via a `sys.path.insert(0, SCRIPTS_DIR)`. Both new tests need to import from `_generate_wgbast_physical_domains` (same `scripts/` directory, so the existing `sys.path.insert` already works). Add the module-level import at the top of the file (avoids re-importing on every parametrized case):
+
+```python
+from _generate_wgbast_physical_domains import (
+    _marineregions_cache_path,
+    RIVERS,
+)
+```
+
+(The leading-underscore module name is importable normally; the underscore is a project convention for "internal CLI script", not a package-private marker.)
+
+The existing module docstring of `tests/test_marineregions_cache.py` reads `"""Tests for the Marine Regions cache+fetch helper inside generate_baltic_example.py."""` — update it to also mention `_generate_wgbast_physical_domains`, e.g. `"""Tests for the Marine Regions cache+fetch helpers (generate_baltic_example.py + _generate_wgbast_physical_domains.py)."""`.
 
 **`test_marineregions_cache_path_returns_iho_keyed_path`** — 4 parametrized cases. For each WGBAST river, asserts `_marineregions_cache_path(river).name` equals the expected IHO-keyed filename (3 → `gulf_of_bothnia_marineregions.json`, 1 → `baltic_sea_marineregions.json`). Catches typos in the slug derivation.
 
@@ -314,7 +325,7 @@ All new error paths surface as `RuntimeError` with actionable text:
 - Tests partitioned across two existing test files (one per sub-task) so each commit is independently green:
   - Commit 1 tests in `tests/test_wgbast_river_extents.py` (no import dependency on commit 2's helper).
   - Commit 2 tests in `tests/test_marineregions_cache.py` (extend the existing file by appending).
-- Existing tests verified to remain green: 25 fixture-shape regression cases + 4 fixture-load cases + 17 helper unit tests + the rest of the suite.
+- Existing tests verified to remain green: 25 fixture-shape regression cases (`test_wgbast_river_extents.py`) + 4 fixture-load cases (`test_multi_river_baltic.py::test_fixture_loads_and_runs_3_days`) + 8 marine helper cases (`test_create_model_marine.py`) + 9 river helper cases (`test_create_model_river.py`) + 2 marine-cache cases (`test_marineregions_cache.py`) + the rest of the suite.
 
 ## Out of scope
 
