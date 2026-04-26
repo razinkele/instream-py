@@ -192,6 +192,46 @@ RIVERS: list[River] = [
 ]
 
 
+# v0.48.0: map each WGBAST river to the IHO sea-area name returned by
+# Marine Regions WFS for its mouth bbox. Used to derive a shared cache
+# path — rivers in the same IHO area share one cached polygon (saves
+# ~34 MB vs the per-river caching scheme used pre-v0.48). IHO polygons
+# are sea-level global features (not bbox-clipped), so sharing is safe.
+RIVER_TO_IHO_NAME = {
+    "example_tornionjoki": "Gulf of Bothnia",
+    "example_simojoki":    "Gulf of Bothnia",
+    "example_byskealven":  "Gulf of Bothnia",
+    "example_morrumsan":   "Baltic Sea",
+}
+
+
+def _marineregions_cache_path(river: "River") -> Path:
+    """Return the IHO-keyed cache path for `river`'s sea polygon.
+
+    Path format: tests/fixtures/_osm_cache/<iho_slug>_marineregions.json
+    where iho_slug is the lowercase, space-to-underscore IHO sea-area
+    name (e.g. 'gulf_of_bothnia', 'baltic_sea').
+
+    Raises:
+      RuntimeError: if `river.short_name` is not in `RIVER_TO_IHO_NAME`,
+        or if the mapped IHO name is empty/whitespace.
+    """
+    try:
+        iho_name = RIVER_TO_IHO_NAME[river.short_name]
+    except KeyError:
+        raise RuntimeError(
+            f"River {river.short_name!r} not in RIVER_TO_IHO_NAME; "
+            f"add a mapping in {__file__} before regenerating."
+        ) from None
+    if not iho_name or not iho_name.strip():
+        raise RuntimeError(
+            f"RIVER_TO_IHO_NAME[{river.short_name!r}] is empty; "
+            f"populate with the IHO sea-area name (e.g. 'Gulf of Bothnia')."
+        )
+    slug = iho_name.lower().replace(" ", "_")
+    return OSM_CACHE / f"{slug}_marineregions.json"
+
+
 # Property naming from configs/example_baltic.yaml spatial.gis_properties.
 # The loader reads these exact column names from the shapefile.
 COLUMN_RENAME = {
@@ -235,7 +275,10 @@ def _load_or_fetch_marineregions(
     bbox_pad_deg: float = 0.5,
 ) -> "gpd.GeoDataFrame | None":
     """Return the Marine Regions IHO polygons for `river`, cached at
-    tests/fixtures/_osm_cache/<short_name>_marineregions.json.
+    tests/fixtures/_osm_cache/<iho_slug>_marineregions.json
+    (e.g. gulf_of_bothnia_marineregions.json). IHO polygons are
+    sea-level global features (not bbox-clipped), so rivers in the
+    same IHO area share one cache file safely.
 
     On first call (or when `refresh=True`), queries Marine Regions WFS
     via `create_model_marine.query_named_sea_polygon`. Caches the
@@ -244,7 +287,7 @@ def _load_or_fetch_marineregions(
 
     Returns None if WFS fetch fails on a fresh attempt.
     """
-    cache = OSM_CACHE / f"{river.short_name}_marineregions.json"
+    cache = _marineregions_cache_path(river)
     if not refresh and cache.exists():
         data = json.loads(cache.read_text(encoding="utf-8"))
         if not data:
@@ -280,6 +323,18 @@ def _load_or_fetch_marineregions(
         # file. Future calls will see "no cache" and retry the WFS,
         # rather than seeing a corrupt empty cache.
         return None
+    # v0.48.0: empty-IHO-name guard — the cache is keyed by IHO sea-area
+    # name. If the WFS returns a polygon with no name (schema change
+    # scenario), we cannot derive the cache filename safely. Caching to
+    # a degenerate slug like '_marineregions.json' would silently corrupt
+    # cross-river cache sharing. Surface the schema change loud.
+    iho_name_in_response = str(gdf["name"].iloc[0]) if "name" in gdf.columns else ""
+    if not iho_name_in_response or not iho_name_in_response.strip():
+        raise RuntimeError(
+            f"Marine Regions returned a polygon with no name; cannot derive "
+            f"cache filename for {river.short_name}. Service may have changed; "
+            f"re-run with --refresh and inspect the WFS response."
+        )
     # Cache as a list of GeoJSON features (always non-empty here)
     payload = json.loads(gdf.to_json())["features"]
     if not payload:
@@ -541,7 +596,7 @@ def write_river_shapefile(river: River) -> Path:
         raise RuntimeError(
             f"{river.river_name}: Marine Regions returned no sea polygon. "
             f"Re-run when WFS recovers (or delete the cached payload at "
-            f"tests/fixtures/_osm_cache/{river.short_name}_marineregions.json "
+            f"{_marineregions_cache_path(river).relative_to(ROOT)} "
             f"if it has gone stale and re-run to re-fetch)."
         )
     # Pick the sea polygon nearest the mouth. Two-stage strategy:
