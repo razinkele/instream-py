@@ -15,6 +15,8 @@ import logging
 import geopandas as gpd
 from pathlib import Path
 from shapely.validation import make_valid
+from shapely.geometry import Point
+from shapely.ops import unary_union
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
@@ -83,6 +85,11 @@ try:
     from modules.create_model_marine import query_named_sea_polygon
 except ImportError:  # pragma: no cover — matches existing fallback pattern
     query_named_sea_polygon = None  # type: ignore[assignment]
+
+try:
+    from modules.create_model_geocode import lookup_place_bbox
+except ImportError:  # pragma: no cover
+    lookup_place_bbox = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +263,31 @@ def create_model_ui():
             ui.tags.div(style="flex:1;"),  # spacer
             ui.output_ui("toolbar_badges"),
         ),
+        ui.div(
+            {"class": "cm-toolbar"},
+            ui.tags.span("Auto:", class_="cm-label"),
+            ui.input_text(
+                "place_name", None,
+                placeholder="Place name…",
+                width="180px",
+            ),
+            ui.input_action_button("find_btn", "🔍 Find",
+                                   class_="btn btn-cm",
+                                   title="Look up a place via Nominatim and load Rivers + Water"),
+            ui.tags.div(class_="cm-sep"),
+            ui.input_action_button("auto_extract_btn", "✨ Auto-extract",
+                                   class_="btn btn-cm",
+                                   title="Filter water polygons to the centerline-connected component"),
+            ui.tags.div(class_="cm-sep"),
+            ui.input_action_button("auto_split_btn", "⚡ Auto-split",
+                                   class_="btn btn-cm",
+                                   title="Partition extracted polygons into N reaches by along-channel distance"),
+            ui.tags.span("N:", class_="cm-label"),
+            ui.div(
+                ui.input_numeric("auto_split_n", None, value=4, min=2, max=8, step=1, width="70px"),
+                style="display:inline-block; vertical-align:middle;",
+            ),
+        ),
         # -- Map (shown immediately, before any fetch) ---
         _widget.ui(height="550px"),
         # Hidden action button + JS bridge for map click events.
@@ -348,6 +380,9 @@ def create_model_server(input, output, session):
     _selection_mode = reactive.value("")       # "", "river", "lagoon", or "sea"
     _current_reach_name = reactive.value("")  # active reach being built
     _workflow_msg = reactive.value("")
+    _auto_extract_done = reactive.value(False)
+    _mouth_lon_lat = reactive.value(None)
+    _finding = reactive.value(False)
 
     # -----------------------------------------------------------------
     # Helpers
@@ -590,9 +625,14 @@ def create_model_server(input, output, session):
     # Fetch handlers (existing, preserved)
     # -----------------------------------------------------------------
 
-    @reactive.effect
-    @reactive.event(input.fetch_rivers)
-    async def _on_fetch_rivers():
+    async def _do_fetch_rivers():
+        """Body lift of fetch_rivers — callable from the Find handler too.
+
+        Sets `_auto_extract_done.set(False)` as the first line because fresh
+        OSM data invalidates any prior Auto-extract result regardless of who
+        triggered the fetch (button or Find).
+        """
+        _auto_extract_done.set(False)
         country = input.osm_country()
         bbox = _get_view_bbox()
         _fetch_msg.set(f"Extracting river network for {country} (bbox clipped)...")
@@ -674,8 +714,15 @@ def create_model_server(input, output, session):
         _fetch_msg.set(f"Loaded {int(is_poly_final.sum())} river polygons + {int((~is_poly_final).sum())} stream lines{water_msg}.")
 
     @reactive.effect
-    @reactive.event(input.fetch_water)
-    async def _on_fetch_water():
+    @reactive.event(input.fetch_rivers)
+    async def _on_fetch_rivers():
+        await _do_fetch_rivers()
+
+    async def _do_fetch_water():
+        """Body lift of fetch_water — callable from Find too.
+        Resets _auto_extract_done first since fresh data invalidates prior extract.
+        """
+        _auto_extract_done.set(False)
         country = input.osm_country()
         bbox = _get_view_bbox()
         _fetch_msg.set(f"Extracting water bodies for {country} (bbox clipped)...")
@@ -694,6 +741,63 @@ def create_model_server(input, output, session):
         _water_gdf.set(gdf)
         await _refresh_map()
         _fetch_msg.set(f"Loaded {len(gdf)} water bodies from local OSM data.")
+
+    @reactive.effect
+    @reactive.event(input.fetch_water)
+    async def _on_fetch_water():
+        await _do_fetch_water()
+
+    @reactive.effect
+    @reactive.event(input.find_btn)
+    async def _on_find():
+        import asyncio
+        import math
+
+        if lookup_place_bbox is None:
+            ui.notification_show(
+                "Geocoder helper unavailable (create_model_geocode failed to import)",
+                type="error",
+            )
+            return
+        if _finding():
+            return
+        _finding.set(True)
+        try:
+            name = input.place_name() or ""
+            if not name.strip():
+                ui.notification_show("Type a place name first", type="warning")
+                return
+
+            result = await asyncio.to_thread(lookup_place_bbox, name)
+            if result is None:
+                ui.notification_show(f"No place found for '{name}'", type="warning")
+                return
+
+            country_geofabrik, bbox = result
+            lon_w, lat_s, lon_e, lat_n = bbox
+            cx = (lon_w + lon_e) / 2.0
+            cy = (lat_s + lat_n) / 2.0
+            span = max(lon_e - lon_w, lat_n - lat_s)
+            zoom = int(max(5, min(13, 9 - math.log2(max(span, 0.05)))))
+
+            if country_geofabrik is None:
+                ui.notification_show(
+                    f"Place found at ({cy:.2f}, {cx:.2f}) but its country has no "
+                    "Geofabrik OSM extract; map zoomed but Rivers/Water not auto-fetched",
+                    type="warning",
+                )
+                _pending_fly_to.set((cx, cy, zoom))
+                return
+
+            ui.update_select("osm_country", selected=country_geofabrik)
+            _pending_fly_to.set((cx, cy, zoom))
+            ui.notification_show(
+                f"Loaded {name} (lat {cy:.2f}, lon {cx:.2f}). Fetching rivers and water…",
+                type="message",
+            )
+            await _do_fetch_rivers()
+        finally:
+            _finding.set(False)
 
     # -----------------------------------------------------------------
     # Fetch sea areas (Marine Regions IHO)
