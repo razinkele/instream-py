@@ -229,6 +229,42 @@ def _orient_centerline_mouth_to_source(
     return LineString(unique)
 
 
+def filter_centerlines_by_name(
+    centerlines: Sequence[LineString | MultiLineString],
+    names: Sequence[Optional[str]],
+    name_query: str,
+) -> list[LineString | MultiLineString]:
+    """Return centerlines whose name contains ``name_query`` (case-insensitive
+    substring, casefolded so 'dane' matches 'Danė').
+
+    Empty / whitespace ``name_query`` short-circuits to passthrough — that's
+    how callers signal "no filter". With a non-empty query, ways whose
+    paired name is None or "" are dropped (OSM unnamed tributaries would
+    otherwise leak through and defeat single-river selection).
+
+    Motivated by v0.51.0's Klaipėda pivot: the BFS in
+    ``filter_polygons_by_centerline_connectivity`` over-collects polygons
+    when the centerline contains every river in a connected water network
+    (port + strait + lagoon + delta). Pre-filtering centerlines by river
+    name narrows the BFS seed set so only the named river's polygons are
+    visited.
+    """
+    if len(names) != len(centerlines):
+        raise ValueError(
+            f"length mismatch: {len(centerlines)} centerlines vs {len(names)} names"
+        )
+
+    q = (name_query or "").strip()
+    if not q:
+        return list(centerlines)
+
+    needle = q.casefold()
+    return [
+        cl for cl, nm in zip(centerlines, names)
+        if nm and needle in nm.casefold()
+    ]
+
+
 def default_reach_names(n_reaches: int) -> list[str]:
     """Smart default for reach names produced by Auto-split.
 

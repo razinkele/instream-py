@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.1] — 2026-04-27
+
+### Added — single-river selection in Auto-extract / Auto-split
+
+Closes the v0.51.0 followup. Adds an optional **main river name** text
+input next to the Create Model panel's ✨ Auto-extract button. When set,
+the BFS that picks the centerline-connected component is seeded only
+from centerlines whose OSM `name` (or `nameText`) attribute contains the
+query string (case-insensitive substring match — `"dane"` matches
+`"Danė"`). The same filter is also applied by ⚡ Auto-split so along-channel
+projection runs against the chosen river only.
+
+This addresses the v0.51.0 Klaipėda finding: in dense connected water
+networks (river + port + strait + lagoon + delta) the unfiltered BFS
+visits every river. With the filter set to a single river name the BFS
+seed never enters the unrelated polygons, so the connected-component
+result is bounded to that river's water. Empty filter preserves prior
+behavior exactly.
+
+- New helper `app/modules/create_model_river.py::filter_centerlines_by_name`
+  — pure (no pandas/geopandas) function: parallel `centerlines` + `names`
+  lists + query → filtered geometries. Casefold-based comparison, drops
+  None/empty names when the filter is active, raises on length mismatch.
+- 5 new unit tests in `tests/test_create_model_river.py` covering:
+  diacritic-insensitive substring match, empty-query passthrough, no-match
+  → `[]`, None/empty names skipped, mismatched-length raises.
+- `_on_auto_extract` and `_on_auto_split` both read `input.river_name_filter()`,
+  prefer the rivers GDF's `name` column (falling back to `nameText`),
+  short-circuit with a clear notification on zero matches.
+
+### Notes
+
+- Filter state is not snapshotted between Auto-extract and Auto-split.
+  If the user changes the filter between buttons, Auto-split's centerline
+  may no longer match the polygons captured by the prior Auto-extract;
+  this is treated as a UI-level mistake. A future patch could capture the
+  active filter in a reactive value at extract time if real users hit this.
+
 ## [0.51.0] — 2026-04-26
 
 ### Added — Danė river fixture

@@ -154,11 +154,13 @@ try:
         filter_polygons_by_centerline_connectivity,
         partition_polygons_along_channel,
         default_reach_names,
+        filter_centerlines_by_name,
     )
 except ImportError:  # pragma: no cover
     filter_polygons_by_centerline_connectivity = None
     partition_polygons_along_channel = None
     default_reach_names = None
+    filter_centerlines_by_name = None
 
 
 # ---------------------------------------------------------------------------
@@ -344,9 +346,17 @@ def create_model_ui():
                                    class_="btn btn-cm",
                                    title="Look up a place via Nominatim and load Rivers + Water"),
             ui.tags.div(class_="cm-sep"),
+            ui.input_text(
+                "river_name_filter", None,
+                placeholder="(optional) main river name…",
+                width="180px",
+            ),
             ui.input_action_button("auto_extract_btn", "✨ Auto-extract",
                                    class_="btn btn-cm",
-                                   title="Filter water polygons to the centerline-connected component"),
+                                   title="Filter water polygons to the centerline-connected component. "
+                                         "If a main-river name is set, restrict the seed centerline to "
+                                         "ways with that name (case-insensitive substring match) — use "
+                                         "this in dense networks like the Klaipėda port + Curonian Lagoon."),
             ui.tags.div(class_="cm-sep"),
             ui.input_action_button("auto_split_btn", "⚡ Auto-split",
                                    class_="btn btn-cm",
@@ -889,14 +899,42 @@ def create_model_server(input, output, session):
         water_gdf  = _water_gdf()
         n_before   = len(water_gdf)
 
-        centerline_mask = rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
-        centerline_geoms = list(rivers_gdf[centerline_mask].geometry)
+        centerline_rows = rivers_gdf[
+            rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
+        ]
+        centerline_geoms = list(centerline_rows.geometry)
         if not centerline_geoms:
             ui.notification_show(
                 "Rivers layer has no LineString geometries — cannot extract main system",
                 type="warning",
             )
             return
+
+        # v0.51.1: optional single-river selection. The v0.51.0 Klaipėda
+        # release found that BFS over the FULL centerline collects every
+        # connected polygon (port + strait + lagoon + delta). When the
+        # user names the river they want, narrow the seed centerline
+        # before the BFS runs.
+        name_query = (input.river_name_filter() or "").strip()
+        if name_query and filter_centerlines_by_name is not None:
+            name_col = "name" if "name" in centerline_rows.columns else (
+                "nameText" if "nameText" in centerline_rows.columns else None
+            )
+            names_list = (
+                list(centerline_rows[name_col]) if name_col else [None] * len(centerline_geoms)
+            )
+            n_centerlines_before = len(centerline_geoms)
+            centerline_geoms = filter_centerlines_by_name(
+                centerline_geoms, names_list, name_query,
+            )
+            if not centerline_geoms:
+                ui.notification_show(
+                    f"No rivers named like '{name_query}' in the loaded centerlines "
+                    f"(searched {n_centerlines_before} ways). Clear the filter to "
+                    "auto-extract from all rivers.",
+                    type="warning",
+                )
+                return
 
         kept = filter_polygons_by_centerline_connectivity(
             centerline_geoms,
@@ -947,14 +985,43 @@ def create_model_server(input, output, session):
         rivers_gdf = _rivers_gdf()
         water_gdf  = _water_gdf()
 
-        centerline_mask = rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
-        centerline_geoms = list(rivers_gdf[centerline_mask].geometry)
+        centerline_rows = rivers_gdf[
+            rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
+        ]
+        centerline_geoms = list(centerline_rows.geometry)
         if not centerline_geoms:
             ui.notification_show(
                 "Rivers layer has no LineString geometries — cannot Auto-split",
                 type="warning",
             )
             return
+
+        # v0.51.1: mirror Auto-extract's name filter on the split centerline
+        # so along-channel projection runs against the right river only.
+        # If user changed the filter between buttons, the new value wins —
+        # which means the polygons (filtered with the OLD value) and the
+        # centerline (filtered with the NEW value) can disagree. UI-level
+        # mistake; accepted because storing per-extract state would expand
+        # the patch.
+        name_query = (input.river_name_filter() or "").strip()
+        if name_query and filter_centerlines_by_name is not None:
+            name_col = "name" if "name" in centerline_rows.columns else (
+                "nameText" if "nameText" in centerline_rows.columns else None
+            )
+            names_list = (
+                list(centerline_rows[name_col]) if name_col else [None] * len(centerline_geoms)
+            )
+            centerline_geoms = filter_centerlines_by_name(
+                centerline_geoms, names_list, name_query,
+            )
+            if not centerline_geoms:
+                ui.notification_show(
+                    f"No rivers named like '{name_query}' in the loaded centerlines — "
+                    "clear the filter or fetch fresh OSM data.",
+                    type="warning",
+                )
+                return
+
         polys_list = list(water_gdf.geometry)
 
         if n_reaches > len(polys_list):
