@@ -70,6 +70,13 @@ class ReachMetrics:
         return self.cells == 1 and self.area_m2 > 100_000.0
 
 
+# v0.51.4: when cell_area/polygon_area exceeds this, the cells overshoot
+# the real OSM water polygon by 50%+ — buffer-inflation regardless of
+# the absolute width. The v0.51.0 Danė fixture had ratio ~50× before
+# regen; the v0.45.x WGBAST fixtures sit at 1.02-1.03 (faithful).
+DEFAULT_MAX_CELL_TO_POLYGON_AREA_RATIO = 1.5
+
+
 @dataclass(frozen=True)
 class ReachIssue:
     """One violation produced by ``check_reach_plausibility``."""
@@ -128,14 +135,68 @@ def compute_reach_metrics(reach_gdf: gpd.GeoDataFrame) -> ReachMetrics:
     )
 
 
+def compute_polygon_coverage_ratio(
+    reach_cells_gdf: gpd.GeoDataFrame,
+    reference_polygons: list,
+) -> Optional[float]:
+    """Return ``cells_total_area / reference_polygons_total_area``.
+
+    Reference polygons are real OSM water polygons (loaded from
+    ``_osm_cache/{fixture}_polygons.json``). Both areas are computed in
+    the cells' projected CRS so the ratio is dimensionless and comparable.
+
+    A ratio ≈ 1.0 means cells faithfully tile real water; ratio > 1.5
+    means cells overshoot the real polygons (buffer inflation). Ratio
+    < 0.5 means cells under-cover (sparse polygon-fill failures).
+
+    Returns None when either input is empty or unprojectable; callers
+    should treat None as "no signal".
+    """
+    if reach_cells_gdf.empty or not reference_polygons:
+        return None
+
+    target_crs = reach_cells_gdf.crs
+    if target_crs is None:
+        return None
+
+    epsg = target_crs.to_epsg()
+    if epsg is None or epsg == 4326:
+        cells_m = reach_cells_gdf.to_crs("EPSG:3857")
+    else:
+        cells_m = reach_cells_gdf
+
+    cells_area = cells_m.geometry.union_all().area
+    if cells_area <= 0:
+        return None
+
+    ref_gdf = gpd.GeoDataFrame(
+        geometry=list(reference_polygons), crs="EPSG:4326"
+    ).to_crs(cells_m.crs)
+    ref_area = ref_gdf.geometry.union_all().area
+    if ref_area <= 0:
+        return None
+
+    return cells_area / ref_area
+
+
 def check_reach_plausibility(
     metrics: ReachMetrics,
     classification: ReachClass,
     *,
     max_river_effective_width_m: float = DEFAULT_MAX_RIVER_EFFECTIVE_WIDTH_M,
     min_marine_cells: int = DEFAULT_MIN_MARINE_CELLS,
+    polygon_coverage_ratio: Optional[float] = None,
+    max_cell_to_polygon_area_ratio: float = DEFAULT_MAX_CELL_TO_POLYGON_AREA_RATIO,
 ) -> list[ReachIssue]:
-    """Apply the v0.51.2 rules to one reach. Empty list = clean."""
+    """Apply the rules to one reach. Empty list = clean.
+
+    When ``polygon_coverage_ratio`` is provided (computed externally
+    from a real OSM polygon cache), the polygon-coverage rule is the
+    AUTHORITATIVE check for buffer inflation: a ratio > 1.5 fails
+    regardless of the absolute effective width. The effective_width
+    rule is then a soft pre-check that's bypassed for legitimately
+    wide rivers (large Finnish/Swedish/braided systems).
+    """
     issues: list[ReachIssue] = []
     if metrics.cells == 0:
         issues.append(ReachIssue(
@@ -146,15 +207,32 @@ def check_reach_plausibility(
         return issues
 
     if classification == "river":
-        if metrics.effective_width_m > max_river_effective_width_m:
+        if polygon_coverage_ratio is not None:
+            # Polygon-overlap mode: AUTHORITATIVE. Wide-but-faithful
+            # rivers (Tornionjoki/Simojoki) pass on ratio ≈ 1.0 even if
+            # they exceed the legacy width threshold.
+            if polygon_coverage_ratio > max_cell_to_polygon_area_ratio:
+                issues.append(ReachIssue(
+                    severity="error",
+                    code="CELLS_OVERSHOOT_REAL_POLYGONS",
+                    message=(
+                        f"cells cover {polygon_coverage_ratio:.2f}× the area of "
+                        f"real OSM water polygons (max {max_cell_to_polygon_area_ratio}× allowed) — "
+                        f"buffer-inflation regression"
+                    ),
+                ))
+        elif metrics.effective_width_m > max_river_effective_width_m:
+            # No polygon reference available — fall back to width
+            # heuristic. Catches Danė-style buffer inflation when
+            # OSM polygon coverage doesn't exist for cross-checking.
             issues.append(ReachIssue(
                 severity="error",
                 code="RIVER_TOO_WIDE",
                 message=(
                     f"effective width {metrics.effective_width_m:.0f} m exceeds "
-                    f"river threshold {max_river_effective_width_m:.0f} m — "
-                    f"cells likely buffered against centerline rather than "
-                    f"clipped to real OSM water polygon"
+                    f"river threshold {max_river_effective_width_m:.0f} m and no "
+                    f"OSM polygon reference available — cells likely buffered "
+                    f"against centerline rather than clipped to real water"
                 ),
             ))
     elif classification == "marine":
@@ -203,16 +281,68 @@ def find_reach_column(gdf: gpd.GeoDataFrame) -> Optional[str]:
     return None
 
 
+def load_fixture_polygon_cache(fixture_dir: Path) -> Optional[list]:
+    """Load the OSM polygon cache for a fixture if one exists.
+
+    Convention: ``tests/fixtures/_osm_cache/{fixture_name}_polygons.json``
+    or ``..._osm_cache/{stem}_polygons.json`` where ``stem`` strips the
+    ``example_`` prefix (Mörrumsån convention from v0.45.2).
+
+    Returns a list of shapely geometries or None if no cache exists.
+    """
+    fixtures_root = fixture_dir.parent
+    cache_dir = fixtures_root / "_osm_cache"
+    if not cache_dir.exists():
+        return None
+
+    candidates = [
+        cache_dir / f"{fixture_dir.name}_polygons.json",
+        cache_dir / f"{fixture_dir.name.removeprefix('example_')}_polygons.json",
+    ]
+    cache_path: Optional[Path] = next((p for p in candidates if p.exists()), None)
+    if cache_path is None:
+        return None
+
+    try:
+        import json
+        from shapely.geometry import shape
+        from shapely.errors import GEOSException
+    except ImportError:
+        return None
+
+    data = json.loads(cache_path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        return None
+
+    polys = []
+    for item in data:
+        try:
+            poly = shape(item["geometry"])
+        except (GEOSException, ValueError, TypeError, KeyError):
+            continue
+        if not poly.is_valid or poly.is_empty:
+            continue
+        if poly.geom_type not in ("Polygon", "MultiPolygon"):
+            continue
+        polys.append(poly)
+    return polys
+
+
 def check_fixture_geography(
     fixture_dir: Path,
     *,
     max_river_effective_width_m: float = DEFAULT_MAX_RIVER_EFFECTIVE_WIDTH_M,
     min_marine_cells: int = DEFAULT_MIN_MARINE_CELLS,
+    max_cell_to_polygon_area_ratio: float = DEFAULT_MAX_CELL_TO_POLYGON_AREA_RATIO,
 ) -> dict[str, tuple[ReachMetrics, ReachClass, list[ReachIssue]]]:
     """Run the rules against every reach in one fixture.
 
+    When ``_osm_cache/{fixture}_polygons.json`` exists, the polygon-
+    coverage ratio becomes the authoritative river-buffer-inflation
+    check (see ``check_reach_plausibility``). When no cache exists,
+    the effective_width heuristic is used.
+
     Returns a mapping ``{reach_name: (metrics, classification, issues)}``.
-    Empty issues list means the reach is clean.
     """
     shp = discover_fixture_shapefile(fixture_dir)
     if shp is None:
@@ -223,15 +353,32 @@ def check_fixture_geography(
     if reach_col is None:
         return {}
 
+    polygon_cache = load_fixture_polygon_cache(fixture_dir)
+
     out: dict[str, tuple[ReachMetrics, ReachClass, list[ReachIssue]]] = {}
     for reach in sorted(gdf[reach_col].unique()):
         sub = gdf[gdf[reach_col] == reach]
         metrics = compute_reach_metrics(sub)
         classification = classify_reach(str(reach))
+
+        # Polygon-coverage ratio is computed at the FIXTURE level (sum
+        # of all river cells / sum of all polygons) rather than per-
+        # reach because the polygon cache has no reach metadata. We
+        # apply that fixture-level ratio to each river reach. Marine
+        # reaches don't need it.
+        ratio = None
+        if classification == "river" and polygon_cache:
+            river_cells = gdf[gdf[reach_col].apply(
+                lambda r: classify_reach(str(r)) == "river"
+            )]
+            ratio = compute_polygon_coverage_ratio(river_cells, polygon_cache)
+
         issues = check_reach_plausibility(
             metrics, classification,
             max_river_effective_width_m=max_river_effective_width_m,
             min_marine_cells=min_marine_cells,
+            polygon_coverage_ratio=ratio,
+            max_cell_to_polygon_area_ratio=max_cell_to_polygon_area_ratio,
         )
         out[str(reach)] = (metrics, classification, issues)
     return out
