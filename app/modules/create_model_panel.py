@@ -15,6 +15,8 @@ import logging
 import geopandas as gpd
 from pathlib import Path
 from shapely.validation import make_valid
+from shapely.geometry import Point
+from shapely.ops import unary_union
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
@@ -79,10 +81,84 @@ REACH_COLORS = [
 ]
 
 
+def _pick_mouth_from_sea(centerline_geoms, sea_gdf):
+    """Pick the centerline endpoint closest to any sea polygon.
+
+    Args:
+      centerline_geoms: list of LineString / MultiLineString.
+      sea_gdf: GeoDataFrame of one or more sea polygons (EPSG:4326).
+
+    Returns:
+      (lon, lat) WGS84 of the closest endpoint, or None if all endpoints
+      are >5 km from any sea polygon, or if `detect_utm_epsg` is unavailable.
+    """
+    from shapely.ops import linemerge
+    if detect_utm_epsg is None:
+        return None
+    if not centerline_geoms or len(sea_gdf) == 0:
+        return None
+
+    centerline = unary_union(centerline_geoms)
+    # linemerge collapses end-to-end-connected sub-lines into single LineStrings
+    # so we don't enumerate interior-junction endpoints (e.g. tributary forks)
+    # as candidate mouths.
+    if centerline.geom_type == "MultiLineString":
+        centerline = linemerge(centerline)
+
+    # Filter null/empty sea polygons defensively (Marine Regions WFS occasionally
+    # returns null geometries on bbox-edge cases).
+    sea_geoms = [g for g in sea_gdf.geometry if g is not None and not g.is_empty]
+    if not sea_geoms:
+        return None
+    sea_union = unary_union(sea_geoms)
+
+    if centerline.geom_type == "LineString":
+        endpoints = [Point(centerline.coords[0]), Point(centerline.coords[-1])]
+    elif centerline.geom_type == "MultiLineString":
+        endpoints = []
+        for sub in centerline.geoms:
+            endpoints.append(Point(sub.coords[0]))
+            endpoints.append(Point(sub.coords[-1]))
+    else:
+        return None
+
+    centroid = centerline.centroid
+    utm_epsg = detect_utm_epsg(centroid.x, centroid.y)
+    ep_gdf = gpd.GeoDataFrame(
+        geometry=endpoints, crs="EPSG:4326"
+    ).to_crs(epsg=utm_epsg).reset_index(drop=True)
+    sea_utm = gpd.GeoDataFrame(
+        geometry=[sea_union], crs="EPSG:4326"
+    ).to_crs(epsg=utm_epsg)
+    distances = ep_gdf.geometry.distance(sea_utm.geometry.iloc[0])
+
+    min_pos = int(distances.values.argmin())
+    if distances.iloc[min_pos] > 5000:
+        return None
+    closest = endpoints[min_pos]
+    return (closest.x, closest.y)
+
+
 try:
     from modules.create_model_marine import query_named_sea_polygon
 except ImportError:  # pragma: no cover — matches existing fallback pattern
     query_named_sea_polygon = None  # type: ignore[assignment]
+
+try:
+    from modules.create_model_geocode import lookup_place_bbox
+except ImportError:  # pragma: no cover
+    lookup_place_bbox = None  # type: ignore[assignment]
+
+try:
+    from modules.create_model_river import (
+        filter_polygons_by_centerline_connectivity,
+        partition_polygons_along_channel,
+        default_reach_names,
+    )
+except ImportError:  # pragma: no cover
+    filter_polygons_by_centerline_connectivity = None
+    partition_polygons_along_channel = None
+    default_reach_names = None
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +332,31 @@ def create_model_ui():
             ui.tags.div(style="flex:1;"),  # spacer
             ui.output_ui("toolbar_badges"),
         ),
+        ui.div(
+            {"class": "cm-toolbar"},
+            ui.tags.span("Auto:", class_="cm-label"),
+            ui.input_text(
+                "place_name", None,
+                placeholder="Place name…",
+                width="180px",
+            ),
+            ui.input_action_button("find_btn", "🔍 Find",
+                                   class_="btn btn-cm",
+                                   title="Look up a place via Nominatim and load Rivers + Water"),
+            ui.tags.div(class_="cm-sep"),
+            ui.input_action_button("auto_extract_btn", "✨ Auto-extract",
+                                   class_="btn btn-cm",
+                                   title="Filter water polygons to the centerline-connected component"),
+            ui.tags.div(class_="cm-sep"),
+            ui.input_action_button("auto_split_btn", "⚡ Auto-split",
+                                   class_="btn btn-cm",
+                                   title="Partition extracted polygons into N reaches by along-channel distance"),
+            ui.tags.span("N:", class_="cm-label"),
+            ui.div(
+                ui.input_numeric("auto_split_n", None, value=4, min=2, max=8, step=1, width="70px"),
+                style="display:inline-block; vertical-align:middle;",
+            ),
+        ),
         # -- Map (shown immediately, before any fetch) ---
         _widget.ui(height="550px"),
         # Hidden action button + JS bridge for map click events.
@@ -348,6 +449,9 @@ def create_model_server(input, output, session):
     _selection_mode = reactive.value("")       # "", "river", "lagoon", or "sea"
     _current_reach_name = reactive.value("")  # active reach being built
     _workflow_msg = reactive.value("")
+    _auto_extract_done = reactive.value(False)
+    _mouth_lon_lat = reactive.value(None)
+    _finding = reactive.value(False)
 
     # -----------------------------------------------------------------
     # Helpers
@@ -590,9 +694,14 @@ def create_model_server(input, output, session):
     # Fetch handlers (existing, preserved)
     # -----------------------------------------------------------------
 
-    @reactive.effect
-    @reactive.event(input.fetch_rivers)
-    async def _on_fetch_rivers():
+    async def _do_fetch_rivers():
+        """Body lift of fetch_rivers — callable from the Find handler too.
+
+        Sets `_auto_extract_done.set(False)` as the first line because fresh
+        OSM data invalidates any prior Auto-extract result regardless of who
+        triggered the fetch (button or Find).
+        """
+        _auto_extract_done.set(False)
         country = input.osm_country()
         bbox = _get_view_bbox()
         _fetch_msg.set(f"Extracting river network for {country} (bbox clipped)...")
@@ -674,8 +783,15 @@ def create_model_server(input, output, session):
         _fetch_msg.set(f"Loaded {int(is_poly_final.sum())} river polygons + {int((~is_poly_final).sum())} stream lines{water_msg}.")
 
     @reactive.effect
-    @reactive.event(input.fetch_water)
-    async def _on_fetch_water():
+    @reactive.event(input.fetch_rivers)
+    async def _on_fetch_rivers():
+        await _do_fetch_rivers()
+
+    async def _do_fetch_water():
+        """Body lift of fetch_water — callable from Find too.
+        Resets _auto_extract_done first since fresh data invalidates prior extract.
+        """
+        _auto_extract_done.set(False)
         country = input.osm_country()
         bbox = _get_view_bbox()
         _fetch_msg.set(f"Extracting water bodies for {country} (bbox clipped)...")
@@ -694,6 +810,207 @@ def create_model_server(input, output, session):
         _water_gdf.set(gdf)
         await _refresh_map()
         _fetch_msg.set(f"Loaded {len(gdf)} water bodies from local OSM data.")
+
+    @reactive.effect
+    @reactive.event(input.fetch_water)
+    async def _on_fetch_water():
+        await _do_fetch_water()
+
+    @reactive.effect
+    @reactive.event(input.find_btn)
+    async def _on_find():
+        import asyncio
+        import math
+
+        if lookup_place_bbox is None:
+            ui.notification_show(
+                "Geocoder helper unavailable (create_model_geocode failed to import)",
+                type="error",
+            )
+            return
+        if _finding():
+            return
+        _finding.set(True)
+        try:
+            name = input.place_name() or ""
+            if not name.strip():
+                ui.notification_show("Type a place name first", type="warning")
+                return
+
+            result = await asyncio.to_thread(lookup_place_bbox, name)
+            if result is None:
+                ui.notification_show(f"No place found for '{name}'", type="warning")
+                return
+
+            country_geofabrik, bbox = result
+            lon_w, lat_s, lon_e, lat_n = bbox
+            cx = (lon_w + lon_e) / 2.0
+            cy = (lat_s + lat_n) / 2.0
+            span = max(lon_e - lon_w, lat_n - lat_s)
+            zoom = int(max(5, min(13, 9 - math.log2(max(span, 0.05)))))
+
+            if country_geofabrik is None:
+                ui.notification_show(
+                    f"Place found at ({cy:.2f}, {cx:.2f}) but its country has no "
+                    "Geofabrik OSM extract; map zoomed but Rivers/Water not auto-fetched",
+                    type="warning",
+                )
+                _pending_fly_to.set((cx, cy, zoom))
+                return
+
+            ui.update_select("osm_country", selected=country_geofabrik)
+            _pending_fly_to.set((cx, cy, zoom))
+            ui.notification_show(
+                f"Loaded {name} (lat {cy:.2f}, lon {cx:.2f}). Fetching rivers and water…",
+                type="message",
+            )
+            await _do_fetch_rivers()
+        finally:
+            _finding.set(False)
+
+    # -----------------------------------------------------------------
+    # Auto-extract: drop disconnected water polygons
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.auto_extract_btn)
+    async def _on_auto_extract():
+        if filter_polygons_by_centerline_connectivity is None:
+            ui.notification_show("create_model_river module not available", type="error")
+            return
+        if _rivers_gdf() is None:
+            ui.notification_show("Click 🌊 Rivers first to load the centerline", type="warning")
+            return
+        if _water_gdf() is None:
+            ui.notification_show("Click 💧 Water first to load polygons", type="warning")
+            return
+
+        rivers_gdf = _rivers_gdf()
+        water_gdf  = _water_gdf()
+        n_before   = len(water_gdf)
+
+        centerline_mask = rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
+        centerline_geoms = list(rivers_gdf[centerline_mask].geometry)
+        if not centerline_geoms:
+            ui.notification_show(
+                "Rivers layer has no LineString geometries — cannot extract main system",
+                type="warning",
+            )
+            return
+
+        kept = filter_polygons_by_centerline_connectivity(
+            centerline_geoms,
+            list(water_gdf.geometry),
+            tolerance_deg=0.0005,
+            max_polys=2000,
+            label="auto-extract",
+        )
+        if not kept:
+            ui.notification_show(
+                "No connected polygons — try lowering Strahler threshold or "
+                "checking that Rivers + Water cover the same area",
+                type="warning",
+            )
+            return
+
+        # Preserve original attribute columns (nameText etc.) by id-based mask
+        kept_ids = {id(g) for g in kept}
+        mask = water_gdf.geometry.apply(lambda g: id(g) in kept_ids)
+        filtered_gdf = water_gdf[mask].reset_index(drop=True)
+        _water_gdf.set(filtered_gdf)
+        _auto_extract_done.set(True)
+
+        await _refresh_map()
+        ui.notification_show(
+            f"Kept {len(kept)} of {n_before} polygons in the main river system.",
+            type="message",
+        )
+
+    # -----------------------------------------------------------------
+    # Auto-split: partition extracted polygons into N reaches
+    # -----------------------------------------------------------------
+
+    @reactive.effect
+    @reactive.event(input.auto_split_btn)
+    async def _on_auto_split():
+        if partition_polygons_along_channel is None or default_reach_names is None:
+            ui.notification_show("create_model_river module not available", type="error")
+            return
+        if not _auto_extract_done():
+            ui.notification_show("Click ✨ Auto-extract first", type="warning")
+            return
+
+        n_reaches = int(input.auto_split_n() or 4)
+        if n_reaches < 1:
+            ui.notification_show("N must be ≥ 1", type="warning")
+            return
+        rivers_gdf = _rivers_gdf()
+        water_gdf  = _water_gdf()
+
+        centerline_mask = rivers_gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])
+        centerline_geoms = list(rivers_gdf[centerline_mask].geometry)
+        if not centerline_geoms:
+            ui.notification_show(
+                "Rivers layer has no LineString geometries — cannot Auto-split",
+                type="warning",
+            )
+            return
+        polys_list = list(water_gdf.geometry)
+
+        if n_reaches > len(polys_list):
+            ui.notification_show(
+                f"N={n_reaches} exceeds polygon count ({len(polys_list)}); "
+                "some reaches will be empty. Consider lowering N.",
+                type="warning",
+            )
+
+        # Determine mouth waypoint
+        sea_gdf = _sea_gdf()
+        if sea_gdf is not None and len(sea_gdf) > 0:
+            mouth = _pick_mouth_from_sea(centerline_geoms, sea_gdf)
+            if mouth is None:
+                ui.notification_show(
+                    "River centerline doesn't reach any sea polygon — click on map to set mouth",
+                    type="warning",
+                )
+                _current_reach_name.set("")
+                _selection_mode.set("mouth_pick")
+                _workflow_msg.set("Click on the map to set the river mouth, then ⚡ Auto-split again")
+                return
+        elif _mouth_lon_lat() is not None:
+            mouth = _mouth_lon_lat()
+        else:
+            _current_reach_name.set("")
+            _selection_mode.set("mouth_pick")
+            _workflow_msg.set("Click on the map to set the river mouth, then ⚡ Auto-split again")
+            return
+
+        groups = partition_polygons_along_channel(
+            centerline_geoms, polys_list,
+            mouth_lon_lat=mouth, n_reaches=n_reaches,
+        )
+        names = default_reach_names(n_reaches)
+
+        reaches = {}
+        for i, polys in enumerate(groups):
+            if not polys:
+                continue
+            reaches[names[i]] = {
+                "segments": polys,
+                "properties": [{} for _ in polys],
+                "color": REACH_COLORS[i % len(REACH_COLORS)],
+                "type": "water",
+            }
+        _reaches_dict.set(reaches)
+        _cells_gdf.set(None)
+        _mouth_lon_lat.set(None)
+
+        await _refresh_map()
+        counts_str = ", ".join(f"{n} ({len(reaches[n]['segments'])})" for n in names if n in reaches)
+        ui.notification_show(
+            f"Split into {len(reaches)} reaches: {counts_str}.",
+            type="message",
+        )
 
     # -----------------------------------------------------------------
     # Fetch sea areas (Marine Regions IHO)
@@ -785,6 +1102,7 @@ def create_model_server(input, output, session):
         _reaches_dict.set({})
         _cells_gdf.set(None)
         _selection_mode.set("")
+        _mouth_lon_lat.set(None)  # NEW: also clear pending mouth pick
         _current_reach_name.set("")
         _workflow_msg.set("All reaches and cells cleared.")
         await _refresh_map()
@@ -880,6 +1198,15 @@ def create_model_server(input, output, session):
         sel = _selection_mode()
         if not sel:
             _workflow_msg.set(f"Click: ({lon:.4f}, {lat:.4f}) — select a mode first (River / Lagoon / Sea)")
+            return
+
+        # NEW: mouth_pick branch handled before reach_name guard (no associated reach)
+        if sel == "mouth_pick":
+            _mouth_lon_lat.set((lon, lat))
+            _selection_mode.set("")
+            _workflow_msg.set(
+                f"River mouth set to ({lon:.4f}, {lat:.4f}). Click ⚡ Auto-split to run."
+            )
             return
 
         from shapely.geometry import Point as _Pt

@@ -227,3 +227,15 @@ def _orient_centerline_mouth_to_source(
     if len(unique) < 2:
         return merged  # fall through; downstream will detect a degenerate input
     return LineString(unique)
+
+
+def default_reach_names(n_reaches: int) -> list[str]:
+    """Smart default for reach names produced by Auto-split.
+
+    For the WGBAST convention N=4 → ["Mouth", "Lower", "Middle", "Upper"].
+    For any other N → ["Reach1", "Reach2", ..., "ReachN"]. Users can
+    rename via the Edit Model panel after the split runs.
+    """
+    if n_reaches == 4:
+        return ["Mouth", "Lower", "Middle", "Upper"]
+    return [f"Reach{i}" for i in range(1, n_reaches + 1)]
