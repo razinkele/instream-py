@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.4] — 2026-04-27
+
+### Fixed — Simojoki + Tornionjoki false positives via polygon-coverage rule
+
+Closes the remaining 6 entries in the v0.51.2 `KNOWN_GEOMETRY_DRIFT`
+registry. Test count: 43 pass + 6 xfail → **51 pass + 0 xfail** (registry
+now empty). All 38 fixture-reach pairs across 7 fixtures pass.
+
+#### Diagnosis
+
+The v0.51.2 effective_width threshold (350 m) was calibrated for
+Lithuanian-scale rivers (Mörrumsån + Nemunas-delta channels). Applied
+to large Finnish/Swedish salmon rivers it produced false positives:
+Tornionjoki has 707 km² of real water surface over ~590 km of length
+(average ~1200 m wide due to lake systems and braided channels);
+Simojoki similarly has 138 km² over ~193 km (~715 m average). These
+reaches looked broken to the v0.51.2 rule but were geographically
+faithful.
+
+#### What changed
+
+A new authoritative rule — **polygon-coverage ratio** — replaces the
+effective_width heuristic when an OSM polygon cache exists for the
+fixture. The check compares the cell-area total to the real OSM
+`natural=water` polygon area; ratio > 1.5 means cells overshoot real
+water (the v0.51.0 Danė failure mode, which had ratio ~50×). Faithful
+geometry sits at ratio 1.02-1.03 across Mörrumsån, Byskealven,
+Simojoki, and Tornionjoki — all four pass cleanly under the new rule
+regardless of absolute effective_width.
+
+The effective_width rule survives as a fallback for fixtures without
+an OSM polygon cache (currently only `example_baltic`'s Danė reaches,
+which use the small dane_polygons.json that doesn't fully cover the
+real river).
+
+#### Files
+
+- `app/modules/geographic_conformance.py`:
+  - new `compute_polygon_coverage_ratio(reach_cells_gdf, reference_polygons)`
+  - new `load_fixture_polygon_cache(fixture_dir)` — auto-discovers
+    `_osm_cache/{fixture}_polygons.json`
+  - `check_reach_plausibility` accepts `polygon_coverage_ratio` and
+    `max_cell_to_polygon_area_ratio`; the polygon-coverage rule is
+    AUTHORITATIVE when present (overrides effective_width)
+  - `check_fixture_geography` auto-loads the polygon cache and computes
+    the fixture-level ratio once per fixture, applies it to all river
+    reaches
+  - new issue code `CELLS_OVERSHOOT_REAL_POLYGONS` (severity error,
+    fires when ratio > 1.5)
+- `tests/test_geographic_conformance.py`:
+  - 2 new unit tests for the polygon-coverage rule
+  - `KNOWN_GEOMETRY_DRIFT` emptied (registry now passes through clean)
+  - session-level `_FIXTURE_RESULTS_CACHE` — runtime 15 min → 5 min by
+    skipping redundant polygon unions per (fixture, reach) pair
+
+#### Verification
+
+- 51/51 `tests/test_geographic_conformance.py` (was 43/0/6)
+- 21/21 `tests/test_baltic_geometry.py` — no regression
+- 16/16 `tests/test_create_model_river.py`
+- `scripts/check_fixture_geography.py` reports "All reaches
+  geographically plausible." for all 7 fixtures × 38 reaches.
+
+#### Backlog status
+
+`KNOWN_GEOMETRY_DRIFT` is now empty for the first time since v0.51.2
+introduced the test. The next geometry regression on any fixture will
+surface as a clean test failure rather than getting buried in xfail.
+
 ## [0.51.3] — 2026-04-27
 
 ### Fixed — Danė + KlaipedaStrait geometry now passes v0.51.2 conformance
