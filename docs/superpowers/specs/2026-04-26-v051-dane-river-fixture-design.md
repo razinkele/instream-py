@@ -87,7 +87,7 @@ but no consumer).
 | `tests/fixtures/example_baltic/KlaipedaStrait-Vels.csv` | Create | hand-written |
 | `tests/fixtures/example_baltic/KlaipedaStrait-TimeSeriesInputs.csv` | Create | hand-written |
 | `tests/fixtures/example_baltic/Shapefile/BalticExample.shp` (and .dbf/.shx/.prj) | Modify | append 5 polygons |
-| `tests/fixtures/example_baltic/BalticExample-AdultArrivals.csv` | Modify | append 26 yearly rows (one per year 2011–2036) targeting `Dane_Lower` (NOT Dane_Mouth — natal-river concept needs pspc>0); ~7 fish/yr (1.5% of yearly total ~465). Format matches existing 11-column header: `Year,Species,Reach,Number,Fraction female,Arrival start,Arrival peak,Arrival end,Length min,Length mode,Length max`. |
+| `tests/fixtures/example_baltic/BalticExample-AdultArrivals.csv` | Modify | append 28 yearly rows (one per year 2011–2038, matching existing file's year coverage) targeting `Dane_Lower` (NOT Dane_Mouth — natal-river concept needs pspc>0); 7 fish/yr (1.5% of yearly total ~465). Format matches existing 11-column header: `Year,Species,Reach,Number,Fraction female,Arrival start,Arrival peak,Arrival end,Length min,Length mode,Length max`. Existing file has 196 data rows; appended file has 224. |
 | `tests/test_baltic_geometry.py` | **Modify** | Add the 5 new reach names to `EXPECTED_REACHES`; raise `CELL_COUNT_MAX` from 2200 to ~2800; add new entries to `DIRECT_ADJACENCY_PAIRS` (Dane_Upper↔Middle, Middle↔Lower, Lower↔Mouth, Mouth↔KlaipedaStrait, KlaipedaStrait↔BalticCoast); add `Dane_Upper`/`Dane_Middle`/`Dane_Lower` to `SPAWNING_REACHES`; add `KlaipedaStrait` to the non-spawning-reaches assertion (alongside BalticCoast and CuronianLagoon). |
 | `scripts/_probe_baltic_with_dane.py` | Create | smoke probe ~70 LOC, 8 assertions |
 | `pyproject.toml` | Modify | version bump 0.50.0 → 0.51.0 |
@@ -304,20 +304,28 @@ Step-by-step operator runbook:
     → fixture-load smoke + all 9 geometry tests PASS with 14 reaches.
 
 15. **Update `BalticExample-AdultArrivals.csv`** — required (NOT optional;
-    spec table marks it as a required modify file). Append 26 yearly rows
-    (one per year 2011–2036) targeting `Dane_Lower` (NOT Dane_Mouth — natal
-    homing requires non-zero pspc). Each row: `<year>,BalticAtlanticSalmon,Dane_Lower,7,0.55,5/15/<year>,7/1/<year>,8/31/<year>,55,68,85`.
+    spec table marks it as a required modify file). Append 28 yearly rows
+    (one per year 2011–2038, matching existing file's year coverage —
+    verified: existing file ends at 2038, 196 data rows + 3 comment lines)
+    targeting `Dane_Lower` (NOT Dane_Mouth — natal homing requires non-zero
+    pspc). Each row:
+    `<year>,BalticAtlanticSalmon,Dane_Lower,7,0.55,5/15/<year>,7/1/<year>,8/31/<year>,55,68,85`.
     Why Dane_Lower: pspc=50 is the smallest non-zero pspc among Danė reaches
     (matches the small-population narrative); homers naturally redistribute
-    upstream during in-river migration. 7 fish/yr × 26 years = 182 new rows
-    appended; total file grows from 182 → 364 rows.
+    upstream during in-river migration. 28 new rows (one per year, with
+    "Number" field = 7 fish for each year) appended; total data rows grow
+    from 196 → 224. The 28-year coverage
+    avoids creating an asymmetric simulation gap in years 2037-2038 for
+    Danė while the other 7 reaches have arrivals.
 
 ## Calibration plan (per Q4 — clone-and-go)
 
 **Dane_Upper, Middle, Lower, Mouth**: clone Minija's params verbatim — the
-COMPLETE param set (~30 keys) is copied from Minija's YAML block, except
-that `pspc_smolts_per_year`, `upstream_junction`, `downstream_junction`, and
-the 3 file-path fields are reset per the Architecture table. The sample
+COMPLETE param set (19 keys: pspc + 13 numeric calibration params + 2 junction
+IDs + 3 file-path fields, verified at example_baltic.yaml:246-265) is copied
+from Minija's YAML block, except that `pspc_smolts_per_year`,
+`upstream_junction`, `downstream_junction`, and the 3 file-path fields are
+reset per the Architecture table. The sample
 YAML in step 11c shows the full Dane_Upper block.
 
 Per-reach pspc rationale:
@@ -428,9 +436,6 @@ SEA_SINK_JUNCTION = 6  # the unique downstream-only junction
 If any assertion fails, the probe prints the specific reach/file/junction
 that's broken so the operator can fix the merge and rerun.
 
-If any assertion fails, the probe prints the specific reach/file/junction
-that's broken so the operator can fix the merge and rerun.
-
 ## Testing
 
 ### Existing test gates
@@ -442,9 +447,9 @@ correctness — just structural integrity.
 
 ### New smoke probe
 
-Per Section 3, ~50 LOC, 7 assertions. Run manually post-merge as a self-check
-before committing. NOT a pytest fixture — one-shot probe that prints
-PASS/FAIL per assertion.
+Per the "Smoke probe responsibilities" section above, ~70 LOC, 8 assertions.
+Run manually post-merge as a self-check before committing. NOT a pytest
+fixture — one-shot probe that prints PASS/FAIL per assertion.
 
 ### No new pytest cases
 
