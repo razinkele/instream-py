@@ -44,14 +44,8 @@ from modules.geographic_conformance import (  # noqa: E402
 # expected-fail; removing a key after a fix forces XPASS, which is a
 # loud signal the registry is now stale.
 KNOWN_GEOMETRY_DRIFT: dict[tuple[str, str], str] = {
-    # v0.51.0 Danė fixture — buffered-centerline cell generation produced
-    # 376-465 m effective widths against a real ~25-50 m river.
-    ("example_baltic", "Dane_Lower"):  "v0.51.0 buffered-centerline geometry; effective_width 465 m vs real ~30 m",
-    ("example_baltic", "Dane_Middle"): "v0.51.0 buffered-centerline geometry; effective_width 376 m vs real ~25 m",
-    ("example_baltic", "Dane_Mouth"):  "v0.51.0 buffered-centerline geometry; effective_width 465 m vs real ~50 m",
-    ("example_baltic", "Dane_Upper"): "v0.51.0 buffered-centerline geometry; effective_width 385 m vs real ~25 m",
-    # v0.51.0 KlaipedaStrait — single 11.3 km² hand-traced polygon.
-    ("example_baltic", "KlaipedaStrait"): "v0.51.0 hand-traced single mega-cell (11.3 km²)",
+    # v0.51.3: Danė + KlaipedaStrait regenerated via tight calibrated
+    # buffer (Danė) + polygon-fill (strait); now PASS — entries removed.
 
     # v0.45.x Simojoki + Tornionjoki — buffered-centerline geometry on
     # large rivers. The threshold (350 m) sits above the real-channel
