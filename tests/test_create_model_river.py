@@ -262,3 +262,73 @@ def test_default_reach_names_other_n():
     assert default_reach_names(2) == ["Reach1", "Reach2"]
     assert default_reach_names(3) == ["Reach1", "Reach2", "Reach3"]
     assert default_reach_names(8) == [f"Reach{i}" for i in range(1, 9)]
+
+
+# ---------------------------------------------------------------------------
+# filter_centerlines_by_name — v0.51.1 single-river selection helper
+# ---------------------------------------------------------------------------
+
+def test_filter_centerlines_substring_match_case_insensitive():
+    """Common case: user types 'dane' (ASCII), OSM has 'Danė' (Lithuanian
+    diacritic). The casefold-based comparison must match Latin-with-marks
+    variants AND be substring-based so 'dan' alone also matches."""
+    from modules.create_model_river import filter_centerlines_by_name
+
+    a = LineString([(0, 0), (1, 0)])
+    b = LineString([(0, 1), (1, 1)])
+    c = LineString([(0, 2), (1, 2)])
+
+    kept = filter_centerlines_by_name(
+        centerlines=[a, b, c],
+        names=["Danė", "Minija", "Nemunas"],
+        name_query="dan",
+    )
+    assert kept == [a]
+
+
+def test_filter_centerlines_empty_query_returns_all():
+    """Empty / whitespace query short-circuits to passthrough — that's
+    how the panel signals 'no filter'. Critical: must NOT drop ways
+    with name=None when filter is off."""
+    from modules.create_model_river import filter_centerlines_by_name
+
+    a = LineString([(0, 0), (1, 0)])
+    b = LineString([(0, 1), (1, 1)])
+
+    assert filter_centerlines_by_name([a, b], ["Danė", None], "") == [a, b]
+    assert filter_centerlines_by_name([a, b], ["Danė", None], "   ") == [a, b]
+
+
+def test_filter_centerlines_no_match_returns_empty():
+    from modules.create_model_river import filter_centerlines_by_name
+
+    a = LineString([(0, 0), (1, 0)])
+    kept = filter_centerlines_by_name([a], ["Minija"], name_query="dane")
+    assert kept == []
+
+
+def test_filter_centerlines_skips_none_and_empty_names_when_filtering():
+    """OSM frequently has name=None on unnamed tributaries. With a
+    non-empty filter those must be dropped — keeping them would defeat
+    'show me only the Danė' (the v0.51.0 motivating case)."""
+    from modules.create_model_river import filter_centerlines_by_name
+
+    a = LineString([(0, 0), (1, 0)])
+    b = LineString([(0, 1), (1, 1)])
+    c = LineString([(0, 2), (1, 2)])
+
+    kept = filter_centerlines_by_name(
+        centerlines=[a, b, c],
+        names=["Danė", None, ""],
+        name_query="dan",
+    )
+    assert kept == [a]
+
+
+def test_filter_centerlines_mismatched_lengths_raises():
+    """Parallel-list contract: callers must pass len(names) == len(centerlines)."""
+    from modules.create_model_river import filter_centerlines_by_name
+
+    a = LineString([(0, 0), (1, 0)])
+    with pytest.raises(ValueError, match="length"):
+        filter_centerlines_by_name([a], ["Danė", "Minija"], "dan")
