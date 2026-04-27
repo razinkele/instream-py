@@ -118,17 +118,39 @@ Expected: 12 CSV files, named with `Dane_` prefix.
 
 Ctrl+C in the terminal that started Shiny. Task 1 ends. NO commit.
 
+- [ ] **Step 1.12: CHECKPOINT — confirm Task 1 success before Task 2**
+
+The plan controller MUST verify Task 1 succeeded before dispatching Task 2:
+1. Confirm `tests/fixtures/_dane_temp/` exists with all 12 Dane_*.csv files (4 reaches × 3 file types).
+2. Confirm `tests/fixtures/_dane_temp/Shapefile/` has at least 1 `.shp` file.
+3. Confirm the operator has stopped the Shiny server (no port 9050 conflict).
+
+If any check fails:
+- **Empty/missing CSVs**: operator likely hit the port-flood case — restart from Step 1.1, lowering Strahler to ≥2 or being more aggressive with port-deselect.
+- **Wrong reach names**: operator skipped Step 1.9 (Edit Model rename) — restart Step 1.9.
+- **Inverted Mouth/Upper**: rename was applied wrong — re-run Step 1.9 with corrected mapping.
+
+If after 3 retries Task 1 still fails, escalate to user — Klaipėda OSM data may have changed since spec-time.
+
 ---
 
 ## Task 2: Backup + manual merge of Danė reaches into example_baltic
 
-- [ ] **Step 2.1: Backup example_baltic**
+- [ ] **Step 2.1: Backup example_baltic + idempotency guard**
 
 ```bash
-cp -r "tests/fixtures/example_baltic" "tests/fixtures/example_baltic.bak"
+# Idempotency: if .bak already exists, restore-from-it BEFORE re-running the merge,
+# so a re-run starts from a known-good state.
+if [ -d "tests/fixtures/example_baltic.bak" ]; then
+    rm -rf "tests/fixtures/example_baltic"
+    cp -r "tests/fixtures/example_baltic.bak" "tests/fixtures/example_baltic"
+    echo "Restored from .bak; re-running merge from clean state"
+else
+    cp -r "tests/fixtures/example_baltic" "tests/fixtures/example_baltic.bak"
+fi
 ```
 
-The merge modifies the shapefile in place; if it goes wrong, restore from `.bak`.
+The merge modifies the shapefile in place; if it goes wrong, restore from `.bak`. Re-running Tasks 2/3/4 is now safe — each begins from the original example_baltic state.
 
 - [ ] **Step 2.2: Copy 12 Danė per-cell CSVs**
 
@@ -142,24 +164,44 @@ Verify: `ls tests/fixtures/example_baltic/Dane_*` shows 12 files.
 
 - [ ] **Step 2.3: Append Danė shapefile features**
 
-Run this Python snippet (save as `scripts/_merge_dane_shapefile.py` or run interactively):
+Schema (verified): `['ID_TEXT', 'REACH_NAME', 'AREA', 'M_TO_ESC', 'NUM_HIDING', 'FRACVSHL', 'FRACSPWN', 'geometry']`. Shapefile CRS = **EPSG:3035** (LAEA Europe, metres). `ID_TEXT` is the cell ID — must be globally unique across the merged shapefile, so Danė rows need new IDs to avoid collisions with existing `CELL_0001..CELL_<n>`.
+
+Run this Python snippet:
 
 ```python
 import geopandas as gpd
 import pandas as pd
+import glob
 
 baltic = gpd.read_file("tests/fixtures/example_baltic/Shapefile/BalticExample.shp")
 dane_dir = "tests/fixtures/_dane_temp/Shapefile"
-import glob
-dane_shp = glob.glob(f"{dane_dir}/*.shp")[0]
-dane = gpd.read_file(dane_shp)
+dane_paths = glob.glob(f"{dane_dir}/*.shp")
+assert len(dane_paths) == 1, f"Expected exactly 1 .shp in {dane_dir}, got {dane_paths}"
+dane = gpd.read_file(dane_paths[0])
+
+# Reproject Danė to baltic CRS if different (Create Model export may use EPSG:4326)
+if dane.crs != baltic.crs:
+    print(f"Reprojecting Danė: {dane.crs} → {baltic.crs}")
+    dane = dane.to_crs(baltic.crs)
 
 # Verify column-set match BEFORE merging
 baltic_cols = set(baltic.columns)
 dane_cols = set(dane.columns)
-assert baltic_cols == dane_cols, f"Column mismatch: only-in-baltic={baltic_cols - dane_cols}, only-in-dane={dane_cols - baltic_cols}"
+assert baltic_cols == dane_cols, \
+    f"Column mismatch: only-in-baltic={baltic_cols - dane_cols}, only-in-dane={dane_cols - baltic_cols}"
+
+# Reassign ID_TEXT to avoid collision with existing CELL_0001..CELL_<n>
+n_existing = len(baltic)
+dane = dane.copy()
+dane["ID_TEXT"] = [f"CELL_{n_existing + i + 1:04d}" for i in range(len(dane))]
 
 merged = gpd.GeoDataFrame(pd.concat([baltic, dane], ignore_index=True), crs=baltic.crs)
+
+# Idempotency guard: refuse to write if Dane reaches already in baltic
+existing_dane = set(baltic["REACH_NAME"]) & {"Dane_Upper", "Dane_Middle", "Dane_Lower", "Dane_Mouth"}
+assert not existing_dane, \
+    f"Danė reaches {existing_dane} already in baltic shapefile — restore from .bak before re-running"
+
 merged.to_file("tests/fixtures/example_baltic/Shapefile/BalticExample.shp")
 print(f"Merged: {len(baltic)} + {len(dane)} = {len(merged)} cells")
 ```
@@ -184,7 +226,7 @@ Expected: 13 reach names (existing 9 + 4 Danė reaches; KlaipedaStrait added in 
 
 - [ ] **Step 3.1: Append KlaipedaStrait polygon to shapefile**
 
-Run this Python snippet:
+Schema is `['ID_TEXT', 'REACH_NAME', 'AREA', 'M_TO_ESC', 'NUM_HIDING', 'FRACVSHL', 'FRACSPWN', 'geometry']`. CRS is **EPSG:3035** (NOT lat/lon). Polygon must be built in EPSG:4326 then reprojected. Sea-reach defaults: `FRACSPWN=0`, `FRACVSHL=0`, `NUM_HIDING=0`, `M_TO_ESC=0`.
 
 ```python
 import geopandas as gpd
@@ -193,8 +235,12 @@ from shapely.geometry import Polygon
 
 baltic = gpd.read_file("tests/fixtures/example_baltic/Shapefile/BalticExample.shp")
 
-# Klaipėda Strait approximate WKT — refine in QGIS if it crosses land
-strait_polygon = Polygon([
+# Idempotency guard
+assert "KlaipedaStrait" not in set(baltic["REACH_NAME"]), \
+    "KlaipedaStrait already in baltic shapefile — restore from .bak before re-running"
+
+# Klaipėda Strait WGS84 polygon — refine in QGIS if it crosses land
+strait_wgs84 = Polygon([
     (21.103, 55.685),  # SW corner — south of strait at Baltic edge
     (21.130, 55.685),  # SE corner — south Klaipėda port
     (21.130, 55.745),  # NE corner — north Klaipėda waterfront
@@ -202,18 +248,35 @@ strait_polygon = Polygon([
     (21.103, 55.685),  # close
 ])
 
-# Build a single-row GeoDataFrame matching baltic's schema
-new_row = {col: baltic.iloc[0][col] for col in baltic.columns if col != "geometry"}
-new_row["REACH_NAME"] = "KlaipedaStrait"
-# Reset numeric/index columns to defaults (FRACSPWN=0 for sea reach)
-if "FRACSPWN" in new_row:
-    new_row["FRACSPWN"] = 0.0
-new_row["geometry"] = strait_polygon
+# Reproject WGS84 polygon → baltic CRS (EPSG:3035). CRITICAL — without this,
+# the (21.103, 55.685) coords get treated as metres in EPSG:3035 and the
+# polygon lands somewhere off the coast of Africa.
+strait_in_baltic_crs = (
+    gpd.GeoSeries([strait_wgs84], crs="EPSG:4326")
+    .to_crs(baltic.crs)
+    .iloc[0]
+)
+
+# Compute polygon area in baltic-CRS metres (EPSG:3035 is metres)
+polygon_area_m2 = strait_in_baltic_crs.area
+
+# Build a single-row GeoDataFrame with sea-reach defaults
+n_existing = len(baltic)
+new_row = {
+    "ID_TEXT": f"CELL_{n_existing + 1:04d}",  # globally unique
+    "REACH_NAME": "KlaipedaStrait",
+    "AREA": polygon_area_m2,                  # actual polygon area
+    "M_TO_ESC": 0.0,                          # at sea: no escape distance
+    "NUM_HIDING": 0,                          # sea reach: no hiding cover
+    "FRACVSHL": 0.0,                          # sea reach: no vegetation shelter
+    "FRACSPWN": 0.0,                          # sea reach: no spawning
+    "geometry": strait_in_baltic_crs,
+}
 
 new_gdf = gpd.GeoDataFrame([new_row], crs=baltic.crs)
 merged = gpd.GeoDataFrame(pd.concat([baltic, new_gdf], ignore_index=True), crs=baltic.crs)
 merged.to_file("tests/fixtures/example_baltic/Shapefile/BalticExample.shp")
-print(f"Added KlaipedaStrait single polygon. Total cells: {len(merged)}")
+print(f"Added KlaipedaStrait single polygon ({polygon_area_m2:.0f} m²). Total cells: {len(merged)}")
 ```
 
 (The single-polygon approach is simpler than the regrid mentioned in the spec's risk #5. KlaipedaStrait gets exactly 1 cell, which is fine for a small sea-edge transition reach. If finer resolution is needed, defer to v0.51.x.)
@@ -374,10 +437,17 @@ Find the `BalticCoast:` block in `configs/example_baltic.yaml` (around line 370)
 Run this Python snippet:
 
 ```python
+import sys
 from pathlib import Path
 
 csv = Path("tests/fixtures/example_baltic/BalticExample-AdultArrivals.csv")
 existing = csv.read_text(encoding="utf-8")
+
+# Idempotency guard: refuse if Dane_Lower rows already present
+if "Dane_Lower" in existing:
+    print("Dane_Lower rows already present — skipping (already idempotent).")
+    sys.exit(0)
+
 new_rows = []
 for year in range(2011, 2039):  # 2011 through 2038 inclusive (28 years)
     new_rows.append(
@@ -387,7 +457,7 @@ csv.write_text(existing.rstrip("\n") + "\n" + "\n".join(new_rows) + "\n", encodi
 print(f"Appended {len(new_rows)} rows")
 ```
 
-Expected output: `Appended 28 rows`.
+Expected output: `Appended 28 rows` (or `Dane_Lower rows already present — skipping` on re-run).
 
 Verify:
 ```bash
@@ -444,11 +514,11 @@ DIRECT_ADJACENCY_PAIRS = [
 Edit `tests/test_baltic_geometry.py:196-197`:
 
 ```python
+# v0.51.0: Danė reaches with non-zero pspc are spawning reaches; Dane_Mouth
+# (pspc=0, brackish) is NOT.
 SPAWNING_REACHES = ["Nemunas", "Atmata", "Minija", "Sysa", "Skirvyte",
                     "Leite", "Gilija",
-                    # v0.51.0: Danė reaches with non-zero pspc
                     "Dane_Upper", "Dane_Middle", "Dane_Lower"]
-                    # NOT Dane_Mouth (pspc=0, brackish)
 ```
 
 - [ ] **Step 5.5: Add KlaipedaStrait to non-spawning assertion**
@@ -532,10 +602,12 @@ def main() -> int:
             for suffix in ("Depths", "Vels"):
                 f = FIXTURE_DIR / f"{r}-{suffix}.csv"
                 try:
-                    df = _parse_hydraulic_csv(f)
-                    if df.shape[1] != 10:
+                    # _parse_hydraulic_csv returns (flows, values) tuple,
+                    # NOT a DataFrame. values shape: (n_cells, n_flows).
+                    flows, values = _parse_hydraulic_csv(f)
+                    if values.shape[1] != 10:
                         load_ok = False
-                        print(f"   {f.name} has {df.shape[1]} flow cols, expected 10")
+                        print(f"   {f.name} has {values.shape[1]} flow cols, expected 10")
                 except Exception as exc:
                     load_ok = False
                     print(f"   {f.name} parse error: {type(exc).__name__}: {exc}")
@@ -554,10 +626,12 @@ def main() -> int:
     )
 
     gdf = gpd.read_file(str(SHP))
+    # Existing fixture has ~1591 cells (v0.30.1 baseline); +5 reaches add 200-400.
+    # A 1500-cell floor catches a regression that drops most existing cells.
     a5 = _check(
-        "5/8 shapefile feature count >= reach count",
-        len(gdf) >= len(EXPECTED_REACHES),
-        f"got {len(gdf)} cells",
+        "5/8 shapefile cell count >= existing baseline floor",
+        len(gdf) >= 1500,
+        f"got {len(gdf)} cells (expected >= 1500; ~1791-2000 typical)",
     )
 
     actual_reaches = set(gdf["REACH_NAME"].unique())
@@ -639,15 +713,28 @@ micromamba run -n shiny python -m pytest tests/test_baltic_example.py tests/test
 
 Expected: all existing tests PASS (no regression in example_a, example_b, example_baltic, WGBAST four).
 
+- [ ] **Step 7.4: Visual map QA (optional, post-deploy)**
+
+Per spec testing checklist item 6: load the merged fixture in the Edit Model
+panel. Verify all 14 reach polygons render at sensible Klaipėda+Nemunas
+geography; no overlap; no orphan polygons. Particularly check that the
+KlaipedaStrait polygon (manually placed in Step 3.1) sits between Smiltynė
+and Klaipėda port, NOT crossing the Curonian Spit's land area.
+
+If KlaipedaStrait crosses land, hand-edit the WKT coordinates in Step 3.1
+(refine via QGIS) and rerun Tasks 2-7 from clean (the `.bak` restore in
+Step 2.1 enables this).
+
 ---
 
 ## Task 8: First commit (data + test + smoke probe)
 
-- [ ] **Step 8.1: Clean up temp fixture**
+- [ ] **Step 8.1: Clean up temp fixture and tmp/**
 
 ```bash
 rm -rf tests/fixtures/_dane_temp/
 rm -rf tests/fixtures/example_baltic.bak/  # if probe + tests passed
+rm -rf tmp/                                  # remove the inspect-helper file from spec verification
 ```
 
 - [ ] **Step 8.2: Commit Task 2-7 changes**
