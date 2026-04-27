@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.3] — 2026-04-27
+
+### Fixed — Danė + KlaipedaStrait geometry now passes v0.51.2 conformance
+
+Closes 5 of 11 entries in the v0.51.2 `KNOWN_GEOMETRY_DRIFT` registry:
+all 4 Danė reaches + KlaipedaStrait. Test count: 38 pass + 11 xfail
+→ 43 pass + 6 xfail. All 14 `example_baltic` reaches now report "ok"
+in `scripts/check_fixture_geography.py`.
+
+**Per-reach effective_width before → after:**
+
+| Reach | v0.51.0 | v0.51.3 |
+|---|---|---|
+| Dane_Lower | 465 m | **76 m** |
+| Dane_Middle | 376 m | **63 m** |
+| Dane_Mouth | 465 m | **69 m** |
+| Dane_Upper | 385 m | **63 m** |
+| KlaipedaStrait | 1 cell @ 11.3 km² | **211 cells @ ~150 m hex** |
+
+#### What changed
+
+- **Danė** — recalibrated centerline buffer. The v0.51.0 mistake was
+  not the centerline-fill approach itself but the wide buffer
+  (`buffer_factor=2.0` on `cell_size=75 m` → 150 m buffer, 300 m wide
+  channel). Recalibrated to `buffer_factor=0.3` (22.5 m buffer, ~45 m
+  wide channel) which matches real Danė width (20-30 m).
+- **Polygon-fill considered, rejected for Danė**: Overpass returned only
+  7 polygons covering 0.16 km² of the Danė watershed. OSM tags Danė
+  primarily as a `waterway=river` LINE not as `natural=water` polygons,
+  so polygon-fill produced 9-21 disconnected lake-patch cells per reach
+  (no contiguous channel for habitat continuity). The polygon-fetch
+  pipeline is preserved in `_regenerate_dane_polygon_fill.py` as a
+  diagnostic / fallback — if OSM coverage improves later, switching
+  the script to polygon-fill is a one-line config change.
+- **KlaipedaStrait** — replaced single 11.3 km² hand-traced rectangle
+  with a 150 m hex tiling of the same outline. 211 cells gives
+  meaningful spatial resolution while keeping the strait's overall
+  geographic footprint unchanged.
+
+#### Files
+
+- `scripts/_regenerate_dane_polygon_fill.py` (NEW) — single regenerator
+  that handles both Danė (centerline + tight calibrated buffer) and
+  KlaipedaStrait (polygon-fill of v0.51.0 rectangle), then merges into
+  `tests/fixtures/example_baltic/`. The polygon-fetch+filter+partition
+  diagnostic path is kept for future use.
+- `tests/fixtures/example_baltic/Shapefile/BalticExample.{shp,dbf,...}`
+  — regenerated with new Danė + strait cells. ID_TEXT renumbered
+  globally to keep cell IDs contiguous (CELL_0001 through CELL_2066).
+- `tests/fixtures/example_baltic/Dane_*-{Depths,Vels,TimeSeriesInputs}.csv`
+  + `KlaipedaStrait-*.csv` — replaced with new per-cell hydraulics.
+- `tests/fixtures/_osm_cache/dane_polygons.json` (NEW) — Overpass
+  cache for the polygon-fetch fallback path.
+- `tests/test_geographic_conformance.py::KNOWN_GEOMETRY_DRIFT` — 5
+  example_baltic entries removed; 6 v0.45.x WGBAST entries remain
+  (Simojoki + Tornionjoki) for v0.51.4.
+
+#### Verification
+
+- `tests/test_geographic_conformance.py` — 43 pass, 6 xfail (was 38/11)
+- `tests/test_baltic_geometry.py` — 21/21 pass (no regression)
+- `tests/test_create_model_river.py` — 16/16 pass
+- `tests/test_model.py::test_multi_reach_model_loads` — pass
+- `tests/test_model.py::test_adult_arrives_as_returning_adult` — pass
+- `scripts/_probe_baltic_with_dane.py` — 8/8 invariants pass (cell
+  count 2066, vs v0.51.0's 2357 — fewer cells, faithful geometry)
+
+#### Cell-count breakdown
+
+example_baltic 2357 → 2066 cells (-12%):
+- Danė reaches: 765 → 264 cells (Mouth/Lower/Middle/Upper: 64/68/63/69)
+- KlaipedaStrait: 1 → 211 cells
+- Other 9 reaches unchanged
+
 ## [0.51.2] — 2026-04-27
 
 ### Added — geographic-conformance checker for habitat-cell fixtures
