@@ -1,0 +1,6 @@
+; Velocities for Baltic example -- KlaipedaStrait
+; weak tidal exchange with Baltic, 0.1-0.3 m/s typical
+; CELL VELOCITIES IN M/S
+10,Number of flows in table,,,,,,,,,,,,,,,,,,
+,10.0,20.0,30.0,40.0,60.0,90.0,130.0,200.0,400.0,1000.0
+1,0.10,0.12,0.14,0.16,0.18,0.20,0.22,0.24,0.27,0.30
