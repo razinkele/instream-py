@@ -387,7 +387,115 @@ reaches:
     depth_file: "BalticCoast-Depths.csv"
     velocity_file: "BalticCoast-Vels.csv"
 
+  Dane_Upper:                  # upper Dane, ~22 km, best spawning habitat
+    pspc_smolts_per_year: 150
+    drift_conc: 1.5e-08          # cloned from Minija
+    search_prod: 1.80e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.72
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 14
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 10
+    downstream_junction: 11
+    time_series_input_file: "Dane_Upper-TimeSeriesInputs.csv"
+    depth_file: "Dane_Upper-Depths.csv"
+    velocity_file: "Dane_Upper-Vels.csv"
+
+  Dane_Middle:                 # middle Dane, ~22 km, rural mid-river
+    pspc_smolts_per_year: 100
+    drift_conc: 1.5e-08
+    search_prod: 1.80e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.72
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 14
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 11
+    downstream_junction: 12
+    time_series_input_file: "Dane_Middle-TimeSeriesInputs.csv"
+    depth_file: "Dane_Middle-Depths.csv"
+    velocity_file: "Dane_Middle-Vels.csv"
+
+  Dane_Lower:                  # lower Dane through Klaipėda, urban; AdultArrivals target
+    pspc_smolts_per_year: 50
+    drift_conc: 1.5e-08
+    search_prod: 1.80e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.72
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 14
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 12
+    downstream_junction: 13
+    time_series_input_file: "Dane_Lower-TimeSeriesInputs.csv"
+    depth_file: "Dane_Lower-Depths.csv"
+    velocity_file: "Dane_Lower-Vels.csv"
+
+  Dane_Mouth:                  # brackish mouth at Klaipėda — no spawning
+    pspc_smolts_per_year: 0
+    drift_conc: 1.5e-08
+    search_prod: 1.80e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.72
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 14
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 13
+    downstream_junction: 14
+    time_series_input_file: "Dane_Mouth-TimeSeriesInputs.csv"
+    depth_file: "Dane_Mouth-Depths.csv"
+    velocity_file: "Dane_Mouth-Vels.csv"
+
+  KlaipedaStrait:              # saline strait Smiltynė–Klaipėda; clones BalticCoast
+    drift_conc: 0.2e-09          # cloned from BalticCoast
+    search_prod: 1.00e-07
+    shelter_speed_frac: 0.0
+    prey_energy_density: 1500
+    drift_regen_distance: 20000
+    shading: 0.02
+    fish_pred_min: 0.700         # 0.65 (BalticCoast) + 0.05 fudge for sheltered geometry
+    terr_pred_min: 0.995
+    light_turbid_coef: 0.007
+    light_turbid_const: 0.004
+    max_spawn_flow: 999
+    shear_A: 0.001
+    shear_B: 0.15
+    upstream_junction: 14
+    downstream_junction: 6        # joins existing sea sink (parallel to BalticCoast)
+    time_series_input_file: "KlaipedaStrait-TimeSeriesInputs.csv"
+    depth_file: "KlaipedaStrait-Depths.csv"
+    velocity_file: "KlaipedaStrait-Vels.csv"
+
 marine:
+  # v0.51.0: Both BalticCoast and KlaipedaStrait drain to junction 6 (sea sink).
+  # Designate BalticCoast as the canonical estuary reach for adult homing —
+  # KlaipedaStrait is a parallel transition reach for Danė smolts only.
+  estuary_reach: BalticCoast
   zones:
     - name: "Estuary"
       area_km2: 80

@@ -30,12 +30,14 @@ FIXTURE = (
 EXPECTED_REACHES = {
     "Nemunas", "Atmata", "Minija", "Sysa", "Skirvyte", "Leite",
     "Gilija", "CuronianLagoon", "BalticCoast",
+    # v0.51.0: Danė river + Klaipėda Strait
+    "Dane_Upper", "Dane_Middle", "Dane_Lower", "Dane_Mouth", "KlaipedaStrait",
 }
 
 # Cell-count band (updated by the generator if CELL_SIZE_M / BUFFER_FACTOR
 # / per_reach_clip are retuned). Current baseline: 1,591 cells at v0.30.1.
 CELL_COUNT_MIN = 1300
-CELL_COUNT_MAX = 2200
+CELL_COUNT_MAX = 2800   # v0.51.0: was 2200, +600 for Danė reaches + KlaipedaStrait
 
 # Pairs that MUST be connected on the cell grid (< 0.5 km apart) for the
 # salmon migration path to be continuous. A failure here means a clip bug.
@@ -53,6 +55,12 @@ DIRECT_ADJACENCY_PAIRS = [
     ("Gilija", "Nemunas"),
     # Šyša joins Atmata at Šilutė
     ("Atmata", "Sysa"),
+    # v0.51.0: Danė chain
+    ("Dane_Upper", "Dane_Middle"),
+    ("Dane_Middle", "Dane_Lower"),
+    ("Dane_Lower", "Dane_Mouth"),
+    ("Dane_Mouth", "KlaipedaStrait"),
+    ("KlaipedaStrait", "BalticCoast"),
 ]
 
 # Pairs that are ALLOWED to be disconnected because real geography or OSM
@@ -193,8 +201,11 @@ def test_documented_gap_under_budget(
 # created, and the population can't reproduce. This exact bug shipped in
 # v0.30.0 → v0.30.1 because the real-OSM generator never populated the
 # `frac_spawn` key in reach_segments (default 0.0 in create_model_grid).
+# v0.51.0: Danė reaches with non-zero pspc are spawning reaches; Dane_Mouth
+# (pspc=0, brackish) is NOT.
 SPAWNING_REACHES = ["Nemunas", "Atmata", "Minija", "Sysa", "Skirvyte",
-                    "Leite", "Gilija"]
+                    "Leite", "Gilija",
+                    "Dane_Upper", "Dane_Middle", "Dane_Lower"]
 
 
 def test_spawning_reaches_have_nonzero_frac_spawn(
@@ -227,7 +238,7 @@ def test_non_spawning_reaches_have_zero_frac_spawn(
 ) -> None:
     """Marine / lagoon cells must have FRACSPWN = 0. If they're > 0, fish
     might spawn in the ocean, which never happens for Atlantic salmon."""
-    for r in ("CuronianLagoon", "BalticCoast"):
+    for r in ("CuronianLagoon", "BalticCoast", "KlaipedaStrait"):
         mask = baltic_gdf["REACH_NAME"] == r
         if mask.sum() == 0:
             continue

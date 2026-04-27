@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.0] — 2026-04-26
+
+### Added — Danė river fixture
+
+example_baltic grows from 9 to 14 reaches with the addition of the Danė
+river (~89 km, Klaipėda, Lithuania) and the Klaipėda Strait sea-edge
+reach. Total cell count: 1591 → 2357.
+
+- 4 Danė reaches (Upper/Middle/Lower/Mouth) generated from OSM Overpass
+  data, calibration cloned from Minija. Per-reach pspc: 150/100/50/0.
+  Total 300 smolts/yr.
+- KlaipedaStrait sea-edge transition reach (single-polygon, hand-traced
+  at Smiltynė–Klaipėda strait), calibration cloned from BalticCoast
+  (`fish_pred_min: 0.700`). Joins existing sea sink junction 6 parallel
+  to BalticCoast.
+- 28 yearly AdultArrivals rows appended (2011–2038, 7 fish/yr) targeting
+  Dane_Lower.
+- New `marine.estuary_reach: BalticCoast` in YAML to disambiguate adult
+  homing target between two sea-mouth reaches.
+
+### Pivoted execution
+
+Original v0.51.0 plan called for using v0.50.0 Find/Auto-extract/Auto-split
+buttons end-to-end via the Create Model panel. Klaipėda's connected geography
+(port + strait + lagoon all share the same OSM water network) defeated
+Auto-extract — BFS visited every river. Pivoted to scripted approach:
+`scripts/_generate_dane_temp_fixture.py` queries Overpass directly,
+splits centerline via shapely.ops.substring, generates hex cells via the
+v0.50.0 `generate_cells` helper, writes per-cell CSVs via the v0.49.0
+`_write_hydraulic_csv` helper. v0.51.0 still exercises the v0.50.0
+helpers — just bypasses the panel UI orchestration. Documents a v0.50.x
+followup ("single-river selection in Auto-extract for dense river
+networks").
+
+### Updates
+
+- `tests/test_baltic_geometry.py`: EXPECTED_REACHES +5, CELL_COUNT_MAX
+  2200→2800, +5 DIRECT_ADJACENCY_PAIRS for Danė chain, SPAWNING_REACHES
+  +Dane_Upper/Middle/Lower (Dane_Mouth pspc=0 excluded), KlaipedaStrait
+  added to non-spawning assertion. 21/21 geometry tests PASS.
+- New `scripts/_probe_baltic_with_dane.py` (~120 LOC, 8 assertions). 8/8 PASS.
+
+### Notes
+
+- Closes the v0.50.0 deferred-followup ("use these new buttons end-to-end").
+- v0.52.0 (next): Tornionjoki juvenile-growth calibration (Workstream B
+  from v0.46+).
+
 ## [0.50.0] — 2026-04-26
 
 ### Added — Create Model UI buttons
