@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.2] — 2026-04-27
+
+### Added — geographic-conformance checker for habitat-cell fixtures
+
+User-reported: "CELL_2357 is absolutely irrelevant geographically, the
+Danė river reaches are far too wide, not conform the Danė river polygons.
+I need a specific geography checker to avoid such artefacts."
+
+This release adds an automated check that catches both classes of
+artefact across all 7 shipped fixtures, plus xfail-strict tracking of
+the known-broken reaches so future regenerations surface as XPASS.
+
+#### What's checked
+
+- **River reaches** — `effective_width = total_reach_area / minimum_rotated_rect_length`
+  must stay below a threshold (default 350 m). This is a robust channel-
+  width proxy that works on the cell shapefile alone (no separate
+  centerline geometry needed), and flags fixtures where buffered-
+  centerline cell generation inflated cells against the real OSM
+  polygon.
+- **Marine / lagoon reaches** — must have at least 5 cells (catches
+  hand-traced single-blob reaches like `KlaipedaStrait`'s 11.3 km²
+  CELL_2357).
+
+Reach classification is name-based (case-insensitive substring against
+`Coast`, `Lagoon`, `Strait`, `Sea`, `Bay`, `Bothnia`, `Estuary`,
+`Harbor`, `Harbour`); everything else is treated as a river.
+
+#### Per-reach status
+
+| | reaches passing | reaches xfailed |
+|---|---|---|
+| `example_morrumsan` (gold standard, v0.45.2 polygon-fill) | 5 / 5 | 0 |
+| `example_byskealven` | 5 / 5 | 0 |
+| `example_baltic` Nemunas-delta channels | 9 / 9 | 0 |
+| `example_a` / `example_b` | 4 / 4 | 0 |
+| `example_baltic` Danė + KlaipedaStrait | 0 / 5 | **5** (v0.51.0 buffered-centerline; CELL_2357 hand-traced) |
+| `example_simojoki` rivers | 1 / 4 (Mouth ok) | **3** (v0.45.x) |
+| `example_tornionjoki` rivers | 2 / 5 (Mouth + BalticCoast ok) | **3** (v0.45.x) |
+
+#### Files
+
+- `app/modules/geographic_conformance.py` — `classify_reach`,
+  `compute_reach_metrics`, `check_reach_plausibility`,
+  `check_fixture_geography`. Pure (no Shiny) helpers.
+- `tests/test_geographic_conformance.py` — 10 unit tests on synthetic
+  geometries + parametrized per-reach test across all fixtures.
+  `KNOWN_GEOMETRY_DRIFT` registry holds the 11 xfailed (fixture, reach)
+  pairs with concrete TODO references; `test_known_drift_registry_consistency`
+  prevents typos from silently swallowing fix-related XPASS signals.
+- `scripts/check_fixture_geography.py` — CLI report. Run before
+  committing a regenerated fixture: `python scripts/check_fixture_geography.py example_baltic`.
+
+#### Doesn't check yet
+
+- True polygon-overlap (cells inside the real OSM water polygon by
+  Jaccard / IoU). Adding this needs a per-river polygon cache; deferred
+  until at least one fixture is regenerated against a real polygon
+  ground truth (likely v0.51.3 Danė regen).
+
 ## [0.51.1] — 2026-04-27
 
 ### Added — single-river selection in Auto-extract / Auto-split
