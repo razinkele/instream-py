@@ -540,13 +540,20 @@ def write_per_cell_csvs(out_dir: Path, cells_gdf: gpd.GeoDataFrame, reach_names:
             flows=flow_template, cell_ids=cell_ids, values=vels,
         )
 
+        # v0.51.6: extend time-series to cover the full baltic sim window
+        # (2011-2038, ~28 years) so the simulation doesn't fail on lookups
+        # past 2011-12-31. The original 365-day stub was a v0.51.0 bug —
+        # other example_baltic reaches (Nemunas etc.) ship 9865 lines of
+        # daily data. Tick day-by-day with datetime.timedelta so leap
+        # years are handled automatically.
         with (out_dir / f"{name}-TimeSeriesInputs.csv").open("w", encoding="utf-8") as f:
             f.write(f"; Daily time-series inputs for {name}\n")
-            f.write("; v0.51.3 polygon-fill regen\n")
+            f.write("; v0.51.6 multi-year extension (2011-2038)\n")
             f.write("Date,flow,temperature,turbidity,light\n")
             d = datetime.date(2011, 1, 1)
-            for day in range(365):
-                doy = day + 1
+            end = datetime.date(2038, 12, 31)
+            while d <= end:
+                doy = d.timetuple().tm_yday
                 temp = 2.0 + 8.0 * (1.0 + math.sin(2 * math.pi * (doy - 90) / 365.0))
                 f.write(f"{d.isoformat()},50.0,{temp:.2f},5.0,500\n")
                 d += datetime.timedelta(days=1)
