@@ -101,7 +101,7 @@ species:
     spawn_min_age: -9
     spawn_min_length: -9
     spawn_min_cond: -9
-    spawn_min_temp: 5
+    spawn_min_temp: 1  # v0.52.0 B5: was 5; Tornionjoki autumn temps are 100% <5°C in spawn window (max 2.7°C). Subarctic Atlantic salmon spawn at 0-5°C (Webb & McLay 1996).
     spawn_prob: 0.1
     spawn_wt_loss_fraction: 0.4
     mort_high_temp_T1: 28.0
