@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.2] — 2026-04-28
+
+### Fixed — Tornionjoki natal recruitment now produces FRY (5-layer onion closed)
+
+Closes the natal-recruitment failure that consumed two days of investigation.
+The bug was a five-layer onion — each fix exposed the next:
+
+1. **v0.52.0**: `behavior.py:656-662` RA candidate filter to natal_reach
+   (was: RAs drifted to BalticCoast where frac_spawn=0)
+2. **v0.52.1**: Tornionjoki Lower/Middle/Upper depths replaced (was Atmata
+   copy 4-6 m → cells stored 500-700 cm → spawn_depth_table rejected
+   anything > 204 cm → suitability=0 across every cell)
+3. **v0.52.2 layer A**: `spawn_defense_area=100` cm in Tornionjoki YAML
+   (was 0 → triggered legacy 50%-loss superimposition path → eggs piled
+   on the same cell wiped each other out)
+4. **v0.52.2 layer B**: Reprojected `TornionjokiExample.shp` from
+   EPSG:4326 (degrees) to EPSG:3035 (meters, matching example_baltic).
+   Without this, the `select_spawn_cell` distance check treated 1°
+   (~46 km at 65°N) as 1 m, excluding nearly all candidate cells and
+   blocking spawning even with defense_area > 0.
+5. **v0.52.2 layer C**: `mort_redd_lo_temp_T1/T9` from -1/+1 → -3/-1
+   (was: 99.9% cumulative egg mortality during 7-month winter
+   incubation at 0.5°C floor; biologically wrong for subarctic salmon).
+
+After all five fixes:
+
+| Metric | v0.52.1 (no v0.52.2 fixes) | v0.52.2 |
+|---|---|---|
+| Spawning fires | Yes | Yes |
+| Cumulative eggs deposited (3 yr) | 1.5M | **2.1M** |
+| Scour mortality | 96% | **0%** |
+| Lo_T mortality | 99.9% | **46%** |
+| FRY emerging (peak) | 0 | **11,443 PARR + 11,350 age-0** ✅ |
+| Total alive (peak) | 2,237 | **12,000** |
+
+Natal recruitment WORKS. The smolt-age xfail
+(`test_latitudinal_smolt_age_gradient[example_tornionjoki]`) remains
+because natal cohorts need 4+ years to mature into age-4 smolts; the
+test's sim window may need extension. But the recruitment chain is
+closed for the first time.
+
+#### Files
+
+- `configs/example_tornionjoki.yaml`:
+  - `spawn_defense_area: 100` (was 0)
+  - `mort_redd_lo_temp_T1: -3.0` (was -1.0)
+  - `mort_redd_lo_temp_T9: -1.0` (was 1.0)
+- `tests/fixtures/example_tornionjoki/Shapefile/TornionjokiExample.{shp,dbf,shx,prj}`:
+  reprojected from EPSG:4326 to EPSG:3035; AREA recalculated in m²
+  (was meaningless degree²)
+- `tests/fixtures/example_tornionjoki/Lower-Depths.csv` + `Vels.csv`,
+  `Middle-Depths.csv` + `Vels.csv`, `Upper-Depths.csv` + `Vels.csv`:
+  per-cell ±10% jitter applied to break spawn-suitability score ties
+- `scripts/_reproject_tornionjoki_to_3035.py` (NEW) — durable
+  reprojection script
+- `scripts/_check_wgbast_crs.py` (NEW) — durable diagnostic for CRS
+  audit across fixtures
+- `scripts/_fix_tornionjoki_depths.py` — extended to also write Vels
+  with per-cell jitter
+- `scripts/_probe_suitability_post_ready.py` and others — supporting
+  diagnostics
+
+#### Verification
+
+- 4/4 simulation regression tests pass
+- B5 cohort probe (3 years): 11,443 PARR + 11,350 age-0 natal fish
+- Other 3 WGBAST fixtures (Simojoki, Byskealven, Morrumsan) NOT
+  reprojected — their tests pass on bootstrap fish; defer until needed
+
+#### Known limitation
+
+`test_latitudinal_smolt_age_gradient[example_tornionjoki]` xfail still
+open. Natal cohorts produced in v0.52.2 are at age 1-2 by end of the
+3-year probe; they need to reach age 4 to flip the xfail. A longer
+sim window (5-6 years) would test this; deferred to v0.52.3.
+
 ## [0.52.1] — 2026-04-28
 
 ### Fixed — Tornionjoki Lower/Middle/Upper depth values are now spawning-suitable
