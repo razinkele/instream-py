@@ -5,6 +5,101 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.0] — 2026-04-28
+
+### Fixed — RETURNING_ADULT fish hold in their natal reach
+
+Fixes the v0.46+ Workstream B Tornionjoki adult-homing bug discovered
+in this session's earlier diagnosis arc. Behavior code was pulling
+RA/KELT fish into adjacent low-velocity cells (BalticCoast in
+Tornionjoki's case), which overwrote `reach_idx` and stranded adults
+in a marine reach with `frac_spawn=0` — so spawning never fired.
+
+#### Bug
+
+`src/salmopy/modules/behavior.py:656-662` (the RA/KELT pre-pass) chose
+the lowest-velocity cell from the entire `move_radius_max=20km`
+candidate set:
+
+```python
+if _lh_i == _RA_VAL or _lh_i == _KELT_VAL:
+    hold_cell = candidates[int(np.argmin(cs.velocity[candidates]))]
+    ...
+    trout_state.reach_idx[i] = cs.reach_idx[hold_cell]
+```
+
+For Tornionjoki, the candidate set for a fish in `Lower` includes
+nearby `BalticCoast` cells (sea velocity ~0). The argmin always picks
+a sea cell, and `reach_idx` is overwritten to BalticCoast. Spawning
+then fails because BalticCoast has `frac_spawn=0`.
+
+Why Baltic doesn't trigger this: example_baltic's geometry has Nemunas
+with its own low-velocity cells competing in argmin; the natal reach
+wins. Tornionjoki is a steep Lapland river with higher-velocity natal
+reaches, so BalticCoast's sea cells always have lower velocity.
+
+#### Fix
+
+Filter candidates to the fish's natal reach BEFORE the argmin:
+
+```python
+_ra_natal = int(trout_state.natal_reach_idx[i])
+if _ra_natal >= 0:
+    _ra_mask = cs.reach_idx[candidates] == _ra_natal
+    if np.any(_ra_mask):
+        candidates = candidates[_ra_mask]
+hold_cell = candidates[int(np.argmin(cs.velocity[candidates]))]
+```
+
+Fallback to original candidates if natal reach has no wet cells in
+range — better to hold in the wrong reach than strand the fish.
+
+#### Verification
+
+- New regression test `test_returning_adult_holds_in_natal_reach_baltic`:
+  PASS (positive control — Baltic was already correct)
+- New regression test `test_returning_adult_holds_in_natal_reach_tornionjoki`:
+  PASS (the bug case)
+- Focused spawn-gate diagnostic: RA distribution flipped from
+  **0/0/0/465** (Lower/Middle/Upper/BalticCoast) to **172/177/116/0**.
+  All RAs now hold in their natal reaches.
+
+#### Files
+
+- `src/salmopy/modules/behavior.py:656-662` — added the natal-reach
+  candidate filter
+- `tests/test_model.py` — 2 new tests + shared `_ra_natal_reach_consistency`
+  helper that runs a fixture for 200 days and asserts every RA fish has
+  `reach_idx == natal_reach_idx`
+
+#### Known limitation: natal recruitment still doesn't fully work
+
+The `test_latitudinal_smolt_age_gradient[example_tornionjoki]` xfail
+remains. The B5 redd probe (`scripts/_probe_v046_tornionjoki_cohort.py
+--years 3`) shows `init_cum=0` even after the fix. A second bug exists
+between "RA in correct reach" and "redd created" — possibly:
+
+- Spawn-window temperature gating: only 11-24% of days reach
+  `spawn_min_temp=1.0°C` across Tornionjoki reaches, combined with
+  `spawn_prob=0.1` per-fish-per-day, may not produce enough spawning
+  events to register.
+- Or another gate inside `_do_spawning` after `ready_to_spawn`.
+
+This is genuinely a separate bug from the behavior.py one — fish are
+now in the right place; spawning module just doesn't fire. Investigation
+deferred to v0.52.1 or later.
+
+### Carried forward from v0.51.x
+
+- `configs/example_tornionjoki.yaml`: `spawn_min_temp=1` (was 5;
+  biologically correct for subarctic salmon per Webb & McLay 1996)
+- `tests/fixtures/example_tornionjoki/TornionjokiExample-AdultArrivals.csv`:
+  remapped from Baltic reach names (Nemunas/Atmata/etc.) to
+  Tornionjoki Lower/Middle/Upper
+
+Both were necessary preconditions for the behavior.py fix to be
+testable. Both remain in place in v0.52.0.
+
 ## [0.51.6] — 2026-04-28
 
 ### Fixed — TimeSeriesInputs.csv now covers full 2011-2038 sim window

@@ -226,6 +226,92 @@ def test_multi_reach_model_loads():
         print("Expected failure (multi-reach WIP):", e)
 
 
+def _ra_natal_reach_consistency(config_path: str, data_dir: str, n_days: int = 200):
+    """Helper: run a fixture for n_days, then assert every RETURNING_ADULT
+    fish has reach_idx == natal_reach_idx.
+
+    This is the v0.52.0 invariant — RA/KELT fish must hold in their
+    natal reach during the freshwater pre-spawn window. Before v0.52.0,
+    behavior.py:656-662 picked the lowest-velocity cell across the
+    entire move-radius candidate set, which for Tornionjoki's geometry
+    pulled adults into BalticCoast (sea velocity ~0) and overwrote
+    reach_idx. Spawning then failed because BalticCoast has frac_spawn=0.
+
+    Returns the dict of (reach_idx → count) for the RA cohort so the
+    caller can also assert non-zero adults exist.
+    """
+    from collections import Counter
+    from salmopy.model import SalmopyModel
+    from salmopy.state.life_stage import LifeStage
+
+    model = SalmopyModel(config_path, data_dir=data_dir)
+    for _ in range(n_days):
+        model.step()
+
+    ts = model.trout_state
+    alive = ts.alive_indices()
+    is_ra = ts.life_history[alive] == int(LifeStage.RETURNING_ADULT)
+    ra = alive[is_ra]
+    if len(ra) == 0:
+        return {}, ts, model
+
+    # The invariant: every RA fish lives in its natal reach.
+    mismatches = []
+    for i in ra:
+        if int(ts.reach_idx[i]) != int(ts.natal_reach_idx[i]):
+            mismatches.append((int(i), int(ts.reach_idx[i]), int(ts.natal_reach_idx[i])))
+
+    assert not mismatches, (
+        f"{len(mismatches)}/{len(ra)} RETURNING_ADULTs are outside their natal reach. "
+        f"First 5: {mismatches[:5]} "
+        f"(format: fish_idx, current_reach_idx, natal_reach_idx). "
+        f"Likely regression in behavior.py:656-662 RA candidate filter."
+    )
+
+    reach_counts = Counter(int(r) for r in ts.reach_idx[ra])
+    return reach_counts, ts, model
+
+
+def test_returning_adult_holds_in_natal_reach_baltic():
+    """example_baltic positive control: RA fish hold in their natal
+    Nemunas / Atmata / etc. reaches, never in BalticCoast (which has
+    frac_spawn=0 and shouldn't host spawners).
+    """
+    from pathlib import Path
+    PROJECT = Path(__file__).resolve().parent.parent
+    config = str(PROJECT / "configs" / "example_baltic.yaml")
+    data = str(PROJECT / "tests" / "fixtures" / "example_baltic")
+    reach_counts, _, model = _ra_natal_reach_consistency(config, data, n_days=200)
+    # Sanity: AdultArrivals should have produced some RAs by day 200
+    assert sum(reach_counts.values()) > 0, "no RETURNING_ADULTs after 200 days"
+    # No RA should be in BalticCoast (it's marine + frac_spawn=0)
+    bc_idx = model.reach_order.index("BalticCoast") if "BalticCoast" in model.reach_order else None
+    if bc_idx is not None:
+        assert reach_counts.get(bc_idx, 0) == 0, (
+            f"{reach_counts.get(bc_idx, 0)} RAs ended up in BalticCoast "
+            f"(should be 0); reach_counts={dict(reach_counts)}"
+        )
+
+
+def test_returning_adult_holds_in_natal_reach_tornionjoki():
+    """example_tornionjoki regression: this is the case v0.52.0 fixed.
+    Before the fix, all 465 RAs ended up at cell 3200 in BalticCoast;
+    after, they hold in Lower/Middle/Upper per AdultArrivals.
+    """
+    from pathlib import Path
+    PROJECT = Path(__file__).resolve().parent.parent
+    config = str(PROJECT / "configs" / "example_tornionjoki.yaml")
+    data = str(PROJECT / "tests" / "fixtures" / "example_tornionjoki")
+    reach_counts, _, model = _ra_natal_reach_consistency(config, data, n_days=200)
+    assert sum(reach_counts.values()) > 0, "no RETURNING_ADULTs after 200 days"
+    bc_idx = model.reach_order.index("BalticCoast") if "BalticCoast" in model.reach_order else None
+    if bc_idx is not None:
+        assert reach_counts.get(bc_idx, 0) == 0, (
+            f"{reach_counts.get(bc_idx, 0)} RAs ended up in BalticCoast "
+            f"(should be 0); reach_counts={dict(reach_counts)}"
+        )
+
+
 def test_adult_arrives_as_returning_adult():
     """Anadromous adults should arrive as RETURNING_ADULT, not SPAWNER."""
     from pathlib import Path
