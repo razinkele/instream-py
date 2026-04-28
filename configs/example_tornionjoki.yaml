@@ -91,7 +91,7 @@ species:
     resp_C: 0.002
     resp_D: 1.4
     search_area: 20000
-    spawn_defense_area: 0
+    spawn_defense_area: 100  # v0.52.2: 100 cm = 1 m radius → ~3.14 m² redd footprint. Was 0 → triggered legacy 50%-loss superimposition path which wiped 96% of eggs when multiple females spawned on the same cell. Real Atlantic salmon redds are ~1-3 m².
     spawn_egg_viability: 0.8
     spawn_fecund_mult: 690
     spawn_fecund_exp: 0.552
@@ -134,8 +134,8 @@ species:
     mort_redd_dewater_surv: 0.98
     mort_redd_hi_temp_T1: 23
     mort_redd_hi_temp_T9: 17.5
-    mort_redd_lo_temp_T1: -1.0
-    mort_redd_lo_temp_T9: 1.0
+    mort_redd_lo_temp_T1: -3.0  # v0.52.2: was -1; subarctic salmon eggs tolerate sustained 0-1°C incubation. With Tornionjoki winter floor 0.5°C and 7-month incubation (210 days), the old -1/1 curve gave 0.62^210 = essentially 0 cumulative survival. New -3/-1 puts 0.5°C far above T9, giving daily survival ≥0.99 → ~12% cumulative (low but non-zero, allowing FRY emergence).
+    mort_redd_lo_temp_T9: -1.0
     mort_redd_scour_depth: 5
     redd_devel_A: 0.0019
     redd_devel_B: 0.0005
