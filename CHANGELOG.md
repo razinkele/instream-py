@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.5] — 2026-04-28
+
+### Fixed — KlaipedaStrait + BalticCoast cells no longer overlap land
+
+User-reported: "klaipeda strait reach is an orthogonal blob spreading
+over the land areas. baltic coast cells expand over the curonian spit"
+
+#### Diagnosis
+
+- **KlaipedaStrait**: v0.51.3 filled the v0.51.0 hand-traced rectangle
+  (21.103-21.130 × 55.685-55.745) with 211 hex cells. The rectangle was
+  an axis-aligned bounding box covering the Klaipėda port + city + spit
+  tip; the actual strait water surface is only ~2-3 km² of the 11.3 km²
+  rectangle. Probe found **198/211 cells (94%) intersect Lithuanian
+  land**, with 9.18 km² of cells on land surface.
+- **BalticCoast**: `generate_baltic_example.py fetch_baltic_coast()`
+  used `if/elif` to subtract EITHER `lithuania_land_real.geojson` OR
+  `curonian_spit.geojson`. The Lithuanian land polygon covers only
+  18.5% of the Curonian Spit (the spit's south half is in
+  Kaliningrad/Russian waters, outside the Lithuanian admin polygon).
+  Result: 3-5 BalticCoast cells extended onto the spit's land surface.
+
+#### Fix
+
+Both polygons now subtract **lithuania_land_real AND curonian_spit**
+before cell generation:
+
+- `scripts/_regenerate_dane_polygon_fill.py::build_strait_segments()`:
+  raw rectangle → `rectangle.difference(land).difference(spit)`. Cell
+  count drops 211 → 50 (only real water remains).
+- `scripts/_regenerate_dane_polygon_fill.py::build_balticcoast_segments()`
+  (NEW): same construction as the base `generate_baltic_example.py` but
+  with both subtractions. Cell count 65 → 97 (slightly finer cell size
+  2000 m vs original 2500 m, plus spit correctly removed).
+- `scripts/generate_baltic_example.py::fetch_baltic_coast()`: changed
+  `if/elif` to `if + if` so both polygons always subtract.
+
+#### Verification
+
+| | v0.51.4 | v0.51.5 |
+|---|---|---|
+| KlaipedaStrait cells | 211 | **50** |
+| KlaipedaStrait area on land | 9.18 km² | **0.00 km²** |
+| BalticCoast cells | 65 | 97 |
+| BalticCoast cells on spit | 3 | 0 (boundary touches only) |
+
+- 88/88 `tests/test_geographic_conformance.py` + `test_baltic_geometry.py` + `test_create_model_river.py` pass
+- 8/8 `scripts/_probe_baltic_with_dane.py` invariants pass (cell count 1937 ≥ 1500 floor)
+- `tests/test_model.py::test_multi_reach_model_loads` + `test_adult_arrives_as_returning_adult` pass
+
+#### Files
+
+- `scripts/_regenerate_dane_polygon_fill.py` — extended to handle
+  KlaipedaStrait + BalticCoast clip; cell count 264+50+97 = 411 new cells
+- `scripts/generate_baltic_example.py::fetch_baltic_coast()` — changed
+  if/elif to if/if so subsequent regenerations from the base script
+  also benefit
+- `scripts/_probe_balticcoast_land_overlap.py` (NEW, durable) —
+  diagnostic for cell-on-land checks; useful for any future fixture
+- `tests/fixtures/example_baltic/Shapefile/BalticExample.{shp,dbf,shx}`
+  — regenerated. ID_TEXT renumbered (CELL_0001 through CELL_1937).
+- `KlaipedaStrait-{Depths,Vels,TimeSeriesInputs}.csv` + same for
+  `BalticCoast-*.csv` — regenerated to match new cell counts
+
+example_baltic total cells: 2066 → 1937 (-6%, geometry now faithful).
+
 ## [0.51.4] — 2026-04-27
 
 ### Fixed — Simojoki + Tornionjoki false positives via polygon-coverage rule

@@ -93,8 +93,15 @@ DANE_MOUTH_LON_LAT = (21.135, 55.713)
 
 # v0.51.0 KlaipedaStrait WKT (recovered from BalticExample.shp). 1.7 ×
 # 6.7 km rectangle covering the Smiltynė–Klaipėda strait water surface.
-# Suitable as a polygon-fill seed even though shape is approximate.
+# v0.51.5: clipped at runtime by lithuania_land + curonian_spit polygons
+# to keep only real water (~2-3 km² of the 11.3 km² rectangle).
 KLAIPEDA_STRAIT_BBOX = (21.103, 55.685, 21.130, 55.745)
+
+# v0.51.5: BalticCoast nearshore Baltic polygon — same construction as
+# generate_baltic_example.py fetch_baltic_coast() but copied here so a
+# single regen run can fix both reaches without touching the 9-reach
+# base generator.
+BALTIC_COAST_BBOX = (20.70, 55.65, 21.20, 55.98)  # (W, S, E, N)
 
 REACH_NAMES = ["Dane_Mouth", "Dane_Lower", "Dane_Middle", "Dane_Upper"]
 REACH_FRAC_SPAWN = [0.0, 0.05, 0.05, 0.05]  # mouth=brackish, no spawn
@@ -111,6 +118,9 @@ DANE_BUFFER_FACTOR = 0.3
 # Strait is genuine open water (1.7×6.7 km). Coarser hex keeps cell
 # count modest while still giving ~200 cells of spatial structure.
 STRAIT_CELL_SIZE_M = 150.0
+# BalticCoast nearshore zone is ~1700 km² post-clip — coarser tile keeps
+# cell count modest. Default at 2000 m (matches v0.51.4 generate_baltic_example.py).
+BALTIC_COAST_CELL_SIZE_M = 2000.0
 
 
 # ----------------------------------------------------------------------
@@ -358,20 +368,129 @@ def build_dane_reach_segments_from_centerline(
 # ----------------------------------------------------------------------
 
 def build_strait_segments() -> dict:
+    """Build the KlaipedaStrait fill polygon with land subtracted.
+
+    The v0.51.3 version used the raw rectangular bbox unchanged. That
+    placed 198/211 cells (94%) on actual land (Klaipėda port + city +
+    spit tip) — only ~2 km² of the 11.3 km² rectangle was real water.
+
+    v0.51.5 fix: subtract Lithuanian land + Curonian Spit polygons from
+    the rectangle. The remaining geometry is the actual strait water
+    surface, which is ~6 km long × ~400 m wide between the spit tip
+    and the port — only ~2-3 km² total.
+    """
     s_lat, w_lon, n_lat, e_lon = (
         KLAIPEDA_STRAIT_BBOX[1],
         KLAIPEDA_STRAIT_BBOX[0],
         KLAIPEDA_STRAIT_BBOX[3],
         KLAIPEDA_STRAIT_BBOX[2],
     )
-    strait_poly = Polygon([
+    strait_rect = Polygon([
         (w_lon, s_lat), (e_lon, s_lat),
         (e_lon, n_lat), (w_lon, n_lat),
         (w_lon, s_lat),
     ])
+
+    land_path = ROOT / "app/data/marineregions/lithuania_land_real.geojson"
+    spit_path = ROOT / "app/data/marineregions/curonian_spit.geojson"
+    geom = strait_rect
+    if land_path.exists():
+        land = gpd.read_file(land_path).geometry.iloc[0]
+        geom = geom.difference(land)
+        log.info("KlaipedaStrait: subtracted lithuania_land_real")
+    if spit_path.exists():
+        spit = gpd.read_file(spit_path).geometry.iloc[0]
+        geom = geom.difference(spit)
+        log.info("KlaipedaStrait: subtracted curonian_spit")
+
+    if not geom.is_valid:
+        from shapely.validation import make_valid
+        geom = make_valid(geom)
+
+    if geom.is_empty:
+        raise RuntimeError(
+            "KlaipedaStrait polygon is empty after land/spit subtraction. "
+            "Check lithuania_land_real.geojson + curonian_spit.geojson."
+        )
+
+    # Diagnostic: how much water remained?
+    area_m2 = gpd.GeoDataFrame(
+        geometry=[geom], crs="EPSG:4326"
+    ).to_crs("EPSG:3035").geometry.iloc[0].area
+    log.info("KlaipedaStrait water area after clip: %.2f km² (was 11.3 km² rectangle)",
+             area_m2 / 1e6)
+
+    # generate_cells expects a list of segments. Explode MultiPolygon into
+    # its parts so each component is a Polygon.
+    if geom.geom_type == "MultiPolygon":
+        segments = list(geom.geoms)
+    else:
+        segments = [geom]
+
     return {
         "KlaipedaStrait": {
-            "segments": [strait_poly],
+            "segments": segments,
+            "frac_spawn": 0.0,  # marine, no spawn
+            "type": "water",
+        }
+    }
+
+
+# ----------------------------------------------------------------------
+# Step 5b (v0.51.5): BalticCoast re-clip
+# ----------------------------------------------------------------------
+
+def build_balticcoast_segments() -> dict:
+    """Build the BalticCoast polygon clipped by lithuania_land + curonian_spit.
+
+    Mirrors the construction in generate_baltic_example.py fetch_baltic_coast(),
+    duplicated here so this regen script can fix BalticCoast cells without
+    re-running the entire 9-reach generator (which would also wipe Danė
+    and force re-stitching).
+
+    The v0.51.4 generator ran with `if/elif` between lithuania_land and
+    curonian_spit; lithuania_land covers only 18.5% of the spit (it's
+    Lithuania-only, the spit's south half is in Kaliningrad waters), so
+    cells extended onto the spit. The fix subtracts BOTH polygons.
+    """
+    w_lon, s_lat, e_lon, n_lat = BALTIC_COAST_BBOX
+    coast_rect = Polygon([
+        (w_lon, s_lat), (e_lon, s_lat),
+        (e_lon, n_lat), (w_lon, n_lat),
+        (w_lon, s_lat),
+    ])
+
+    land_path = ROOT / "app/data/marineregions/lithuania_land_real.geojson"
+    spit_path = ROOT / "app/data/marineregions/curonian_spit.geojson"
+    geom = coast_rect
+    if land_path.exists():
+        land = gpd.read_file(land_path).geometry.iloc[0]
+        geom = geom.difference(land)
+        log.info("BalticCoast: subtracted lithuania_land_real")
+    if spit_path.exists():
+        spit = gpd.read_file(spit_path).geometry.iloc[0]
+        geom = geom.difference(spit)
+        log.info("BalticCoast: subtracted curonian_spit")
+
+    if not geom.is_valid:
+        from shapely.validation import make_valid
+        geom = make_valid(geom)
+    if geom.is_empty:
+        raise RuntimeError("BalticCoast polygon empty after land/spit subtraction.")
+
+    area_m2 = gpd.GeoDataFrame(
+        geometry=[geom], crs="EPSG:4326"
+    ).to_crs("EPSG:3035").geometry.iloc[0].area
+    log.info("BalticCoast water area after clip: %.2f km²", area_m2 / 1e6)
+
+    if geom.geom_type == "MultiPolygon":
+        segments = list(geom.geoms)
+    else:
+        segments = [geom]
+
+    return {
+        "BalticCoast": {
+            "segments": segments,
             "frac_spawn": 0.0,  # marine, no spawn
             "type": "water",
         }
@@ -555,13 +674,27 @@ def main() -> int:
         raise RuntimeError("KlaipedaStrait generate_cells produced 0 cells")
     log.info("KlaipedaStrait cells: %d total", len(strait_cells))
 
+    # Step 6b (v0.51.5): BalticCoast hex cells with land + spit clip
+    bc_segments = build_balticcoast_segments()
+    log.info("generating BalticCoast cells (cell_size=%.0f m) ...", BALTIC_COAST_CELL_SIZE_M)
+    bc_cells = generate_cells(
+        reach_segments=bc_segments,
+        cell_size=BALTIC_COAST_CELL_SIZE_M,
+        cell_shape="hexagonal",
+        buffer_factor=2.0,
+        min_overlap=0.1,
+    )
+    if bc_cells.empty:
+        raise RuntimeError("BalticCoast generate_cells produced 0 cells")
+    log.info("BalticCoast cells: %d total", len(bc_cells))
+
     # Combine + write CSVs in _dane_temp/
     all_cells = gpd.GeoDataFrame(
-        pd.concat([dane_cells, strait_cells], ignore_index=True),
+        pd.concat([dane_cells, strait_cells, bc_cells], ignore_index=True),
         geometry="geometry",
         crs=dane_cells.crs,
     )
-    all_reach_names = REACH_NAMES + ["KlaipedaStrait"]
+    all_reach_names = REACH_NAMES + ["KlaipedaStrait", "BalticCoast"]
     write_per_cell_csvs(OUT_DIR, all_cells, all_reach_names)
 
     # Per-reach summary
@@ -590,13 +723,16 @@ def main() -> int:
              shp, len(all_cells_for_shp), all_cells_for_shp.crs)
 
     if not args.no_merge:
-        merge_into_example_baltic(all_cells_for_shp, REACH_NAMES + ["KlaipedaStrait"])
+        merge_into_example_baltic(
+            all_cells_for_shp,
+            REACH_NAMES + ["KlaipedaStrait", "BalticCoast"],
+        )
     else:
         log.info("--no-merge: skipping example_baltic merge")
 
     print()
     print("=" * 60)
-    print("v0.51.3 Danė + KlaipedaStrait polygon-fill regen complete.")
+    print("v0.51.5 Danė + KlaipedaStrait + BalticCoast regen complete.")
     print(f"  Total new cells: {len(all_cells)}")
     for reach in all_reach_names:
         n = int((all_cells["reach_name"] == reach).sum())

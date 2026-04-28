@@ -458,22 +458,26 @@ def fetch_baltic_coast() -> object:
     # The polygon captures the mainland coast from Šventoji → Palanga →
     # Klaipėda plus the Curonian Spit, so a single subtraction leaves only
     # sea + the strait + the spit-west offshore band.
+    # v0.51.5: subtract BOTH lithuania_land_real AND curonian_spit. The
+    # land polygon only covers 18.5% of the spit (it's a Lithuania-only
+    # boundary; the spit's southern half is in Kaliningrad/Russian
+    # waters). Without subtracting the full spit polygon, BalticCoast
+    # cells extend onto the spit's land surface.
     geom = coast_rect
     if LITHUANIA_LAND_PATH.exists():
         land = gpd.read_file(LITHUANIA_LAND_PATH).geometry.iloc[0]
-        geom = coast_rect.difference(land)
+        geom = geom.difference(land)
         if not geom.is_valid:
             geom = make_valid(geom)
-        _log("  Clipped BalticCoast by real coastline-derived land polygon "
-             "(OSM natural=coastline ways).")
-    elif SPIT_CACHE_PATH.exists():
-        # Fallback: spit only if the Lithuania cache hasn't been fetched yet.
+        _log("  Clipped BalticCoast by lithuania_land_real "
+             "(OSM natural=coastline-derived).")
+    if SPIT_CACHE_PATH.exists():
         spit = gpd.read_file(SPIT_CACHE_PATH).geometry.iloc[0]
-        geom = coast_rect.difference(spit)
+        geom = geom.difference(spit)
         if not geom.is_valid:
             geom = make_valid(geom)
-        _log("  Clipped BalticCoast by Curonian Spit polygon only (fallback).")
-    else:
+        _log("  Also clipped BalticCoast by curonian_spit polygon.")
+    if not LITHUANIA_LAND_PATH.exists() and not SPIT_CACHE_PATH.exists():
         _log("  WARN: no coastline cache found — BalticCoast is an un-clipped "
              "rectangle. Run scripts/_fetch_lithuania_land_osm.py.")
 
