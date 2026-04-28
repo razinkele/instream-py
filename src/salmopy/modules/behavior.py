@@ -654,6 +654,21 @@ def select_habitat_and_activity(trout_state, fem_space, **params):
 
         _lh_i = int(trout_state.life_history[i])
         if _lh_i == _RA_VAL or _lh_i == _KELT_VAL:
+            # v0.52.0: restrict the hold-cell candidate set to the fish's
+            # natal reach BEFORE picking the lowest-velocity slot.
+            # Without this, the unfiltered argmin pulls RA/KELT fish into
+            # any low-velocity cell within their move_radius — which for
+            # Tornionjoki means cells in BalticCoast (sea velocity ~0).
+            # Once moved, line below overwrites reach_idx and the fish
+            # is stuck in a frac_spawn=0 reach, so spawning never fires.
+            # Fallback to the original candidates if the natal reach has
+            # no wet cells in range (geometry edge case — better to hold
+            # in the wrong reach than strand the fish).
+            _ra_natal = int(trout_state.natal_reach_idx[i])
+            if _ra_natal >= 0:
+                _ra_mask = cs.reach_idx[candidates] == _ra_natal
+                if np.any(_ra_mask):
+                    candidates = candidates[_ra_mask]
             hold_cell = candidates[int(np.argmin(cs.velocity[candidates]))]
             best_cells[i] = hold_cell
             best_activities[i] = 4
