@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.6] — 2026-04-28
+
+### Fixed — TimeSeriesInputs.csv now covers full 2011-2038 sim window
+
+User-reported error when running example_baltic in the app:
+> "Nearest date 2011-12-31 00:00:00 is 2.0 days from 2012-01-02 00:00:00
+> for reach Dane_Lower — date is outside time-series range"
+
+Root cause: the v0.51.x regen scripts wrote only **365 days** of
+TimeSeriesInputs.csv per reach (2011-01-01 to 2011-12-31), while the
+rest of example_baltic ships ~28 years (Nemunas-TimeSeriesInputs.csv
+is 9865 lines covering 2011 through 2038). Any sim crossing
+2012-01-01 failed the time-series lookup on Dane_Lower / Dane_Middle /
+Dane_Mouth / Dane_Upper / KlaipedaStrait / BalticCoast.
+
+The bug was introduced in v0.51.0 and persisted through v0.51.3 +
+v0.51.5 because focused tests (test_baltic_geometry runs 90 days,
+test_multi_reach_model_loads runs <90 days) never exercised the
+post-2011 lookup path.
+
+#### Fix
+
+In `scripts/_regenerate_dane_polygon_fill.py::write_per_cell_csvs`:
+
+```python
+# was: for day in range(365): ...
+d = datetime.date(2011, 1, 1)
+end = datetime.date(2038, 12, 31)
+while d <= end:
+    ...
+    d += datetime.timedelta(days=1)
+```
+
+Result: 6 affected reaches now have 10227 daily rows each (was 365),
+covering 2011-01-01 through 2038-12-31 with leap years handled
+automatically.
+
+#### Verification
+
+- New `scripts/_smoke_baltic_400_days.py` — runs example_baltic for 400
+  days (start 2011-04-01, end 2012-05-06). Crosses the previously-
+  fatal 2011-12-31 boundary at day 275 and runs cleanly to completion.
+- 88/88 `tests/test_baltic_geometry.py` + `test_geographic_conformance.py` + `test_create_model_river.py` pass
+- 8/8 `scripts/_probe_baltic_with_dane.py` invariants pass
+
+#### Files (10 modified)
+
+- `scripts/_regenerate_dane_polygon_fill.py` — single-line `range(365)`
+  → `while d <= end_date` loop
+- `scripts/_smoke_baltic_400_days.py` (NEW) — durable smoke test that
+  exercises a >365-day sim run
+- `tests/fixtures/example_baltic/` — 6 regenerated TimeSeriesInputs.csv
+  files, each from 365 lines → 10230 lines
+
 ## [0.51.5] — 2026-04-28
 
 ### Fixed — KlaipedaStrait + BalticCoast cells no longer overlap land
