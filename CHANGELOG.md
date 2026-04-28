@@ -5,6 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.1] — 2026-04-28
+
+### Fixed — Tornionjoki Lower/Middle/Upper depth values are now spawning-suitable
+
+Diagnosis chain continued from v0.52.0. With RA fish correctly held
+in their natal reach, the next bug surfaced: per-cell depth values
+in `tests/fixtures/example_tornionjoki/Lower-Depths.csv` (and Middle,
+Upper) were copies of `example_baltic Atmata-Depths.csv` with values
+**4.2-6.6 m** — Atmata is a deep delta channel. Tornionjoki's natal
+spawning reaches are typically 30-100 cm deep at base flow.
+
+After the model's m→cm conversion (`model_init.py:87`), cells stored
+500-700 cm depth. The species `spawn_depth_table` rejects depths
+> 204 cm, so suitability=0 for every cell. Even with v0.52.0's RA
+fix in place, **332 of 332 RAs failed the suitability gate** — no
+redds were ever created.
+
+#### Fix
+
+Replace the inherited Atmata depth profiles with realistic Tornionjoki
+spawning-habitat depths:
+
+| Reach | Old (Atmata) | New (Tornionjoki) |
+|---|---|---|
+| Lower | 4.2-6.6 m | 0.5-2.2 m |
+| Middle | 4.2-6.6 m | 0.4-1.85 m |
+| Upper | 4.2-6.6 m | 0.3-1.55 m |
+| Mouth | 4.9-7.8 m | unchanged (frac_spawn=0; not spawn habitat) |
+
+Velocity files left unchanged (existing values 50-90 cm/s are
+plausible for Tornionjoki).
+
+#### Verification
+
+| Metric | v0.52.0 | v0.52.1 |
+|---|---|---|
+| Lower cell d_score | 0 | **0.700** |
+| Middle cell d_score | 0 | **0.826** |
+| Upper cell d_score | 0 | **0.933** |
+| RAs passing suitability | 0/465 | **332/332** ✅ |
+| Redds created at Nov 1 yr 1 | 0 | **144** |
+| init_cum eggs deposited at yr 3 | 0 | **1,457,244** |
+
+- 4/4 simulation regression tests still pass
+  (test_returning_adult_holds_in_natal_reach_{baltic,tornionjoki},
+  test_adult_arrives_as_returning_adult, test_multi_reach_model_loads)
+
+#### Files
+
+- `tests/fixtures/example_tornionjoki/Lower-Depths.csv` — 1805 cells,
+  values now 0.50-2.20 m (was 4.21-6.62 m)
+- `tests/fixtures/example_tornionjoki/Middle-Depths.csv` — 365 cells,
+  values now 0.40-1.85 m
+- `tests/fixtures/example_tornionjoki/Upper-Depths.csv` — 464 cells,
+  values now 0.30-1.55 m
+- `scripts/_fix_tornionjoki_depths.py` (NEW, 86 LOC) — durable patch
+  script that can be re-applied if the fixture is ever regenerated
+  from the Atmata template
+- `scripts/_probe_suitability_post_ready.py` (NEW, 132 LOC) — durable
+  diagnostic that runs to mid-spawn-window and reports per-cell + per-
+  fish suitability scores
+- `scripts/_probe_cell_units.py` + `_probe_depth_table_lookup.py`
+  (NEW) — supporting unit-tracing diagnostics
+
+#### Known limitation: eggs die from scour before emergence
+
+The B5 cohort probe (`scripts/_probe_v046_tornionjoki_cohort.py
+--years 3`) shows redds get created (144 → 195 → 255 per year) but
+**96.6% of eggs die from `scour` before incubation completes**:
+
+```
+init_cum    lo_T    hi_T   dewat   scour
+770,759    25,617       0       0  744,953
+```
+
+Only 144 eggs survive in 144 redds out of 770k deposited. **Zero FRY
+emerge** in life-stage breakdown across 3 simulated years. The new
+shallow depths overshoot in the other direction — at high-flow events
+the cells become too shallow, scouring eggs out.
+
+`test_latitudinal_smolt_age_gradient[example_tornionjoki]` xfail
+remains. v0.52.2 needs to address scour mortality (likely by giving
+deeper base values + asymmetric flow scaling, OR adjusting the
+species `mort_redd_scour_depth` threshold for subarctic redds).
+
 ## [0.52.0] — 2026-04-28
 
 ### Fixed — RETURNING_ADULT fish hold in their natal reach
