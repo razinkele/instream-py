@@ -19,7 +19,14 @@ simulation:
 performance:
   backend: numpy
   device: cpu
-  trout_capacity: 12000
+  # v0.53.1 Issue A: was 12000; the v0.53.0 terr_pred calibration plus
+  # v0.52.x natal-recruitment fixes lift PARR retention enough that the
+  # 5-yr run hits the cap and starts dropping eggs at redd_emergence
+  # ("trout_state capacity full" warnings, see scripts/_v053_breakdown_1yr.log).
+  # 100k slot pool covers seed pop (~3k) + natal cohorts (peak ~30-40k
+  # FRY/PARR per year × 5 cohorts overlapping for AU1 4-yr smolt life
+  # history) with comfortable headroom.
+  trout_capacity: 100000
   redd_capacity: 3000
   jit_warmup: false
 spatial:

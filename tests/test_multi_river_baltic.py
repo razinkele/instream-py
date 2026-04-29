@@ -7,6 +7,7 @@ per-river geometry, temperature offsets, and flow scaling.
 Plan: docs/superpowers/plans/2026-04-20-arc-M-to-Q-expanded.md
 """
 from __future__ import annotations
+import logging
 import yaml
 
 import pytest
@@ -131,4 +132,50 @@ def test_latitudinal_smolt_age_gradient(
     modal_age = int(smolts["age_years"].round().mode().iloc[0])
     assert abs(modal_age - expected_modal_age) <= 1, (
         f"{config_path}: modal age {modal_age}, expected {expected_modal_age}"
+    )
+
+
+def test_tornionjoki_no_trout_state_capacity_overflow(tmp_path, caplog):
+    """v0.53.1 Issue A regression: a 1-year Tornionjoki run must not drop
+    eggs at redd_emergence due to trout_state capacity exhaustion.
+
+    Background: the 5-yr smolt-age test (v0.53.0 falsifying probe)
+    surfaced hundreds of warnings:
+      "redd_emergence: trout_state capacity full; dropping N eggs..."
+    indicating the 12000-slot pool was exhausted under the now-realistic
+    natal-cohort survival curve. v0.53.1 raised the cap to 100000 to
+    cover seed pop + 5 overlapping AU1 cohorts.
+    """
+    from salmopy.model import SalmopyModel
+
+    with open("configs/example_tornionjoki.yaml") as f:
+        cfg = yaml.safe_load(f)
+    cfg["simulation"]["end_date"] = "2012-03-31"  # 1 year
+    cfg["simulation"]["seed"] = 42
+    cfg_path = tmp_path / "cfg.yaml"
+    with open(cfg_path, "w") as f:
+        yaml.safe_dump(cfg, f)
+
+    model = SalmopyModel(
+        config_path=str(cfg_path),
+        data_dir="tests/fixtures/example_tornionjoki",
+        output_dir=str(tmp_path),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="salmopy.spawning"):
+        model.run()
+
+    drop_warnings = [
+        rec for rec in caplog.records
+        if "trout_state capacity full" in rec.getMessage()
+    ]
+    dropped = getattr(model.trout_state, "_eggs_dropped_capacity_full", 0)
+    assert not drop_warnings, (
+        f"trout_state capacity overflow: {len(drop_warnings)} warnings, "
+        f"{dropped} eggs dropped over 1-year run. Raise "
+        f"performance.trout_capacity in configs/example_tornionjoki.yaml."
+    )
+    assert dropped == 0, (
+        f"trout_state capacity overflow: {dropped} eggs dropped silently. "
+        f"Raise performance.trout_capacity in configs/example_tornionjoki.yaml."
     )
