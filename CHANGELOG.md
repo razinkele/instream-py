@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.5] — 2026-04-29
+
+### Fixed — Tornionjoki `redd_capacity` overflow during 5-yr smolt-age test
+
+The v0.53.0+ recruitment boost (terr_pred calibration + trout_capacity bump
+in v0.53.1) increases PARR-to-spawner conversion enough that the 5-yr
+smolt-age test accumulates >3000 active redds. Each blocked spawn now
+fires a v0.53.3 `logging.warning` + lazy counter increment via pytest's
+stdout capture — the resulting log buildup slowed the 5-yr run from the
+~115-min benchmark to >248 min and counting before it was killed.
+
+Same fixture-local pattern as the v0.53.1 `trout_capacity` raise:
+`configs/example_tornionjoki.yaml` `performance.redd_capacity` raised
+from **3000 → 30000**, giving 3–6× headroom over the projected ~5-10k
+overlapping-redd peak across a 5-yr AU1 cohort cycle. Other fixtures
+(simojoki/byskealven/morrumsan) keep their default capacity — they don't
+have the v0.53.0 calibration that drove Tornionjoki's recruitment up.
+
+### Notes
+
+- The v0.53.3 instrumentation worked exactly as designed — surfacing the
+  silent overflow that would otherwise have been invisible. The cap-bump
+  is a direct response to the diagnostic signal.
+- No production behavior change other than the YAML calibration. Memory
+  overhead is ~10× larger pre-allocated redd arrays — negligible at
+  ~3-5 KB per slot.
+- This unblocks the 5-yr `test_latitudinal_smolt_age_gradient[example_tornionjoki]`
+  to produce an interpretable verdict (test result no longer distorted by
+  silent egg drops at the redd level).
+
 ## [0.53.4] — 2026-04-29
 
 ### Fixed — `tests/e2e/test_baltic_e2e.py` stale-assertion regression

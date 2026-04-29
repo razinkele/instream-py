@@ -27,7 +27,14 @@ performance:
   # FRY/PARR per year × 5 cohorts overlapping for AU1 4-yr smolt life
   # history) with comfortable headroom.
   trout_capacity: 100000
-  redd_capacity: 3000
+  # v0.53.5: was 3000; v0.53.0's terr_pred calibration + v0.53.1 trout_capacity
+  # raise increase PARR-to-spawner conversion enough that the 5-yr test
+  # accumulates >3000 active redds and starts dropping spawns at create_redd
+  # ("redd_state capacity full" warnings introduced in v0.53.3). 30000 gives
+  # 3-6× headroom over the projected post-fix peak (~5-10k overlapping redds
+  # over 5-yr AU1 cohort cycle). Same fixture-local pattern as the v0.53.1
+  # trout_capacity bump.
+  redd_capacity: 30000
   jit_warmup: false
 spatial:
   backend: shapefile
