@@ -793,6 +793,9 @@ class _ModelDayBoundaryMixin:
             ts.natal_reach_idx[slots] = reach_idx
             ts.life_history[slots] = int(LifeStage.PARR)
             ts.is_hatchery[slots] = True
+            # v0.53.1 Issue B: hatchery-origin fish are not natal — clear
+            # any stale True a previous natal fish left in this dead slot.
+            ts.is_natal[slots] = False
             ts.in_shelter[slots] = False
             ts.spawned_this_season[slots] = False
             ts.activity[slots] = 0
@@ -917,6 +920,9 @@ class _ModelDayBoundaryMixin:
             # wild adults must not inherit is_hatchery=True from a dead
             # hatchery-origin slot.
             ts.is_hatchery[slots] = False
+            # v0.53.1 Issue B: arriving adults are imported, not natal —
+            # clear any stale True a previous natal fish left in the slot.
+            ts.is_natal[slots] = False
             ts.max_lifetime_weight[slots] = weights  # init peak weight for starvation
 
             self._arrival_counts[key] = arrived_so_far + n_add

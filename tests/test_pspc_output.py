@@ -21,12 +21,17 @@ def test_outmigrants_csv_10col_netlogo_compat(tmp_path: Path):
     ]
     path = write_outmigrants(outmigrants, ["Salmon"], tmp_path)
     rows = path.read_text().splitlines()
+    # v0.53.1 Issue B: appended `is_natal` column (InSALMON-only). The
+    # original 10-column NetLogo-compat schema is still the prefix.
     assert rows[0] == (
         "species,timestep,reach_idx,natal_reach_idx,natal_reach_name,"
-        "age_years,length_category,length_cm,initial_length_cm,superind_rep"
+        "age_years,length_category,length_cm,initial_length_cm,superind_rep,"
+        "is_natal"
     )
     assert rows[1].startswith("Salmon,180,0,2,Nemunas_main,")
-    assert rows[1].endswith(",100")
+    # `,100` is now followed by `,False` (record built without is_natal,
+    # so write_outmigrants defaults to False).
+    assert rows[1].endswith(",100,False")
 
 
 def test_reach_config_accepts_pspc(tmp_path: Path):

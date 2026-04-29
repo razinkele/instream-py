@@ -53,6 +53,12 @@ def _build_outmigrant_record(trout_state, fish_idx, current_reach,
         natal_name = ""
     fish_length = float(trout_state.length[fish_idx])
     length_category = "Juvenile" if fish_length < 12.0 else "Smolt"
+    # v0.53.1 Issue B: propagate is_natal so outmigrants.csv consumers
+    # can split natal-cohort smolts from initial-population seed fish.
+    # `getattr` keeps mock TroutState fixtures (no is_natal field)
+    # working — they fall back to False.
+    is_natal_arr = getattr(trout_state, "is_natal", None)
+    is_natal_flag = bool(is_natal_arr[fish_idx]) if is_natal_arr is not None else False
     return {
         "species_idx": int(trout_state.species_idx[fish_idx]),
         "timestep": timestep_int,
@@ -69,6 +75,7 @@ def _build_outmigrant_record(trout_state, fish_idx, current_reach,
         "length": fish_length,
         "initial_length": float(trout_state.initial_length[fish_idx]),
         "superind_rep": int(trout_state.superind_rep[fish_idx]),
+        "is_natal": is_natal_flag,
     }
 
 

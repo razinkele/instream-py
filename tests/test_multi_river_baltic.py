@@ -129,6 +129,17 @@ def test_latitudinal_smolt_age_gradient(
             f"{config_path}: only {len(smolts)} smolts produced — "
             f"fixture hydrology may need refinement"
         )
+    # v0.53.1 Issue B: filter to natal-cohort smolts (born during the
+    # simulation) so that initial-population seed fish — which start as
+    # 12-20 cm "starters" age 0-2 and smoltify in 1-2 years — don't
+    # dominate the modal-age distribution.
+    if "is_natal" in smolts.columns:
+        natal_smolts = smolts[smolts["is_natal"]]
+        if len(natal_smolts) >= 5:
+            smolts = natal_smolts
+        # Else fall back to all smolts so the metric still has a value
+        # and the test continues to surface upstream natal-cohort
+        # collapse, rather than silently skipping.
     modal_age = int(smolts["age_years"].round().mode().iloc[0])
     assert abs(modal_age - expected_modal_age) <= 1, (
         f"{config_path}: modal age {modal_age}, expected {expected_modal_age}"

@@ -169,6 +169,13 @@ def write_outmigrants(
       species, timestep, reach_idx (exit), natal_reach_idx, natal_reach_name,
       age_years, length_category, length_cm, initial_length_cm, superind_rep
 
+    v0.53.1 appends an InSALMON-only `is_natal` column (True iff the fish
+    was born via redd_emergence in this sim, False for initial-population
+    seed fish, hatchery stockings, and adult arrivals). The column is
+    appended on the right so NetLogo-parity readers ignore it; consumers
+    that need to split natal cohorts from imports (e.g.
+    test_latitudinal_smolt_age_gradient) read it explicitly.
+
     When `require_natal_reach=True`, raise ValueError on any record with
     natal_reach_idx == -1 — used by callers that have configured PSPC
     (Arc K.4) to surface partial wiring early.
@@ -180,6 +187,7 @@ def write_outmigrants(
             "species", "timestep", "reach_idx", "natal_reach_idx",
             "natal_reach_name", "age_years", "length_category",
             "length_cm", "initial_length_cm", "superind_rep",
+            "is_natal",
         ])
         for om in outmigrants:
             sp = (
@@ -208,6 +216,7 @@ def write_outmigrants(
                 round(float(om.get("length", 0.0)), 4),
                 round(float(om.get("initial_length", 0.0)), 4),
                 int(om.get("superind_rep", 1)),
+                bool(om.get("is_natal", False)),
             ])
     return path
 

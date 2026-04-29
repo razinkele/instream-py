@@ -513,6 +513,10 @@ def redd_emergence(
         ts.smolt_date[slots] = -1
         ts.smolt_readiness[slots] = 0.0
         ts.is_hatchery[slots] = False
+        # v0.53.1 Issue B: tag natal-cohort fish so analytics
+        # (test_latitudinal_smolt_age_gradient) can distinguish them
+        # from initial-population seed fish at outmigration.
+        ts.is_natal[slots] = True
 
         # Decrement redd eggs by actual eggs emerged (sum of rep's used)
         eggs_emerged_actual = int(reps.sum())
