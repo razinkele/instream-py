@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.4] — 2026-04-29
+
+### Fixed — `tests/e2e/test_baltic_e2e.py` stale-assertion regression
+
+When v0.51.0 added Danė (4 reaches) + KlaipedaStrait, the Baltic
+fixture grew from 9 → 14 reaches. The Playwright E2E tests still
+hard-coded "9 reaches" and `BALTIC_REACHES` only listed 9 names.
+
+Result: every E2E call to `_select_baltic_config` was waiting for the
+DOM to render `'9 reaches'`, but the live app renders
+`f"{n_reaches} reaches"` from `setup_panel.py:482` → "14 reaches",
+so `wait_for_function` would time out and skip silently. Tests had
+been broken since v0.51.0 deployment but never surfaced because they
+gate on app reachability.
+
+### Changed
+
+- `BALTIC_REACHES` now lists all 14 names: original 9 baseline +
+  Dane_Upper / Dane_Middle / Dane_Lower / Dane_Mouth / KlaipedaStrait.
+- All occurrences of `"9 reaches"` → `"14 reaches"` (text matchers
+  and explanatory comments).
+- Module + class docstrings updated from "9 real reaches" / "8 real"
+  → "14 real reaches" with a v0.51.0 attribution note.
+
+### Notes
+
+- Test-only change; no production code modified.
+- 12 E2E tests collected cleanly; runtime verification requires a
+  live Shiny app instance (gated by `INTEGRATION_ENABLED` /
+  app-reachability).
+
 ## [0.53.3] — 2026-04-29
 
 ### Added — defensive instrumentation for `redd_state` capacity overflow

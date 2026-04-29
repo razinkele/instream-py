@@ -5,7 +5,8 @@ example config (`configs/example_baltic.yaml`):
 
     TestBalticSmoke (runs whenever app reachable):
       - example_baltic listed in the sidebar config dropdown
-      - Loading it populates the Setup summary with 9 real Nemunas-basin reaches
+      - Loading it populates the Setup summary with 14 real Nemunas-basin reaches
+        (9 baseline + 5 added in v0.51.0: Danė + KlaipedaStrait)
       - Setup summary mentions the 3 marine zones (Estuary / Coastal / Baltic Proper)
       - Spatial tab mounts the deck.gl map container
 
@@ -38,10 +39,14 @@ INTEGRATION_ENABLED = os.environ.get("E2E_INTEGRATION") == "1"
 # Rusnė → Klaipėda strait — main anadromous route), Minija (Klaipėda
 # tributary), Šyša (delta branch → Sysa), Skirvytė (middle delta → Skirvyte),
 # Leitė (small tributary → Leite), Gilija (southern delta, from Kaliningrad PBF
-# as Матросовка), plus the real-OSM Curonian Lagoon and offshore Baltic strip.
+# as Матросовка), Curonian Lagoon, offshore Baltic strip,
+# v0.51.0+: Danė (Lithuanian river feeding Klaipėda — split into Dane_Upper /
+# Middle / Lower / Mouth) and KlaipedaStrait (the narrow channel connecting
+# the lagoon to the Baltic). 14 reaches total.
 BALTIC_REACHES = [
     "Nemunas", "Atmata", "Minija", "Sysa", "Skirvyte", "Leite", "Gilija",
     "CuronianLagoon", "BalticCoast",
+    "Dane_Upper", "Dane_Middle", "Dane_Lower", "Dane_Mouth", "KlaipedaStrait",
 ]
 
 # Marine zone names declared in configs/example_baltic.yaml under `marine.zones`.
@@ -63,11 +68,11 @@ def _select_baltic_config(pg: Page) -> None:
     pg.locator("#load_config_btn").click()
     # Shiny reactive propagation: setup_summary re-renders after the click.
     # Wait for the output to update via a specific signal — the Baltic config
-    # advertises "9 reaches" which is unique to this config.
+    # advertises "14 reaches" which is unique to this config.
     pg.wait_for_function(
         """() => {
             const el = document.querySelector('#setup-setup_summary');
-            return el && el.textContent.includes('9 reaches');
+            return el && el.textContent.includes('14 reaches');
         }""",
         timeout=20_000,
     )
@@ -95,14 +100,14 @@ class TestBalticSmoke:
         )
 
     def test_load_baltic_populates_setup_summary(self, baltic_page: Page) -> None:
-        """After loading Baltic, the Setup summary header says 'across 9 reaches'."""
+        """After loading Baltic, the Setup summary header says 'across 14 reaches'."""
         _select_baltic_config(baltic_page)
         summary = baltic_page.locator("#setup-setup_summary")
         expect(summary).to_be_visible(timeout=10_000)
-        expect(summary).to_contain_text("9 reaches")
+        expect(summary).to_contain_text("14 reaches")
 
     def test_setup_summary_lists_real_reach_names(self, baltic_page: Page) -> None:
-        """All 8 Baltic-basin reach names appear in the setup-summary table."""
+        """All 14 Baltic-basin reach names appear in the setup-summary table."""
         _select_baltic_config(baltic_page)
         summary = baltic_page.locator("#setup-setup_summary")
         expect(summary).to_be_visible(timeout=10_000)
@@ -220,13 +225,13 @@ class TestBalticSmoke:
 
     def test_setup_panel_inline_picker_loads_baltic(self, baltic_page: Page) -> None:
         """Selecting Baltic in the Setup panel's own picker + clicking its
-        Load button populates the setup_summary with the 8 real reaches."""
+        Load button populates the setup_summary with the 14 real reaches."""
         baltic_page.locator("#setup-setup_config").select_option(label="example_baltic")
         baltic_page.locator("#setup-setup_load_btn").click()
         baltic_page.wait_for_function(
             """() => {
                 const el = document.querySelector('#setup-setup_summary');
-                return el && el.textContent.includes('9 reaches');
+                return el && el.textContent.includes('14 reaches');
             }""",
             timeout=20_000,
         )
