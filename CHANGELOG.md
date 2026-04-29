@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.2] — 2026-04-29
+
+### Fixed — `test_end_to_end_pspc_on_tiny_baltic` stale-assertion regression
+
+The Baltic fixture grew from 3 → 6 PSPC reaches when v0.51.0 added the
+Danė river (Dane_Upper / Dane_Middle / Dane_Lower); the test's
+hard-coded `len == 3` assertion had been broken since then, masked by
+no-one running the full suite. Predates v0.53.x and was confirmed
+pre-existing on master at `ad7bf68`.
+
+Updated to compare against an explicit set of expected reach names
+rather than a count, so any future fixture changes surface as a clear
+diff. Dane_Mouth (pspc=0) is excluded — the writer emits NaN for zero
+PSPC, matching prior behavior.
+
+### Notes
+
+- Single-line test fix; no production code change.
+- 7/7 `test_pspc_output.py` tests pass.
+
 ## [0.53.1] — 2026-04-29
 
 ### Closes both v0.53.0 follow-ups (Issue A capacity overflow + Issue B test methodology)

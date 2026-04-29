@@ -108,10 +108,18 @@ def test_end_to_end_pspc_on_tiny_baltic(tmp_path):
     assert {"reach_idx", "smolts_produced", "pspc_achieved_pct"}.issubset(
         df.columns
     )
-    # Nemunas, Atmata, Minija have PSPC; others don't
+    # PSPC reaches in example_baltic.yaml as of v0.51.0+:
+    #   * baseline: Nemunas, Atmata, Minija
+    #   * v0.51.0 added Danė: Dane_Upper, Dane_Middle, Dane_Lower
+    #   * Dane_Mouth has pspc=0 → emitted as NaN by the writer, so excluded.
+    expected_pspc = {
+        "Nemunas", "Atmata", "Minija",
+        "Dane_Upper", "Dane_Middle", "Dane_Lower",
+    }
     reaches_with_pspc = df[df["pspc_smolts_per_year"].notna()]
-    assert len(reaches_with_pspc) == 3, (
-        f"Expected 3 reaches with PSPC, got {list(reaches_with_pspc['reach_name'])}"
+    got = set(reaches_with_pspc["reach_name"])
+    assert got == expected_pspc, (
+        f"Expected PSPC reaches {sorted(expected_pspc)}, got {sorted(got)}"
     )
 
 
