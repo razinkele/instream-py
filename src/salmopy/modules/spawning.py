@@ -238,6 +238,21 @@ def create_redd(
     """
     slot = redd_state.first_dead_slot()
     if slot < 0:
+        # v0.53.3: log + count dropped redds (was silent — same shape as
+        # the v0.43.6 trout_state overflow log in redd_emergence). When
+        # this fires, the spawning female loses her spawn for the season:
+        # eggs that should have been deposited never enter the redd pool.
+        # Distorts cohort dynamics; analogous to the trout_state cap.
+        import logging
+        logging.getLogger("salmopy.spawning").warning(
+            "create_redd: redd_state capacity full; dropping spawn from "
+            "female (length %.1f cm) at cell %d (reach %d).",
+            float(length), int(cell_idx), int(reach_idx),
+        )
+        try:
+            redd_state._redds_dropped_capacity_full += 1
+        except AttributeError:
+            redd_state._redds_dropped_capacity_full = 1
         return -1
 
     num_eggs = fecund_mult * length**fecund_exp * egg_viability

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.3] — 2026-04-29
+
+### Added — defensive instrumentation for `redd_state` capacity overflow
+
+`spawning.create_redd` returned `-1` on capacity exhaustion silently;
+the caller in `model_day_boundary.py` simply skipped the spawn with no
+log entry, no counter, no surface signal. This is the same shape as
+the v0.43.6 `trout_state` overflow that already had a warning + counter
+(visible in the v0.53.0 5-yr probe; that visibility is what enabled the
+v0.53.1 fix). Without parallel instrumentation here, future
+`redd_capacity` overflows would be invisible until the next deep dive.
+
+v0.53.3 mirrors the v0.43.6 pattern:
+- `create_redd` now logs a WARNING when the redd pool is full,
+  including female length, cell, and reach for diagnosis.
+- `redd_state._redds_dropped_capacity_full` counter (lazy attribute,
+  same pattern as `trout_state._eggs_dropped_capacity_full`).
+- New regression test `test_tornionjoki_no_redd_capacity_overflow`
+  asserts the counter stays at 0 over a 1-year run, matching the
+  shape of the v0.53.1 trout-capacity test.
+
+### Notes
+
+- No production behavior change. Same skip semantics — the lost spawn
+  is still lost; this release just makes it observable.
+- 1-yr Tornionjoki currently uses ~few hundred of the 3000-slot redd
+  pool, so the new test passes today. Multi-year runs may eventually
+  exhaust it under v0.53.0+ recruitment levels; if so, raise
+  `performance.redd_capacity` (analogous to the v0.53.1 trout-cap fix).
+
 ## [0.53.2] — 2026-04-29
 
 ### Fixed — `test_end_to_end_pspc_on_tiny_baltic` stale-assertion regression

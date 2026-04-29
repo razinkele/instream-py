@@ -190,3 +190,49 @@ def test_tornionjoki_no_trout_state_capacity_overflow(tmp_path, caplog):
         f"trout_state capacity overflow: {dropped} eggs dropped silently. "
         f"Raise performance.trout_capacity in configs/example_tornionjoki.yaml."
     )
+
+
+def test_tornionjoki_no_redd_capacity_overflow(tmp_path, caplog):
+    """v0.53.3 regression: a 1-year Tornionjoki run must not drop spawns at
+    create_redd due to redd_state capacity exhaustion.
+
+    Background: prior to v0.53.3 the spawning loop silently skipped a
+    female's spawn when redd_state.first_dead_slot() returned -1 (no
+    warning, no counter). Diagnosis from a long Tornionjoki run was
+    therefore impossible to do from logs. v0.53.3 added the warning +
+    `redd_state._redds_dropped_capacity_full` counter, and this test
+    asserts the counter stays at 0 over 1 year.
+    """
+    from salmopy.model import SalmopyModel
+
+    with open("configs/example_tornionjoki.yaml") as f:
+        cfg = yaml.safe_load(f)
+    cfg["simulation"]["end_date"] = "2012-03-31"  # 1 year
+    cfg["simulation"]["seed"] = 42
+    cfg_path = tmp_path / "cfg.yaml"
+    with open(cfg_path, "w") as f:
+        yaml.safe_dump(cfg, f)
+
+    model = SalmopyModel(
+        config_path=str(cfg_path),
+        data_dir="tests/fixtures/example_tornionjoki",
+        output_dir=str(tmp_path),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="salmopy.spawning"):
+        model.run()
+
+    drop_warnings = [
+        rec for rec in caplog.records
+        if "redd_state capacity full" in rec.getMessage()
+    ]
+    dropped = getattr(model.redd_state, "_redds_dropped_capacity_full", 0)
+    assert not drop_warnings, (
+        f"redd_state capacity overflow: {len(drop_warnings)} warnings, "
+        f"{dropped} redds dropped over 1-year run. Raise "
+        f"performance.redd_capacity in configs/example_tornionjoki.yaml."
+    )
+    assert dropped == 0, (
+        f"redd_state capacity overflow: {dropped} redds dropped silently. "
+        f"Raise performance.redd_capacity in configs/example_tornionjoki.yaml."
+    )
