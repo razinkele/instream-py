@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.1] — 2026-04-29
+
+### Closes both v0.53.0 follow-ups (Issue A capacity overflow + Issue B test methodology)
+
+The v0.53.0 5-yr smolt-age probe surfaced two distinct bugs blocking
+the Tornionjoki xfail. v0.53.1 fixes both.
+
+### Issue A — `trout_state` capacity overflow
+
+The 5-yr Tornionjoki run, with v0.53.0's terr_pred calibration plus the
+v0.52.x natal-recruitment fixes, lifts PARR retention enough that the
+12000-slot trout_state pool overflows by mid-summer of year 1. Hundreds
+of warnings emit from `redd_emergence` ("trout_state capacity full;
+dropping N eggs..."), distorting cohort dynamics.
+
+**Fix**: `configs/example_tornionjoki.yaml` `performance.trout_capacity`
+raised from 12000 to 100000 — covers seed pop (~3k) + AU1 5-cohort
+overlap with comfortable headroom. Memory overhead is ~50 MB of int32/
+float64 arrays per state field — acceptable for laptop runs.
+
+**Regression**: `test_tornionjoki_no_trout_state_capacity_overflow`
+runs example_tornionjoki for 1 year and asserts no
+`trout_state capacity full` warnings emit and
+`trout_state._eggs_dropped_capacity_full == 0`.
+
+### Issue B — outmigrants.csv mixes natal + seed cohorts
+
+`test_latitudinal_smolt_age_gradient` reads modal `age_years` from all
+smolt-class outmigrants. Initial-population seed fish (12-20 cm
+"starters" that smolt at age 1-2) dominate the modal-age distribution,
+so even with correct natal biology the test reports modal age 2
+instead of 4 for AU1 rivers.
+
+**Fix**: track natal-cohort origin explicitly.
+
+- `TroutState` gets a new `is_natal: np.ndarray (bool)` field.
+- `spawning.redd_emergence` sets `is_natal[slots] = True` for all
+  redd-emerged FRY.
+- `model_day_boundary.py` hatchery-stocking + adult-arrival paths
+  explicitly set `is_natal = False` (slot-reuse hygiene; same pattern
+  as the v0.16.0 ghost-smolt fix).
+- `_build_outmigrant_record` propagates the flag to outmigrant dicts.
+- `write_outmigrants` appends an `is_natal` column to
+  `outmigrants.csv` (added at right edge — NetLogo-parity readers
+  ignore it; new consumers read explicitly).
+- `test_latitudinal_smolt_age_gradient` filters smolts to
+  `is_natal == True` when natal-cohort sample size ≥ 5; falls back
+  to all smolts otherwise so upstream natal-cohort collapse still
+  shows up as a real failure rather than a silent skip.
+
+### Notes
+
+- `is_natal` is an InSALMON-only extension with no NetLogo
+  counterpart — same convention as `is_hatchery` (v0.17.0).
+- Schema change: `outmigrants.csv` now has 11 columns instead of 10.
+  `tests/test_pspc_output.py::test_outmigrants_csv_10col_netlogo_compat`
+  updated to match. The original 10-column schema is still the
+  prefix.
+- `test_latitudinal_smolt_age_gradient[example_tornionjoki]` (5-yr,
+  ~75 min) result reported in the v0.53.1 release notes inline with
+  the commit.
+
 ## [0.53.0] — 2026-04-29
 
 ### Diagnostic — per-source mortality breakdown falsifies the v0.52.3 high-temp hypothesis
