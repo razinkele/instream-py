@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.0] — 2026-04-30
+
+### Added — example_minija_basin fixture (Lithuanian Atlantic salmon)
+
+New `configs/example_minija_basin.yaml` + `tests/fixtures/example_minija_basin/`
+fixture for the Minija drainage basin (NW Lithuania → Curonian Lagoon).
+Mirror of the WGBAST 4-reach pattern (Mouth → Lower → Middle → Upper)
+plus BalticCoast, with reach waypoints curated from public OSM/gazetteer
+data. Major right-bank tributaries (Babrungas, Veiviržė) embedded
+geographically in the Middle/Lower waypoints rather than as separate
+reaches — a tributary expansion is a v0.54.x candidate.
+
+**Fixture stats:**
+- 5 reaches, 3,979 hex cells (Mouth 551, Lower 905, Middle 895, Upper 777, BalticCoast 851)
+- ~92 km along-channel (real Minija ~202 km — simplified centerline)
+- PSPC: 1,200 smolts/year total (300/600/300 split, matches the
+  example_baltic Minija reach scale; cf. WGBAST Byskealven ~30k/yr)
+- Latitude 55.5°N, light table reflects Lithuanian growing season
+
+### Changed
+
+- `scripts/_generate_wgbast_physical_domains.py`:
+  - Added Minija River entry to RIVERS list with mouth-to-source
+    waypoints (~21°E, 55.46-55.93°N range).
+  - Added `--only <short_name>` CLI flag so individual river
+    shapefiles can be regenerated without touching others. Useful for
+    iterating waypoints on one river.
+  - Mapped `example_minija_basin` → "Baltic Sea" in `RIVER_TO_IHO_NAME`
+    (shares cache with Mörrumsån — IHO polygons are global).
+
+### Added
+
+- `scripts/_wire_minija_basin_csvs.py` — one-shot wrapper that calls
+  `_wire_wgbast_physical_configs.copy_reach_csvs` to expand the
+  inherited Byskealven hydraulic CSVs to match Minija's larger
+  cell-count (851 vs 305 BalticCoast cells; same shape across all 5
+  reaches).
+
+### Notes
+
+- **NOT a WGBAST-assessment stock**. Lithuanian Atlantic salmon are
+  tracked in ICES SD 26 alongside the Daugava/Lielupe rivers.
+- Inherits Byskealven hydraulic data (depths, velocities, time series).
+  Known climate mismatch: Byskealven is subarctic Sweden (~6°C colder
+  than Minija's Lithuanian baseline). Per-river hydrology calibration
+  is a v0.54.x followup — the smoke test passes, but multi-year
+  ecology will reflect the wrong climate envelope until calibrated.
+- OSM polygon cache not built (used buffered centerline). A
+  geographically-faithful polygon-fill rewrite is a v0.54.x candidate,
+  same shape as the v0.45.2 → v0.45.3 Mörrumsån polygon improvements.
+- Smoke test passes (`test_fixture_loads_and_runs_3_days
+  [example_minija_basin]`); no slow/cohort test added because
+  Lithuanian Atlantic salmon smolt-age expectations need separate
+  calibration (deferred to a v0.54.x smolt-age regression test).
+
 ## [0.53.5] — 2026-04-29
 
 ### Fixed — Tornionjoki `redd_capacity` overflow during 5-yr smolt-age test

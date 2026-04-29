@@ -19,6 +19,8 @@ CONFIGS = [
     ("configs/example_simojoki.yaml", "example_simojoki"),
     ("configs/example_byskealven.yaml", "example_byskealven"),
     ("configs/example_morrumsan.yaml", "example_morrumsan"),
+    # v0.54.0: Lithuanian Minija drainage basin (ICES SD 26, not WGBAST).
+    ("configs/example_minija_basin.yaml", "example_minija_basin"),
 ]
 
 

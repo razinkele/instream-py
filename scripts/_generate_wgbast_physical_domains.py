@@ -189,6 +189,32 @@ RIVERS: list[River] = [
         cell_size_m=60.0,       # ~20m channel width, small cells
         buffer_factor=4.0,
     ),
+    # --- Minija basin (Lithuania) — v0.54.0 example fixture ---
+    # Minija (~202 km, ~21°E, southern Baltic-state coast) drains the
+    # NW Lithuania highlands → Curonian Lagoon. Flows roughly NE→SW from
+    # source near Plungė through Gargždai → Priekulė → Drevernai mouth.
+    # Major right-bank tributaries (Babrungas, Veiviržė) join in the
+    # mid-lower reaches, embedded geographically in the Middle/Lower
+    # waypoints. Mouth feeds the Curonian Lagoon (separated from the
+    # Baltic Sea proper by the Curonian Spit) — Marine Regions returns
+    # "Baltic Sea" for the bbox, so we share that IHO cache.
+    # NOT a WGBAST-assessment stock; Lithuanian Atlantic salmon are
+    # tracked in ICES SD 26 alongside the Daugava/Lielupe rivers.
+    River(
+        short_name="example_minija_basin",
+        stem="MinijaBasinExample",
+        river_name="Minija",
+        latitude=55.5,           # mouth at ~55.46°N
+        waypoints=[
+            (21.21, 55.46),     # 0: Mouth — Curonian Lagoon entry near Drevernai
+            (21.31, 55.55),     # 1: Priekulė area (Lower)
+            (21.45, 55.71),     # 2: Gargždai / Veiviržė confluence (Middle)
+            (21.66, 55.84),     # 3: mid-upper, post-Babrungas (Upper-mid)
+            (21.88, 55.93),     # 4: source area near Plungė (Upper)
+        ],
+        cell_size_m=70.0,        # ~25-40 m channel width, moderate cells
+        buffer_factor=3.5,
+    ),
 ]
 
 
@@ -202,6 +228,11 @@ RIVER_TO_IHO_NAME = {
     "example_simojoki":    "Gulf of Bothnia",
     "example_byskealven":  "Gulf of Bothnia",
     "example_morrumsan":   "Baltic Sea",
+    # Minija enters the Curonian Lagoon, but Marine Regions returns
+    # "Baltic Sea" for the mouth bbox at the lagoon scale. Sharing the
+    # baltic_sea_marineregions.json cache is safe (IHO polygons aren't
+    # bbox-clipped).
+    "example_minija_basin": "Baltic Sea",
 }
 
 
@@ -757,10 +788,27 @@ def write_river_shapefile(river: River) -> Path:
 
 
 def main():
-    for river in RIVERS:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--only", default=None,
+        help="Generate only this river (short_name, e.g. example_minija_basin). "
+             "Default: all entries in RIVERS.",
+    )
+    args = ap.parse_args()
+    targets = (
+        [r for r in RIVERS if r.short_name == args.only]
+        if args.only else RIVERS
+    )
+    if args.only and not targets:
+        valid = [r.short_name for r in RIVERS]
+        raise SystemExit(
+            f"--only {args.only!r} not in RIVERS: {valid}"
+        )
+    for river in targets:
         write_river_shapefile(river)
     log.info("=" * 60)
-    log.info("All 4 WGBAST river shapefiles regenerated with real geography.")
+    log.info("Regenerated %d river shapefile(s) with real geography.", len(targets))
 
 
 if __name__ == "__main__":
