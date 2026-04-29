@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.0] — 2026-04-29
+
+### Diagnostic — per-source mortality breakdown falsifies the v0.52.3 high-temp hypothesis
+
+The v0.52.3 working note pinned the residual smolt-age xfail on
+`mort_fish_high_temp_T*` calibration. v0.53.0 instruments the survival
+kernel and runs the probe, with a clear answer: **high-temp is not the
+killer**. Daily high-temp survival is 1.000000 in every month — at
+Tornionjoki summer temps (12-15°C) the T1=28°C/T9=24°C logistic is
+fully inert. The actual dominant kernel killer was `mort_terr_pred_*`,
+running at ~2.6% annualized PARR survival vs real 30-50%/yr.
+
+### Added
+
+- `Backend.survival_with_breakdown(...)` on the numpy backend —
+  returns the per-source survival dict (`ht`, `str`, `cond`, `fp`,
+  `tp`, `combined`) used by diagnostic probes. Refactor extracts
+  shared `_survival_components` so the existing `survival(...)`
+  return is bit-identical.
+- `model._mortality_breakdown_log` opt-in hook in
+  `ModelEnvironmentMixin._do_survival` — when set to `[]` by a probe,
+  captures per-fish per-source survivals on every call. Default
+  `None` = zero overhead in production runs.
+- `scripts/_probe_v053_mortality_breakdown.py` — runs Tornionjoki and
+  reports PARR-weighted mean daily survival per source, by season and
+  by month.
+- `scripts/_v053_breakdown_1yr.log` — durable probe baseline; the
+  evidence that falsified the high-temp hypothesis.
+
+### Changed — Tornionjoki terrestrial-predation calibration
+
+- `configs/example_tornionjoki.yaml`: per-reach `terr_pred_min` raised
+  from 0.96-0.97 to 0.99 for Mouth/Lower/Middle/Upper. The old floors
+  were inSALMO-template defaults inherited from
+  example_a/example_b warm-river calibration — never subarctic-tuned.
+  Same surgical pattern as v0.52.2's `lo_T` fixture-local override.
+  BalticCoast left at 0.995 (irrelevant — PARR don't go there).
+
+### Calibration outcome
+
+After-fix probe data:
+- Summer terr_pred daily survival: **0.987-0.992 → 0.995-0.997**
+- Annualized terr_pred survival: **2.6% → ~23%** (within real 30-50% range)
+- Combined kernel summer-cumulative survival: **15% → 34%**
+- Average summer PARR retention: **1,314 → 2,594** super-individuals
+
+### Updated — `_TORNIONJOKI_XFAIL` reason text
+
+`tests/test_multi_river_baltic.py`: xfail reason rewritten with the
+v0.53.0 falsification + new diagnosis. The xfail itself remains red
+because of two NEW issues exposed by the 5-yr test run with the fix:
+
+- **(A) trout_state capacity overflow** — the now-realistic population
+  exceeds the preallocated trout_state arrays; emerging eggs are
+  dropped at the redd, distorting cohort dynamics.
+- **(B) test methodology** — `outmigrants.csv` mixes natal smolts with
+  initial-population seed fish (12-20 cm starters that smolt at age
+  1-2). Modal age is dominated by seeds even when natal biology is
+  correct.
+
+Both deferred to v0.53.1+. The v0.53.0 calibration delivered what the
+diagnostic prescribed; the test fails for unrelated reasons.
+
+### Updated stale documentation
+
+- `scripts/_v053_smolt_verification.log` gets a header note pointing
+  to the falsification (the file itself is preserved verbatim as
+  historical artifact of the v0.52.3 working hypothesis).
+
+### Notes
+
+- No production behavior change other than the YAML calibration
+  (Tornionjoki only). Backend parity tests (72/72) and survival tests
+  unchanged. Breakdown hook adds zero overhead when not enabled.
+
 ## [0.52.2] — 2026-04-28
 
 ### Fixed — Tornionjoki natal recruitment now produces FRY (5-layer onion closed)

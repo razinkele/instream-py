@@ -59,13 +59,26 @@ def test_fixture_loads_and_runs_3_days(config_path, fixture_dir, tmp_path):
 
 _TORNIONJOKI_XFAIL = pytest.mark.xfail(
     reason=(
-        "Modal smolt age is 2 (age of initial-population fish that outmigrate "
-        "immediately at their seeded 12-20 cm sizes). Expected 4 requires "
-        "natal FRY to grow 4 years in-river before outmigrating — but "
-        "juvenile growth/mortality calibration on example_tornionjoki does "
-        "not currently sustain cohorts that long. Real calibration work; "
-        "the other 3 Baltic rivers (Simojoki, Byskealven, Morrumsan) pass "
-        "after the v0.44.3 age_years unit fix. Tracked as a v0.45 item."
+        "Modal smolt age is 2; expected 4. v0.52.0-v0.52.2 fixed five "
+        "delivery-side bugs (RA candidate filter, depths, defense_area, "
+        "EPSG:3035 reproj, lo_T) so natal cohorts now appear (11k PARR "
+        "peak, 2.6M cumulative eggs, scour=0). v0.53.0 added a per-source "
+        "mortality breakdown diagnostic (numpy_backend.survival_with_"
+        "breakdown) which FALSIFIED the high-temp hypothesis from the "
+        "v0.52.3 verification log: high-temp daily survival is 1.000 at "
+        "subarctic temps. The actual dominant kernel killer was "
+        "mort_terr_pred_* (~2.6% annualized vs real 30-50%/yr); v0.53.0 "
+        "raised Tornionjoki terr_pred_min from 0.96-0.97 to 0.99, lifting "
+        "annualized survival to ~23-30%. The xfail still fails for two "
+        "DIFFERENT reasons exposed by the v0.53.0 5-yr test run: "
+        "(A) trout_state preallocated capacity overflows under the "
+        "now-realistic population — many emerging eggs are dropped at "
+        "the redd, distorting cohort dynamics; "
+        "(B) outmigrants.csv mixes natal smolts with initial-population "
+        "seed fish (12-20 cm starters that smolt at age 1-2), so the "
+        "modal age is dominated by seed fish even when natal biology "
+        "is correct. Both are tracked as v0.53.1+ items. See "
+        "scripts/_v053_breakdown_1yr.log."
     ),
     strict=False,
 )

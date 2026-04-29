@@ -240,28 +240,15 @@ class NumpyBackend:
 
         return result
 
-    def survival(self, lengths, weights, conditions, temperatures, depths, **params):
-        """Vectorized survival probability for all alive fish.
+    def _survival_components(
+        self, lengths, weights, conditions, temperatures, depths, **params
+    ):
+        """Compute per-source daily survival probabilities.
 
-        Parameters
-        ----------
-        lengths : 1-D array (N,) — fish lengths
-        weights : 1-D array (N,) — fish weights
-        conditions : 1-D array (N,) — body condition factors
-        temperatures : 1-D array (N,) — water temperature at each fish's reach
-        depths : 1-D array (N,) — water depth at each fish's cell
-        **params : dict containing:
-            velocities, lights, activities, pisciv_densities, dist_escapes,
-            available_hidings, superind_reps,
-            sp_mort_high_temp_T1, sp_mort_high_temp_T9,
-            sp_mort_strand_survival_when_dry,
-            sp_mort_condition_S_at_K5, sp_mort_condition_S_at_K8,
-            rp_fish_pred_min, sp_mort_fish_pred_* (L1/L9/D1/D9/P1/P9/I1/I9/T1/T9/hiding_factor),
-            rp_terr_pred_min, sp_mort_terr_pred_* (L1/L9/D1/D9/V1/V9/I1/I9/H1/H9/hiding_factor)
-
-        Returns
-        -------
-        survival_probs : 1-D array (N,) — combined daily survival probability
+        Returns a dict of 1-D arrays (N,) keyed by source: ``ht`` (high-temp),
+        ``str`` (stranding), ``cond`` (condition/starvation), ``fp`` (fish
+        predation), ``tp`` (terrestrial predation). The combined daily survival
+        is the product of these five.
         """
         # --- High temperature survival ---
         s_ht = self.evaluate_logistic(
@@ -399,8 +386,51 @@ class NumpyBackend:
         terr_pred_min = params["rp_terr_pred_min"]
         s_tp = terr_pred_min + (1.0 - terr_pred_min) * (1.0 - tp_risk)
 
-        # --- Combined ---
-        return s_ht * s_str * s_cond * s_fp * s_tp
+        return {"ht": s_ht, "str": s_str, "cond": s_cond, "fp": s_fp, "tp": s_tp}
+
+    def survival(self, lengths, weights, conditions, temperatures, depths, **params):
+        """Vectorized survival probability for all alive fish.
+
+        Parameters
+        ----------
+        lengths : 1-D array (N,) — fish lengths
+        weights : 1-D array (N,) — fish weights
+        conditions : 1-D array (N,) — body condition factors
+        temperatures : 1-D array (N,) — water temperature at each fish's reach
+        depths : 1-D array (N,) — water depth at each fish's cell
+        **params : dict containing:
+            velocities, lights, activities, pisciv_densities, dist_escapes,
+            available_hidings, superind_reps,
+            sp_mort_high_temp_T1, sp_mort_high_temp_T9,
+            sp_mort_strand_survival_when_dry,
+            sp_mort_condition_S_at_K5, sp_mort_condition_S_at_K8,
+            rp_fish_pred_min, sp_mort_fish_pred_* (L1/L9/D1/D9/P1/P9/I1/I9/T1/T9/hiding_factor),
+            rp_terr_pred_min, sp_mort_terr_pred_* (L1/L9/D1/D9/V1/V9/I1/I9/H1/H9/hiding_factor)
+
+        Returns
+        -------
+        survival_probs : 1-D array (N,) — combined daily survival probability
+        """
+        c = self._survival_components(
+            lengths, weights, conditions, temperatures, depths, **params
+        )
+        return c["ht"] * c["str"] * c["cond"] * c["fp"] * c["tp"]
+
+    def survival_with_breakdown(
+        self, lengths, weights, conditions, temperatures, depths, **params
+    ):
+        """Same inputs as :meth:`survival`, but returns a dict of per-source
+        survivals plus the combined product.
+
+        Used by diagnostic probes (e.g. ``scripts/_probe_v053_mortality_breakdown.py``)
+        to attribute mortality to each of the five mechanisms. Not called from
+        the main simulation loop.
+        """
+        c = self._survival_components(
+            lengths, weights, conditions, temperatures, depths, **params
+        )
+        c["combined"] = c["ht"] * c["str"] * c["cond"] * c["fp"] * c["tp"]
+        return c
 
     def deplete_resources(
         self, fish_order, chosen_cells, available_drift, available_search, **params

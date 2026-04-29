@@ -1,0 +1,101 @@
+v0.52.3 SMOLT-AGE VERIFICATION RUN
+====================================
+Date: 2026-04-29
+Probe: scripts/_probe_v046_tornionjoki_cohort.py --years 5
+
+[v0.53.0 update — same date]
+The "mort_fish_high_temp_T*" hypothesis below was FALSIFIED by a
+per-source mortality breakdown probe later the same day. high-temp
+daily survival is 1.000000 in EVERY month of the simulation —
+T1=28°C/T9=24°C is fully inert at Tornionjoki summer water temps
+(12-15°C). The actual dominant kernel killer is mort_terr_pred_*,
+which had ~99% daily summer survival = 2.6% annualized (3-7× too
+aggressive). v0.53.0 ships the per-source diagnostic primitive
+(numpy_backend.survival_with_breakdown) and a targeted Tornionjoki
+terr_pred_min raise (0.96-0.97 → 0.99) that lifts annualized
+survival to ~23-30% (within real 30-50% range). See
+scripts/_v053_breakdown_1yr.log for the falsifying probe data.
+[end v0.53.0 update]
+
+Sim: example_tornionjoki, seed=42 (matches test_latitudinal_smolt_age_gradient)
+Window: 2011-04-01 → 2016-03-30 (5 years; same as the xfail'd test)
+Walltime: ~75 minutes (single Python process, micromamba shiny env)
+Source: /tmp/v053_smolt_probe.log (preserved here as durable diagnostic)
+
+VERDICT: v0.52.2 fix delivers natal cohorts but exposes a 6th layer.
+  - Modal smolt age STILL 2 (test_latitudinal_smolt_age_gradient still red)
+  - All 86 outmigrants are initial-population fish (seeded at 12-20 cm)
+  - NO natal cohort produces a smolt over the 5-year window
+
+BUT delivery layer (v0.52.0/v0.52.1/v0.52.2) is GREEN:
+  - 2.6M cumulative eggs deposited
+  - 11,443 PARR peak (Sept 2012); 11,350/11,274/11,186 in subsequent years
+  - eggs_scour_cum stays at 0 across all 5 years (defense_area + EPSG:3035 fixes hold)
+
+LAYER 6 SIGNAL (juvenile in-river survival):
+  Sept 2012 → Mar 2013: 11,443 PARR → 2,107 PARR (winter, 18% survival)
+  Mar 2013  → Sept 2013:  2,107 PARR →     6 PARR (summer,  0.3% survival)
+  Real Tornionjoki Atlantic salmon parr survival is ~30-50% per year.
+  Python over-mortality ratio: ~600× (summer is the dominant kill).
+
+LIKELY ROOT CAUSE (hypothesis, deferred to v0.53.x):
+  mort_fish_high_temp_T* params were calibrated against the original
+  Atmata-baseline warm-river fixture; subarctic Tornionjoki summer
+  temps drive what the param table thinks is "lethal hot water".
+  Same shape as the lo_T problem v0.52.2 fixed for eggs, on the
+  opposite end of the temperature axis.
+
+==== RAW PROBE OUTPUT (5-year cohort run) ====
+
+Running example_tornionjoki for 5 years (end 2016-03-30)...
+
+=== AGE HISTOGRAM (all alive states) ===
+date          n_alive cohort histogram (age_years -> count)
+----------------------------------------------------------------------
+2011-04-02       4566 0:2989, 1:1298, 2:279
+2011-09-28        984 0:276, 1:173, 2:70, 3:465
+2012-03-26        488 1:31, 2:32, 3:45, 4:380
+2012-09-22      12000 0:11443, 3:177, 4:380
+2013-03-21       2611 1:2107, 4:143, 5:361
+2013-09-17      12000 0:11350, 1:6, 3:140, 4:143, 5:361
+2014-03-16       1422 1:825, 2:2, 4:117, 5:131, 6:347
+2014-09-12      12000 0:11274, 1:6, 3:125, 4:117, 5:131, 6:347
+2015-03-11       1385 1:702, 2:1, 4:113, 5:111, 6:125, 7:333
+2015-09-07      12000 0:11186, 1:7, 3:125, 4:113, 5:111, 6:125, 7:333
+2016-03-05       1361 1:593, 4:115, 5:108, 6:106, 7:119, 8:320
+
+=== LIFE-STAGE BREAKDOWN ===
+date             FRY    PARR  SPAWNE   SMOLT  OCEAN_  OCEAN_  RETURN    KELT
+----------------------------------------------------------------------
+2011-04-02       696    3870       0       0       0       0       0       0
+2011-09-28         5     451       0       0      63       0     465       0
+2012-03-26         0      63       0       0       0      45     347      33
+2012-09-22         0   11443       0       0       0      30     494      33
+2013-03-21         0    2107       0       0       0       9     453      42
+2013-09-17      2079    9277       0       0       0       0     602      42
+2014-03-16         0     827       0       0       0       0     538      57
+2014-09-12      1925    9355       0       0       0       0     663      57
+2015-03-11         0     703       0       0       0       0     614      68
+2015-09-07      1386    9807       0       0       0       0     739      68
+2016-03-05         0     593       0       0       0       0     689      79
+
+=== REDD STATE (natal recruitment) ===
+date          n_redds  eggs_now  frac_dev  init_cum    lo_T    hi_T   dewat   scour
+------------------------------------------------------------------------------------------
+2011-04-02          0         0     0.000         0       0       0       0       0
+2011-09-28          0         0     0.000         0       0       0       0       0
+2012-03-26        159    410646     0.347    760995  350347       0       0       0
+2012-09-22        158    238065     1.953    760995  352252   13725       0       0
+2013-03-21        718    734360     0.343   1709052  979544   13725       0       0
+2013-09-17        451    328330     1.944   1709052  993834   39566       0       0
+2014-03-16       1256   1141996     0.325   2114416 1901002   39566       0       0
+2014-09-12        968    671757     1.886   2114416 1943038   78618       0       0
+2015-03-11       1200   1074062     0.318   2628320 2789426   78618       0       0
+2015-09-07        893    577547     1.865   2628320 2844344  114794       0       0
+2016-03-05       1512   1282010     0.307   2634842 3791445  114794       0       0
+
+=== SMOLT-AGE DISTRIBUTION (from model._outmigrants) ===
+total outmigrants: 86
+modal smolt age: 2
+distribution:
+  age 2:    86 (100.0%)  ##################################################

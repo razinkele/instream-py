@@ -166,7 +166,7 @@ reaches:
     drift_regen_distance: 600
     shading: 0.8
     fish_pred_min: 0.985
-    terr_pred_min: 0.97
+    terr_pred_min: 0.99  # v0.53.0: was 0.97; per-source mortality probe (scripts/_v053_breakdown_1yr.log) showed terr_pred is dominant kernel killer at ~2.6% annualized survival vs real Tornionjoki parr ~30-50%/yr. Floor 0.97 is warm-river template default; subarctic Atlantic salmon experience much lower avian/mammalian predation pressure on parr.
     light_turbid_coef: 0.002
     light_turbid_const: 0.0
     max_spawn_flow: 20
@@ -187,7 +187,7 @@ reaches:
     drift_regen_distance: 800
     shading: 0.5
     fish_pred_min: 0.97
-    terr_pred_min: 0.965
+    terr_pred_min: 0.99  # v0.53.0: was 0.965; see Mouth note.
     light_turbid_coef: 0.0025
     light_turbid_const: 0.0008
     max_spawn_flow: 18
@@ -208,7 +208,7 @@ reaches:
     drift_regen_distance: 700
     shading: 0.72
     fish_pred_min: 0.98
-    terr_pred_min: 0.97
+    terr_pred_min: 0.99  # v0.53.0: was 0.97; see Mouth note.
     light_turbid_coef: 0.0028
     light_turbid_const: 0.0005
     max_spawn_flow: 14
@@ -228,7 +228,7 @@ reaches:
     drift_regen_distance: 1000
     shading: 0.55
     fish_pred_min: 0.96
-    terr_pred_min: 0.96
+    terr_pred_min: 0.99  # v0.53.0: was 0.96; see Mouth note.
     light_turbid_coef: 0.003
     light_turbid_const: 0.001
     max_spawn_flow: 15

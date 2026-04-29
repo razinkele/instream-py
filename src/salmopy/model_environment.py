@@ -202,12 +202,7 @@ class _ModelEnvironmentMixin:
             # Per-fish temperatures from reach
             temps = self.reach_state.temperature[r_idx]
 
-            surv = self.backend.survival(
-                self.trout_state.length[alive],
-                self.trout_state.weight[alive],
-                self.trout_state.condition[alive],
-                temps,
-                cs.depth[valid_cells],
+            surv_kwargs = dict(
                 velocities=cs.velocity[valid_cells],
                 lights=cs.light[valid_cells],
                 activities=self.trout_state.activity[alive],
@@ -253,6 +248,33 @@ class _ModelEnvironmentMixin:
                     sp_idx
                 ],
             )
+            surv_args = (
+                self.trout_state.length[alive],
+                self.trout_state.weight[alive],
+                self.trout_state.condition[alive],
+                temps,
+                cs.depth[valid_cells],
+            )
+
+            # v0.53 diagnostic hook: when a probe sets
+            # ``self._mortality_breakdown_log = []``, capture per-source
+            # survivals on every call. None in production runs (no overhead).
+            breakdown_log = getattr(self, "_mortality_breakdown_log", None)
+            if breakdown_log is None:
+                surv = self.backend.survival(*surv_args, **surv_kwargs)
+            else:
+                breakdown = self.backend.survival_with_breakdown(
+                    *surv_args, **surv_kwargs
+                )
+                surv = breakdown.pop("combined")
+                breakdown_log.append({
+                    "date": self.time_manager.current_date,
+                    "alive_idx": alive.copy(),
+                    "life_history": self.trout_state.life_history[alive].copy(),
+                    "age": self.trout_state.age[alive].copy(),
+                    "superind_rep": self.trout_state.superind_rep[alive].copy(),
+                    "components": {k: v.copy() for k, v in breakdown.items()},
+                })
 
             # Skip fish with invalid cells
             valid_mask = (cell_idx >= 0) & (cell_idx < self.fem_space.num_cells)
