@@ -1,4 +1,4 @@
-# Minija drainage basin — real Minija river + Atmata branch + Curonian Lagoon + Baltic coast
+# Minija drainage basin — Minija + 3 tributaries + Atmata branch + Curonian Lagoon + Baltic coast
 #
 # v0.54.3: extracted from example_baltic by selecting the reaches that
 # form the Minija anadromous pathway. Replaces the v0.54.0 synthetic-
@@ -10,26 +10,33 @@
 # does NOT have its own Lagoon mouth — it joins the Atmata branch (a
 # Nemunas-Delta distributary) at Lankupiai, and Atmata then carries the
 # combined flow past Drevernai into the Curonian Lagoon → Klaipėda
-# Strait → Baltic Sea. The v0.54.3 fixture had Minija discharging
-# directly to the Lagoon, which is geographically wrong.
+# Strait → Baltic Sea.
 #
-# Reaches (4 total, 720 cells):
+# v0.55.0: added 3 right-bank tributaries via Overpass OSM fetch
+# (`_fetch_minija_tributaries_osm.py`) + hex cell generation
+# (`_extend_minija_with_tributaries.py`). All three converge on Minija's
+# upstream end (junction 3) — geographically simplified (real
+# confluences are scattered along Minija's length) but topologically
+# functional for an IBM where Minija is a single reach.
+#
+# Reaches (7 total, 5,406 cells):
 #   Minija         — real Minija river OSM polygon, 425 cells
-#                    (downstream junction = Atmata confluence, NOT lagoon)
-#   Atmata         —  78 cells; Nemunas-Delta distributary that carries
-#                    Minija outflow to the Curonian Lagoon
+#                    (downstream junction = Atmata confluence at Lankupiai)
+#   Babrungas      — ~22 km tributary, Lake Plateliai → Plungė, 1,711 cells
+#   Salantas       — ~52 km north tributary near Salantai, 1,489 cells
+#   Salpe          — Šalpė, small mid-river stream, 1,486 cells
+#   Atmata         —  78 cells; Nemunas-Delta distributary
 #   CuronianLagoon — Kuršių marios, 120 cells
 #   BalticCoast    — nearshore Baltic N of Klaipėda, 97 cells
 #
-# Junction topology: Minija (3→4) → Atmata (4→5) → CuronianLagoon (2→5)
-# → BalticCoast (5→6). Junction 4 is the Minija-Atmata confluence at
-# Lankupiai (repurposed from baltic's junction 2 = Nemunas/Atmata
-# bifurcation, which doesn't apply to a Minija-only fixture).
+# Junction topology:
+#   Babrungas (7→3), Salantas (8→3), Salpe (9→3) all → Minija (3→4)
+#   Minija (3→4) → Atmata (4→5) → CuronianLagoon (2→5)
+#   BalticCoast (5→6)
 #
-# Tributaries (Babrungas, Veiviržė, Šalpė, Salantas) are NOT separate
-# reaches — example_baltic's OSM-fetched polygon for "Minija" covers the
-# main stem only. Adding tributaries would require fetching their OSM
-# ways separately and is a v0.55+ candidate.
+# Veiviržė deferred — Overpass returned 0 ways for the regex
+# `^(Veiviržė|Veivirze)$` within the Minija-basin bbox. Likely a
+# spelling/diacritic mismatch; v0.55.x candidate to investigate.
 #
 # Marine domain: Estuary → Coastal → Baltic Proper (abstract zones from baltic).
 # Full lifecycle: egg → fry → parr → smolt → ocean → return → spawn
@@ -228,6 +235,73 @@ reaches:
     time_series_input_file: "Minija-TimeSeriesInputs.csv"
     depth_file: "Minija-Depths.csv"
     velocity_file: "Minija-Vels.csv"
+
+  # ── Minija basin tributaries (right bank, north → south, join Minija
+  #    at the upstream junction 3). v0.55.0 added via OSM polylines from
+  #    `_fetch_minija_tributaries_osm.py` + cells generated at 50 m. ──
+
+  Babrungas:                   # ~22 km, Lake Plateliai → Plungė → Minija main stem
+    pspc_smolts_per_year: 200    # high-quality upper-tributary spawning habitat
+    drift_conc: 1.4e-08          # cloned from Minija; calibration pending
+    search_prod: 1.70e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.75              # forested upper Žemaitija
+    fish_pred_min: 0.985
+    terr_pred_min: 0.975
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 12
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 7
+    downstream_junction: 3       # joins Minija at junction 3 (Minija upstream end)
+    time_series_input_file: "Babrungas-TimeSeriesInputs.csv"
+    depth_file: "Babrungas-Depths.csv"
+    velocity_file: "Babrungas-Vels.csv"
+
+  Salantas:                    # ~52 km north tributary, Salantai area → Minija
+    pspc_smolts_per_year: 150
+    drift_conc: 1.4e-08          # cloned from Minija; calibration pending
+    search_prod: 1.70e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.70
+    fish_pred_min: 0.980
+    terr_pred_min: 0.975
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 11
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 8
+    downstream_junction: 3       # joins Minija at junction 3
+    time_series_input_file: "Salantas-TimeSeriesInputs.csv"
+    depth_file: "Salantas-Depths.csv"
+    velocity_file: "Salantas-Vels.csv"
+
+  Salpe:                       # Šalpė — small mid-river stream tributary
+    pspc_smolts_per_year: 50     # smaller stream, modest spawning capacity
+    drift_conc: 1.0e-08          # leaner stream
+    search_prod: 1.20e-06
+    shelter_speed_frac: 0.18
+    prey_energy_density: 3500
+    drift_regen_distance: 800
+    shading: 0.65
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0030
+    light_turbid_const: 0.0008
+    max_spawn_flow: 8
+    shear_A: 0.008
+    shear_B: 0.32
+    upstream_junction: 9
+    downstream_junction: 3       # joins Minija at junction 3
+    time_series_input_file: "Salpe-TimeSeriesInputs.csv"
+    depth_file: "Salpe-Depths.csv"
+    velocity_file: "Salpe-Vels.csv"
 
   Atmata:                      # Nemunas-Delta distributary; carries Minija outflow to Lagoon
                                # (real geography: Minija meets Atmata at Lankupiai →

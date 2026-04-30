@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.0] — 2026-04-30
+
+### Added — Minija basin tributaries (drainage basin "rivers" plural)
+
+The v0.54.x Minija arc landed the main stem (Minija) + connector
+(Atmata) + downstream marine pathway (Lagoon, Coast). v0.55.0 adds
+three right-bank tributaries fetched via Overpass OSM, expanding
+example_minija_basin into a proper drainage basin fixture.
+
+### Tributaries fetched + added
+
+| Reach | OSM ways | Cells | Approx. confluence | Notes |
+|--|--|--|--|--|
+| **Babrungas** | 22 | 1,711 | Plungė area (~55.92°N, 21.85°E) | ~22 km, Lake Plateliai outlet |
+| **Salantas** | 24 | 1,489 | Salantai area (~55.99°N, 21.62°E) | ~52 km north tributary |
+| **Salpe** (Šalpė) | 30 | 1,486 | mid-river (~55.65°N, 21.71°E) | smaller stream tributary |
+
+**Veiviržė deferred** — Overpass returned 0 ways for `^(Veiviržė|Veivirze)$`
+within the Minija-basin bbox. Likely a spelling/diacritic mismatch in
+OSM tagging; v0.55.x candidate to investigate.
+
+### Pipeline
+
+- `scripts/_fetch_minija_tributaries_osm.py` — Overpass fetcher with
+  fallback endpoints, cached at
+  `tests/fixtures/_osm_cache/minija_tributaries.json`.
+- `scripts/_extend_minija_with_tributaries.py` — buffers OSM polylines
+  (50 m circumradius hex cells, 100 m channel buffer), generates cells
+  via `create_model_grid.generate_cells`, reprojects to EPSG:3035,
+  appends to existing fixture. Clones hydraulic CSVs from Minija for
+  each tributary (calibration deferred).
+
+### Fixture stats
+
+- 4 reaches → 7 reaches; 720 cells → **5,406 cells**
+- Junction topology: Babrungas (7→3), Salantas (8→3), Salpe (9→3) all
+  converge on Minija (3→4) → Atmata (4→5) → Lagoon → Coast (5→6).
+  Star-graph at junction 3 — geographically simplified (real
+  confluences are scattered along Minija's length) but topologically
+  valid for an IBM where Minija is a single reach.
+
+### Notes
+
+- Tributary hydraulic data (Depths/Vels/TimeSeriesInputs) cloned from
+  Minija as a starting point. Real per-tributary calibration would
+  need Lithuanian gauging data — deferred.
+- Cell size 50 m (smaller than Minija's example_baltic-derived cells)
+  reflects narrower tributary channels. Total tributary cells (4,686)
+  exceed Minija (425) because tributaries are longer than the Minija
+  reach extracted from baltic.
+- 3-day smoke passes (`test_fixture_loads_and_runs_3_days
+  [example_minija_basin]`, 43.6 s walltime).
+
 ## [0.54.4] — 2026-04-30
 
 ### Fixed — example_minija_basin connectivity (Minija → Atmata → Lagoon)
