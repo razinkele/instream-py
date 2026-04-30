@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.2] — 2026-04-30
+
+### Added — `_probe_v054_parr_cohort_dynamics.py` cohort-age diagnostic
+
+The v0.54.1 xfail rewrite frames the modal-age-2 puzzle as either:
+  H1 (growth too fast — fish reach 14 cm smolt threshold by age 2) or
+  H2 (cohorts collapse — older parr die before they can smolt at age 4)
+
+This probe is the next diagnostic step. For each natal cohort it tracks:
+- Cohort size by age over time (super-individual count, biweekly snapshots)
+- Mean + p10/p50/p90 length by age (testing H1)
+- Age-2 → age-3 retention rate (testing H2)
+- Smolt-out distribution by age (from `model._outmigrants` filtered by
+  `is_natal == True`)
+
+Plus a final HYPOTHESIS READOUT section that calls H1 vs H2 from the
+data — mean age-2 length compared to the 14 cm threshold, and age-2 →
+age-3 retention as a percentage.
+
+### Notes
+
+- Probe is read-only — no production code change. Same opt-in pattern
+  as `_probe_v053_mortality_breakdown.py` (relies on `is_natal` flag
+  from v0.53.1).
+- 1-yr smoke confirmed the probe runs without crashing; full cohort
+  output format unvalidated under real data because a 2-yr smoke ran
+  >50 min before being killed (same trout_state overflow that v0.54.1
+  diagnosed slows the run as overflow logging accumulates).
+- Recommended pre-run sequence for usable timing: bump trout_capacity
+  in `configs/example_tornionjoki.yaml` to 500k+ FIRST (eliminates
+  burst overflow → no logging spam → walltime back to ~75-90 min for
+  5-yr), then run probe with `--years 5`.
+
 ## [0.54.1] — 2026-04-30
 
 ### Updated — `_TORNIONJOKI_XFAIL` reason text after v0.53.5 5-yr run
