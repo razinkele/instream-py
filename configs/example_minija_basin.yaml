@@ -28,13 +28,21 @@
 # are scattered along Minija's length) but topologically functional
 # for an IBM where Minija is a single reach.
 #
-# Reaches (8 total, 8,037 cells):
+# v0.55.2: tightened tributary geometry to fix RIVER_TOO_WIDE failures
+# from test_geographic_conformance. Tributary cells were generated with a
+# 100 m buffer + 50 m hex cells in v0.55.0/.1, producing effective widths
+# of 397-530 m vs. the ~5-15 m real channel widths. Now each tributary
+# uses 30 m hex cells + 15 m buffer (7.5 m each side); polygon-clip mode
+# is opt-in based on a 50% coverage floor (none of the 4 tributaries hit
+# this — OSM tags only 1-15% of their length as natural=water).
+#
+# Reaches (8 total, 6,609 cells):
 #   Minija         — real Minija river OSM polygon, 425 cells
 #                    (downstream junction = Atmata confluence at Lankupiai)
-#   Babrungas      — ~22 km tributary, Lake Plateliai → Plungė, 1,721 cells
-#   Salantas       — ~52 km north tributary near Salantai, 1,502 cells
-#   Salpe          — Šalpė, small mid-river stream, 1,489 cells
-#   Veivirzas      — ~70 km largest Minija tributary, 2,605 cells
+#   Babrungas      — ~22 km tributary, Lake Plateliai → Plungė, 1,414 cells
+#   Salantas       — ~52 km north tributary near Salantai, 1,222 cells
+#   Salpe          — Šalpė, small mid-river stream, 1,184 cells
+#   Veivirzas      — ~70 km largest Minija tributary, 2,069 cells
 #   Atmata         —  78 cells; Nemunas-Delta distributary
 #   CuronianLagoon — Kuršių marios, 120 cells
 #   BalticCoast    — nearshore Baltic N of Klaipėda, 97 cells

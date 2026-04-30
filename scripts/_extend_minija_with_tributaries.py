@@ -58,16 +58,27 @@ from modules.create_model_utils import detect_utm_epsg  # noqa: E402
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "example_minija_basin"
 SHP_PATH = FIXTURE_DIR / "Shapefile" / "MinijaBasinExample.shp"
 OSM_CACHE = ROOT / "tests" / "fixtures" / "_osm_cache" / "minija_tributaries.json"
+POLY_CACHE = ROOT / "tests" / "fixtures" / "_osm_cache" / "minija_tributaries_polygons.json"
 
 # Tributaries to add (must have data in OSM cache).
 # v0.55.1: added Veivirzas (was deferred in v0.55.0 due to OSM name
 # regex mismatch — actual tag is "Veiviržas", not "Veiviržė").
 TRIBUTARIES = ["Babrungas", "Salantas", "Salpe", "Veivirzas"]
 
-# Generation parameters — small streams, smaller cells than Minija main stem
-CELL_SIZE_M = 50.0
-BUFFER_FACTOR = 2.0   # 100 m buffer either side
-FRAC_SPAWN_TRIBUTARY = 0.30  # tributaries are typically high-quality spawning habitat
+# Generation parameters.
+# v0.55.2: tightened buffer + added polygon-clip mode to address the
+# "RIVER_TOO_WIDE" error from test_geographic_conformance. Real Minija
+# tributaries are 5-15 m wide channels — a 100 m buffer (the v0.55.0/.1
+# default) inflated effective_width to 400-530 m. Now:
+#   1. If OSM water polygons cover this tributary's centerline, clip cells
+#      to those polygons (real shapes).
+#   2. Fall back to a TIGHT buffer (15 m total = 7.5 m each side) for
+#      centerline-only tributaries.
+CELL_SIZE_M = 30.0
+BUFFER_FACTOR = 0.5   # 15 m total buffer (7.5 m each side) for fallback
+# Distance (m) to consider a water polygon as "belonging to" a tributary
+POLY_PROXIMITY_M = 100.0
+FRAC_SPAWN_TRIBUTARY = 0.30
 
 # Match the COLUMN_RENAME from _generate_wgbast_physical_domains.py so the
 # output shapefile follows the same DBF schema as Minija/Atmata/etc.
@@ -95,6 +106,57 @@ def load_osm_lines(trib_name: str) -> list[LineString]:
             log.warning("[%s] skipping malformed way %s: %s",
                         trib_name, w.get("id"), exc)
     return lines
+
+
+def load_basin_polygons() -> "gpd.GeoDataFrame | None":
+    """Load all water polygons in the Minija basin bbox (v0.55.2)."""
+    if not POLY_CACHE.exists():
+        log.warning("Polygon cache missing: %s — falling back to tight buffer "
+                    "for all tributaries.", POLY_CACHE)
+        return None
+    data = json.loads(POLY_CACHE.read_text(encoding="utf-8"))
+    if not data:
+        log.warning("Polygon cache empty — falling back to tight buffer.")
+        return None
+    polys = []
+    for w in data:
+        try:
+            polys.append(shape(w["geometry"]))
+        except Exception:
+            continue
+    if not polys:
+        return None
+    gdf = gpd.GeoDataFrame(geometry=polys, crs="EPSG:4326")
+    log.info("Loaded %d basin water polygons", len(gdf))
+    return gdf
+
+
+def clip_polygons_to_tributary(
+    poly_gdf: "gpd.GeoDataFrame",
+    centerlines: list[LineString],
+    proximity_m: float = POLY_PROXIMITY_M,
+    utm_epsg: int = 32634,
+) -> "gpd.GeoDataFrame | None":
+    """Filter water polygons that intersect a buffer around the tributary
+    centerline. Returns None if no polygons overlap the buffer (caller
+    falls back to tight buffer mode).
+    """
+    if poly_gdf is None or poly_gdf.empty or not centerlines:
+        return None
+    # Reproject centerlines to UTM for meter-accurate buffering
+    cl_gdf = gpd.GeoDataFrame(geometry=centerlines, crs="EPSG:4326").to_crs(epsg=utm_epsg)
+    centerline_buffer = cl_gdf.geometry.union_all().buffer(proximity_m)
+    # Reproject polys to UTM and clip to buffer
+    poly_utm = poly_gdf.to_crs(epsg=utm_epsg)
+    keep = poly_utm[poly_utm.intersects(centerline_buffer)].copy()
+    if keep.empty:
+        return None
+    # Clip polygons to the centerline buffer (drop bits far from the river)
+    keep["geometry"] = keep.geometry.intersection(centerline_buffer)
+    keep = keep[~keep.is_empty & keep.is_valid].copy()
+    if keep.empty:
+        return None
+    return keep.to_crs("EPSG:4326")
 
 
 def main() -> None:
@@ -127,18 +189,59 @@ def main() -> None:
     utm_epsg = detect_utm_epsg(center_lon=(bw + be) / 2, center_lat=(bs + bn) / 2)
     log.info("Detected UTM EPSG: %s for cell generation", utm_epsg)
 
-    # Build reach_segments dict: one entry per tributary
+    # v0.55.2: load basin polygons (cached for future reference) and
+    # measure their per-tributary coverage. Use polygon-clip mode ONLY
+    # if polygons cover >= POLY_COVERAGE_FLOOR of the expected channel
+    # area (centerline length × tight_buffer). Otherwise fall back to
+    # tight-buffer mode — full river length, correct width.
+    #
+    # OSM tags Lithuanian small tributaries inconsistently: some short
+    # named segments are tagged as natural=water (Babrungas, Salantas,
+    # Veivirzas) but the bulk of each river is just waterway=river
+    # centerline. Polygon-only mode misses 80-95% of the river length;
+    # tight-buffer mode covers everything at ~30 m channel approximation,
+    # which passes test_geographic_conformance and matches real widths.
+    basin_polys = load_basin_polygons()
     reach_segments = {}
+    poly_modes = {}  # trib -> "polygon" | "buffer"
     for trib in TRIBUTARIES:
         lines = load_osm_lines(trib)
         if not lines:
             log.warning("[%s] no OSM lines — skipping", trib)
             continue
         log.info("[%s] %d OSM line segments", trib, len(lines))
-        reach_segments[trib] = {
-            "segments": lines,
-            "frac_spawn": FRAC_SPAWN_TRIBUTARY,
-        }
+        clipped = clip_polygons_to_tributary(basin_polys, lines, utm_epsg=utm_epsg)
+        polygon_area = 0.0
+        if clipped is not None and not clipped.empty:
+            polygon_area = float(clipped.to_crs(epsg=utm_epsg).geometry.area.sum())
+        # Expected channel area = centerline length × tight buffer width
+        cl_utm = gpd.GeoDataFrame(geometry=lines, crs="EPSG:4326").to_crs(epsg=utm_epsg)
+        centerline_len_m = float(cl_utm.geometry.length.sum())
+        expected_area = centerline_len_m * (CELL_SIZE_M * BUFFER_FACTOR)
+        coverage_ratio = polygon_area / expected_area if expected_area > 0 else 0.0
+        log.info("[%s] centerline=%.0f m, polygons=%.0f m², expected=%.0f m², coverage=%.1f%%",
+                 trib, centerline_len_m, polygon_area, expected_area, coverage_ratio * 100)
+        # Polygon mode only if polygons cover most of the river
+        POLY_COVERAGE_FLOOR = 0.50
+        if coverage_ratio >= POLY_COVERAGE_FLOOR and clipped is not None:
+            polys_for_reach = list(clipped.geometry)
+            log.info("[%s] using POLYGON mode (%d polygons, coverage %.1f%%)",
+                     trib, len(polys_for_reach), coverage_ratio * 100)
+            reach_segments[trib] = {
+                "segments": polys_for_reach,
+                "frac_spawn": FRAC_SPAWN_TRIBUTARY,
+            }
+            poly_modes[trib] = "polygon"
+        else:
+            log.info("[%s] using TIGHT BUFFER mode (%.1f m total) — polygon "
+                     "coverage %.1f%% below %.0f%% floor",
+                     trib, CELL_SIZE_M * BUFFER_FACTOR, coverage_ratio * 100,
+                     POLY_COVERAGE_FLOOR * 100)
+            reach_segments[trib] = {
+                "segments": lines,
+                "frac_spawn": FRAC_SPAWN_TRIBUTARY,
+            }
+            poly_modes[trib] = "buffer"
 
     if not reach_segments:
         raise SystemExit("no tributary data — aborting.")

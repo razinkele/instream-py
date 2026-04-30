@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.2] — 2026-04-30
+
+### Fixed — Minija tributaries clipped to realistic channel widths
+
+The v0.55.0/.1 tributaries (Babrungas, Salantas, Šalpė, Veiviržas) were
+generated with `cell_size=50 m + buffer_factor=2.0` (100 m total channel
+buffer). Real Minija basin tributaries are 5-15 m wide streams.
+Effective widths landed at **397-530 m** — caught by the existing
+`tests/test_geographic_conformance.py::test_reach_geographic_plausibility`
+with `RIVER_TOO_WIDE: ... cells likely buffered against centerline rather
+than clipped to real water`.
+
+The check existed; the tributaries simply skipped it because the
+v0.55.0/.1 generation used naive centerline buffering without any
+width validation.
+
+### Changed
+
+- `_fetch_minija_tributaries_osm.py`: now also fetches OSM **water
+  polygons** (natural=water + waterway=riverbank, basin-bbox query).
+  Cached at `tests/fixtures/_osm_cache/minija_tributaries_polygons.json`.
+  1,351 polygons fetched in the basin bbox.
+- `_extend_minija_with_tributaries.py`:
+  - Cell size 50 m → **30 m**, buffer factor 2.0 → **0.5** (15 m total
+    buffer = ~30 m channel width approximation).
+  - Polygon-clip mode opt-in: applies only when polygons cover ≥50% of
+    expected channel area. None of the 4 Minija tributaries hit this
+    floor (OSM tags only 1-15% of their length as natural=water), so
+    all four use tight-buffer mode. The polygon-clip path remains
+    available for future fixtures with full polygon coverage.
+- Tributary cells dropped from 7,317 → **5,889** (proportional drop;
+  fixture goes from 8,037 → 6,609 cells total).
+- Effective widths now 30-60 m (instead of 397-530 m), well below the
+  350 m `RIVER_TOO_WIDE` threshold.
+
+### Verified
+
+`test_reach_geographic_plausibility[example_minija_basin-*]` — **all 8
+reaches PASS** (Atmata, Babrungas, BalticCoast, CuronianLagoon, Minija,
+Salantas, Šalpė, Veiviržas).
+
+3-day smoke passes (51.7 s walltime).
+
+### Notes
+
+- The geographic-conformance check (v0.51.2 / v0.51.4) is the right
+  guardrail for this class of error and is already wired into the
+  parametrized test. Future tributary additions to ANY fixture will
+  fail loudly if cells are buffered too widely. No new test infra
+  needed — the gate was already in place.
+- For future fixtures with rivers that DO have full OSM polygon
+  coverage, the polygon-clip mode will activate automatically (50%
+  coverage floor). Larger named rivers (e.g. Nemunas, Daugava) usually
+  have natural=water polygons and would benefit.
+
 ## [0.55.1] — 2026-04-30
 
 ### Added — Veiviržas, the largest Minija tributary
