@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.4] — 2026-04-30
+
+### Fixed — example_minija_basin connectivity (Minija → Atmata → Lagoon)
+
+The v0.54.3 fixture had Minija discharging directly to the Curonian
+Lagoon. Real geography routes the Minija through the **Atmata** branch
+(Nemunas-Delta distributary): Minija meets Atmata at Lankupiai, and
+Atmata then carries the combined flow past Drevernai into the Lagoon
+→ Klaipėda Strait → Baltic Sea. Without Atmata as a connector reach,
+anadromous fish in the simulation took a geographically wrong path.
+
+### Changed
+
+- Reach count 3 → 4 (added Atmata, 78 cells extracted from
+  example_baltic). Total cells 642 → 720.
+- Junction topology rewired: Minija (3→4) → Atmata (4→5) →
+  CuronianLagoon (2→5) → BalticCoast (5→6). Junction 4 is the
+  Minija-Atmata confluence at Lankupiai (repurposed from baltic's
+  junction 2 = Nemunas/Atmata bifurcation, which doesn't apply to a
+  Minija-only fixture).
+- `Minija.downstream_junction`: 5 → 4 (was lagoon directly; now into
+  Atmata).
+- `Atmata.upstream_junction`: 2 → 4 (was Nemunas split; now Minija
+  confluence).
+- `scripts/_extract_minija_from_baltic.py`: KEEP_REACHES tuple now
+  includes "Atmata" between "Minija" and "CuronianLagoon".
+
+### Notes
+
+- Atmata's hydrology in baltic was tuned for the full Nemunas-Delta
+  load (Nemunas + several distributaries draining through it). For a
+  Minija-only basin with much lower flow, the inherited Atmata
+  TimeSeriesInputs (~bigger flow than what Minija alone provides) is
+  a known calibration limitation. Real per-river hydrograph would
+  require Lithuanian gauging data — deferred to v0.55+.
+- 3-day smoke passes; deployed to laguna.
+- This is the v0.54.0→v0.54.3→v0.54.4 arc demonstrating "ship → user
+  feedback → fix" pattern. v0.54.0 was wrong geometry, v0.54.3 fixed
+  geometry but missed connectivity, v0.54.4 fixes connectivity.
+
 ## [0.54.3] — 2026-04-30
 
 ### Fixed — example_minija_basin now uses real OSM polygon geometry

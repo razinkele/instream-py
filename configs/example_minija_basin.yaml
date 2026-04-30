@@ -1,18 +1,30 @@
-# Minija drainage basin — real Minija river + Curonian Lagoon + Baltic coast
+# Minija drainage basin — real Minija river + Atmata branch + Curonian Lagoon + Baltic coast
 #
-# v0.54.3: extracted from example_baltic by selecting the 3 reaches that
+# v0.54.3: extracted from example_baltic by selecting the reaches that
 # form the Minija anadromous pathway. Replaces the v0.54.0 synthetic-
 # geometry attempt (curated waypoints + buffered centerline); this fixture
 # uses the real OSM polygon geometry built by the v0.51.0 example_baltic
 # pipeline (`scripts/generate_baltic_example.py`).
 #
-# Reaches (3 total, 642 cells):
+# v0.54.4: added Atmata as a connector reach. Real geography: Minija
+# does NOT have its own Lagoon mouth — it joins the Atmata branch (a
+# Nemunas-Delta distributary) at Lankupiai, and Atmata then carries the
+# combined flow past Drevernai into the Curonian Lagoon → Klaipėda
+# Strait → Baltic Sea. The v0.54.3 fixture had Minija discharging
+# directly to the Lagoon, which is geographically wrong.
+#
+# Reaches (4 total, 720 cells):
 #   Minija         — real Minija river OSM polygon, 425 cells
-#                    (flows into Curonian Lagoon at Klaipėda area)
-#   CuronianLagoon — Kuršių marios, real OSM outline, 120 cells
-#                    (downstream lagoon — Minija's natal-river receiver)
+#                    (downstream junction = Atmata confluence, NOT lagoon)
+#   Atmata         —  78 cells; Nemunas-Delta distributary that carries
+#                    Minija outflow to the Curonian Lagoon
+#   CuronianLagoon — Kuršių marios, 120 cells
 #   BalticCoast    — nearshore Baltic N of Klaipėda, 97 cells
-#                    (open-sea marine habitat for ocean phase)
+#
+# Junction topology: Minija (3→4) → Atmata (4→5) → CuronianLagoon (2→5)
+# → BalticCoast (5→6). Junction 4 is the Minija-Atmata confluence at
+# Lankupiai (repurposed from baltic's junction 2 = Nemunas/Atmata
+# bifurcation, which doesn't apply to a Minija-only fixture).
 #
 # Tributaries (Babrungas, Veiviržė, Šalpė, Salantas) are NOT separate
 # reaches — example_baltic's OSM-fetched polygon for "Minija" covers the
@@ -196,7 +208,7 @@ reaches:
   # salmon estimate (cf. example_baltic Minija reach) order-of-magnitude
   # consistent with ICES SD 26 (Gulf of Riga / Lithuanian rivers small
   # cohort tracking). Real Kesminas et al. surveys would refine this.
-  Minija:                      # real Minija — feeds Curonian Lagoon at Klaipėda
+  Minija:                      # real Minija — joins Atmata at Lankupiai before reaching Lagoon
     pspc_smolts_per_year: 1200   # key Lithuanian spawning tributary
     drift_conc: 1.5e-08
     search_prod: 1.80e-06
@@ -211,11 +223,34 @@ reaches:
     max_spawn_flow: 14
     shear_A: 0.010
     shear_B: 0.35
-    upstream_junction: 3
-    downstream_junction: 5
+    upstream_junction: 3        # Minija source area
+    downstream_junction: 4      # v0.54.4: was 5; mouths into Atmata at Lankupiai, NOT directly into Lagoon
     time_series_input_file: "Minija-TimeSeriesInputs.csv"
     depth_file: "Minija-Depths.csv"
     velocity_file: "Minija-Vels.csv"
+
+  Atmata:                      # Nemunas-Delta distributary; carries Minija outflow to Lagoon
+                               # (real geography: Minija meets Atmata at Lankupiai →
+                               # Atmata flows past Drevernai → Curonian Lagoon → Klaipėda Strait)
+    drift_conc: 1.2e-08
+    search_prod: 1.50e-06
+    shelter_speed_frac: 0.20
+    prey_energy_density: 3800
+    drift_regen_distance: 800
+    shading: 0.50              # lowland, partial riparian
+    fish_pred_min: 0.970
+    terr_pred_min: 0.965
+    light_turbid_coef: 0.0025
+    light_turbid_const: 0.0008
+    max_spawn_flow: 18
+    shear_A: 0.009
+    shear_B: 0.32
+    upstream_junction: 4        # v0.54.4: was 2 (Nemunas/Atmata bifurcation in baltic);
+                                # repurposed as Minija-Atmata confluence at Lankupiai
+    downstream_junction: 5      # discharges to Lagoon
+    time_series_input_file: "Atmata-TimeSeriesInputs.csv"
+    depth_file: "Atmata-Depths.csv"
+    velocity_file: "Atmata-Vels.csv"
 
   CuronianLagoon:              # Kuršių marios — brackish 0-7 PSU (~1,584 km² real)
     drift_conc: 1.0e-09        # very low food in open lagoon

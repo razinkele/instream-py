@@ -4,13 +4,18 @@ Replaces the v0.54.0 synthetic-geometry fixture (waypoints + buffered
 centerline) with a faithful extraction from example_baltic, which uses
 real OSM-fetched polygon geometry from the v0.51.0 work.
 
-Reach selection (3 reaches forming the Minija anadromous pathway):
+Reach selection (4 reaches forming the Minija anadromous pathway):
   Minija          425 cells — main freshwater stem (real OSM polygon)
-  CuronianLagoon  120 cells — downstream lagoon (where Minija mouths)
+  Atmata           78 cells — Nemunas-Delta distributary that connects
+                              Minija to the Curonian Lagoon. v0.54.4 fix:
+                              Minija doesn't have its own Lagoon mouth —
+                              real geography routes it through the Atmata
+                              branch at Lankupiai before reaching the
+                              Lagoon → Klaipėda Strait → Baltic Sea.
+  CuronianLagoon  120 cells — Kuršių marios (Atmata's outlet)
   BalticCoast      97 cells — open Baltic, marine habitat for ocean phase
 
-Total: 642 cells — much smaller than the v0.54.0 synthetic fixture
-(3979 cells) but faithful to real Minija geography.
+Total: 720 cells.
 
 Side effects: rewrites
   tests/fixtures/example_minija_basin/Shapefile/MinijaBasinExample.{shp,dbf,prj,shx,cpg}
@@ -31,8 +36,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "tests" / "fixtures" / "example_baltic"
 DST_DIR = ROOT / "tests" / "fixtures" / "example_minija_basin"
 
-# Reaches to keep — Minija anadromous pathway
-KEEP_REACHES = ("Minija", "CuronianLagoon", "BalticCoast")
+# Reaches to keep — Minija anadromous pathway. Order matters for the
+# anadromous-flow narrative: source -> distributary -> lagoon -> sea.
+KEEP_REACHES = ("Minija", "Atmata", "CuronianLagoon", "BalticCoast")
 
 
 def main() -> None:
