@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.3] — 2026-04-30
+
+### Changed — per-tributary flow scaling for Minija basin
+
+The v0.55.0/.1/.2 tributaries cloned Minija's TimeSeriesInputs verbatim,
+giving Babrungas (~140 km² basin), Salantas (~205 km²), Šalpė (small
+stream), and Veiviržas (~370 km², largest) all the same hydrograph
+as Minija main stem (~22 m³/s mean). This is unrealistic — small
+streams have a fraction of Minija's flow.
+
+`_extend_minija_with_tributaries.py` now applies per-tributary
+`FLOW_MULTIPLIERS` when cloning Minija-TimeSeriesInputs.csv, scaling
+the `flow` column by drainage-area approximation:
+
+| Tributary | Multiplier | Approx flow (vs Minija ~22 m³/s) |
+|--|--|--|
+| Babrungas | 0.11 | ~2.5 m³/s |
+| Salantas | 0.16 | ~3.5 m³/s |
+| Šalpė | 0.05 | ~1.0 m³/s |
+| Veiviržas | 0.27 | ~6.0 m³/s |
+
+Temperature is NOT scaled — all tributaries share Minija's climate
+zone (NW Lithuania, ~55-56°N). Same shape as
+`_scaffold_wgbast_rivers.py`'s per-river `mean_flow_multiplier`.
+
+The multipliers are drainage-area approximations; real Lithuanian
+gauging data would refine. Cell counts and shapefile geometry
+unchanged from v0.55.2.
+
+### Added — design plan for inter-reach connectivity check
+
+`docs/superpowers/plans/2026-04-30-inter-reach-connectivity-check.md`
+documents a v0.56+ candidate: extend the existing
+`test_geographic_conformance` to also validate that flow-connected
+reaches (per YAML junctions) are geometrically near each other. The
+plan covers the tension between logical (junction IDs) and physical
+(cell coordinates) connectivity, three design options ordered by
+strictness, and a recommended Receiver-proximity rule (option 2).
+**Not yet implemented** — captured for next session.
+
+### Notes
+
+- 3-day smoke passes (23.4 s walltime, faster than v0.55.2's 51.7 s
+  because per-tributary lower flows reduce per-tick fish counts).
+- v0.55.2's geographic conformance still passes (cell geometry
+  unchanged, only TimeSeriesInputs CSV content scaled).
+
 ## [0.55.2] — 2026-04-30
 
 ### Fixed — Minija tributaries clipped to realistic channel widths

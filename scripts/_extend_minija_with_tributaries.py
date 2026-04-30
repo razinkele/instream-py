@@ -80,6 +80,25 @@ BUFFER_FACTOR = 0.5   # 15 m total buffer (7.5 m each side) for fallback
 POLY_PROXIMITY_M = 100.0
 FRAC_SPAWN_TRIBUTARY = 0.30
 
+# v0.55.3: per-tributary mean-flow multipliers vs Minija main stem.
+# Approximate from drainage-area scaling (real Lithuanian gauging data
+# would refine — deferred). Applied when cloning Minija-TimeSeriesInputs
+# so each tributary's flow column reflects its real-river scale.
+#   Minija    ~22 m³/s mean  → 1.0× baseline
+#   Babrungas ~140 km² basin → 0.11
+#   Salantas  ~205 km² basin → 0.16
+#   Salpe     small stream   → 0.05
+#   Veivirzas ~370 km² basin → 0.27 (largest tributary)
+# Temperature is NOT scaled — all tributaries share Minija's climate
+# zone (NW Lithuania, ~55-56°N). Same shape as
+# `_scaffold_wgbast_rivers.RIVERS[*].mean_flow_multiplier` per-river config.
+FLOW_MULTIPLIERS = {
+    "Babrungas": 0.11,
+    "Salantas":  0.16,
+    "Salpe":     0.05,
+    "Veivirzas": 0.27,
+}
+
 # Match the COLUMN_RENAME from _generate_wgbast_physical_domains.py so the
 # output shapefile follows the same DBF schema as Minija/Atmata/etc.
 COLUMN_RENAME = {
@@ -291,10 +310,29 @@ def main() -> None:
         if trib not in reach_segments:
             continue
         n_cells = int((combined["REACH_NAME"] == trib).sum())
-        # TimeSeriesInputs: reach-scoped, copy verbatim
+        # TimeSeriesInputs: reach-scoped. v0.55.3: scale `flow` column
+        # by tributary-specific multiplier (drainage-area approx).
         src_ts = FIXTURE_DIR / "Minija-TimeSeriesInputs.csv"
         dst_ts = FIXTURE_DIR / f"{trib}-TimeSeriesInputs.csv"
-        shutil.copy2(src_ts, dst_ts)
+        flow_mult = FLOW_MULTIPLIERS.get(trib, 1.0)
+        if flow_mult == 1.0:
+            shutil.copy2(src_ts, dst_ts)
+        else:
+            with open(src_ts, encoding="utf-8") as f:
+                lines = f.readlines()
+            comments = [ln for ln in lines if ln.startswith(";")]
+            ts = pd.read_csv(src_ts, comment=";")
+            if "flow" in ts.columns:
+                ts["flow"] = ts["flow"] * flow_mult
+            header_note = (
+                f"; v0.55.3: flow column scaled by {flow_mult:.2f} from Minija "
+                f"baseline (drainage-area approximation; real gauging data "
+                f"would refine).\n"
+            )
+            with open(dst_ts, "w", encoding="utf-8", newline="") as f:
+                f.writelines(comments)
+                f.write(header_note)
+                ts.to_csv(f, index=False, lineterminator="\n")
         # Depths/Vels: per-cell — need n_cells rows. Borrow the
         # _expand_per_cell_csv helper from _wire_wgbast_physical_configs.
         sys.path.insert(0, str(ROOT / "scripts"))
