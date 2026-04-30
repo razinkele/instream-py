@@ -5,6 +5,96 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.0] — 2026-04-30
+
+### Added — inter-reach connectivity check
+
+Implements the v0.56+ candidate from
+`docs/superpowers/plans/2026-04-30-inter-reach-connectivity-check.md`
+after a 6-round plan review. The new check validates that flow-
+connected reaches (per YAML `upstream_junction` / `downstream_junction`)
+sit within geographic proximity of each other, catching a class of
+bug the v0.51.2/v0.51.4 per-reach checks couldn't: cells with the
+right WIDTH but at the wrong LOCATION relative to the basin.
+
+### New helpers in `app/modules/geographic_conformance.py`
+
+- `build_junction_graph(reaches)` — adjacency from
+  `ReachConfig.upstream_junction` / `downstream_junction` shared
+  values. Symmetric. Reaches with both junctions unset contribute no
+  edges (graceful degradation, not error).
+- `find_neighbor_reaches(graph, target, max_hops=2)` — BFS to depth
+  `max_hops` over the junction graph, excluding target itself.
+  k=2 default handles star-graph + cross-basin abstractions.
+- `compute_min_reach_distance(target_cells, neighbor_cells)` —
+  minimum cell-cell distance via `gpd.sjoin_nearest` (R-tree, O((N+M)
+  log(N+M))). Geographic CRS auto-reprojected to EPSG:3857 for
+  meter-accurate distance.
+- `_load_fixture_config(fixture_dir)` — auto-discover the YAML by
+  name convention (`configs/{fixture_dir.name}.yaml`). Best-effort;
+  returns None on missing/malformed config (warning logged).
+
+### Wired into existing checks
+
+- `check_reach_plausibility` gains `nearest_neighbor_distance_m` and
+  `connectivity_threshold_m` / `marine_connectivity_threshold_m`
+  kwargs. None signals "skip" (no junction config). Class-aware
+  thresholds reflect that marine zones (offshore disks) sit
+  naturally further from configured neighbors than river chains.
+- `check_fixture_geography` auto-loads YAML via `_load_fixture_config`,
+  builds the junction graph once per fixture, and threads the
+  per-reach nearest-neighbor distance into the per-reach checks.
+
+### Defaults
+
+| Parameter | Default | Rationale |
+|--|--|--|
+| `DEFAULT_CONNECTIVITY_THRESHOLD_M` | 500 m | 6-17× cell circumradius across fixtures; a reach 6+ cells from any 2-hop neighbor is mis-located |
+| `DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M` | 100 km | Offshore Marine Regions disks can centroid far from river mouth (Bothnian Bay sea polygons land 50+ km from Tornio) |
+| `DEFAULT_CONNECTIVITY_HOPS` | 2 | Handles star-graph (Minija basin's 4 tributaries → junction 3) and cross-basin (Minija → Atmata at junction 4 → Lagoon at junction 5) abstractions |
+
+### Registry entries (5 documented `KNOWN_GEOMETRY_DRIFT`)
+
+The new check found 5 real geometry issues in existing fixtures.
+All are real physical-domain artifacts that need follow-up fixture
+work, not check-tuning:
+
+- `example_minija_basin/Babrungas` + `Salantas` — Minija polygon
+  extracted from example_baltic in v0.54.3 covers only 55.35-55.75°N;
+  these tributaries join at 55.92-55.99°N (~7.5 km gap).
+- `example_morrumsan/Mouth` — small reach-split gap between Mouth
+  and Lower (835 m, just over the 500 m threshold). Cosmetic.
+- `example_simojoki/BalticCoast` + `example_tornionjoki/BalticCoast` —
+  Marine Regions WFS clipping puts the BalticCoast disk centroid
+  far from the river mouth (182 / 257 km gaps). Investigate disk
+  generation in `_generate_wgbast_physical_domains.py`.
+
+All entries have v0.56.x follow-up notes for the actual fixture fix.
+
+### New unit tests (12 added)
+
+Pure-function tests in `tests/test_geographic_conformance.py`:
+`test_check_connectivity_*` (4 tests for the `check_reach_plausibility`
+new branch), `test_build_junction_graph_*` (2 tests),
+`test_find_neighbor_reaches_*` (3 tests), `test_compute_min_reach_distance_*`
+(3 tests). All pass.
+
+### Verified
+
+- 66 passed + 5 xfailed across the full conformance sweep (8 fixtures,
+  ~71 reach-level tests). 5:33 walltime — under the plan's projected
+  20% increase from the prior baseline (~5 min).
+- The new failure mode (`REACH_DISCONNECTED`) caught real geometry
+  drift the per-reach checks missed.
+
+### Notes
+
+- No production behavior change; this is test infrastructure +
+  conformance gating only. No app/laguna deploy needed.
+- The Minija fixture iteration arc (v0.54.0–v0.55.3) inspired this
+  check — and the check immediately surfaced TWO previously-invisible
+  drift cases in WGBAST fixtures that have shipped since v0.45.0.
+
 ## [0.55.3] — 2026-04-30
 
 ### Changed — per-tributary flow scaling for Minija basin

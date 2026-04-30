@@ -76,6 +76,30 @@ class ReachMetrics:
 # regen; the v0.45.x WGBAST fixtures sit at 1.02-1.03 (faithful).
 DEFAULT_MAX_CELL_TO_POLYGON_AREA_RATIO = 1.5
 
+# v0.56.0: inter-reach connectivity defaults. A reach must have cells
+# within DEFAULT_CONNECTIVITY_THRESHOLD_M of at least one other reach
+# reachable within DEFAULT_CONNECTIVITY_HOPS steps in the YAML junction
+# graph. See docs/superpowers/plans/2026-04-30-inter-reach-connectivity-check.md.
+#
+# k=2 hops handle star-graph abstractions (Minija basin: 4 tributaries
+# all converge on junction 3) and cross-basin abstractions (Minija →
+# Atmata is geographically separated by ~50 km but logically connected
+# via junction 4 → 5; the 2-hop walk reaches Lagoon which IS adjacent).
+#
+# 500 m is roughly 6-17× the cell circumradius across existing fixtures
+# (Minija basin uses 30 m cells, WGBAST uses 60-150 m cells). A reach
+# 6+ cells away from any 2-hop neighbor is almost certainly mis-located.
+DEFAULT_CONNECTIVITY_THRESHOLD_M = 500.0
+# Marine reaches naturally sit far from configured neighbors — a 10 km
+# offshore BalticCoast disk can have its sea-polygon-clipped centroid
+# tens of kilometers from the river mouth, depending on the IHO sea
+# polygon's shape vs the disk. Cross-river marine zones in WGBAST
+# fixtures (Bothnian Bay) can land 100+ km from their river mouth
+# after Marine Regions WFS clipping. Use a more generous threshold
+# for marine reaches to avoid systematic false positives.
+DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M = 100_000.0
+DEFAULT_CONNECTIVITY_HOPS = 2
+
 
 @dataclass(frozen=True)
 class ReachIssue:
@@ -187,6 +211,9 @@ def check_reach_plausibility(
     min_marine_cells: int = DEFAULT_MIN_MARINE_CELLS,
     polygon_coverage_ratio: Optional[float] = None,
     max_cell_to_polygon_area_ratio: float = DEFAULT_MAX_CELL_TO_POLYGON_AREA_RATIO,
+    nearest_neighbor_distance_m: Optional[float] = None,
+    connectivity_threshold_m: float = DEFAULT_CONNECTIVITY_THRESHOLD_M,
+    marine_connectivity_threshold_m: float = DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M,
 ) -> list[ReachIssue]:
     """Apply the rules to one reach. Empty list = clean.
 
@@ -253,6 +280,33 @@ def check_reach_plausibility(
                 message=(
                     f"marine/lagoon reach has only {metrics.cells} cells "
                     f"(min {min_marine_cells}); habitat tiling is too coarse"
+                ),
+            ))
+
+    # v0.56.0: connectivity check — fires when caller has computed
+    # neighbor proximity from the YAML junction graph. None signals
+    # "no junction config available" (single-reach fixtures, missing
+    # config); the check is then skipped. 0.0 (cells overlap) is
+    # distinct from None and passes the threshold.
+    # Class-aware threshold: marine reaches use a much larger value
+    # because offshore zones (Marine Regions WFS-derived BalticCoast
+    # disks) can naturally sit tens of km from their river mouth.
+    if nearest_neighbor_distance_m is not None:
+        active_threshold = (
+            marine_connectivity_threshold_m if classification == "marine"
+            else connectivity_threshold_m
+        )
+        if nearest_neighbor_distance_m > active_threshold:
+            issues.append(ReachIssue(
+                severity="error",
+                code="REACH_DISCONNECTED",
+                message=(
+                    f"nearest configured-neighbor reach (within "
+                    f"{DEFAULT_CONNECTIVITY_HOPS} junction hops) is "
+                    f"{nearest_neighbor_distance_m:.0f} m away "
+                    f"(threshold {active_threshold:.0f} m for "
+                    f"{classification}); cells likely generated at "
+                    f"wrong coordinates relative to the basin"
                 ),
             ))
     return issues
@@ -328,12 +382,155 @@ def load_fixture_polygon_cache(fixture_dir: Path) -> Optional[list]:
     return polys
 
 
+def build_junction_graph(reaches) -> dict[str, set[str]]:
+    """Adjacency from reach A → reach B if they share any junction.
+
+    Two reaches share a junction when A's `upstream_junction` or
+    `downstream_junction` equals B's `upstream_junction` or
+    `downstream_junction`. Symmetric.
+
+    Reaches whose junction fields are unset / None contribute no edges
+    (this is a graceful degradation, not an error — `ReachConfig` is
+    Pydantic `extra='allow'` and legacy fixtures may have reaches
+    without junction config).
+
+    Parameters
+    ----------
+    reaches : Mapping[str, Any]
+        ``ModelConfig.reaches``-style mapping. Each value must expose
+        ``upstream_junction`` and ``downstream_junction`` attributes
+        (Pydantic models or duck-typed objects).
+    """
+    graph: dict[str, set[str]] = {name: set() for name in reaches}
+    # Map junction_id -> list of reach names that touch it
+    junction_to_reaches: dict[int, list[str]] = {}
+    for reach_name, cfg in reaches.items():
+        for attr in ("upstream_junction", "downstream_junction"):
+            j = getattr(cfg, attr, None)
+            if j is None:
+                continue
+            junction_to_reaches.setdefault(j, []).append(reach_name)
+    # Connect every pair of reaches sharing a junction
+    for sharing in junction_to_reaches.values():
+        for a in sharing:
+            for b in sharing:
+                if a != b:
+                    graph[a].add(b)
+    return graph
+
+
+def find_neighbor_reaches(
+    graph: dict[str, set[str]],
+    target_reach: str,
+    max_hops: int = DEFAULT_CONNECTIVITY_HOPS,
+) -> set[str]:
+    """BFS to depth `max_hops` over the junction graph.
+
+    Excludes `target_reach` itself from the result. Returns an empty set
+    if `target_reach` is not in the graph or has no neighbors.
+    """
+    if target_reach not in graph:
+        return set()
+    visited = {target_reach}
+    frontier = {target_reach}
+    for _ in range(max_hops):
+        next_frontier: set[str] = set()
+        for node in frontier:
+            for neighbor in graph.get(node, ()):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    next_frontier.add(neighbor)
+        frontier = next_frontier
+        if not frontier:
+            break
+    visited.discard(target_reach)
+    return visited
+
+
+def compute_min_reach_distance(
+    target_cells_gdf: gpd.GeoDataFrame,
+    neighbor_cells_gdf: gpd.GeoDataFrame,
+) -> float:
+    """Minimum cell-to-cell distance in meters between two reach cell sets.
+
+    Both inputs must share a CRS. Geographic CRS (EPSG:4326) inputs are
+    reprojected to EPSG:3857 for meter-accurate distances, mirroring
+    ``compute_reach_metrics``. Already-projected EPSG codes (e.g.
+    EPSG:3035 LAEA Europe) are kept as-is.
+
+    Implementation: ``gpd.sjoin_nearest`` uses an R-tree spatial index,
+    yielding O((N+M) log(N+M)) rather than naive O(N×M).
+
+    Returns 0.0 when ANY cells touch / overlap (intersection has zero
+    distance). Returns ``inf`` if either input is empty.
+    """
+    if target_cells_gdf.empty or neighbor_cells_gdf.empty:
+        return float("inf")
+
+    # Reproject to a meter-based CRS if needed
+    epsg = target_cells_gdf.crs.to_epsg() if target_cells_gdf.crs else None
+    if epsg is None or epsg == 4326:
+        target_m = target_cells_gdf.to_crs("EPSG:3857")
+        neighbor_m = neighbor_cells_gdf.to_crs("EPSG:3857")
+    else:
+        target_m = target_cells_gdf
+        neighbor_m = neighbor_cells_gdf.to_crs(target_cells_gdf.crs)
+
+    joined = gpd.sjoin_nearest(
+        target_m, neighbor_m, how="left", distance_col="dist_m"
+    )
+    if joined.empty or "dist_m" not in joined.columns:
+        return float("inf")
+    distances = joined["dist_m"].dropna()
+    if distances.empty:
+        return float("inf")
+    return float(distances.min())
+
+
+def _load_fixture_config(fixture_dir: Path):
+    """Auto-discover the YAML config for a fixture by name convention.
+
+    Looks for ``<repo_root>/configs/{fixture_dir.name}.yaml`` (the standard
+    convention used across all WGBAST and Baltic fixtures). Returns the
+    loaded ``ModelConfig`` or None if the config is missing OR loading
+    fails (in which case a warning is logged).
+
+    Callers treat None as "skip connectivity check for this fixture" —
+    it's a soft signal, not an error. Existing per-reach checks continue
+    to fire regardless.
+    """
+    # tests/fixtures/X → repo_root is parents[2]
+    try:
+        repo_root = fixture_dir.resolve().parents[2]
+    except IndexError:
+        return None
+    cfg_path = repo_root / "configs" / f"{fixture_dir.name}.yaml"
+    if not cfg_path.exists():
+        return None
+    try:
+        # Late import — keeps geographic_conformance importable in
+        # contexts that don't have salmopy on the path (e.g. some
+        # CI lints).
+        from salmopy.io.config import load_config
+        return load_config(cfg_path)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "geographic_conformance: could not load %s for connectivity "
+            "check: %s", cfg_path, exc,
+        )
+        return None
+
+
 def check_fixture_geography(
     fixture_dir: Path,
     *,
     max_river_effective_width_m: float = DEFAULT_MAX_RIVER_EFFECTIVE_WIDTH_M,
     min_marine_cells: int = DEFAULT_MIN_MARINE_CELLS,
     max_cell_to_polygon_area_ratio: float = DEFAULT_MAX_CELL_TO_POLYGON_AREA_RATIO,
+    connectivity_threshold_m: float = DEFAULT_CONNECTIVITY_THRESHOLD_M,
+    marine_connectivity_threshold_m: float = DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M,
+    connectivity_hops: int = DEFAULT_CONNECTIVITY_HOPS,
 ) -> dict[str, tuple[ReachMetrics, ReachClass, list[ReachIssue]]]:
     """Run the rules against every reach in one fixture.
 
@@ -355,6 +552,15 @@ def check_fixture_geography(
 
     polygon_cache = load_fixture_polygon_cache(fixture_dir)
 
+    # v0.56.0: load YAML config (best-effort) for the connectivity check.
+    # When None, individual reaches' nearest_neighbor_distance_m stays
+    # None and the connectivity check is skipped per-reach.
+    config = _load_fixture_config(fixture_dir)
+    junction_graph: dict[str, set[str]] = {}
+    if config is not None and getattr(config, "reaches", None):
+        junction_graph = build_junction_graph(config.reaches)
+    shapefile_reaches = set(str(r) for r in gdf[reach_col].unique())
+
     out: dict[str, tuple[ReachMetrics, ReachClass, list[ReachIssue]]] = {}
     for reach in sorted(gdf[reach_col].unique()):
         sub = gdf[gdf[reach_col] == reach]
@@ -373,12 +579,31 @@ def check_fixture_geography(
             )]
             ratio = compute_polygon_coverage_ratio(river_cells, polygon_cache)
 
+        # v0.56.0: connectivity — find k-hop neighbors via the junction
+        # graph, restrict to reaches actually present in the shapefile
+        # (orphan YAML entries are skipped), and compute minimum cell-
+        # cell distance via gpd.sjoin_nearest.
+        nearest_neighbor_distance_m: Optional[float] = None
+        if junction_graph:
+            neighbors = find_neighbor_reaches(
+                junction_graph, str(reach), max_hops=connectivity_hops,
+            ) & shapefile_reaches
+            if neighbors:
+                neighbor_cells = gdf[gdf[reach_col].astype(str).isin(neighbors)]
+                if not neighbor_cells.empty:
+                    nearest_neighbor_distance_m = compute_min_reach_distance(
+                        sub, neighbor_cells,
+                    )
+
         issues = check_reach_plausibility(
             metrics, classification,
             max_river_effective_width_m=max_river_effective_width_m,
             min_marine_cells=min_marine_cells,
             polygon_coverage_ratio=ratio,
             max_cell_to_polygon_area_ratio=max_cell_to_polygon_area_ratio,
+            nearest_neighbor_distance_m=nearest_neighbor_distance_m,
+            connectivity_threshold_m=connectivity_threshold_m,
+            marine_connectivity_threshold_m=marine_connectivity_threshold_m,
         )
         out[str(reach)] = (metrics, classification, issues)
     return out
