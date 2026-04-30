@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.3] — 2026-04-30
+
+### Fixed — example_minija_basin now uses real OSM polygon geometry
+
+The v0.54.0 example_minija_basin fixture was scaffolded via the WGBAST
+single-river pattern: hand-curated waypoints (5 points along a guessed
+Minija centerline) + a buffered-centerline hex grid. That produced a
+fixture with non-real geometry — useful as a structure-test scaffold,
+but NOT geographically faithful to the real Minija drainage basin.
+
+v0.54.3 rebuilds the fixture by extracting the Minija reach from
+`example_baltic`, which already uses real OSM polygon geometry built
+by the v0.51.0 `scripts/generate_baltic_example.py` pipeline.
+
+### Changed
+
+- 5 reaches (Mouth/Lower/Middle/Upper + BalticCoast at 3,979 cells) →
+  3 reaches: Minija + CuronianLagoon + BalticCoast at 642 cells, all
+  with real OSM/published-coordinate geometry from example_baltic.
+- Real lat/lon: Minija at 21.28-21.44°E, 55.35-55.75°N (40 km along
+  the actual river channel). Curonian Lagoon downstream + Baltic
+  Coast for marine habitat — the natural anadromous pathway.
+- Hydraulic CSVs (Depths/Vels/TimeSeriesInputs) for each reach copied
+  verbatim from `tests/fixtures/example_baltic/` (cell counts now
+  match because we use the same source cells).
+- Initial population + adult arrival CSVs filtered to Minija-only rows
+  from the baltic source: 3 cohorts × Minija (was 21 across all
+  baltic reaches), 28 annual arrivals to Minija (was 224 across all).
+- Reaches block in YAML pruned by 11 entries (Nemunas, Atmata, Sysa,
+  Skirvyte, Leite, Gilija, Dane_{Upper,Middle,Lower,Mouth},
+  KlaipedaStrait); marine block updated to drop the KlaipedaStrait
+  cross-reference.
+
+### Added
+
+- `scripts/_extract_minija_from_baltic.py` — one-shot regenerator that
+  builds the Minija fixture by filtering the baltic shapefile + CSVs.
+  Same shape as the WGBAST `_wire_*` scripts; idempotent.
+
+### Notes
+
+- **Tributaries (Babrungas, Veiviržė, Šalpė, Salantas) are NOT separate
+  reaches** — example_baltic's OSM-fetched polygon for "Minija" tags
+  the main stem only. Adding tributaries requires fetching their OSM
+  ways separately and wiring them as new reaches; deferred to v0.55+.
+- The v0.54.0 scaffold path (Minija entry in
+  `_generate_wgbast_physical_domains.py` + `_wire_minija_basin_csvs.py`)
+  is preserved but no longer used by example_minija_basin. The
+  `--only` flag I added to the WGBAST script is generally useful for
+  any future single-river regeneration.
+- 3-day smoke test passes (`test_fixture_loads_and_runs_3_days
+  [example_minija_basin]`); deployed to laguna.
+
 ## [0.54.2] — 2026-04-30
 
 ### Added — `_probe_v054_parr_cohort_dynamics.py` cohort-age diagnostic

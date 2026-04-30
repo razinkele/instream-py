@@ -1,56 +1,81 @@
-# Minija drainage basin -- physical-geography domain (v0.54.0).
-# 4 freshwater reaches (Mouth/Lower/Middle/Upper) along the real
-# Minija river centerline (NW Lithuania → Curonian Lagoon), plus
-# BalticCoast for marine habitat. Mid/Lower reaches embed the
-# Babrungas + Veiviržė tributary confluences geographically.
-# Shapefile generated via scripts/_generate_wgbast_physical_domains.py
-# with --only example_minija_basin.
+# Minija drainage basin — real Minija river + Curonian Lagoon + Baltic coast
 #
-# NOT a WGBAST-assessment stock; Lithuanian Atlantic salmon are
-# tracked in ICES SD 26. Inherits Byskealven hydraulic CSVs as
-# starter data — known climate-mismatch (Byskealven is subarctic
-# Sweden, ~6°C colder than Minija's Lithuanian baseline). Per-river
-# calibration is a v0.54.x followup.
+# v0.54.3: extracted from example_baltic by selecting the 3 reaches that
+# form the Minija anadromous pathway. Replaces the v0.54.0 synthetic-
+# geometry attempt (curated waypoints + buffered centerline); this fixture
+# uses the real OSM polygon geometry built by the v0.51.0 example_baltic
+# pipeline (`scripts/generate_baltic_example.py`).
 #
+# Reaches (3 total, 642 cells):
+#   Minija         — real Minija river OSM polygon, 425 cells
+#                    (flows into Curonian Lagoon at Klaipėda area)
+#   CuronianLagoon — Kuršių marios, real OSM outline, 120 cells
+#                    (downstream lagoon — Minija's natal-river receiver)
+#   BalticCoast    — nearshore Baltic N of Klaipėda, 97 cells
+#                    (open-sea marine habitat for ocean phase)
+#
+# Tributaries (Babrungas, Veiviržė, Šalpė, Salantas) are NOT separate
+# reaches — example_baltic's OSM-fetched polygon for "Minija" covers the
+# main stem only. Adding tributaries would require fetching their OSM
+# ways separately and is a v0.55+ candidate.
+#
+# Marine domain: Estuary → Coastal → Baltic Proper (abstract zones from baltic).
+# Full lifecycle: egg → fry → parr → smolt → ocean → return → spawn
+#
+# Shapefile CRS: EPSG:3035 (ETRS89/LAEA Europe). Hydraulic base depths come
+# from published real means (Curonian Lagoon 3.8 m, coast 10 m); Minija's
+# per-flow scaling is synthetic because per-flow bathymetry isn't in OSM.
+
 simulation:
-  start_date: '2011-04-01'
-  end_date: '2016-03-31'
+  start_date: "2011-04-01"
+  end_date: "2036-03-31"
   output_frequency: 1
-  output_units: days
+  output_units: "days"
   seed: 42
   census_days:
-  - 06-15
-  - 09-30
+    - "06-15"
+    - "09-30"
   census_years_to_skip: 0
-  population_file: MinijaBasinExample-InitialPopulations.csv
-  adult_arrival_file: MinijaBasinExample-AdultArrivals.csv
-  m74_forcing_csv: data/wgbast/m74_ysfm_series.csv
+  population_file: "MinijaBasinExample-InitialPopulations.csv"
+  adult_arrival_file: "MinijaBasinExample-AdultArrivals.csv"
+
+  # WGBAST Arc L: per-(year, river) M74 YSFM forcing. Activate by
+  # uncommenting and setting river_name on the WGBAST-comparable reaches
+  # below (e.g. Nemunas → a real Lithuanian river not currently in the
+  # Vuorinen series). For the placeholder CSV the forcing only fires on
+  # "Simojoki" and "Tornionjoki"; Baltic fixtures lack a river_name match
+  # so the cull is a no-op for now.
+  # m74_forcing_csv: "data/wgbast/m74_ysfm_series.csv"
+
 performance:
-  backend: numpy
-  device: cpu
+  backend: "numpy"
+  device: "cpu"
   trout_capacity: 12000
   redd_capacity: 3000
   jit_warmup: false
+
 spatial:
-  backend: shapefile
-  mesh_file: Shapefile/MinijaBasinExample.shp
+  backend: "shapefile"
+  mesh_file: "Shapefile/MinijaBasinExample.shp"
   gis_properties:
-    cell_id: ID_TEXT
-    reach_name: REACH_NAME
-    area: AREA
-    dist_escape: M_TO_ESC
-    num_hiding_places: NUM_HIDING
-    frac_vel_shelter: FRACVSHL
-    frac_spawn: FRACSPWN
+    cell_id: "ID_TEXT"
+    reach_name: "REACH_NAME"
+    area: "AREA"
+    dist_escape: "M_TO_ESC"
+    num_hiding_places: "NUM_HIDING"
+    frac_vel_shelter: "FRACVSHL"
+    frac_spawn: "FRACSPWN"
+
 light:
-  latitude: 55.5
+  latitude: 55.7
   light_correction: 0.65
   light_at_night: 0.5
   twilight_angle: 6.0
+
 species:
   BalticAtlanticSalmon:
     is_anadromous: true
-    display_color: silver
+    display_color: "silver"
     cmax_A: 0.303
     cmax_B: -0.275
     cmax_temp_table:
@@ -64,8 +89,8 @@ species:
       20.0: 0.0
     weight_A: 0.0077
     weight_B: 3.05
-    spawn_start_day: 10-15
-    spawn_end_day: 11-30
+    spawn_start_day: "10-15"
+    spawn_end_day: "11-30"
     kelt_survival_prob: 0.25
     min_kelt_condition: 0.5
     capture_R1: 1.3
@@ -97,7 +122,7 @@ species:
     pisciv_length: 20
     resp_A: 36
     resp_B: 0.783
-    resp_C: 0.002
+    resp_C: 0.0020
     resp_D: 1.4
     search_area: 20000
     spawn_defense_area: 0
@@ -116,8 +141,8 @@ species:
     mort_high_temp_T1: 28.0
     mort_high_temp_T9: 24.0
     mort_strand_survival_when_dry: 0.5
-    mort_condition_S_at_K8: 0.999
-    mort_condition_S_at_K5: 0.99
+    mort_condition_S_at_K8: 0.999     # Atlantic salmon parr overwinter at low K
+    mort_condition_S_at_K5: 0.99      # daily survival ~0.996 at K=0.7
     mort_terr_pred_L1: 6.0
     mort_terr_pred_L9: 3.0
     mort_terr_pred_D1: 0.0
@@ -143,12 +168,12 @@ species:
     mort_redd_dewater_surv: 0.98
     mort_redd_hi_temp_T1: 23
     mort_redd_hi_temp_T9: 17.5
-    mort_redd_lo_temp_T1: -1.0
-    mort_redd_lo_temp_T9: 1.0
-    mort_redd_scour_depth: 5
-    redd_devel_A: 0.0019
-    redd_devel_B: 0.0005
-    redd_devel_C: 3.6e-05
+    mort_redd_lo_temp_T1: -1.0          # Baltic eggs tolerate near-freezing
+    mort_redd_lo_temp_T9: 1.0           # mortality only below ~0°C
+    mort_redd_scour_depth: 5              # Baltic gravels are deep — harder to scour
+    redd_devel_A: 0.00190
+    redd_devel_B: 0.000500
+    redd_devel_C: 0.0000360
     redd_area: 56000
     superind_max_rep: 10
     superind_max_length: 5
@@ -165,99 +190,61 @@ species:
       54: 1.0
       61: 1.0
       192: 0.0
-    smolt_min_length: 13.0
+
 reaches:
-  Mouth:
-    drift_conc: 2.0e-08
-    search_prod: 2.0e-06
-    shelter_speed_frac: 0.3
-    prey_energy_density: 4500
-    drift_regen_distance: 600
-    shading: 0.8
-    fish_pred_min: 0.985
-    terr_pred_min: 0.97
-    light_turbid_coef: 0.002
-    light_turbid_const: 0.0
-    max_spawn_flow: 20
-    shear_A: 0.013
-    shear_B: 0.4
-    upstream_junction: 1
-    downstream_junction: 2
-    time_series_input_file: Mouth-TimeSeriesInputs.csv
-    depth_file: Mouth-Depths.csv
-    velocity_file: Mouth-Vels.csv
-    river_name: Minija
-  Lower:
-    pspc_smolts_per_year: 300   # v0.54.0: Lithuanian Atlantic salmon ~1.2k/yr total (cf. example_baltic Minija reach 1200); split 300/600/300 across freshwater reaches with Middle as spawning hotspot.
-    drift_conc: 1.2e-08
-    search_prod: 1.5e-06
-    shelter_speed_frac: 0.2
-    prey_energy_density: 3800
-    drift_regen_distance: 800
-    shading: 0.5
-    fish_pred_min: 0.97
-    terr_pred_min: 0.965
-    light_turbid_coef: 0.0025
-    light_turbid_const: 0.0008
-    max_spawn_flow: 18
-    shear_A: 0.009
-    shear_B: 0.32
-    upstream_junction: 2
-    downstream_junction: 3
-    time_series_input_file: Lower-TimeSeriesInputs.csv
-    depth_file: Lower-Depths.csv
-    velocity_file: Lower-Vels.csv
-    river_name: Minija
-  Middle:
-    pspc_smolts_per_year: 600
+  # PSPC = 1,200 smolts/yr for Minija — preliminary Lithuanian Atlantic
+  # salmon estimate (cf. example_baltic Minija reach) order-of-magnitude
+  # consistent with ICES SD 26 (Gulf of Riga / Lithuanian rivers small
+  # cohort tracking). Real Kesminas et al. surveys would refine this.
+  Minija:                      # real Minija — feeds Curonian Lagoon at Klaipėda
+    pspc_smolts_per_year: 1200   # key Lithuanian spawning tributary
     drift_conc: 1.5e-08
-    search_prod: 1.8e-06
+    search_prod: 1.80e-06
     shelter_speed_frac: 0.22
     prey_energy_density: 4000
     drift_regen_distance: 700
     shading: 0.72
-    fish_pred_min: 0.98
-    terr_pred_min: 0.97
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
     light_turbid_coef: 0.0028
     light_turbid_const: 0.0005
     max_spawn_flow: 14
-    shear_A: 0.01
+    shear_A: 0.010
     shear_B: 0.35
     upstream_junction: 3
-    downstream_junction: 4
-    time_series_input_file: Middle-TimeSeriesInputs.csv
-    depth_file: Middle-Depths.csv
-    velocity_file: Middle-Vels.csv
-    river_name: Minija
-  Upper:
-    drift_conc: 8.0e-09
-    search_prod: 1.0e-06
-    shelter_speed_frac: 0.15
-    prey_energy_density: 3500
-    drift_regen_distance: 1000
-    shading: 0.55
-    fish_pred_min: 0.96
-    terr_pred_min: 0.96
-    light_turbid_coef: 0.003
-    light_turbid_const: 0.001
-    max_spawn_flow: 15
-    shear_A: 0.008
-    shear_B: 0.3
-    upstream_junction: 4
     downstream_junction: 5
-    time_series_input_file: Upper-TimeSeriesInputs.csv
-    depth_file: Upper-Depths.csv
-    velocity_file: Upper-Vels.csv
-    pspc_smolts_per_year: 300
-    river_name: Minija
-  BalticCoast:
-    drift_conc: 2.0e-10
-    search_prod: 1.0e-07
+    time_series_input_file: "Minija-TimeSeriesInputs.csv"
+    depth_file: "Minija-Depths.csv"
+    velocity_file: "Minija-Vels.csv"
+
+  CuronianLagoon:              # Kuršių marios — brackish 0-7 PSU (~1,584 km² real)
+    drift_conc: 1.0e-09        # very low food in open lagoon
+    search_prod: 3.00e-07
+    shelter_speed_frac: 0.03
+    prey_energy_density: 2500
+    drift_regen_distance: 5000
+    shading: 0.10
+    fish_pred_min: 0.800       # severe predation: pike, perch, cormorants
+    terr_pred_min: 0.940
+    light_turbid_coef: 0.005
+    light_turbid_const: 0.003
+    max_spawn_flow: 999
+    shear_A: 0.002
+    shear_B: 0.20
+    upstream_junction: 2
+    downstream_junction: 5
+    time_series_input_file: "CuronianLagoon-TimeSeriesInputs.csv"
+    depth_file: "CuronianLagoon-Depths.csv"
+    velocity_file: "CuronianLagoon-Vels.csv"
+
+  BalticCoast:                 # nearshore Baltic off Klaipėda (~6-7 PSU real)
+    drift_conc: 0.2e-09        # almost no invertebrate drift at sea
+    search_prod: 1.00e-07
     shelter_speed_frac: 0.0
     prey_energy_density: 1500
     drift_regen_distance: 20000
     shading: 0.02
-    fish_pred_min: 0.95
+    fish_pred_min: 0.650       # seals, cod, large fish — lethal for juveniles
     terr_pred_min: 0.995
     light_turbid_coef: 0.007
     light_turbid_const: 0.004
@@ -266,185 +253,42 @@ reaches:
     shear_B: 0.15
     upstream_junction: 5
     downstream_junction: 6
-    time_series_input_file: BalticCoast-TimeSeriesInputs.csv
-    depth_file: BalticCoast-Depths.csv
-    velocity_file: BalticCoast-Vels.csv
-    river_name: Minija
+    time_series_input_file: "BalticCoast-TimeSeriesInputs.csv"
+    depth_file: "BalticCoast-Depths.csv"
+    velocity_file: "BalticCoast-Vels.csv"
+
 marine:
+  # v0.54.3: BalticCoast is the only marine reach in this basin-only fixture
+  # (KlaipedaStrait + Danė distributaries from example_baltic are not part
+  # of the Minija drainage basin and were removed). BalticCoast is the
+  # canonical estuary reach for adult homing.
+  estuary_reach: BalticCoast
   zones:
-  - name: Estuary
-    area_km2: 80
-  - name: Coastal
-    area_km2: 800
-  - name: Baltic Proper
-    area_km2: 8000
+    - name: "Estuary"
+      area_km2: 80
+    - name: "Coastal"
+      area_km2: 800
+    - name: "Baltic Proper"
+      area_km2: 8000
   zone_connectivity:
-    Estuary:
-    - Coastal
-    Coastal:
-    - Baltic Proper
-    - Estuary
-    Baltic Proper:
-    - Coastal
-  smolt_min_length: 13.0
+    Estuary: ["Coastal"]
+    Coastal: ["Baltic Proper", "Estuary"]
+    Baltic Proper: ["Coastal"]
+  smolt_min_length: 8.0
   return_min_sea_winters: 2
   static_driver:
     Estuary:
-      temperature:
-      - 1
-      - 2
-      - 5
-      - 9
-      - 13
-      - 16
-      - 18
-      - 17
-      - 13
-      - 8
-      - 4
-      - 2
-      salinity:
-      - 4
-      - 4
-      - 3
-      - 3
-      - 4
-      - 5
-      - 6
-      - 6
-      - 5
-      - 4
-      - 4
-      - 4
-      prey_index:
-      - 0.1
-      - 0.2
-      - 0.4
-      - 0.6
-      - 0.8
-      - 0.9
-      - 0.8
-      - 0.7
-      - 0.5
-      - 0.3
-      - 0.1
-      - 0.1
-      predation_risk:
-      - 0.1
-      - 0.1
-      - 0.2
-      - 0.4
-      - 0.3
-      - 0.2
-      - 0.15
-      - 0.1
-      - 0.1
-      - 0.1
-      - 0.1
-      - 0.1
+      temperature: [1, 2, 5, 9, 13, 16, 18, 17, 13, 8, 4, 2]
+      salinity: [4, 4, 3, 3, 4, 5, 6, 6, 5, 4, 4, 4]
+      prey_index: [0.1, 0.2, 0.4, 0.6, 0.8, 0.9, 0.8, 0.7, 0.5, 0.3, 0.1, 0.1]
+      predation_risk: [0.1, 0.1, 0.2, 0.4, 0.3, 0.2, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1]
     Coastal:
-      temperature:
-      - 2
-      - 2
-      - 3
-      - 6
-      - 10
-      - 14
-      - 17
-      - 16
-      - 12
-      - 8
-      - 4
-      - 2
-      salinity:
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      prey_index:
-      - 0.2
-      - 0.3
-      - 0.4
-      - 0.6
-      - 0.7
-      - 0.8
-      - 0.8
-      - 0.7
-      - 0.5
-      - 0.3
-      - 0.2
-      - 0.2
-      predation_risk:
-      - 0.05
-      - 0.05
-      - 0.1
-      - 0.15
-      - 0.1
-      - 0.05
-      - 0.05
-      - 0.05
-      - 0.05
-      - 0.05
-      - 0.05
-      - 0.05
+      temperature: [2, 2, 3, 6, 10, 14, 17, 16, 12, 8, 4, 2]
+      salinity: [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+      prey_index: [0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.8, 0.7, 0.5, 0.3, 0.2, 0.2]
+      predation_risk: [0.05, 0.05, 0.1, 0.15, 0.1, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
     Baltic Proper:
-      temperature:
-      - 3
-      - 2
-      - 2
-      - 4
-      - 8
-      - 12
-      - 15
-      - 15
-      - 12
-      - 8
-      - 5
-      - 3
-      salinity:
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      - 7
-      prey_index:
-      - 0.2
-      - 0.2
-      - 0.3
-      - 0.5
-      - 0.7
-      - 0.8
-      - 0.9
-      - 0.8
-      - 0.6
-      - 0.4
-      - 0.2
-      - 0.2
-      predation_risk:
-      - 0.02
-      - 0.02
-      - 0.02
-      - 0.05
-      - 0.05
-      - 0.05
-      - 0.05
-      - 0.05
-      - 0.02
-      - 0.02
-      - 0.02
-      - 0.02
+      temperature: [3, 2, 2, 4, 8, 12, 15, 15, 12, 8, 5, 3]
+      salinity: [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+      prey_index: [0.2, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9, 0.8, 0.6, 0.4, 0.2, 0.2]
+      predation_risk: [0.02, 0.02, 0.02, 0.05, 0.05, 0.05, 0.05, 0.05, 0.02, 0.02, 0.02, 0.02]
