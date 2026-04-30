@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.1] — 2026-04-30
+
+### Updated — `_TORNIONJOKI_XFAIL` reason text after v0.53.5 5-yr run
+
+The v0.53.5 5-yr `test_latitudinal_smolt_age_gradient[example_tornionjoki]`
+completed in 4h 2m (commit 05d028b, post-redd_capacity-fix). Verdict:
+**still RED**, modal smolt age 2 vs expected 4. The v0.53.5 redd_capacity
+raise eliminated the redd_state overflow that slowed the prior run, but
+a second overflow surfaced: trout_state hits its 100k cap during
+emergence-day allocation bursts (each redd emerges ~700 eggs; hundreds
+emerging on the same day exceed the cap). The `is_natal` filter from
+v0.53.1 IS active, so the modal-age-2 reading now reflects natal-cohort
+biology (not seed-fish contamination) — meaning the residual gap is
+calibration, not measurement.
+
+Rewrote the xfail reason to document:
+- The 8-layer delivery chain that's now closed (v0.52.0–v0.53.5)
+- The new two-front gap: (A) trout_state burst overflow, (B) growth/
+  mortality calibration causing age-2 smolts even when natal cohorts
+  are correctly identified
+- That the next diagnostic step is a PARR-stage cohort dynamics probe
+  (not just kernel survival like v0.53.0's), to distinguish "growth too
+  fast" from "older cohorts dying"
+
+### Notes
+
+- Test-only change; no production behavior modified.
+- Walltime concern: 4h 2m vs 115-min benchmark → 2× slower because
+  trout_state overflow now produces logging spam (same shape v0.53.5
+  fixed for redd_state). Bump trout_capacity to 500k-1M in v0.54.x to
+  restore baseline runtime.
+- Smoke tests pass (`-m "not slow"`); the slow run remains xfail
+  (strict=False) and ships as-is.
+
 ## [0.54.0] — 2026-04-30
 
 ### Added — example_minija_basin fixture (Lithuanian Atlantic salmon)
