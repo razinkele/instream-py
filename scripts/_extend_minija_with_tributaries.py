@@ -59,8 +59,10 @@ FIXTURE_DIR = ROOT / "tests" / "fixtures" / "example_minija_basin"
 SHP_PATH = FIXTURE_DIR / "Shapefile" / "MinijaBasinExample.shp"
 OSM_CACHE = ROOT / "tests" / "fixtures" / "_osm_cache" / "minija_tributaries.json"
 
-# Tributaries to add (must have data in OSM cache). Veiviržė deferred.
-TRIBUTARIES = ["Babrungas", "Salantas", "Salpe"]
+# Tributaries to add (must have data in OSM cache).
+# v0.55.1: added Veivirzas (was deferred in v0.55.0 due to OSM name
+# regex mismatch — actual tag is "Veiviržas", not "Veiviržė").
+TRIBUTARIES = ["Babrungas", "Salantas", "Salpe", "Veivirzas"]
 
 # Generation parameters — small streams, smaller cells than Minija main stem
 CELL_SIZE_M = 50.0
@@ -108,6 +110,12 @@ def main() -> None:
         )
 
     base = gpd.read_file(SHP_PATH)
+    # If a previous run left tributary cells in the shapefile, drop them
+    # so we don't double-up on re-run (v0.55.1 idempotency).
+    pre_tribs = [r for r in base["REACH_NAME"].unique() if r in TRIBUTARIES]
+    if pre_tribs:
+        log.info("Removing pre-existing tributary cells: %s", pre_tribs)
+        base = base[~base["REACH_NAME"].isin(TRIBUTARIES)].copy()
     log.info("Base fixture: %d cells, reaches=%s",
              len(base), sorted(base["REACH_NAME"].unique()))
     target_crs = base.crs

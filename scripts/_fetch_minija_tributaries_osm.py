@@ -65,8 +65,13 @@ TRIBUTARIES: list[TributaryQuery] = [
         confluence_lon_lat=(21.85, 55.92),  # near Plungė
     ),
     TributaryQuery(
-        name="Veivirze",
-        name_regex="^(Veiviržė|Veivirze)$",
+        # OSM tags this river as "Veiviržas" (Lithuanian masculine form,
+        # cross-checked via wikidata=Q3500757 / wikipedia=lt:Veiviržas).
+        # The original v0.55.0 regex used "Veiviržė" — the feminine form
+        # which is a common typo / declension confusion. Probed via
+        # `_probe_veivirze_osm.py` and confirmed.
+        name="Veivirzas",
+        name_regex="^(Veiviržas|Veivirzas)$",
         confluence_lon_lat=(21.40, 55.55),  # near Lankupiai
     ),
     TributaryQuery(

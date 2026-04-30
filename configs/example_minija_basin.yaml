@@ -14,29 +14,35 @@
 #
 # v0.55.0: added 3 right-bank tributaries via Overpass OSM fetch
 # (`_fetch_minija_tributaries_osm.py`) + hex cell generation
-# (`_extend_minija_with_tributaries.py`). All three converge on Minija's
-# upstream end (junction 3) — geographically simplified (real
-# confluences are scattered along Minija's length) but topologically
-# functional for an IBM where Minija is a single reach.
+# (`_extend_minija_with_tributaries.py`).
 #
-# Reaches (7 total, 5,406 cells):
+# v0.55.1: added Veiviržas — the v0.55.0 fetch used regex `Veiviržė`
+# (feminine) but the real OSM tag is `Veiviržas` (masculine, confirmed
+# via wikidata Q3500757 / wikipedia lt:Veiviržas). The regex mismatch
+# was diagnosed via `_probe_veivirze_osm.py`. Veiviržas is the largest
+# Minija tributary (~70 km) so its inclusion materially completes the
+# drainage basin.
+#
+# All four tributaries converge on Minija's upstream end (junction 3) —
+# a star-graph topology, geographically simplified (real confluences
+# are scattered along Minija's length) but topologically functional
+# for an IBM where Minija is a single reach.
+#
+# Reaches (8 total, 8,037 cells):
 #   Minija         — real Minija river OSM polygon, 425 cells
 #                    (downstream junction = Atmata confluence at Lankupiai)
-#   Babrungas      — ~22 km tributary, Lake Plateliai → Plungė, 1,711 cells
-#   Salantas       — ~52 km north tributary near Salantai, 1,489 cells
-#   Salpe          — Šalpė, small mid-river stream, 1,486 cells
+#   Babrungas      — ~22 km tributary, Lake Plateliai → Plungė, 1,721 cells
+#   Salantas       — ~52 km north tributary near Salantai, 1,502 cells
+#   Salpe          — Šalpė, small mid-river stream, 1,489 cells
+#   Veivirzas      — ~70 km largest Minija tributary, 2,605 cells
 #   Atmata         —  78 cells; Nemunas-Delta distributary
 #   CuronianLagoon — Kuršių marios, 120 cells
 #   BalticCoast    — nearshore Baltic N of Klaipėda, 97 cells
 #
 # Junction topology:
-#   Babrungas (7→3), Salantas (8→3), Salpe (9→3) all → Minija (3→4)
-#   Minija (3→4) → Atmata (4→5) → CuronianLagoon (2→5)
-#   BalticCoast (5→6)
-#
-# Veiviržė deferred — Overpass returned 0 ways for the regex
-# `^(Veiviržė|Veivirze)$` within the Minija-basin bbox. Likely a
-# spelling/diacritic mismatch; v0.55.x candidate to investigate.
+#   Babrungas (7→3), Salantas (8→3), Salpe (9→3), Veivirzas (10→3)
+#   all → Minija (3→4) → Atmata (4→5) → CuronianLagoon (2→5)
+#   → BalticCoast (5→6)
 #
 # Marine domain: Estuary → Coastal → Baltic Proper (abstract zones from baltic).
 # Full lifecycle: egg → fry → parr → smolt → ocean → return → spawn
@@ -302,6 +308,32 @@ reaches:
     time_series_input_file: "Salpe-TimeSeriesInputs.csv"
     depth_file: "Salpe-Depths.csv"
     velocity_file: "Salpe-Vels.csv"
+
+  Veivirzas:                   # Veiviržas — ~70 km largest Minija tributary,
+                               # joins Minija near Lankupiai (the v0.55.0 fetch
+                               # missed this with regex `Veiviržė` — actual OSM
+                               # tag is the masculine `Veiviržas`).
+    pspc_smolts_per_year: 250    # largest tributary, biggest spawning capacity
+    drift_conc: 1.4e-08
+    search_prod: 1.70e-06
+    shelter_speed_frac: 0.22
+    prey_energy_density: 4000
+    drift_regen_distance: 700
+    shading: 0.72
+    fish_pred_min: 0.980
+    terr_pred_min: 0.970
+    light_turbid_coef: 0.0028
+    light_turbid_const: 0.0005
+    max_spawn_flow: 14
+    shear_A: 0.010
+    shear_B: 0.35
+    upstream_junction: 10
+    downstream_junction: 3       # joins Minija at junction 3 (geographically
+                                 # closer to Atmata-confluence; junction-3 is
+                                 # a star simplification — see fixture header)
+    time_series_input_file: "Veivirzas-TimeSeriesInputs.csv"
+    depth_file: "Veivirzas-Depths.csv"
+    velocity_file: "Veivirzas-Vels.csv"
 
   Atmata:                      # Nemunas-Delta distributary; carries Minija outflow to Lagoon
                                # (real geography: Minija meets Atmata at Lankupiai →

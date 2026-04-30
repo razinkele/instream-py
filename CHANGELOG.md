@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.1] — 2026-04-30
+
+### Added — Veiviržas, the largest Minija tributary
+
+The v0.55.0 fetch tried `^(Veiviržė|Veivirze)$` and got 0 ways from
+Overpass. Diagnosed via probe: OSM tags this river as **`Veiviržas`**
+(Lithuanian masculine declension, confirmed via wikidata Q3500757 +
+wikipedia lt:Veiviržas), not `Veiviržė` (feminine, which is wrong).
+
+### Changed
+
+- `_fetch_minija_tributaries_osm.py`: Veivirze entry corrected to
+  use `name_regex="^(Veiviržas|Veivirzas)$"`. 17 OSM ways fetched.
+- `_extend_minija_with_tributaries.py`: TRIBUTARIES list adds
+  "Veivirzas". Also gained idempotency — re-runs now drop pre-existing
+  tributary cells before regenerating, so the same script can be used
+  to add new tributaries without duplicating old ones.
+- Fixture: 7 reaches/5,406 cells → **8 reaches/8,037 cells**. Veiviržas
+  contributes 2,605 cells (largest of the four tributaries — it's
+  ~70 km vs Babrungas's ~22 km).
+- YAML reaches block adds Veiviržas (junctions 10→3, joining the
+  star-graph). PSPC 250 smolts/yr — biggest tributary share given its
+  size + spawning habitat.
+
+### Notes
+
+- Veiviržas joins Minija near Lankupiai geographically (lower-river
+  end), not at Minija's upstream end. The junction-3 star simplification
+  groups all tributary inflows at Minija's upstream — biologically
+  equivalent for a single-reach Minija but spatially abstracted.
+- 3-day smoke passes (54.3 s walltime, slightly longer than v0.55.0's
+  43.6 s due to +2,605 cells). Deployed to laguna.
+- `scripts/_probe_veivirze_osm.py` removed after diagnosis (one-shot
+  troubleshooting tool; the fix is captured in the fetcher's regex).
+
 ## [0.55.0] — 2026-04-30
 
 ### Added — Minija basin tributaries (drainage basin "rivers" plural)
