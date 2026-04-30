@@ -90,15 +90,17 @@ DEFAULT_MAX_CELL_TO_POLYGON_AREA_RATIO = 1.5
 # (Minija basin uses 30 m cells, WGBAST uses 60-150 m cells). A reach
 # 6+ cells away from any 2-hop neighbor is almost certainly mis-located.
 DEFAULT_CONNECTIVITY_THRESHOLD_M = 500.0
-# Marine reaches naturally sit far from configured neighbors — a 10 km
-# offshore BalticCoast disk can have its sea-polygon-clipped centroid
-# tens of kilometers from the river mouth, depending on the IHO sea
-# polygon's shape vs the disk. Cross-river marine zones in WGBAST
-# fixtures (Bothnian Bay) can land 100+ km from their river mouth
-# after Marine Regions WFS clipping. Use a more generous threshold
-# for marine reaches to avoid systematic false positives.
-DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M = 100_000.0
+# Marine reaches naturally sit far from their 1-hop junction neighbor.
+# In WGBAST topology, BalticCoast's 1-hop neighbor is Upper (sharing
+# the chain-end junction 5), not Mouth — Mouth is 4 hops away through
+# the chain Mouth → Lower → Middle → Upper → BalticCoast. The
+# physically-adjacent reach is at the FAR end of the BFS walk, not
+# the near end. Marine reaches therefore use a large k to traverse
+# the whole connected component and find the closest river reach
+# geographically (typically Mouth).
+DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M = 5_000.0
 DEFAULT_CONNECTIVITY_HOPS = 2
+DEFAULT_MARINE_CONNECTIVITY_HOPS = 10  # effectively traverse component
 
 
 @dataclass(frozen=True)
@@ -531,6 +533,7 @@ def check_fixture_geography(
     connectivity_threshold_m: float = DEFAULT_CONNECTIVITY_THRESHOLD_M,
     marine_connectivity_threshold_m: float = DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M,
     connectivity_hops: int = DEFAULT_CONNECTIVITY_HOPS,
+    marine_connectivity_hops: int = DEFAULT_MARINE_CONNECTIVITY_HOPS,
 ) -> dict[str, tuple[ReachMetrics, ReachClass, list[ReachIssue]]]:
     """Run the rules against every reach in one fixture.
 
@@ -583,10 +586,18 @@ def check_fixture_geography(
         # graph, restrict to reaches actually present in the shapefile
         # (orphan YAML entries are skipped), and compute minimum cell-
         # cell distance via gpd.sjoin_nearest.
+        # Class-aware k: marine reaches use a large hop count because
+        # WGBAST topology connects BalticCoast to Upper (chain-end) not
+        # Mouth (mouth-end), so the geographically-adjacent neighbor is
+        # at the FAR end of the BFS walk through the chain.
         nearest_neighbor_distance_m: Optional[float] = None
         if junction_graph:
+            active_hops = (
+                marine_connectivity_hops if classification == "marine"
+                else connectivity_hops
+            )
             neighbors = find_neighbor_reaches(
-                junction_graph, str(reach), max_hops=connectivity_hops,
+                junction_graph, str(reach), max_hops=active_hops,
             ) & shapefile_reaches
             if neighbors:
                 neighbor_cells = gdf[gdf[reach_col].astype(str).isin(neighbors)]

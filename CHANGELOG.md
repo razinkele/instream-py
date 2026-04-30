@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.1] — 2026-04-30
+
+### Fixed — marine-hop traversal for chain-end BalticCoast topology
+
+The v0.56.0 connectivity check flagged Simojoki + Tornionjoki BalticCoast
+at 182 / 257 km from configured neighbors. Diagnosed as a check-side
+design flaw (not a fixture bug) via `_probe_wgbast_balticcoast_drift.py`:
+
+- BalticCoast IS at the river mouth in both fixtures (lat 65.79-65.96
+  for Tornionjoki, near the real Tornio mouth at 65.85°N).
+- Mouth extends from sea level UP the river (lat 65.83 → 67.62 for
+  Tornionjoki — 200 km along channel).
+- WGBAST junction topology connects BalticCoast to Upper (chain-end
+  junction 5→6), NOT Mouth. So 1-hop neighbor is Upper at 68°N,
+  ~270 km away from BalticCoast.
+- The geographically-adjacent freshwater reach (Mouth) is at the
+  FAR end of the BFS walk: BalticCoast → Upper → Middle → Lower →
+  Mouth (4 hops).
+
+### Changed
+
+- `DEFAULT_MARINE_CONNECTIVITY_HOPS = 10` (added). Marine reaches now
+  traverse the full connected component of the junction graph,
+  reaching the geographically-adjacent freshwater reach at the chain
+  end (typically Mouth).
+- `DEFAULT_MARINE_CONNECTIVITY_THRESHOLD_M = 5_000.0` (was 100,000.0).
+  With the larger k, the threshold can be tighter — a 5 km marine-river
+  gap is the realistic ceiling for fixtures where the mouth and
+  offshore disk legitimately tile adjacent territory.
+- 2 v0.56.0 `KNOWN_GEOMETRY_DRIFT` registry entries removed
+  (example_simojoki/BalticCoast and example_tornionjoki/BalticCoast).
+  Both now PASS without exception.
+- `check_fixture_geography` gains a `marine_connectivity_hops` kwarg
+  that's threaded through alongside the existing `connectivity_hops`.
+
+### Verified
+
+- **68 passed + 3 xfailed** (was 66 + 5 in v0.56.0). Two of the five
+  initial drift cases flipped from xfail to pass via the marine-hops
+  fix; the remaining three are real fixture issues with v0.56.x
+  follow-up notes.
+- 5:37 walltime — same envelope as v0.56.0.
+
+### Notes
+
+- Same release window as v0.56.0 (test-infra only, no deploy).
+- Probe script `scripts/_probe_wgbast_balticcoast_drift.py` retained
+  for future diagnostic — useful for any "where do these cells live?"
+  question.
+
 ## [0.56.0] — 2026-04-30
 
 ### Added — inter-reach connectivity check
