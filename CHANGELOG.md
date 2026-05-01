@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.7] — 2026-05-01
+
+### Fixed — every river in `example_minija_basin` now has a visible area feature on the OSM overlay
+
+User report: "still it doesn't show area features for individual
+rivers included." The v0.56.4 polygon sidecars only contained raw OSM
+`natural=water` polygons — Lithuanian small rivers tag inconsistently,
+so coverage was sparse:
+
+| Reach     | OSM polygons (v0.56.4) |
+|-----------|------------------------|
+| Salpe     | 0  ← invisible         |
+| Salantas  | 1                      |
+| Babrungas | 6                      |
+| Veivirzas | 10                     |
+| Minija    | 28                     |
+
+`scripts/_add_channel_envelopes_to_sidecars.py` post-processes the
+existing `*-osm-polygons.shp` sidecars: per reach, it computes a
+buffered envelope `union(centerlines).buffer(25 m)` and appends it
+with `REACH_NAME=<reach>-channel`. Each reach now has at least one
+visible polygon. Final counts:
+
+| Sidecar                                            | Polygons |
+|----------------------------------------------------|----------|
+| MinijaBasinExample-tributaries-osm-polygons.shp    | 21 (17 OSM + 4 envelopes) |
+| MinijaBasinExample-mainstem-osm-polygons.shp       | 29 (28 OSM + 1 envelope)  |
+
+The envelope buffer (25 m) is wider than the actual cell-generation
+buffer (5 m) for visibility on a basemap. Real channel widths in this
+basin are 5-30 m, so the envelope slightly overstates the smallest
+streams but stays within an order of magnitude of reality.
+
+Idempotent: re-runs detect the `-channel` REACH_NAME suffix and replace
+existing envelopes.
+
 ## [0.56.6] — 2026-05-01
 
 ### Added — OSM-source overlay checkbox in Setup, Edit Model, and Create Model panels
