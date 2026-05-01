@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.10] — 2026-05-01
+
+### Fixed — OSM polygons now actually visible on the Spatial overlay + Create Model crash on missing pyosmium
+
+Two user-reported issues:
+
+**(1) "It still doesn't show polygons only created cells and line."**
+Despite v0.56.9's unclipped polygons (largest at ~1 km²), the Spatial
+panel still didn't render them. Two contributing causes:
+
+* The `partial_update` path used to flip `visible: False → True`
+  silently dropped the layer's data buffer in some browser/version
+  combos. v0.56.10 switches the OSM-overlay toggle to a full
+  ``widget.update()`` with cached cells + redds layers — forces
+  deck.gl to rebuild the layer stack.
+* The polygon styling (translucent blue alpha=70, 1-pixel stroke)
+  blended into both the basemap and viridis-coloured cells. v0.56.10
+  uses bright orange (alpha=160) with a 3-pixel red-orange stroke;
+  centerlines switch from red to magenta to avoid clashing with the
+  orange fill.
+
+**(2) "When in the create model I select Lithuania rivers app
+crashes."** The Create Model panel's Rivers/Water buttons depend on
+two native deps (`pyosmium` Python lib + `osmium-tool` CLI). Both
+are missing on the laguna deploy. v0.56.10 wraps the fetch handlers
+in try/except so a friendly notification fires (`"Could not fetch
+rivers: …"`) instead of a hard crash. Installing the deps via
+`sudo /opt/micromamba/envs/shiny/bin/pip install osmium` plus the
+osmium-tool conda package restores full functionality.
+
 ## [0.56.9] — 2026-05-01
 
 ### Fixed — OSM polygon sidecars now contain unclipped polygons (real OSM shapes)

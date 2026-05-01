@@ -737,9 +737,20 @@ def create_model_server(input, output, session):
         def _progress(msg):
             _fetch_msg.set(msg)
 
-        gdf = await loop.run_in_executor(
-            None, lambda: query_waterways(country, bbox, progress_cb=_progress)
-        )
+        try:
+            gdf = await loop.run_in_executor(
+                None, lambda: query_waterways(country, bbox, progress_cb=_progress)
+            )
+        except RuntimeError as exc:
+            # pyosmium / osmium-tool missing on this server, or PBF clip
+            # failed. Surface as a friendly notification instead of a hard
+            # crash. (The two dependencies are conda-forge `pyosmium` and
+            # `osmium-tool`; both must be in the active env.)
+            msg = f"Could not fetch rivers: {exc}"
+            logger.warning(msg)
+            _fetch_msg.set(msg)
+            ui.notification_show(msg, type="error", duration=10)
+            return
 
         if gdf is None or len(gdf) == 0:
             _fetch_msg.set("No river features found. Try zooming in or selecting a different region.")
@@ -752,9 +763,13 @@ def create_model_server(input, output, session):
 
         # Auto-fetch water body polygons (lakes, lagoons) for context
         _fetch_msg.set(f"Got {n_polys} river polygons + {n_lines} stream lines. Fetching water bodies...")
-        water_gdf = await loop.run_in_executor(
-            None, lambda: query_water_bodies(country, bbox)
-        )
+        try:
+            water_gdf = await loop.run_in_executor(
+                None, lambda: query_water_bodies(country, bbox)
+            )
+        except RuntimeError as exc:
+            logger.warning("water_bodies fetch failed: %s", exc)
+            water_gdf = None
 
         if water_gdf is not None and len(water_gdf) > 0:
             _water_gdf.set(water_gdf)
@@ -830,9 +845,16 @@ def create_model_server(input, output, session):
         import asyncio
         loop = asyncio.get_running_loop()
 
-        gdf = await loop.run_in_executor(
-            None, lambda: query_water_bodies(country, bbox)
-        )
+        try:
+            gdf = await loop.run_in_executor(
+                None, lambda: query_water_bodies(country, bbox)
+            )
+        except RuntimeError as exc:
+            msg = f"Could not fetch water: {exc}"
+            logger.warning(msg)
+            _fetch_msg.set(msg)
+            ui.notification_show(msg, type="error", duration=10)
+            return
 
         if gdf is None or len(gdf) == 0:
             _fetch_msg.set("No water bodies found in this area.")

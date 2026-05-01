@@ -98,6 +98,13 @@ def spatial_server(input, output, session, results_rv):
     _widget = reactive.value(None)
     _cells_sent = reactive.value(False)
     _anim_server = reactive.value(None)
+    # v0.56.10: cache last-built cells & redds layers so the OSM toggle
+    # can do a full `widget.update()` (forces deck.gl to rebuild the
+    # layer stack instead of relying on partial_update's visibility
+    # patching, which silently dropped layers in some browser/version
+    # combos). Re-using cached layers means re-rendering is still fast.
+    _last_cells_layer = reactive.value(None)
+    _last_redds_layer = reactive.value(None)
 
     @output
     @render.ui
@@ -204,6 +211,8 @@ def spatial_server(input, output, session, results_rv):
                 [cells_layer, redds_layer, *osm_layers],
                 animate=True,
             )
+            _last_cells_layer.set(cells_layer)
+            _last_redds_layer.set(redds_layer)
             _cells_sent.set(True)
 
         except Exception as e:
@@ -225,6 +234,7 @@ def spatial_server(input, output, session, results_rv):
         show = input.show_redds()
         try:
             redds_layer = _build_redds_layer(results, visible=show)
+            _last_redds_layer.set(redds_layer)
             await widget.partial_update(session, [redds_layer])
         except Exception as e:
             if "SilentException" in type(e).__name__:
@@ -232,8 +242,12 @@ def spatial_server(input, output, session, results_rv):
             logger.exception("Error updating redds layer")
 
     # ------------------------------------------------------------------
-    # OSM OVERLAY VISIBILITY — partial_update when checkbox flips
+    # OSM OVERLAY VISIBILITY — full widget.update on flip
     # ------------------------------------------------------------------
+    # v0.56.10: was partial_update with new `visible` prop, but in some
+    # browser/version combos the patched layer never rebound the data
+    # buffer when going from invisible→visible. Doing a full update with
+    # the cached cells+redds layers reliably rebuilds the stack.
     @reactive.effect
     async def _toggle_osm_overlay():
         widget = _widget()
@@ -244,9 +258,12 @@ def spatial_server(input, output, session, results_rv):
             return
         show = input.show_osm_overlay()
         try:
+            cells_layer = _last_cells_layer()
+            redds_layer = _last_redds_layer()
             osm_layers = _build_osm_overlay_layers(results, visible=show)
-            if osm_layers:
-                await widget.partial_update(session, osm_layers)
+            stack = [lyr for lyr in (cells_layer, redds_layer) if lyr is not None]
+            stack.extend(osm_layers)
+            await widget.update(session, stack, animate=False)
         except Exception as e:
             if "SilentException" in type(e).__name__:
                 return
@@ -268,6 +285,7 @@ def spatial_server(input, output, session, results_rv):
 
         try:
             cells_layer = _build_cells_layer(gdf_wgs84, color_var)
+            _last_cells_layer.set(cells_layer)
             await widget.partial_update(session, [cells_layer])
         except Exception as e:
             if "SilentException" in type(e).__name__:
@@ -448,21 +466,26 @@ def build_osm_overlay_layers(sidecars: dict, visible: bool = False) -> list:
     if not sidecars:
         return []
 
+    # Bright, contrasting palette: polygons render as semi-opaque orange
+    # fills with bold red-orange strokes; centerlines render as solid
+    # magenta strokes. Designed to stand out against viridis-coloured
+    # cells (mostly green/yellow/blue) and the light basemap. Earlier
+    # blues blended with the cells and were missed entirely.
     layers = []
     for stem, gdf in sidecars.items():
         is_polygon = "-polygons" in stem
         if is_polygon:
             kwargs = {
-                "getFillColor": [0, 90, 180, 70],
-                "getLineColor": [0, 60, 140, 220],
-                "lineWidthMinPixels": 1,
+                "getFillColor": [255, 140, 0, 160],   # bright orange, ~63% alpha
+                "getLineColor": [200, 50, 0, 255],    # solid red-orange
+                "lineWidthMinPixels": 3,
                 "stroked": True,
                 "filled": True,
             }
         else:
             kwargs = {
-                "getLineColor": [220, 30, 60, 220],
-                "lineWidthMinPixels": 2,
+                "getLineColor": [220, 0, 120, 230],   # magenta — won't clash with the orange fill
+                "lineWidthMinPixels": 3,
                 "stroked": True,
                 "filled": False,
             }
