@@ -55,20 +55,63 @@ TRIBUTARIES = ["Babrungas", "Salantas", "Salpe", "Veivirzas"]
 
 
 def load_basin_polygons() -> "gpd.GeoDataFrame":
-    """Load the cached basin OSM water polygons (1351 features in WGS84)."""
+    """Load the cached basin OSM polygons that actually represent
+    flowing-water river morphology — NOT lakes, reservoirs, or ponds.
+
+    OSM tagging convention for the cache (Overpass `natural=water` +
+    `waterway=riverbank` queries):
+      * `waterway=riverbank` ........ explicit riverbank polygon — keep
+      * `natural=water` + `water=river` ..... river-area polygon — keep
+      * `natural=water` + `water=stream` .... stream-area polygon — keep
+      * `natural=water` + `water=oxbow` ..... abandoned river bend — keep
+      * `natural=water` + `water=canal` ..... artificial channel — keep
+      * `natural=water` (no `water=*` subtag) ... usually a riverbank or
+        an unclassified water body — keep (was Minija's case in OSM)
+      * `natural=water` + `water=reservoir/lake/pond/basin` ..... DROP
+        (these are stillwater bodies, not river morphology)
+
+    The earlier filter accepted any polygon intersecting the centerline
+    buffer, which captured ~500 reservoirs and lakes adjacent to the
+    Minija and its tributaries — the user reported seeing "ponds nearby"
+    instead of river shapes.
+    """
     cache = OSM_CACHE_DIR / "minija_tributaries_polygons.json"
     data = json.loads(cache.read_text(encoding="utf-8"))
-    geoms = []
+
+    # ONLY keep polygons whose tags explicitly mark them as river-class.
+    # The cache's other 1300+ `natural=water` polygons are mostly lakes
+    # (Lithuanian named "ež. X" = ežeras = lake), reservoirs, and ponds
+    # without explicit `water=lake` subtags — they look like ponds on
+    # the map, not river morphology. The user reported v0.56.9 sidecars
+    # were displaying these instead of real river shapes.
+    keep_water_subtags = {"river", "stream", "oxbow", "canal"}
+
+    rows = []
     for w in data:
-        try:
-            g = shape(w["geometry"])
-            if g.is_valid and not g.is_empty:
-                geoms.append(g)
-        except Exception:
-            continue
-    gdf = gpd.GeoDataFrame(geometry=geoms, crs="EPSG:4326")
-    log.info("Loaded %d basin OSM water polygons from cache", len(gdf))
-    return gdf
+        tags = w.get("tags", {})
+        water_subtag = tags.get("water", "")
+        waterway_tag = tags.get("waterway", "")
+        # Two acceptable signatures for a river-class polygon:
+        # 1. waterway=riverbank (the explicit OSM tag for river edges)
+        # 2. natural=water + water=river|stream|oxbow|canal
+        if waterway_tag == "riverbank" or water_subtag in keep_water_subtags:
+            try:
+                g = shape(w["geometry"])
+                if g.is_valid and not g.is_empty:
+                    rows.append({
+                        "geometry": g,
+                        "water": water_subtag,
+                        "waterway": waterway_tag,
+                        "name": tags.get("name", ""),
+                    })
+            except Exception:
+                continue
+    log.info(
+        "Loaded %d river-class polygons from cache (only "
+        "waterway=riverbank or water=river/stream/oxbow/canal)",
+        len(rows),
+    )
+    return gpd.GeoDataFrame(rows, crs="EPSG:4326")
 
 
 def _buffer_in_utm(geom_wgs84, buffer_m: float):

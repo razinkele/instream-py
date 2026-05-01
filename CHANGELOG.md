@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.11] — 2026-05-01
+
+### Fixed — sidecar polygons now filter to true river-class OSM tags only
+
+User report (verified via Playwright on the live deploy): the polygons
+rendering on the Spatial / Setup overlay were OSM lakes/reservoirs/
+ponds adjacent to the centerlines, not actual riverbank polygons.
+
+`scripts/_regenerate_sidecars_unclipped.py` now keeps only OSM
+polygons whose tags explicitly mark them as flowing-water river
+morphology:
+
+* `waterway=riverbank` ........ explicit OSM riverbank polygon
+* `natural=water` + `water=river|stream|oxbow|canal`
+
+Polygons tagged `water=reservoir|lake|pond|basin` or whose
+`natural=water` has no explicit `water=*` subtag (in this region,
+mostly Lithuanian-named lakes ``ež. X``) are dropped.
+
+After filtering, only **25 river-class polygons** exist in the entire
+Minija basin OSM cache. **5 of them** intersect any of our reach
+centerlines (Minija + 4 tributaries), broken down per reach:
+
+| Reach     | River-class polygons |
+|-----------|----------------------|
+| Minija    | 2  (oxbows near Plungė) |
+| Veivirzas | 2                    |
+| Babrungas | 1                    |
+| Salantas  | 0                    |
+| Salpe     | 0                    |
+
+Each polygon is ~3,000 m² (~55 m × 55 m). They are visible from zoom
+14+ (river-detail level); at basin zoom (~60 km wide) they're
+sub-pixel. Verified via Playwright: at zoom 16 the orange polygons
+follow real OSM-mapped river meanders (e.g. the Minija/Babrungas
+confluence oxbow is unambiguously visible).
+
+OSM's river-polygon coverage for these Lithuanian streams is the
+ground-truth limit — not a software bug. Densifying coverage would
+require a different data source (national hydrological dataset).
+
 ## [0.56.10] — 2026-05-01
 
 ### Fixed — OSM polygons now actually visible on the Spatial overlay + Create Model crash on missing pyosmium
