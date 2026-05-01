@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.2] — 2026-05-01
+
+### Fixed — extended Minija reach to cover the upper river (closes 2 v0.56.0 KNOWN_GEOMETRY_DRIFT entries)
+
+The v0.54.3 Minija extraction from `example_baltic` only covered the
+lower 40 km of the river (lat 55.346-55.751°N). Real Minija extends
+upstream to ~55.962°N where the Babrungas (Plungė) and Salantas
+(Salantai) tributaries join. The v0.56.0 connectivity check correctly
+flagged this as `REACH_DISCONNECTED` for both tributaries (~7.5 km
+gap). v0.56.0 documented them in `KNOWN_GEOMETRY_DRIFT` as fixture
+issues to fix later. v0.56.2 IS that fix.
+
+### Added
+
+- `scripts/_extend_minija_mainstem.py` — fetches Minija main-stem
+  polylines via Overpass (cached at
+  `tests/fixtures/_osm_cache/minija_mainstem.json`), filters to the
+  upper portion (above 55.75°N — the part missing from baltic
+  extraction), buffers them tight (15 m total = matches v0.55.2
+  tributary parameters), and APPENDS hex cells to the existing
+  Minija reach. Idempotent via `MJU-` cell-ID prefix.
+- 26 OSM polylines covering 134 km of upper-Minija centerline →
+  3,766 new Minija cells.
+
+### Fixture stats
+
+- `example_minija_basin/Shapefile/MinijaBasinExample.shp`:
+  6,609 cells → **10,375 cells** total.
+- Minija reach: 425 cells → **4,191 cells** (8 of which are MJU-
+  prefixed upper-river additions).
+- WGS84 extent: lon 21.275-22.109, lat **55.346-55.962** (was
+  55.346-55.751; gap closed).
+
+### Removed registry entries
+
+- `example_minija_basin/Babrungas` and `example_minija_basin/Salantas`
+  — both now PASS conformance without exception. The
+  `KNOWN_GEOMETRY_DRIFT` registry shrinks from 3 entries to 1
+  (only `example_morrumsan/Mouth` remains).
+
+### Verified
+
+- Conformance: Babrungas + Salantas + Minija all PASS.
+- 3-day smoke test passes (1:09 walltime — slightly longer than
+  v0.56.1's 1:30 because the larger Minija reach yields more cells
+  to iterate, but still well under the smoke-test budget).
+
+### Notes
+
+- Minija hydraulic CSVs (Depths, Vels) auto-resized to 4191 rows
+  via `_expand_per_cell_csv`. TimeSeriesInputs unchanged
+  (per-reach scoped, not per-cell).
+- The OSM Minija polyline cache (296 KB) is now in
+  `tests/fixtures/_osm_cache/minija_mainstem.json` for future
+  regeneration / iteration.
+- Test-infra-adjacent change but the fixture itself is updated;
+  deploys to laguna.
+
 ## [0.56.1] — 2026-04-30
 
 ### Fixed — marine-hop traversal for chain-end BalticCoast topology

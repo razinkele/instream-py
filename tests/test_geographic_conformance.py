@@ -64,19 +64,13 @@ KNOWN_GEOMETRY_DRIFT: dict[tuple[str, str], str] = {
     # release. The cells themselves ARE plausibly placed (real OSM
     # Babrungas/Salantas geometry); only the connection to the
     # truncated Minija fails.
-    ("example_minija_basin", "Babrungas"): (
-        "Babrungas joins Minija at ~55.92°N (Plungė), but the Minija "
-        "polygon extracted from example_baltic in v0.54.3 covers only "
-        "55.35-55.75°N. Connectivity gap is ~7.5 km. Fixable by "
-        "extending example_baltic's Minija extraction or splitting "
-        "Minija into upper/lower reaches — deferred to v0.56.x."
-    ),
-    ("example_minija_basin", "Salantas"): (
-        "Same root cause as Babrungas: Salantas joins Minija at "
-        "~55.99°N (Salantai), well above the 55.75°N upper bound of "
-        "the Minija polygon in example_baltic. Connectivity gap is "
-        "~7.5 km. Fix paired with Babrungas in v0.56.x."
-    ),
+    # v0.56.0 entries for Minija basin's Babrungas + Salantas (both
+    # ~7.5 km from Minija basin) were CLOSED in v0.56.2 by extending
+    # the Minija reach with full-OSM main-stem geometry covering the
+    # upper river up to 55.962°N (Plungė + Salantai areas).
+    # `_extend_minija_mainstem.py` fetches the Minija polylines from
+    # OSM, filters to the upper portion, and appends them to the
+    # existing Minija reach.
     ("example_morrumsan", "Mouth"): (
         "v0.56.0 connectivity check: Morrumsan/Mouth nearest 2-hop "
         "neighbor is 835 m away — just barely over the 500 m river "
