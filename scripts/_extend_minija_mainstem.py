@@ -113,8 +113,44 @@ def fetch_minija_polylines(refresh: bool = False) -> list[LineString]:
     return [shape(w["geometry"]) for w in ways]
 
 
+def _load_minija_polygons_near_centerline(
+    polylines: list[LineString],
+    proximity_m: float = 100.0,
+    utm_epsg: int = 32634,
+) -> list:
+    """Load OSM water polygons (basin-wide cache from tributary fetch)
+    that intersect a buffered Minija centerline. v0.56.4 union-mode.
+    """
+    poly_cache = ROOT / "tests/fixtures/_osm_cache/minija_tributaries_polygons.json"
+    if not poly_cache.exists():
+        log.warning("Polygon cache missing: %s — Minija will use buffer-only.",
+                    poly_cache)
+        return []
+    data = json.loads(poly_cache.read_text(encoding="utf-8"))
+    if not data:
+        return []
+    poly_geoms = []
+    for w in data:
+        try:
+            poly_geoms.append(shape(w["geometry"]))
+        except Exception:
+            continue
+    poly_gdf = gpd.GeoDataFrame(geometry=poly_geoms, crs="EPSG:4326")
+    cl_gdf = gpd.GeoDataFrame(geometry=polylines, crs="EPSG:4326").to_crs(epsg=utm_epsg)
+    centerline_buffer = cl_gdf.geometry.union_all().buffer(proximity_m)
+    poly_utm = poly_gdf.to_crs(epsg=utm_epsg)
+    keep = poly_utm[poly_utm.intersects(centerline_buffer)].copy()
+    if keep.empty:
+        return []
+    keep["geometry"] = keep.geometry.intersection(centerline_buffer)
+    keep = keep[~keep.is_empty & keep.is_valid].copy()
+    log.info("[Minija] %d water polygons near centerline (UNION mode)", len(keep))
+    return list(keep.to_crs("EPSG:4326").geometry)
+
+
 def _generate_cells_per_polyline(
     polylines: list[LineString],
+    polygons: list,  # NEW: water polygons to UNION with each polyline's buffer
     target_crs,
 ) -> "gpd.GeoDataFrame":
     """Generate Minija hex cells one OSM polyline at a time.
@@ -123,12 +159,30 @@ def _generate_cells_per_polyline(
     because the union bbox spans the whole basin (~57×62 km), creating
     a ~6M-cell raw hex grid before filter. Per-polyline calls keep each
     bbox tight (a few km), so each call returns in seconds.
+
+    v0.56.4 UNION mode: each polyline's buffer is unioned with the
+    nearby water polygons (filtered by proximity to the polyline's
+    own bbox) before cell generation. This ensures cells fill the
+    real OSM polygon shapes (not just the centerline buffer).
     """
+    # Index polygons by bounding box for fast per-polyline filtering
+    poly_gdf_4326 = (
+        gpd.GeoDataFrame(geometry=polygons, crs="EPSG:4326")
+        if polygons else None
+    )
     pieces: list[gpd.GeoDataFrame] = []
     for i, line in enumerate(polylines, start=1):
+        # For this polyline, find nearby water polygons (within ~50m of bbox)
+        line_segments: list = [line]
+        if poly_gdf_4326 is not None and not poly_gdf_4326.empty:
+            from shapely.geometry import box
+            line_bbox_buffered = box(*line.buffer(0.001).bounds)  # ~100m at this lat
+            nearby = poly_gdf_4326[poly_gdf_4326.intersects(line_bbox_buffered)]
+            if not nearby.empty:
+                line_segments = list(nearby.geometry) + [line]
         reach_segments = {
             "Minija": {
-                "segments": [line],
+                "segments": line_segments,
                 "frac_spawn": FRAC_SPAWN_MAINSTEM,
             },
         }
@@ -155,6 +209,47 @@ def _generate_cells_per_polyline(
     # Re-number cell_ids globally to avoid collisions across pieces
     combined["cell_id"] = [f"MJ-{i:06d}" for i in range(1, len(combined) + 1)]
     return combined
+
+
+def write_minija_osm_sidecar(
+    shp_dir: Path, polylines: list, polygons: list, target_crs,
+    polygon_sidecar_name: str = "MinijaBasinExample-mainstem-osm-polygons.shp",
+    centerline_sidecar_name: str = "MinijaBasinExample-mainstem-osm-centerlines.shp",
+) -> None:
+    """Write the Minija main-stem OSM input geometry as TWO sidecar
+    shapefiles (polygons + centerlines). Shapefile format requires
+    uniform geometry type per file.
+
+    v0.56.4: separate per-extender files (no cross-extender merging).
+    The tributary extender writes its own
+    `MinijaBasinExample-tributaries-osm-{polygons,centerlines}.shp`;
+    this script writes the mainstem-prefixed equivalents.
+    """
+    if polygons:
+        poly_rows = [{"REACH_NAME": "Minija", "geometry": g} for g in polygons]
+        gdf = gpd.GeoDataFrame(poly_rows, geometry="geometry",
+                               crs="EPSG:4326").to_crs(target_crs)
+        out = shp_dir / polygon_sidecar_name
+        for ext in (".shp", ".shx", ".dbf", ".prj", ".cpg"):
+            stale = out.with_suffix(ext)
+            if stale.exists():
+                stale.unlink()
+        gdf.to_file(out, driver="ESRI Shapefile")
+        log.info("Wrote polygon sidecar %s (%d features)",
+                 out.relative_to(ROOT), len(gdf))
+
+    if polylines:
+        line_rows = [{"REACH_NAME": "Minija", "geometry": g} for g in polylines]
+        gdf = gpd.GeoDataFrame(line_rows, geometry="geometry",
+                               crs="EPSG:4326").to_crs(target_crs)
+        out = shp_dir / centerline_sidecar_name
+        for ext in (".shp", ".shx", ".dbf", ".prj", ".cpg"):
+            stale = out.with_suffix(ext)
+            if stale.exists():
+                stale.unlink()
+        gdf.to_file(out, driver="ESRI Shapefile")
+        log.info("Wrote centerline sidecar %s (%d features)",
+                 out.relative_to(ROOT), len(gdf))
 
 
 def main() -> None:
@@ -194,10 +289,16 @@ def main() -> None:
     centerline_len_m = float(cl_utm.geometry.length.sum())
     log.info("Minija total centerline length: %.1f km", centerline_len_m / 1000)
 
+    # v0.56.4: load OSM water polygons that intersect the Minija centerline
+    # (UNION mode — cells fill real polygon shapes plus centerline buffer).
+    polygons = _load_minija_polygons_near_centerline(
+        polylines, utm_epsg=utm_epsg,
+    )
+
     log.info("Generating cells per-polyline (cell_size=%s m, buffer_factor=%s, "
-             "%d polylines to process)...",
-             CELL_SIZE_M, BUFFER_FACTOR, len(polylines))
-    new_cells = _generate_cells_per_polyline(polylines, target_crs)
+             "%d polylines, %d water polygons UNION'd)...",
+             CELL_SIZE_M, BUFFER_FACTOR, len(polylines), len(polygons))
+    new_cells = _generate_cells_per_polyline(polylines, polygons, target_crs)
     log.info("Generated %d total Minija cells", len(new_cells))
 
     # Rename columns to match shapefile schema (reach_name → REACH_NAME, etc.)
@@ -222,10 +323,15 @@ def main() -> None:
     log.info("Combined: %d cells (was %d). Minija reach: %d cells (was %d)",
              len(combined), len(base), n_minija_after, base_minija_cells)
 
-    # Wipe + rewrite shapefile
+    # Wipe + rewrite ONLY the main fixture file (MinijaBasinExample.*).
+    # A bare `*.shp` glob would also delete sibling sidecar shapefiles
+    # written by `_extend_minija_with_tributaries.py` (the tributary OSM
+    # input sidecars). Stem-scoped wipe preserves them.
     shp_dir = SHP_PATH.parent
-    for pat in ("*.shp", "*.shx", "*.dbf", "*.prj", "*.cpg"):
-        for stale in shp_dir.glob(pat):
+    stem = SHP_PATH.stem  # "MinijaBasinExample"
+    for ext in (".shp", ".shx", ".dbf", ".prj", ".cpg"):
+        stale = shp_dir / f"{stem}{ext}"
+        if stale.exists():
             stale.unlink()
     combined.to_file(SHP_PATH, driver="ESRI Shapefile")
     log.info("Wrote %s", SHP_PATH.relative_to(ROOT))
@@ -238,6 +344,12 @@ def main() -> None:
         if path.exists():
             _expand_per_cell_csv(path, path, n_cells)
             log.info("  %s: resized", path.name)
+
+    # v0.56.4: write Minija OSM input geometry to mainstem-prefixed
+    # sidecar shapefiles (independent of the tributary extender's
+    # tributary-prefixed sidecars). Lets users overlay the original
+    # OSM source on the cells map for visual inspection.
+    write_minija_osm_sidecar(SHP_PATH.parent, polylines, polygons, target_crs)
 
     # WGS84 bounds report — verify upper-Minija coverage
     out_wgs = combined.to_crs("EPSG:4326")

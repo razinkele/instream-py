@@ -5,6 +5,86 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.4] — 2026-05-01
+
+### Changed — UNION mode for Minija reach cell generation + OSM-input sidecar shapefiles
+
+User report: "minija doesn't fill the boundaries of the river shape.
+should be addressed at the core level when creating new boundaries.
+Also add the initial extracted river spatial coverage (area type
+vectors) to the map making it easier to inspect the correctness of
+the final example setup".
+
+Two coupled fixes:
+
+**Issue 1 — UNION mode at the core level.** Previously the Minija
+extenders chose between polygon-only mode (when OSM water-polygon
+coverage cleared a 50% floor) and centerline-buffer mode otherwise.
+Polygon-only mode missed uncovered river segments; buffer-only mode
+missed the wider real river shapes (pools, eddies). v0.56.4 unions
+the OSM water polygons with the centerline buffers and passes BOTH
+to `generate_cells`, which unions them into one reach polygon. Cells
+now cover the union of (real OSM water polygon shape) ∪ (centerline
+buffer for gaps) for every reach.
+
+Affected scripts:
+- `_extend_minija_with_tributaries.py`: the polygon-OR-buffer choice
+  becomes UNION; per-tributary chunked generation (was single-call,
+  timed out at 20 m UNION mode because the bbox spanned the whole
+  basin — same pattern as `_extend_minija_mainstem.py`).
+- `_extend_minija_mainstem.py`: per-polyline UNION — for each polyline,
+  filters basin water polygons to those near the polyline's bbox and
+  unions them with the centerline buffer.
+
+**Issue 2 — OSM-input sidecar shapefiles.** Each extender now writes
+its own pair of sidecar shapefiles next to `MinijaBasinExample.shp`,
+storing the original OSM input geometry used to generate cells:
+
+  MinijaBasinExample-tributaries-osm-polygons.shp    (17 features)
+  MinijaBasinExample-tributaries-osm-centerlines.shp (93 features)
+  MinijaBasinExample-mainstem-osm-polygons.shp       (28 features)
+  MinijaBasinExample-mainstem-osm-centerlines.shp    (46 features)
+
+Each sidecar carries a REACH_NAME column. Shapefile format requires
+uniform geometry per file, so polygons + centerlines are split.
+Per-extender prefixing (mainstem/tributaries) avoids merge-on-write
+conflicts — each extender owns its own files.
+
+Future work (v0.56.5+): wire the Shiny app's spatial panel to load
+and overlay these sidecars on the cells map for visual inspection.
+
+### Bug — mainstem extender's wipe glob deleted sibling sidecars
+
+The `*.shp`-glob wipe in `_extend_minija_mainstem.py` was overly
+broad and deleted the tributary sidecars written by the prior
+extender. Replaced with a stem-scoped wipe (`MinijaBasinExample.*`
+only). The tributary extender's wipe was already stem-scoped.
+
+### Fixture stats
+
+| Reach | v0.56.3 | v0.56.4 | Δ |
+|--|--|--|--|
+| Minija | 8,505 | **8,979** | +474 (+5.6%) |
+| Babrungas | 2,148 | **2,146** | -2 |
+| Salantas | 1,881 | **1,908** | +27 |
+| Šalpė | 1,842 | **1,834** | -8 |
+| Veiviržas | 3,143 | **3,204** | +61 |
+| Atmata | 78 | 78 | - |
+| CuronianLagoon | 120 | 120 | - |
+| BalticCoast | 97 | 97 | - |
+| **Total** | **17,814** | **18,366** | +552 (+3.1%) |
+
+Cell-count changes are mostly Minija (UNION mode pulled in 28 OSM
+water polygons covering pools/eddies the centerline buffer missed).
+Tributary changes are small because Lithuanian small-river polygons
+are sparse in OSM (Šalpė has zero, falls back to BUFFER-only).
+
+### Verified
+
+- 3-day smoke test passes (`example_minija_basin`, 85 s).
+- `test_reach_geographic_plausibility[example_minija_basin-Minija]`
+  passes (no new KNOWN_GEOMETRY_DRIFT entry).
+
 ## [0.56.3] — 2026-05-01
 
 ### Changed — uniform 20 m cells for Minija + tributaries

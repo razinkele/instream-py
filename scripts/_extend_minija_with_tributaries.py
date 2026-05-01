@@ -178,6 +178,50 @@ def clip_polygons_to_tributary(
     return keep.to_crs("EPSG:4326")
 
 
+def write_osm_input_sidecar(
+    shp_dir: Path, reach_segments: dict, target_crs,
+    polygon_sidecar_name: str = "MinijaBasinExample-tributaries-osm-polygons.shp",
+    centerline_sidecar_name: str = "MinijaBasinExample-tributaries-osm-centerlines.shp",
+) -> None:
+    """Write the OSM input geometry as TWO sidecar shapefiles
+    (polygons + centerlines) — shapefile format requires uniform geom
+    type per file. Both have a REACH_NAME column for filtering.
+
+    v0.56.4: enables map overlay for visual inspection of cell coverage
+    vs. real river polygon shapes.
+    """
+    poly_rows: list = []
+    line_rows: list = []
+    for reach_name, reach_data in reach_segments.items():
+        for seg in reach_data.get("segments", []):
+            if seg.geom_type in ("Polygon", "MultiPolygon"):
+                poly_rows.append({"REACH_NAME": reach_name, "geometry": seg})
+            elif seg.geom_type in ("LineString", "MultiLineString"):
+                line_rows.append({"REACH_NAME": reach_name, "geometry": seg})
+
+    if poly_rows:
+        sidecar = gpd.GeoDataFrame(poly_rows, geometry="geometry", crs="EPSG:4326").to_crs(target_crs)
+        out = shp_dir / polygon_sidecar_name
+        for ext in (".shp", ".shx", ".dbf", ".prj", ".cpg"):
+            stale = out.with_suffix(ext)
+            if stale.exists():
+                stale.unlink()
+        sidecar.to_file(out, driver="ESRI Shapefile")
+        log.info("Wrote polygon sidecar %s (%d features)",
+                 out.relative_to(ROOT), len(sidecar))
+
+    if line_rows:
+        sidecar = gpd.GeoDataFrame(line_rows, geometry="geometry", crs="EPSG:4326").to_crs(target_crs)
+        out = shp_dir / centerline_sidecar_name
+        for ext in (".shp", ".shx", ".dbf", ".prj", ".cpg"):
+            stale = out.with_suffix(ext)
+            if stale.exists():
+                stale.unlink()
+        sidecar.to_file(out, driver="ESRI Shapefile")
+        log.info("Wrote centerline sidecar %s (%d features)",
+                 out.relative_to(ROOT), len(sidecar))
+
+
 def main() -> None:
     if not SHP_PATH.exists():
         raise SystemExit(
@@ -240,47 +284,71 @@ def main() -> None:
         coverage_ratio = polygon_area / expected_area if expected_area > 0 else 0.0
         log.info("[%s] centerline=%.0f m, polygons=%.0f m², expected=%.0f m², coverage=%.1f%%",
                  trib, centerline_len_m, polygon_area, expected_area, coverage_ratio * 100)
-        # Polygon mode only if polygons cover most of the river
-        POLY_COVERAGE_FLOOR = 0.50
-        if coverage_ratio >= POLY_COVERAGE_FLOOR and clipped is not None:
+        # v0.56.4: ALWAYS combine polygons + centerlines (UNION mode).
+        # Previously the choice was polygon-OR-buffer based on a 50%
+        # coverage floor. That left gaps: polygon-only mode missed
+        # uncovered river segments; buffer-only mode missed wider real
+        # river shapes (pools, eddies). Now we pass BOTH to generate_cells
+        # which unions them into one reach polygon, ensuring cells cover
+        # the union of (real OSM water polygon shape) ∪ (tight centerline
+        # buffer for gaps).
+        polys_for_reach: list = []
+        if clipped is not None and not clipped.empty:
             polys_for_reach = list(clipped.geometry)
-            log.info("[%s] using POLYGON mode (%d polygons, coverage %.1f%%)",
-                     trib, len(polys_for_reach), coverage_ratio * 100)
-            reach_segments[trib] = {
-                "segments": polys_for_reach,
-                "frac_spawn": FRAC_SPAWN_TRIBUTARY,
-            }
-            poly_modes[trib] = "polygon"
+        combined_segments = polys_for_reach + lines
+        if polys_for_reach and lines:
+            mode = f"UNION (polygons={len(polys_for_reach)}, lines={len(lines)})"
+        elif polys_for_reach:
+            mode = f"POLYGON-only ({len(polys_for_reach)})"
         else:
-            log.info("[%s] using TIGHT BUFFER mode (%.1f m total) — polygon "
-                     "coverage %.1f%% below %.0f%% floor",
-                     trib, CELL_SIZE_M * BUFFER_FACTOR, coverage_ratio * 100,
-                     POLY_COVERAGE_FLOOR * 100)
-            reach_segments[trib] = {
-                "segments": lines,
-                "frac_spawn": FRAC_SPAWN_TRIBUTARY,
-            }
-            poly_modes[trib] = "buffer"
+            mode = f"BUFFER-only ({len(lines)} centerlines, {CELL_SIZE_M * BUFFER_FACTOR:.1f} m total)"
+        log.info("[%s] using %s mode (polygon coverage %.1f%%)",
+                 trib, mode, coverage_ratio * 100)
+        reach_segments[trib] = {
+            "segments": combined_segments,
+            "frac_spawn": FRAC_SPAWN_TRIBUTARY,
+        }
+        poly_modes[trib] = mode
 
     if not reach_segments:
         raise SystemExit("no tributary data — aborting.")
 
-    # Generate cells for tributaries
-    log.info("Generating hex cells for %d tributaries (cell_size=%s m, buffer=%sx)...",
-             len(reach_segments), CELL_SIZE_M, BUFFER_FACTOR)
-    new_cells = generate_cells(
-        reach_segments=reach_segments,
-        cell_size=CELL_SIZE_M,
-        cell_shape="hexagonal",
-        buffer_factor=BUFFER_FACTOR,
-    )
-    log.info("Generated %d new cells across %d tributaries",
+    # v0.56.4: Per-tributary cell generation. Single-call mode unions all
+    # tributaries' polygons into one bbox spanning the whole basin
+    # (~57×62 km), which at 20 m cells creates a ~6M-cell raw grid even
+    # before filter — kills walltime. Per-tributary calls keep each
+    # bbox to one tributary's spatial extent (a few km), so each call
+    # returns in seconds. Same pattern as `_extend_minija_mainstem.py`'s
+    # per-polyline chunking.
+    log.info("Generating hex cells per-tributary (cell_size=%s m, buffer=%sx, "
+             "%d tributaries)...",
+             CELL_SIZE_M, BUFFER_FACTOR, len(reach_segments))
+    pieces: list = []
+    for trib_name, trib_data in reach_segments.items():
+        single_reach = {trib_name: trib_data}
+        log.info("  generating %s (%d segments)...",
+                 trib_name, len(trib_data["segments"]))
+        try:
+            piece = generate_cells(
+                reach_segments=single_reach,
+                cell_size=CELL_SIZE_M,
+                cell_shape="hexagonal",
+                buffer_factor=BUFFER_FACTOR,
+            )
+        except Exception as exc:
+            log.warning("  %s: SKIPPED (%s)", trib_name, exc)
+            continue
+        if piece.empty:
+            log.warning("  %s: 0 cells generated", trib_name)
+            continue
+        log.info("  %s: %d cells", trib_name, len(piece))
+        pieces.append(piece.to_crs(target_crs))
+    if not pieces:
+        raise SystemExit("no cells generated — aborting.")
+    new_cells = pd.concat(pieces, ignore_index=True)
+    new_cells = gpd.GeoDataFrame(new_cells, geometry="geometry", crs=target_crs)
+    log.info("Generated %d total cells across %d tributaries",
              len(new_cells), new_cells["reach_name"].nunique())
-    for r, n in new_cells["reach_name"].value_counts().sort_index().items():
-        log.info("  %s: %d cells", r, n)
-
-    # Reproject to base CRS (EPSG:3035)
-    new_cells = new_cells.to_crs(target_crs)
 
     # Rename columns to match the shapefile schema (UPPERCASE)
     new_cells = new_cells.rename(columns=COLUMN_RENAME)
@@ -298,11 +366,19 @@ def main() -> None:
 
     # Wipe & rewrite shapefile
     shp_dir = SHP_PATH.parent
-    for pat in ("*.shp", "*.shx", "*.dbf", "*.prj", "*.cpg"):
-        for stale in shp_dir.glob(pat):
+    for pat in ("MinijaBasinExample.shp", "MinijaBasinExample.shx",
+                "MinijaBasinExample.dbf", "MinijaBasinExample.prj",
+                "MinijaBasinExample.cpg"):
+        stale = shp_dir / pat
+        if stale.exists():
             stale.unlink()
     combined.to_file(SHP_PATH, driver="ESRI Shapefile")
     log.info("Wrote %s", SHP_PATH.relative_to(ROOT))
+
+    # v0.56.4: write OSM input geometry as a sidecar shapefile so users
+    # can overlay it on the cells map in QGIS / Shiny / any GIS to
+    # verify cell coverage matches the real river polygon shape.
+    write_osm_input_sidecar(shp_dir, reach_segments, target_crs)
 
     # Clone hydraulic CSVs for each tributary from Minija
     log.info("Cloning hydraulic CSVs from Minija for each tributary...")
