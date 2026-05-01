@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.3] — 2026-05-01
+
+### Changed — uniform 20 m cells for Minija + tributaries
+
+Refactored the Minija freshwater reaches (Minija main stem + 4
+tributaries) to a uniform 20 m hex-cell resolution. Previous state was
+inconsistent: lower Minija from baltic at ~50 m, upper Minija (v0.56.2)
+at 30 m, tributaries at 30 m. v0.56.3 unifies them at 20 m.
+
+Atmata, CuronianLagoon, and BalticCoast keep their baltic-inherited
+~50 m resolution per the user's "rest of example resolution intact"
+contract.
+
+### Fixture stats
+
+| Reach | v0.56.2 | v0.56.3 | Resolution |
+|--|--|--|--|
+| Minija | 4,191 | **8,505** | 50/30 m mix → uniform 20 m |
+| Babrungas | 1,414 | **2,148** | 30 m → 20 m |
+| Salantas | 1,222 | **1,881** | 30 m → 20 m |
+| Šalpė | 1,184 | **1,842** | 30 m → 20 m |
+| Veiviržas | 2,069 | **3,143** | 30 m → 20 m |
+| Atmata | 78 | 78 | unchanged |
+| CuronianLagoon | 120 | 120 | unchanged |
+| BalticCoast | 97 | 97 | unchanged |
+| **Total** | **10,375** | **17,814** | +72% cells |
+
+### Implementation note — per-polyline chunked generation
+
+A single `generate_cells` call over the full Minija polylines (~200 km,
+46 OSM ways) at 20 m hex cells would create a ~6M-cell raw grid (basin
+bbox ~57×62 km / cell area). v0.56.3's `_extend_minija_mainstem.py`
+chunks generation per OSM polyline (each polyline's bbox is a few km),
+so each call returns in seconds. Total runtime: ~2 min for 46 polylines.
+
+This pattern (per-segment chunked generation) is reusable for any
+future fixture where a long thin reach spans a wide bbox.
+
+### Changed scripts
+
+- `_extend_minija_with_tributaries.py`: `CELL_SIZE_M` 30 → **20**;
+  `BUFFER_FACTOR` stays 0.5 (10 m total buffer = 5 m each side).
+- `_extend_minija_mainstem.py`: same cell-size change; replaces the
+  prior upper-only filter with a per-polyline chunked-generation
+  helper that processes the full Minija (lower + upper).
+
+### Verified
+
+- 8 conformance tests pass for example_minija_basin (no registry
+  exceptions).
+- 3-day smoke test passes.
+- Atmata / CuronianLagoon / BalticCoast unchanged (cell counts and
+  geometries identical to v0.56.2).
+
+### Notes
+
+- Hydraulic CSVs auto-resized via `_expand_per_cell_csv` to match
+  new cell counts (e.g. Minija from 4191 → 8505 rows).
+- The fixture file is larger but still manageable
+  (~17K cells vs ~10K).
+- Resolution is non-uniform across the FIXTURE (freshwater 20 m vs
+  marine 50 m), but uniform within each habitat class. This matches
+  ecological reality: river-channel detail matters more than open-
+  water tiling for habitat selection.
+
 ## [0.56.2] — 2026-05-01
 
 ### Fixed — extended Minija reach to cover the upper river (closes 2 v0.56.0 KNOWN_GEOMETRY_DRIFT entries)

@@ -1,18 +1,23 @@
-"""Append upper-Minija OSM cells to example_minija_basin's Minija reach.
+"""Replace example_minija_basin's Minija reach with full-OSM 20m cells.
 
-The v0.54.3 Minija extraction from example_baltic only covered the
-lower 40 km (55.35-55.75°N); real Minija extends to 55.93°N where
-Babrungas + Salantas tributaries join. The v0.56.0 conformance check
-flagged this as REACH_DISCONNECTED at ~7.5 km gap.
+v0.56.2 added upper Minija cells (above 55.75°N) at 30 m resolution,
+appending to the baltic-derived ~50 m lower Minija. The fixture had
+mixed cell sizes across the same reach.
 
-This script fetches Minija's full OSM polylines (Overpass), filters
-to the UPPER portion (above 55.75°N — the part missing from
-baltic-extracted Minija), buffers them tight, generates hex cells,
-and APPENDS them to the existing Minija reach (rather than replacing,
-which is much slower).
+v0.56.3 unifies the Minija reach at 20 m resolution by replacing ALL
+Minija cells with OSM-fetched polyline-buffer cells. Tributaries are
+also bumped to 20 m (in `_extend_minija_with_tributaries.py`).
+Atmata / CuronianLagoon / BalticCoast keep their existing baltic-
+derived resolution — the user's "rest of example resolution intact"
+contract.
 
-Idempotent: re-runs detect and remove prior upper-Minija cells via
-the new ID_TEXT prefix "MJU-" (Minija Upper).
+Implementation note: cell generation is CHUNKED per OSM polyline
+because a single generate_cells call over the full ~200 km of
+Minija polylines at 20 m hex cells produces a ~6M-cell raw grid
+(bbox ~57×62 km / cell area). Per-polyline chunking shrinks each
+call's bbox to a few km, so each completes in seconds.
+
+Idempotent: re-runs detect and remove ALL Minija cells before regen.
 """
 from __future__ import annotations
 
@@ -47,8 +52,8 @@ SHP_PATH = FIXTURE_DIR / "Shapefile" / "MinijaBasinExample.shp"
 # Minija basin bbox — covers full river from mouth (55.35°N) to source (55.93°N)
 MINIJA_BBOX = (55.30, 21.10, 56.00, 22.10)  # S, W, N, E
 
-# Match v0.55.2 tributary parameters for consistency
-CELL_SIZE_M = 30.0
+# v0.56.3: 20 m cells across all freshwater (matches tributary refactor).
+CELL_SIZE_M = 20.0
 BUFFER_FACTOR = 0.5
 FRAC_SPAWN_MAINSTEM = 0.12  # was 0.12 in baltic-extracted Minija (matches existing)
 
@@ -108,7 +113,48 @@ def fetch_minija_polylines(refresh: bool = False) -> list[LineString]:
     return [shape(w["geometry"]) for w in ways]
 
 
-UPPER_MINIJA_LAT_FLOOR = 55.75  # match upper bound of baltic-extracted Minija
+def _generate_cells_per_polyline(
+    polylines: list[LineString],
+    target_crs,
+) -> "gpd.GeoDataFrame":
+    """Generate Minija hex cells one OSM polyline at a time.
+
+    Single-call mode (all polylines together) is too slow at 20 m cells
+    because the union bbox spans the whole basin (~57×62 km), creating
+    a ~6M-cell raw hex grid before filter. Per-polyline calls keep each
+    bbox tight (a few km), so each call returns in seconds.
+    """
+    pieces: list[gpd.GeoDataFrame] = []
+    for i, line in enumerate(polylines, start=1):
+        reach_segments = {
+            "Minija": {
+                "segments": [line],
+                "frac_spawn": FRAC_SPAWN_MAINSTEM,
+            },
+        }
+        try:
+            piece = generate_cells(
+                reach_segments=reach_segments,
+                cell_size=CELL_SIZE_M,
+                cell_shape="hexagonal",
+                buffer_factor=BUFFER_FACTOR,
+            )
+        except Exception as exc:
+            log.warning("polyline %d/%d skipped (%s)", i, len(polylines), exc)
+            continue
+        if piece.empty:
+            continue
+        pieces.append(piece.to_crs(target_crs))
+        if i % 5 == 0 or i == len(polylines):
+            log.info("  ... %d/%d polylines processed (%d cells so far)",
+                     i, len(polylines), sum(len(p) for p in pieces))
+    if not pieces:
+        return gpd.GeoDataFrame(columns=["cell_id", "reach_name", "geometry"], crs=target_crs)
+    combined = pd.concat(pieces, ignore_index=True)
+    combined = gpd.GeoDataFrame(combined, geometry="geometry", crs=target_crs)
+    # Re-number cell_ids globally to avoid collisions across pieces
+    combined["cell_id"] = [f"MJ-{i:06d}" for i in range(1, len(combined) + 1)]
+    return combined
 
 
 def main() -> None:
@@ -119,17 +165,14 @@ def main() -> None:
         )
 
     base = gpd.read_file(SHP_PATH)
-    base_minija_cells = (base["REACH_NAME"] == "Minija").sum()
+    base_minija_cells = int((base["REACH_NAME"] == "Minija").sum())
     log.info("Base shapefile: %d total cells, Minija reach has %d cells",
              len(base), base_minija_cells)
 
-    # Idempotency: drop any prior upper-Minija cells (ID_TEXT starts with "MJU-")
-    if "ID_TEXT" in base.columns:
-        is_upper = base["ID_TEXT"].astype(str).str.startswith("MJU-")
-        n_prior_upper = int(is_upper.sum())
-        if n_prior_upper > 0:
-            log.info("Removing %d prior upper-Minija cells (re-run cleanup)", n_prior_upper)
-            base = base[~is_upper].copy()
+    # Idempotency: drop ALL existing Minija cells (we replace them)
+    other = base[base["REACH_NAME"] != "Minija"].copy()
+    log.info("Removing %d existing Minija cells; keeping %d non-Minija cells",
+             base_minija_cells, len(other))
 
     target_crs = base.crs
     log.info("Target CRS: %s", target_crs)
@@ -140,46 +183,24 @@ def main() -> None:
     utm_epsg = detect_utm_epsg(center_lon=(bw + be) / 2, center_lat=(bs + bn) / 2)
     log.info("UTM EPSG for cell generation: %s", utm_epsg)
 
-    # Fetch Minija polylines (cached)
+    # Fetch Minija polylines (cached from v0.56.2)
     polylines = fetch_minija_polylines()
     if not polylines:
         raise SystemExit("no Minija polylines retrieved — aborting")
-    log.info("Loaded %d Minija polylines from OSM", len(polylines))
-
-    # Filter to upper-Minija (above 55.75°N) — the part missing from baltic
-    upper_polylines = [
-        line for line in polylines
-        if line.bounds[3] > UPPER_MINIJA_LAT_FLOOR  # max lat above floor
-    ]
-    log.info("Filtered to %d upper-Minija polylines (above %s°N)",
-             len(upper_polylines), UPPER_MINIJA_LAT_FLOOR)
-    if not upper_polylines:
-        raise SystemExit(f"no Minija polylines above {UPPER_MINIJA_LAT_FLOOR}°N")
+    log.info("Loaded %d Minija polylines from OSM (full river)", len(polylines))
 
     # Compute centerline length for diagnostic
-    cl_utm = gpd.GeoDataFrame(geometry=upper_polylines, crs="EPSG:4326").to_crs(epsg=utm_epsg)
+    cl_utm = gpd.GeoDataFrame(geometry=polylines, crs="EPSG:4326").to_crs(epsg=utm_epsg)
     centerline_len_m = float(cl_utm.geometry.length.sum())
-    log.info("Upper-Minija centerline length: %.1f km", centerline_len_m / 1000)
+    log.info("Minija total centerline length: %.1f km", centerline_len_m / 1000)
 
-    # Generate cells using the same approach as tributaries
-    reach_segments = {
-        "Minija": {
-            "segments": upper_polylines,
-            "frac_spawn": FRAC_SPAWN_MAINSTEM,
-        },
-    }
-    log.info("Generating cells (cell_size=%s m, buffer_factor=%s)...",
-             CELL_SIZE_M, BUFFER_FACTOR)
-    new_cells = generate_cells(
-        reach_segments=reach_segments,
-        cell_size=CELL_SIZE_M,
-        cell_shape="hexagonal",
-        buffer_factor=BUFFER_FACTOR,
-    )
-    log.info("Generated %d new upper-Minija cells", len(new_cells))
+    log.info("Generating cells per-polyline (cell_size=%s m, buffer_factor=%s, "
+             "%d polylines to process)...",
+             CELL_SIZE_M, BUFFER_FACTOR, len(polylines))
+    new_cells = _generate_cells_per_polyline(polylines, target_crs)
+    log.info("Generated %d total Minija cells", len(new_cells))
 
-    # Reproject + rename columns to match shapefile schema
-    new_cells = new_cells.to_crs(target_crs)
+    # Rename columns to match shapefile schema (reach_name → REACH_NAME, etc.)
     COLUMN_RENAME = {
         "cell_id": "ID_TEXT",
         "reach_name": "REACH_NAME",
@@ -190,18 +211,16 @@ def main() -> None:
         "frac_spawn": "FRACSPWN",
     }
     new_cells = new_cells.rename(columns=COLUMN_RENAME)
-    # Mark upper-Minija cells with "MJU-" prefix for idempotent re-runs
-    new_cells["ID_TEXT"] = "MJU-" + new_cells["ID_TEXT"].astype(str)
-    keep_cols = [c for c in base.columns if c in new_cells.columns]
+    new_cells["ID_TEXT"] = new_cells["ID_TEXT"].astype(str)
+    keep_cols = [c for c in other.columns if c in new_cells.columns]
     new_cells = new_cells[keep_cols + ["geometry"]] if "geometry" not in keep_cols else new_cells[keep_cols]
 
-    # Append upper-Minija cells to existing fixture
-    combined = pd.concat([base, new_cells], ignore_index=True)
+    # Replace Minija reach with new 20m cells
+    combined = pd.concat([other, new_cells], ignore_index=True)
     combined = gpd.GeoDataFrame(combined, geometry="geometry", crs=target_crs)
     n_minija_after = int((combined["REACH_NAME"] == "Minija").sum())
-    log.info("Combined: %d cells (was %d). Minija reach: %d cells (was %d, +%d upper)",
-             len(combined), len(base),
-             n_minija_after, base_minija_cells, len(new_cells))
+    log.info("Combined: %d cells (was %d). Minija reach: %d cells (was %d)",
+             len(combined), len(base), n_minija_after, base_minija_cells)
 
     # Wipe + rewrite shapefile
     shp_dir = SHP_PATH.parent

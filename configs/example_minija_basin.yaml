@@ -31,21 +31,26 @@
 # v0.55.2: tightened tributary geometry to fix RIVER_TOO_WIDE failures
 # from test_geographic_conformance. Tributary cells were generated with a
 # 100 m buffer + 50 m hex cells in v0.55.0/.1, producing effective widths
-# of 397-530 m vs. the ~5-15 m real channel widths. Now each tributary
-# uses 30 m hex cells + 15 m buffer (7.5 m each side); polygon-clip mode
-# is opt-in based on a 50% coverage floor (none of the 4 tributaries hit
-# this — OSM tags only 1-15% of their length as natural=water).
+# of 397-530 m vs. the ~5-15 m real channel widths.
 #
-# Reaches (8 total, 6,609 cells):
-#   Minija         — real Minija river OSM polygon, 425 cells
-#                    (downstream junction = Atmata confluence at Lankupiai)
-#   Babrungas      — ~22 km tributary, Lake Plateliai → Plungė, 1,414 cells
-#   Salantas       — ~52 km north tributary near Salantai, 1,222 cells
-#   Salpe          — Šalpė, small mid-river stream, 1,184 cells
-#   Veivirzas      — ~70 km largest Minija tributary, 2,069 cells
-#   Atmata         —  78 cells; Nemunas-Delta distributary
-#   CuronianLagoon — Kuršių marios, 120 cells
-#   BalticCoast    — nearshore Baltic N of Klaipėda, 97 cells
+# v0.56.3: refactored Minija + tributaries to UNIFORM 20 m hex cells
+# (was a mix of 50 m baltic-derived lower Minija + 30 m upper Minija +
+# 30 m tributaries). Atmata, CuronianLagoon, and BalticCoast keep their
+# baltic-inherited resolution per user contract ("rest of example
+# resolution intact"). Minija main-stem regenerated via per-polyline
+# chunked generation (`scripts/_extend_minija_mainstem.py`) — full
+# basin would have required a ~6M-cell raw grid in single-call mode.
+#
+# Reaches (8 total, 17,814 cells at v0.56.3):
+#   Minija         — full real Minija OSM polylines, 8,505 cells @ 20 m
+#                    (lat 55.346-55.962°N, mouth → source)
+#   Babrungas      — ~22 km tributary, 2,148 cells @ 20 m
+#   Salantas       — ~52 km north tributary, 1,881 cells @ 20 m
+#   Salpe          — Šalpė, 1,842 cells @ 20 m
+#   Veivirzas      — ~70 km largest tributary, 3,143 cells @ 20 m
+#   Atmata         —  78 cells (baltic-inherited, ~50 m)
+#   CuronianLagoon — Kuršių marios, 120 cells (baltic-inherited)
+#   BalticCoast    — nearshore Baltic, 97 cells (baltic-inherited)
 #
 # Junction topology:
 #   Babrungas (7→3), Salantas (8→3), Salpe (9→3), Veivirzas (10→3)

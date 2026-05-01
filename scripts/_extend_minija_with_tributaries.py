@@ -68,14 +68,14 @@ TRIBUTARIES = ["Babrungas", "Salantas", "Salpe", "Veivirzas"]
 # Generation parameters.
 # v0.55.2: tightened buffer + added polygon-clip mode to address the
 # "RIVER_TOO_WIDE" error from test_geographic_conformance. Real Minija
-# tributaries are 5-15 m wide channels — a 100 m buffer (the v0.55.0/.1
-# default) inflated effective_width to 400-530 m. Now:
-#   1. If OSM water polygons cover this tributary's centerline, clip cells
-#      to those polygons (real shapes).
-#   2. Fall back to a TIGHT buffer (15 m total = 7.5 m each side) for
-#      centerline-only tributaries.
-CELL_SIZE_M = 30.0
-BUFFER_FACTOR = 0.5   # 15 m total buffer (7.5 m each side) for fallback
+# tributaries are 5-15 m wide channels.
+# v0.56.3: bumped cell_size 30 → 20 m for higher-resolution freshwater
+# habitat tiling. Real tributary widths land at the cell scale (1-2
+# cells across the channel), giving finer per-cell hydraulic detail.
+# Atmata, CuronianLagoon, and BalticCoast keep their existing resolution
+# (inherited from example_baltic at ~50 m).
+CELL_SIZE_M = 20.0
+BUFFER_FACTOR = 0.5   # 10 m total buffer (5 m each side) for fallback
 # Distance (m) to consider a water polygon as "belonging to" a tributary
 POLY_PROXIMITY_M = 100.0
 FRAC_SPAWN_TRIBUTARY = 0.30
