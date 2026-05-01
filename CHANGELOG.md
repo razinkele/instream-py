@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.13] — 2026-05-01
+
+### Added — DSM-derived river polygons (gis-hydro-mcp pipeline)
+
+User asked to "extract real osm polygons for the minija river" using
+the locally-available **gis-hydro-mcp** package + Lithuanian DSM data.
+
+OSM has no riverbank polygons for the lower Minija (verified across
+v0.56.4 → v0.56.12). Instead, this release derives river-area polygons
+from terrain via the precomputed flow-accumulation rasters in
+``C:\dsm_work\`` (originally produced by ``run_hydro.py`` using
+gis-hydro-mcp). New script:
+
+`scripts/_extract_minija_polygons_from_dsm.py`
+
+* Reads ``aoi_flowacc.tif`` (2 m, 4×4 km AOI in EPSG:3346 covering the
+  Žardė tributary network near Klaipėda — outside OSM's polygon
+  coverage).
+* Thresholds at three drainage tiers (creek 250 cells, river 5k cells,
+  mainstem 100k cells).
+* Filters tiny disconnected components (noise).
+* Buffers each tier (3-14 m wide ribbons) and dissolves per tier.
+* Writes ``MinijaBasinExample-dsm-derived-osm-polygons.shp`` (33
+  polygons total: 21 creek + 9 river + 3 mainstem).
+
+The new sidecar is auto-discovered by ``simulation.discover_osm_sidecars``
+(via the ``*-osm-*.shp`` glob established in v0.56.4) so it renders on
+the Spatial / Setup / Edit Model overlay alongside the existing OSM
+polygon and centerline sidecars.
+
+Verified via Playwright: the DSM-derived polygons render as bright
+orange ribbons following real terrain drainage paths. Shapes are
+NOT uniform buffers — they follow the actual flow accumulation network
+derived from the 2 m elevation grid.
+
+### Investigation notes (research recorded for future fixtures)
+
+Investigated parallel-agent research uncovered three viable polygon
+sources for Lithuanian rivers:
+* **EU-Hydro** (Copernicus, GeoPackage, free with registration) — best
+  for Europe-wide coverage with ≥5-10 m river-width threshold.
+* **Lithuanian UETK** (Aplinkos apsaugos agentūra via geoportal.lt) —
+  the cadastre is rivers-as-lines only; lakes/reservoirs as polygons.
+* **DSM-based flow accumulation** (this release) — derives polygons
+  from terrain, exact match to local geography but limited to the
+  available DSM AOI extent.
+
+OSM relations probed: Curonian Lagoon (relation 7546467) is tagged
+``natural=bay + water=lagoon``, missed by the existing
+``natural=water`` query. Atmata branch has no polygon in OSM at all.
+Minija main stem (relation 2822878) is a ``type=waterway`` line
+relation, no polygon geometry.
+
 ## [0.56.12] — 2026-05-01
 
 ### Fixed — Edit Model crash on `example_minija_basin` (sidecar shapefile shadowed the main mesh)
