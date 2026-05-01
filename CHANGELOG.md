@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.8] — 2026-05-01
+
+### Reverted — v0.56.7 channel envelopes (synthetic uniform buffers misrepresented geography)
+
+User report: "OSM geometry is wrong, it doesn't follow real
+geographical features, but rather creates uniform buffer."
+
+v0.56.7 added 25 m buffered-centerline polygons per reach so every
+river had a visible area feature. But these uniform ribbons looked
+indistinguishable from a low-detail render of the true OSM polygons —
+they didn't follow real river curves, pools, or eddies. For the
+Minija main stem (where 28 real OSM water polygons exist), the
+synthetic envelope conflicted with reality. For Salpe (where OSM has
+no polygon data) the envelope invented geography.
+
+This release reverts the sidecar polygon files to the v0.56.4 state —
+raw OSM `natural=water` + `waterway=riverbank` polygons only. Counts:
+
+| Sidecar                                            | Polygons |
+|----------------------------------------------------|----------|
+| MinijaBasinExample-tributaries-osm-polygons.shp    | 17       |
+| MinijaBasinExample-mainstem-osm-polygons.shp       | 28       |
+
+Per-reach OSM polygon coverage (from v0.56.4 logs):
+
+| Reach     | OSM water polygons |
+|-----------|--------------------|
+| Salpe     | 0                  |
+| Salantas  | 1                  |
+| Babrungas | 6                  |
+| Veivirzas | 10                 |
+| Minija    | 28                 |
+
+Centerlines remain in the sidecars and render as red strokes for
+every river — the centerline is the OSM source of truth where
+polygons are absent. The cells themselves (UNION-mode-generated in
+v0.56.4) still cover the full river extent regardless of polygon
+coverage.
+
+The `_add_channel_envelopes_to_sidecars.py` script is removed.
+
 ## [0.56.7] — 2026-05-01
 
 ### Fixed — every river in `example_minija_basin` now has a visible area feature on the OSM overlay
