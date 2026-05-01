@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.9] — 2026-05-01
+
+### Fixed — OSM polygon sidecars now contain unclipped polygons (real OSM shapes)
+
+User report: "it still doesn't show polygons only created cells and
+line."
+
+Root cause: v0.56.4's extender saved each OSM `natural=water` polygon
+**intersected** with the 100 m centerline buffer used for cell
+generation. That preserved the "what generate_cells consumed"
+semantic but produced tiny clipped fragments — the median tributary
+polygon was 2,400 m² (square equivalent ~50 m), and the median
+mainstem polygon was 6,500 m² (~80 m). At basin-zoom on the map,
+these are 1-3 pixels wide and effectively invisible.
+
+`scripts/_regenerate_sidecars_unclipped.py` rebuilds the polygon
+sidecars from the cached OSM basin polygons (`minija_*_polygons.json`)
+without the clip. Each polygon retains its true OSM riverbank shape
+(meanders, oxbows, pools).
+
+Same row count (17 tributary + 28 mainstem polygons) but vastly
+larger geometry:
+
+| Sidecar     | Total area before | Total area after | Largest polygon |
+|-------------|-------------------|------------------|-----------------|
+| Tributaries | 22 k m²           | **46 k m²**      | 7.4 k m² (~85 m square) |
+| Mainstem    | 143 k m²          | **2.89 M m²**    | **988 k m² (~1 km²)**  |
+
+The Minija main stem now shows large, recognizable river-bank
+polygons that follow the real meanders. Tributary polygons remain
+small (Lithuanian small-river OSM coverage is sparse) but at least
+2× the previous size.
+
+The `scripts/_regenerate_sidecars_unclipped.py` script is kept so
+future Minija OSM cache refreshes can rebuild the sidecars with the
+same logic.
+
 ## [0.56.8] — 2026-05-01
 
 ### Reverted — v0.56.7 channel envelopes (synthetic uniform buffers misrepresented geography)

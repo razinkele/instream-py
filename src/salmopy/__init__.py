@@ -1,3 +1,3 @@
 """Salmopy — Python conversion of inSTREAM/inSALMO 7.4 individual-based salmonid model."""
 
-__version__ = "0.56.8"
+__version__ = "0.56.9"
