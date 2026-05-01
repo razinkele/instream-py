@@ -270,6 +270,7 @@ def run_simulation(
             "redds": redds,
             "config": raw,
             "summary": summary,
+            "osm_sidecars": _load_osm_sidecars(model, raw),
         }
 
     finally:
@@ -345,6 +346,39 @@ def _build_cells_gdf(model, raw_config):
         "frac_spawn",
     ]
     return gdf[[c for c in keep if c in gdf.columns]]
+
+
+def _load_osm_sidecars(model, raw_config) -> dict:
+    """Discover OSM-input sidecar shapefiles next to the mesh shapefile.
+
+    v0.56.4 began emitting `<fixture>-<extender>-osm-{polygons,centerlines}.shp`
+    files alongside the cell shapefile to preserve the original OSM input
+    geometry used during fixture generation. This helper finds them and
+    returns a mapping of layer-name → WGS84 GeoDataFrame for the spatial
+    panel's optional overlay.
+
+    Returns an empty dict when no sidecars exist (older fixtures).
+    Glob is restricted to siblings of the mesh path so unrelated OSM
+    shapefiles in nearby directories are not picked up.
+    """
+    mesh_path = Path(model.data_dir) / raw_config["spatial"]["mesh_file"]
+    if not mesh_path.exists():
+        alt = Path(model.data_dir) / "Shapefile" / Path(raw_config["spatial"]["mesh_file"]).name
+        if alt.exists():
+            mesh_path = alt
+    sidecar_dir = mesh_path.parent
+    sidecars: dict = {}
+    for sidecar in sorted(sidecar_dir.glob("*-osm-*.shp")):
+        try:
+            gdf = gpd.read_file(sidecar)
+        except Exception:
+            continue
+        if gdf.empty:
+            continue
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        sidecars[sidecar.stem] = gdf
+    return sidecars
 
 
 def _value_to_rgba(values, cmap="viridis", alpha=160):

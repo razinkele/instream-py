@@ -155,3 +155,52 @@ class TestValueToRgba:
         result = _value_to_rgba(values, alpha=200)
         for rgba in result:
             assert rgba[3] == 200
+
+
+class TestBuildOsmOverlayLayers:
+    """v0.56.5: spatial panel renders sidecar shapefiles when present."""
+
+    def test_returns_empty_when_no_sidecars(self):
+        from modules.spatial_panel import _build_osm_overlay_layers
+        assert _build_osm_overlay_layers({}, visible=True) == []
+        assert _build_osm_overlay_layers({"osm_sidecars": {}}, visible=True) == []
+
+    def test_distinct_styling_for_polygons_vs_centerlines(self):
+        from shapely.geometry import LineString, Polygon as ShPoly
+        from modules.spatial_panel import _build_osm_overlay_layers
+
+        poly_gdf = gpd.GeoDataFrame(
+            {"REACH_NAME": ["A"]},
+            geometry=[ShPoly([(0, 0), (1, 0), (1, 1), (0, 1)])],
+            crs="EPSG:4326",
+        )
+        line_gdf = gpd.GeoDataFrame(
+            {"REACH_NAME": ["A"]},
+            geometry=[LineString([(0, 0), (1, 1)])],
+            crs="EPSG:4326",
+        )
+        results = {"osm_sidecars": {
+            "Fix-tribs-osm-polygons": poly_gdf,
+            "Fix-tribs-osm-centerlines": line_gdf,
+        }}
+        layers = _build_osm_overlay_layers(results, visible=True)
+        assert len(layers) == 2
+        # Polygon layer should have a non-zero alpha fill colour;
+        # centerline layer should not be filled.
+        styles = {lyr["id"]: lyr for lyr in layers}
+        assert styles["osm-Fix-tribs-osm-polygons"].get("filled") is True
+        assert styles["osm-Fix-tribs-osm-centerlines"].get("filled") is False
+
+    def test_visibility_propagates(self):
+        from shapely.geometry import LineString
+        from modules.spatial_panel import _build_osm_overlay_layers
+
+        gdf = gpd.GeoDataFrame(
+            {"REACH_NAME": ["A"]},
+            geometry=[LineString([(0, 0), (1, 1)])],
+            crs="EPSG:4326",
+        )
+        results = {"osm_sidecars": {"Fix-tribs-osm-centerlines": gdf}}
+        for flag in (True, False):
+            layers = _build_osm_overlay_layers(results, visible=flag)
+            assert layers[0]["visible"] is flag

@@ -57,6 +57,11 @@ def spatial_ui():
             ui.input_checkbox("show_trips", "Show fish trails", value=True),
             ui.input_checkbox("show_heads", "Show fish icons", value=True),
             ui.input_checkbox("show_redds", "Show redds (egg nests)", value=True),
+            ui.input_checkbox(
+                "show_osm_overlay",
+                "Show OSM source geometry",
+                value=False,
+            ),
             ui.input_slider(
                 "trail_width",
                 "Trail width (px)",
@@ -65,7 +70,7 @@ def spatial_ui():
                 value=3,
                 step=1,
             ),
-            col_widths=(3, 3, 3, 3),
+            col_widths=(3, 3, 3, 3, 12),
         ),
         ui.output_ui("anim_controls"),
         ui.output_ui("map_container"),
@@ -184,9 +189,20 @@ def spatial_server(input, output, session, results_rv):
                 show_redds = input.show_redds()
             redds_layer = _build_redds_layer(results, visible=show_redds)
 
-            # Send cells + redds together; _update_trips handles trips
-            # after _cells_sent becomes True (avoids double-send).
-            await widget.update(session, [cells_layer, redds_layer], animate=True)
+            # OSM-source overlays (v0.56.5+): one geojson_layer per
+            # `*-osm-*.shp` sidecar discovered alongside the mesh
+            # shapefile. Off by default; toggled via the checkbox.
+            with reactive.isolate():
+                show_osm = input.show_osm_overlay()
+            osm_layers = _build_osm_overlay_layers(results, visible=show_osm)
+
+            # Send cells + redds + OSM overlays together; _update_trips
+            # handles trips after _cells_sent becomes True.
+            await widget.update(
+                session,
+                [cells_layer, redds_layer, *osm_layers],
+                animate=True,
+            )
             _cells_sent.set(True)
 
         except Exception as e:
@@ -213,6 +229,27 @@ def spatial_server(input, output, session, results_rv):
             if "SilentException" in type(e).__name__:
                 return
             logger.exception("Error updating redds layer")
+
+    # ------------------------------------------------------------------
+    # OSM OVERLAY VISIBILITY — partial_update when checkbox flips
+    # ------------------------------------------------------------------
+    @reactive.effect
+    async def _toggle_osm_overlay():
+        widget = _widget()
+        if widget is None or not _cells_sent():
+            return
+        results = results_rv()
+        if results is None:
+            return
+        show = input.show_osm_overlay()
+        try:
+            osm_layers = _build_osm_overlay_layers(results, visible=show)
+            if osm_layers:
+                await widget.partial_update(session, osm_layers)
+        except Exception as e:
+            if "SilentException" in type(e).__name__:
+                return
+            logger.exception("Error updating OSM overlay layers")
 
     # ------------------------------------------------------------------
     # CELL RE-COLORING — partial_update when color_var changes
@@ -391,6 +428,54 @@ def _build_redds_layer(results, visible: bool = True):
         pickable=True,
         visible=visible,
     )
+
+
+def _build_osm_overlay_layers(results, visible: bool = False) -> list:
+    """Render the OSM-source sidecar shapefiles as map overlay layers.
+
+    v0.56.4 fixtures emit `*-osm-{polygons,centerlines}.shp` files
+    alongside the cell mesh, preserving the original OSM input geometry
+    used to generate the cells. Polygon sidecars render as a thin
+    transparent fill so users can see whether the cells fully cover the
+    real river polygon shape; centerline sidecars render as a bright
+    contrasting line so the OSM waterway path is visible at any zoom.
+
+    Returns one ``geojson_layer`` per sidecar found, in the order
+    ``simulation._load_osm_sidecars`` produced them. Empty list when no
+    sidecars exist (older fixtures or non-WGBAST examples).
+    """
+    sidecars = results.get("osm_sidecars") if results else None
+    if not sidecars:
+        return []
+
+    layers = []
+    for stem, gdf in sidecars.items():
+        is_polygon = "-polygons" in stem
+        if is_polygon:
+            kwargs = {
+                "getFillColor": [0, 90, 180, 70],
+                "getLineColor": [0, 60, 140, 220],
+                "lineWidthMinPixels": 1,
+                "stroked": True,
+                "filled": True,
+            }
+        else:
+            kwargs = {
+                "getLineColor": [220, 30, 60, 220],
+                "lineWidthMinPixels": 2,
+                "stroked": True,
+                "filled": False,
+            }
+        layers.append(
+            geojson_layer(
+                f"osm-{stem}",
+                gdf,
+                visible=visible,
+                pickable=False,
+                **kwargs,
+            )
+        )
+    return layers
 
 
 def _build_cells_layer(gdf_wgs84, color_var):

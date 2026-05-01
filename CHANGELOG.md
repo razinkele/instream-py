@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.5] — 2026-05-01
+
+### Added — OSM-source overlay on the Spatial panel
+
+Closes the second half of the v0.56.4 user request ("add the initial
+extracted river spatial coverage (area type vectors) to the map").
+The four `*-osm-{polygons,centerlines}.shp` sidecar shapefiles emitted
+by the v0.56.4 Minija extenders now render as an optional deck.gl
+overlay on the simulation result map, controlled by a new
+`Show OSM source geometry` checkbox in the Spatial card.
+
+- `simulation._load_osm_sidecars` discovers any `*-osm-*.shp` siblings
+  of the mesh shapefile, reads them in WGS84, and exposes them as
+  `results["osm_sidecars"]` (a `dict[stem → GeoDataFrame]`).
+- `spatial_panel._build_osm_overlay_layers` returns one
+  `geojson_layer` per sidecar; polygon sidecars render with a
+  transparent blue fill, centerline sidecars with a contrasting red
+  stroke.
+- Two reactive effects in the spatial panel handle initial-send and
+  visibility-toggle (mirrors the existing redds-layer pattern).
+
+The discovery glob is a versioning hook: new sidecar pairs added in
+future fixture pipelines will be auto-rendered without panel changes.
+
+### Tests
+
+3 new `TestBuildOsmOverlayLayers` cases in
+`tests/test_spatial_panel.py` (empty-input contract, polygon-vs-line
+styling branch, visibility flag).
+
 ## [0.56.4] — 2026-05-01
 
 ### Changed — UNION mode for Minija reach cell generation + OSM-input sidecar shapefiles
