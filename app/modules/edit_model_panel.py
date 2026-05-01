@@ -50,6 +50,26 @@ def _fixtures_root(root: Path) -> Path:
     return root / "tests" / "fixtures"
 
 
+def _pick_main_shapefile(shp_dir: Path) -> Path | None:
+    """Find the fixture's main cell shapefile in a directory.
+
+    v0.56.4 introduced ``*-osm-{polygons,centerlines}.shp`` sidecar
+    shapefiles next to the main mesh shapefile. A naive
+    ``next(glob('*.shp'))`` picks one of those sidecars on filesystems
+    that return the dash-prefixed names first, breaking Edit Model.
+    Filter sidecars out by the ``-osm-`` substring; pick the largest
+    remaining shapefile by file size (the main mesh is always
+    significantly larger than any sidecar).
+    """
+    candidates = [
+        p for p in shp_dir.glob("*.shp")
+        if "-osm-" not in p.stem
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_size)
+
+
 def discover_fixtures() -> list[str]:
     """Return short_name list for fixtures with both a config + shapefile."""
     root = _project_root()
@@ -65,7 +85,7 @@ def discover_fixtures() -> list[str]:
         shp_dir = fix_dir / "Shapefile"
         if not shp_dir.exists():
             continue
-        if not next(iter(shp_dir.glob("*.shp")), None):
+        if _pick_main_shapefile(shp_dir) is None:
             continue
         available.append(short_name)
     return available
@@ -76,7 +96,9 @@ def _load_fixture(short_name: str):
     root = _project_root()
     cfg_path = root / "configs" / f"{short_name}.yaml"
     fix_dir = _fixtures_root(root) / short_name
-    shp = next((fix_dir / "Shapefile").glob("*.shp"))
+    shp = _pick_main_shapefile(fix_dir / "Shapefile")
+    if shp is None:
+        raise FileNotFoundError(f"no main mesh shapefile in {fix_dir}/Shapefile")
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     cells = gpd.read_file(shp)
     if cells.crs is None:

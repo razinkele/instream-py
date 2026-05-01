@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.12] — 2026-05-01
+
+### Fixed — Edit Model crash on `example_minija_basin` (sidecar shapefile shadowed the main mesh)
+
+User report: "it still crashes in the edit model." Verified via
+Playwright on the laguna deploy: switching the Edit Model fixture
+dropdown to `example_minija_basin` loaded only **3 cells** (1
+Babrungas + 2 Veivirzas) instead of the real 18,366 cells across 8
+reaches.
+
+Root cause: `_load_fixture` in `app/modules/edit_model_panel.py` did
+``next((fix_dir / "Shapefile").glob("*.shp"))`` — picked the FIRST
+``*.shp`` file the OS returned. After v0.56.4 added the sidecar
+shapefiles (`MinijaBasinExample-tributaries-osm-polygons.shp` etc.),
+on Linux the alphabetical order put a sidecar before
+`MinijaBasinExample.shp`, so Edit Model loaded a sidecar's 3
+features as if they were the cell mesh.
+
+Fix: new `_pick_main_shapefile(shp_dir)` helper filters out files
+whose stem contains `-osm-` (the sidecar naming convention) and
+picks the largest remaining shapefile by file size. The main mesh
+is always significantly larger than any sidecar, so size acts as a
+robust tiebreaker. Used by both `discover_fixtures` and
+`_load_fixture`.
+
+### Note — OSM polygon coverage in Minija lower reaches
+
+User reported the OSM overlay polygons "still not following the
+river especially in the lower reaches." Investigation: OSM has
+**zero river-class polygons** in the lower Minija basin (south of
+55.65°N) — the 569 polygons there are all `water=reservoir`
+(aquaculture ponds), not riverbank polygons. Including them would
+be the regression v0.56.11 fixed. The Curonian Lagoon and Atmata
+branch are not in this OSM polygon cache (relation-tagged or
+outside the bbox). The strict-filter v0.56.11 sidecars (5 polygons,
+all in upper reaches) reflect what OSM actually has — the
+centerlines (magenta) provide the only continuous OSM source signal
+through the lower reaches.
+
 ## [0.56.11] — 2026-05-01
 
 ### Fixed — sidecar polygons now filter to true river-class OSM tags only
