@@ -25,6 +25,9 @@ from shapely.geometry import shape
 from shiny import module, reactive, render, ui
 from shiny_deckgl import MapWidget, geojson_layer
 
+from simulation import discover_osm_sidecars
+from modules.spatial_panel import build_osm_overlay_layers
+
 logger = logging.getLogger(__name__)
 
 
@@ -203,6 +206,12 @@ def edit_model_ui():
                 ui.input_action_button(
                     "regen_apply", "Regenerate + save", class_="btn-danger",
                 ),
+                ui.hr(),
+                ui.input_checkbox(
+                    "show_osm_overlay",
+                    "Show OSM source geometry",
+                    value=False,
+                ),
                 ui.output_ui("save_status"),
             ),
             ui.column(
@@ -310,8 +319,18 @@ def edit_model_server(input, output, session):
             filled=True,
             pickable=True,
         )
+
+        # v0.56.6: optional OSM-source overlay (sidecar shapefiles
+        # written by the v0.56.4 extenders next to the mesh shapefile).
+        layers = [layer]
+        shp_path = s.get("shp_path")
+        if shp_path:
+            sidecars = discover_osm_sidecars(shp_path)
+            show_osm = input.show_osm_overlay()
+            layers.extend(build_osm_overlay_layers(sidecars, visible=show_osm))
+
         try:
-            await _widget.update(session, [layer])
+            await _widget.update(session, layers)
         except Exception:
             logger.exception("map update failed")
 

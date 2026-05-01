@@ -348,24 +348,20 @@ def _build_cells_gdf(model, raw_config):
     return gdf[[c for c in keep if c in gdf.columns]]
 
 
-def _load_osm_sidecars(model, raw_config) -> dict:
-    """Discover OSM-input sidecar shapefiles next to the mesh shapefile.
+def discover_osm_sidecars(mesh_path) -> dict:
+    """Read every `*-osm-*.shp` file living next to the given mesh path.
 
     v0.56.4 began emitting `<fixture>-<extender>-osm-{polygons,centerlines}.shp`
     files alongside the cell shapefile to preserve the original OSM input
     geometry used during fixture generation. This helper finds them and
-    returns a mapping of layer-name → WGS84 GeoDataFrame for the spatial
-    panel's optional overlay.
+    returns a mapping of layer-name → WGS84 GeoDataFrame for any panel's
+    optional overlay.
 
     Returns an empty dict when no sidecars exist (older fixtures).
     Glob is restricted to siblings of the mesh path so unrelated OSM
     shapefiles in nearby directories are not picked up.
     """
-    mesh_path = Path(model.data_dir) / raw_config["spatial"]["mesh_file"]
-    if not mesh_path.exists():
-        alt = Path(model.data_dir) / "Shapefile" / Path(raw_config["spatial"]["mesh_file"]).name
-        if alt.exists():
-            mesh_path = alt
+    mesh_path = Path(mesh_path)
     sidecar_dir = mesh_path.parent
     sidecars: dict = {}
     for sidecar in sorted(sidecar_dir.glob("*-osm-*.shp")):
@@ -379,6 +375,19 @@ def _load_osm_sidecars(model, raw_config) -> dict:
             gdf = gdf.to_crs(epsg=4326)
         sidecars[sidecar.stem] = gdf
     return sidecars
+
+
+def _load_osm_sidecars(model, raw_config) -> dict:
+    """Resolve the mesh path from the model and delegate to
+    `discover_osm_sidecars`. Used by simulation results so the spatial
+    panel can render the overlay alongside cells/redds/trips.
+    """
+    mesh_path = Path(model.data_dir) / raw_config["spatial"]["mesh_file"]
+    if not mesh_path.exists():
+        alt = Path(model.data_dir) / "Shapefile" / Path(raw_config["spatial"]["mesh_file"]).name
+        if alt.exists():
+            mesh_path = alt
+    return discover_osm_sidecars(mesh_path)
 
 
 def _value_to_rgba(values, cmap="viridis", alpha=160):

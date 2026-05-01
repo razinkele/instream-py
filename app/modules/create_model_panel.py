@@ -366,6 +366,12 @@ def create_model_ui():
                 ui.input_numeric("auto_split_n", None, value=4, min=2, max=8, step=1, width="70px"),
                 style="display:inline-block; vertical-align:middle;",
             ),
+            ui.tags.div(class_="cm-sep"),
+            ui.input_checkbox(
+                "show_osm_overlay",
+                "OSM source",
+                value=True,
+            ),
         ),
         # -- Map (shown immediately, before any fetch) ---
         _widget.ui(height="550px"),
@@ -674,28 +680,37 @@ def create_model_server(input, output, session):
         )
 
     async def _refresh_map():
-        """Rebuild all map layers from current state and push to widget."""
+        """Rebuild all map layers from current state and push to widget.
+
+        ``show_osm_overlay`` (v0.56.6) toggles visibility of the
+        OSM-source layers (sea / water / rivers) so the user can see
+        the generated reach + cell layers without the underlying source
+        clutter — useful for inspecting cell coverage before export.
+        Selected reaches and generated cells stay visible regardless.
+        """
+        show_osm = input.show_osm_overlay()
         layers = []
-        # Sea areas (bottommost)
-        sea = _sea_gdf()
-        if sea is not None and len(sea) > 0:
-            layers.append(_build_sea_layer(sea))
-        # Water bodies
-        water = _water_gdf()
-        if water is not None and len(water) > 0:
-            logger.info("Water layer: %d features", len(water))
-            layers.append(_build_water_layer(water))
-        else:
-            logger.info("No water features to display")
-        # Filtered rivers (polygons + line fallbacks)
-        fgdf = _filtered_rivers_gdf()
-        if fgdf is not None and len(fgdf) > 0:
-            layers.extend(_build_river_layer(fgdf))
-        # Cells
+        # Sea areas (bottommost) — OSM/Marine-Regions source
+        if show_osm:
+            sea = _sea_gdf()
+            if sea is not None and len(sea) > 0:
+                layers.append(_build_sea_layer(sea))
+            # Water bodies — OSM source
+            water = _water_gdf()
+            if water is not None and len(water) > 0:
+                logger.info("Water layer: %d features", len(water))
+                layers.append(_build_water_layer(water))
+            else:
+                logger.info("No water features to display")
+            # Filtered rivers (polygons + line fallbacks) — OSM source
+            fgdf = _filtered_rivers_gdf()
+            if fgdf is not None and len(fgdf) > 0:
+                layers.extend(_build_river_layer(fgdf))
+        # Cells (always visible — they're the workproduct)
         cells_lyr = _build_cells_layer()
         if cells_lyr is not None:
             layers.append(cells_lyr)
-        # Reach overlays (top)
+        # Reach overlays (top — also always visible)
         reach_layers = _build_reach_layers()
         layers.extend(reach_layers)
         await _widget.update(session, layers)
@@ -791,6 +806,12 @@ def create_model_server(input, output, session):
         is_poly_final = gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])
         water_msg = f" + {len(water_gdf)} water bodies" if water_gdf is not None else ""
         _fetch_msg.set(f"Loaded {int(is_poly_final.sum())} river polygons + {int((~is_poly_final).sum())} stream lines{water_msg}.")
+
+    @reactive.effect
+    @reactive.event(input.show_osm_overlay)
+    async def _on_show_osm_toggle():
+        """v0.56.6: re-push layers when the OSM-source visibility flag flips."""
+        await _refresh_map()
 
     @reactive.effect
     @reactive.event(input.fetch_rivers)

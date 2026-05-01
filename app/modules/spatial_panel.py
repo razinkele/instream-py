@@ -62,15 +62,16 @@ def spatial_ui():
                 "Show OSM source geometry",
                 value=False,
             ),
-            ui.input_slider(
-                "trail_width",
-                "Trail width (px)",
-                min=1,
-                max=10,
-                value=3,
-                step=1,
-            ),
-            col_widths=(3, 3, 3, 3, 12),
+            col_widths=(3, 3, 3, 3),
+        ),
+        ui.input_slider(
+            "trail_width",
+            "Trail width (px)",
+            min=1,
+            max=10,
+            value=3,
+            step=1,
+            width="100%",
         ),
         ui.output_ui("anim_controls"),
         ui.output_ui("map_container"),
@@ -430,7 +431,7 @@ def _build_redds_layer(results, visible: bool = True):
     )
 
 
-def _build_osm_overlay_layers(results, visible: bool = False) -> list:
+def build_osm_overlay_layers(sidecars: dict, visible: bool = False) -> list:
     """Render the OSM-source sidecar shapefiles as map overlay layers.
 
     v0.56.4 fixtures emit `*-osm-{polygons,centerlines}.shp` files
@@ -441,10 +442,9 @@ def _build_osm_overlay_layers(results, visible: bool = False) -> list:
     contrasting line so the OSM waterway path is visible at any zoom.
 
     Returns one ``geojson_layer`` per sidecar found, in the order
-    ``simulation._load_osm_sidecars`` produced them. Empty list when no
-    sidecars exist (older fixtures or non-WGBAST examples).
+    ``simulation.discover_osm_sidecars`` produced them. Empty list when
+    no sidecars exist (older fixtures or non-WGBAST examples).
     """
-    sidecars = results.get("osm_sidecars") if results else None
     if not sidecars:
         return []
 
@@ -476,6 +476,14 @@ def _build_osm_overlay_layers(results, visible: bool = False) -> list:
             )
         )
     return layers
+
+
+def _build_osm_overlay_layers(results, visible: bool = False) -> list:
+    """Backwards-compatible wrapper: extracts ``osm_sidecars`` from the
+    simulation results dict and delegates to :func:`build_osm_overlay_layers`.
+    """
+    sidecars = results.get("osm_sidecars") if results else None
+    return build_osm_overlay_layers(sidecars or {}, visible=visible)
 
 
 def _build_cells_layer(gdf_wgs84, color_var):

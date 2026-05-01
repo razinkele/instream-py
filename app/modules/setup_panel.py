@@ -14,7 +14,8 @@ from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
 from shiny_deckgl.controls import legend_control
-from simulation import _value_to_rgba
+from simulation import _value_to_rgba, discover_osm_sidecars
+from modules.spatial_panel import build_osm_overlay_layers
 
 # v0.41.3 (2026-04-21): removed the hand-traced Baltic-specific
 # `app/data/water_polygons.geojson` overlay. It was a pre-v0.30.1 v1
@@ -217,6 +218,15 @@ def setup_ui():
                 ui.output_ui("layer_description"),
                 class_="setup-row",
             ),
+            # Row 3: OSM overlay toggle (sidecars exposed by v0.56.4)
+            ui.div(
+                ui.input_checkbox(
+                    "show_osm_overlay",
+                    "Show OSM source geometry",
+                    value=False,
+                ),
+                class_="setup-row",
+            ),
             class_="setup-map-controls",
         ),
         _widget.ui(height="550px"),
@@ -382,6 +392,7 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
             gdf = gdf.to_crs(epsg=4326)
 
         gdf.attrs["raw_config"] = raw
+        gdf.attrs["mesh_path"] = str(mesh_path)
         return gdf
 
     @reactive.effect
@@ -396,12 +407,18 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
             layer_var = input.layer_var()
             layer = _build_layer(gdf, layer_var)
 
-            # Build layer list: water background + grid cells
+            # Build layer list: water background + grid cells + optional
+            # OSM-source overlay (v0.56.4 sidecars).
             layers = []
             wl = _water_layer()
             if wl is not None:
                 layers.append(wl)
             layers.append(layer)
+            mesh_path = gdf.attrs.get("mesh_path")
+            if mesh_path:
+                sidecars = discover_osm_sidecars(mesh_path)
+                show_osm = input.show_osm_overlay()
+                layers.extend(build_osm_overlay_layers(sidecars, visible=show_osm))
 
             await _widget.update(session, layers, animate=False)
 

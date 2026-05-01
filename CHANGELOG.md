@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.6] — 2026-05-01
+
+### Added — OSM-source overlay checkbox in Setup, Edit Model, and Create Model panels
+
+The "Show OSM source geometry" toggle introduced for the Spatial panel
+in v0.56.5 is now also available in:
+
+- **Setup**: a third control row below the Color-by selector. When
+  checked, renders the same v0.56.4 sidecar shapefiles as the Spatial
+  panel does (polygons in transparent blue, centerlines in red).
+- **Edit Model**: a checkbox below the Regenerate button. Same
+  rendering as Setup; sidecars are discovered from the loaded
+  fixture's shapefile directory.
+- **Create Model**: a toolbar checkbox to the right of the Auto-split
+  controls. Toggles visibility of the OSM-source layers (rivers /
+  water / sea polygons) the panel already fetches — selected reaches
+  and generated cells stay visible regardless. Defaults to ON
+  (preserves prior behaviour).
+
+### Refactor
+
+`spatial_panel._build_osm_overlay_layers(results, ...)` is now a thin
+wrapper around the new public `build_osm_overlay_layers(sidecars, ...)`.
+`simulation._load_osm_sidecars` is now also a wrapper around the new
+public `discover_osm_sidecars(mesh_path)`. Both refactors keep their
+old call sites unchanged while exposing the same logic to the three
+new panel call sites.
+
 ## [0.56.5] — 2026-05-01
 
 ### Added — OSM-source overlay on the Spatial panel
