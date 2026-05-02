@@ -15,7 +15,7 @@ from shiny import module, reactive, render, ui
 from shiny_deckgl import MapWidget, geojson_layer
 from shiny_deckgl.controls import legend_control
 from simulation import _value_to_rgba, discover_osm_sidecars
-from modules.spatial_panel import build_osm_overlay_layers
+from modules.spatial_panel import build_osm_overlay_layers, build_osm_overlay_legend_widget
 
 # v0.41.3 (2026-04-21): removed the hand-traced Baltic-specific
 # `app/data/water_polygons.geojson` overlay. It was a pre-v0.30.1 v1
@@ -218,15 +218,9 @@ def setup_ui():
                 ui.output_ui("layer_description"),
                 class_="setup-row",
             ),
-            # Row 3: OSM overlay toggle (sidecars exposed by v0.56.4)
-            ui.div(
-                ui.input_checkbox(
-                    "show_osm_overlay",
-                    "Show OSM source geometry",
-                    value=False,
-                ),
-                class_="setup-row",
-            ),
+            # OSM source layers are exposed via the in-map "OSM source
+            # layers" legend widget (top-left): one toggle per reach, color
+            # swatches included.
             class_="setup-map-controls",
         ),
         _widget.ui(height="550px"),
@@ -407,20 +401,24 @@ def setup_server(input, output, session, config_file_rv, load_btn_rv):
             layer_var = input.layer_var()
             layer = _build_layer(gdf, layer_var)
 
-            # Build layer list: water background + grid cells + optional
-            # OSM-source overlay (v0.56.4 sidecars).
+            # Build layer list: water background + grid cells + per-reach
+            # OSM-source overlay layers (v0.56.17+). The in-map
+            # `layer_legend_widget` (top-left) provides per-reach toggles.
             layers = []
             wl = _water_layer()
             if wl is not None:
                 layers.append(wl)
             layers.append(layer)
             mesh_path = gdf.attrs.get("mesh_path")
+            extra_widgets = None
             if mesh_path:
                 sidecars = discover_osm_sidecars(mesh_path)
-                show_osm = input.show_osm_overlay()
-                layers.extend(build_osm_overlay_layers(sidecars, visible=show_osm))
+                layers.extend(build_osm_overlay_layers(sidecars, visible=True))
+                osm_legend = build_osm_overlay_legend_widget(sidecars, placement="top-left")
+                if osm_legend is not None:
+                    extra_widgets = [osm_legend]
 
-            await _widget.update(session, layers, animate=False)
+            await _widget.update(session, layers, animate=False, widgets=extra_widgets)
 
             # Re-fit view bounds ONLY when the loaded config changed.
             # Recoloring via `layer_var` leaves `_loaded_config` unchanged,

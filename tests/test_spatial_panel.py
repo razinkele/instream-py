@@ -158,49 +158,80 @@ class TestValueToRgba:
 
 
 class TestBuildOsmOverlayLayers:
-    """v0.56.5: spatial panel renders sidecar shapefiles when present."""
+    """v0.56.17: per-reach overlay layers + in-map legend widget."""
 
     def test_returns_empty_when_no_sidecars(self):
-        from modules.spatial_panel import _build_osm_overlay_layers
-        assert _build_osm_overlay_layers({}, visible=True) == []
-        assert _build_osm_overlay_layers({"osm_sidecars": {}}, visible=True) == []
+        from modules.spatial_panel import build_osm_overlay_layers
+        assert build_osm_overlay_layers({}) == []
+        assert build_osm_overlay_layers(None) == []
 
-    def test_distinct_styling_for_polygons_vs_centerlines(self):
+    def test_one_layer_per_reach_per_kind(self):
+        """Two reaches × two kinds (poly + line) → 4 layers with stable ids."""
         from shapely.geometry import LineString, Polygon as ShPoly
-        from modules.spatial_panel import _build_osm_overlay_layers
+        from modules.spatial_panel import build_osm_overlay_layers
 
-        poly_gdf = gpd.GeoDataFrame(
-            {"REACH_NAME": ["A"]},
+        polys = gpd.GeoDataFrame(
+            {"REACH_NAME": ["Minija", "Babrungas"]},
+            geometry=[
+                ShPoly([(0, 0), (1, 0), (1, 1), (0, 1)]),
+                ShPoly([(2, 0), (3, 0), (3, 1), (2, 1)]),
+            ],
+            crs="EPSG:4326",
+        )
+        lines = gpd.GeoDataFrame(
+            {"REACH_NAME": ["Minija", "Babrungas"]},
+            geometry=[LineString([(0, 0), (1, 1)]), LineString([(2, 0), (3, 1)])],
+            crs="EPSG:4326",
+        )
+        layers = build_osm_overlay_layers({
+            "Fix-tribs-osm-polygons": polys,
+            "Fix-tribs-osm-centerlines": lines,
+        })
+        ids = sorted(l["id"] for l in layers)
+        assert ids == [
+            "osm-Babrungas-centerlines",
+            "osm-Babrungas-polygons",
+            "osm-Minija-centerlines",
+            "osm-Minija-polygons",
+        ]
+        # Polygon layers have filled=True, centerlines filled=False
+        styles = {l["id"]: l for l in layers}
+        assert styles["osm-Minija-polygons"].get("filled") is True
+        assert styles["osm-Minija-centerlines"].get("filled") is False
+
+    def test_legend_widget_entries_match_layer_ids(self):
+        from shapely.geometry import LineString, Polygon as ShPoly
+        from modules.spatial_panel import (
+            build_osm_overlay_layers, build_osm_overlay_legend_widget,
+        )
+
+        polys = gpd.GeoDataFrame(
+            {"REACH_NAME": ["Minija"]},
             geometry=[ShPoly([(0, 0), (1, 0), (1, 1), (0, 1)])],
             crs="EPSG:4326",
         )
-        line_gdf = gpd.GeoDataFrame(
-            {"REACH_NAME": ["A"]},
+        lines = gpd.GeoDataFrame(
+            {"REACH_NAME": ["Minija"]},
             geometry=[LineString([(0, 0), (1, 1)])],
             crs="EPSG:4326",
         )
-        results = {"osm_sidecars": {
-            "Fix-tribs-osm-polygons": poly_gdf,
-            "Fix-tribs-osm-centerlines": line_gdf,
-        }}
-        layers = _build_osm_overlay_layers(results, visible=True)
-        assert len(layers) == 2
-        # Polygon layer should have a non-zero alpha fill colour;
-        # centerline layer should not be filled.
-        styles = {lyr["id"]: lyr for lyr in layers}
-        assert styles["osm-Fix-tribs-osm-polygons"].get("filled") is True
-        assert styles["osm-Fix-tribs-osm-centerlines"].get("filled") is False
+        sidecars = {
+            "Fix-tribs-osm-polygons": polys,
+            "Fix-tribs-osm-centerlines": lines,
+        }
+        layers = build_osm_overlay_layers(sidecars)
+        widget = build_osm_overlay_legend_widget(sidecars)
+        assert widget is not None
+        layer_ids = {l["id"] for l in layers}
+        widget_ids = {e["layer_id"] for e in widget["entries"]}
+        # Every legend entry refers to a real layer
+        assert widget_ids == layer_ids
+        # Polygon entries get a "rect" swatch, centerlines get "line"
+        shapes = {e["layer_id"]: e["shape"] for e in widget["entries"]}
+        assert shapes["osm-Minija-polygons"] == "rect"
+        assert shapes["osm-Minija-centerlines"] == "line"
 
-    def test_visibility_propagates(self):
-        from shapely.geometry import LineString
-        from modules.spatial_panel import _build_osm_overlay_layers
-
-        gdf = gpd.GeoDataFrame(
-            {"REACH_NAME": ["A"]},
-            geometry=[LineString([(0, 0), (1, 1)])],
-            crs="EPSG:4326",
-        )
-        results = {"osm_sidecars": {"Fix-tribs-osm-centerlines": gdf}}
-        for flag in (True, False):
-            layers = _build_osm_overlay_layers(results, visible=flag)
-            assert layers[0]["visible"] is flag
+    def test_legend_widget_returns_none_when_no_sidecars(self):
+        from modules.spatial_panel import build_osm_overlay_legend_widget
+        assert build_osm_overlay_legend_widget({}) is None
+        assert build_osm_overlay_legend_widget(None) is None

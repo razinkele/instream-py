@@ -26,7 +26,7 @@ from shiny import module, reactive, render, ui
 from shiny_deckgl import MapWidget, geojson_layer
 
 from simulation import discover_osm_sidecars
-from modules.spatial_panel import build_osm_overlay_layers
+from modules.spatial_panel import build_osm_overlay_layers, build_osm_overlay_legend_widget
 
 logger = logging.getLogger(__name__)
 
@@ -228,12 +228,8 @@ def edit_model_ui():
                 ui.input_action_button(
                     "regen_apply", "Regenerate + save", class_="btn-danger",
                 ),
-                ui.hr(),
-                ui.input_checkbox(
-                    "show_osm_overlay",
-                    "Show OSM source geometry",
-                    value=False,
-                ),
+                # OSM source layers exposed via the in-map "OSM source layers"
+                # legend widget (top-left): per-reach toggles + color swatches.
                 ui.output_ui("save_status"),
             ),
             ui.column(
@@ -342,17 +338,20 @@ def edit_model_server(input, output, session):
             pickable=True,
         )
 
-        # v0.56.6: optional OSM-source overlay (sidecar shapefiles
-        # written by the v0.56.4 extenders next to the mesh shapefile).
+        # v0.56.17: per-reach OSM-source overlay layers + in-map legend
+        # widget (top-left) drives per-reach visibility toggles.
         layers = [layer]
+        extra_widgets = None
         shp_path = s.get("shp_path")
         if shp_path:
             sidecars = discover_osm_sidecars(shp_path)
-            show_osm = input.show_osm_overlay()
-            layers.extend(build_osm_overlay_layers(sidecars, visible=show_osm))
+            layers.extend(build_osm_overlay_layers(sidecars, visible=True))
+            osm_legend = build_osm_overlay_legend_widget(sidecars, placement="top-left")
+            if osm_legend is not None:
+                extra_widgets = [osm_legend]
 
         try:
-            await _widget.update(session, layers)
+            await _widget.update(session, layers, widgets=extra_widgets)
         except Exception:
             logger.exception("map update failed")
 

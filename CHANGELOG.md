@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.17] — 2026-05-02
+
+### Changed — OSM source overlay is now a per-reach legend widget (shiny-deckgl 1.9 layer_legend_widget)
+
+User: "instead of button show osm source geometry create a functional
+layer from the latest shiny-webgl version".
+
+The single "Show OSM source geometry" checkbox is replaced by an
+in-map ``layer_legend_widget`` that exposes per-reach toggles + color
+swatches. Uses ``shiny_deckgl.widgets.layer_legend_widget`` introduced
+in shiny-deckgl 1.9.
+
+Architectural changes:
+
+* ``build_osm_overlay_layers`` now emits **one deck.gl layer per
+  (reach, kind) pair** across all sidecars (``osm-Minija-polygons``,
+  ``osm-Babrungas-centerlines``, etc.) rather than one layer per
+  sidecar file. For example_minija_basin this produces 12 layers
+  (6 reaches × 2 kinds).
+* New ``build_osm_overlay_legend_widget`` emits a deck.gl widget
+  with one entry per layer — checkbox, color swatch, label.
+* Per-reach color palette: Minija orange, Babrungas blue, Salantas
+  purple, Salpe green, Veivirzas pink, Atmata red, CuronianLagoon
+  teal. Polygon swatches use ``shape="rect"``, centerlines use
+  ``shape="line"``.
+* Spatial / Setup / Edit Model panels now pass ``widgets=[osm_legend]``
+  to ``MapWidget.update()``. The obsolete ``show_osm_overlay`` checkbox
+  + ``_toggle_osm_overlay`` reactive effect are removed — visibility is
+  now driven entirely by the JS-side legend checkboxes.
+
+Verified via Playwright on laguna: legend renders top-left as a
+collapsible "OSM source layers" panel; expanding shows 11 reach
+entries (5 area + 5 centerline + 1 Veivirzas centerline) for
+example_minija_basin; toggling a checkbox hides/shows that reach
+instantly without a server round-trip.
+
+### Tests
+
+`tests/test_spatial_panel.py::TestBuildOsmOverlayLayers` rewritten
+to validate the new per-reach layer ids and legend-widget contract.
+4 cases pass:
+* empty input returns empty layers / None widget
+* per-reach × per-kind id generation
+* legend layer_id ↔ layer id 1:1 correspondence
+* polygon vs centerline swatch shape (rect vs line)
+
+15/15 spatial-panel tests pass.
+
 ## [0.56.16] — 2026-05-02
 
 ### Fixed — lower Minija + Atmata polygons clipped from the Šyša delta lump

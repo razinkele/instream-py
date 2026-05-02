@@ -11,6 +11,7 @@ Architecture:
 import logging
 import math
 
+import pandas as pd
 from shiny import module, reactive, render, ui
 
 
@@ -57,13 +58,10 @@ def spatial_ui():
             ui.input_checkbox("show_trips", "Show fish trails", value=True),
             ui.input_checkbox("show_heads", "Show fish icons", value=True),
             ui.input_checkbox("show_redds", "Show redds (egg nests)", value=True),
-            ui.input_checkbox(
-                "show_osm_overlay",
-                "Show OSM source geometry",
-                value=False,
-            ),
-            col_widths=(3, 3, 3, 3),
+            col_widths=(4, 4, 4),
         ),
+        # OSM source layers are exposed via the in-map "OSM source layers"
+        # legend widget (top-left) — per-reach toggles + color swatches.
         ui.input_slider(
             "trail_width",
             "Trail width (px)",
@@ -197,12 +195,14 @@ def spatial_server(input, output, session, results_rv):
                 show_redds = input.show_redds()
             redds_layer = _build_redds_layer(results, visible=show_redds)
 
-            # OSM-source overlays (v0.56.5+): one geojson_layer per
-            # `*-osm-*.shp` sidecar discovered alongside the mesh
-            # shapefile. Off by default; toggled via the checkbox.
-            with reactive.isolate():
-                show_osm = input.show_osm_overlay()
-            osm_layers = _build_osm_overlay_layers(results, visible=show_osm)
+            # OSM-source overlays (v0.56.17+): one layer per (reach, kind)
+            # group across all `*-osm-*.shp` sidecars. Each layer has a
+            # stable id (osm-<reach>-<polygons|centerlines>) so the in-map
+            # ``layer_legend_widget`` can toggle each reach independently.
+            sidecars = (results or {}).get("osm_sidecars") or {}
+            osm_layers = build_osm_overlay_layers(sidecars, visible=True)
+            osm_legend = build_osm_overlay_legend_widget(sidecars, placement="top-left")
+            extra_widgets = [osm_legend] if osm_legend is not None else None
 
             # Send cells + redds + OSM overlays together; _update_trips
             # handles trips after _cells_sent becomes True.
@@ -210,6 +210,7 @@ def spatial_server(input, output, session, results_rv):
                 session,
                 [cells_layer, redds_layer, *osm_layers],
                 animate=True,
+                widgets=extra_widgets,
             )
             _last_cells_layer.set(cells_layer)
             _last_redds_layer.set(redds_layer)
@@ -242,33 +243,10 @@ def spatial_server(input, output, session, results_rv):
             logger.exception("Error updating redds layer")
 
     # ------------------------------------------------------------------
-    # OSM OVERLAY VISIBILITY — full widget.update on flip
-    # ------------------------------------------------------------------
-    # v0.56.10: was partial_update with new `visible` prop, but in some
-    # browser/version combos the patched layer never rebound the data
-    # buffer when going from invisible→visible. Doing a full update with
-    # the cached cells+redds layers reliably rebuilds the stack.
-    @reactive.effect
-    async def _toggle_osm_overlay():
-        widget = _widget()
-        if widget is None or not _cells_sent():
-            return
-        results = results_rv()
-        if results is None:
-            return
-        show = input.show_osm_overlay()
-        try:
-            cells_layer = _last_cells_layer()
-            redds_layer = _last_redds_layer()
-            osm_layers = _build_osm_overlay_layers(results, visible=show)
-            stack = [lyr for lyr in (cells_layer, redds_layer) if lyr is not None]
-            stack.extend(osm_layers)
-            await widget.update(session, stack, animate=False)
-        except Exception as e:
-            if "SilentException" in type(e).__name__:
-                return
-            logger.exception("Error updating OSM overlay layers")
-
+    # OSM overlay visibility is now driven from the in-map legend widget
+    # (deck.gl `layer_legend_widget`, top-left). No server-side reactive
+    # effect needed — clicking a checkbox in the legend toggles the
+    # corresponding deck.gl layer's visibility on the JS client.
     # ------------------------------------------------------------------
     # CELL RE-COLORING — partial_update when color_var changes
     # ------------------------------------------------------------------
@@ -449,58 +427,155 @@ def _build_redds_layer(results, visible: bool = True):
     )
 
 
-def build_osm_overlay_layers(sidecars: dict, visible: bool = False) -> list:
-    """Render the OSM-source sidecar shapefiles as map overlay layers.
+# Per-reach palette for the OSM-overlay layers. Each reach gets a
+# distinct color across both polygon (fill) and centerline (stroke)
+# layers so the legend swatches read well. Reaches not in this map use
+# the fallback color (orange/red).
+_REACH_COLORS = {
+    "Minija":         {"fill": [255, 140,   0, 170], "stroke": [200,  50,   0, 255]},
+    "Babrungas":      {"fill": [ 30, 144, 255, 170], "stroke": [  0,  80, 200, 255]},
+    "Salantas":       {"fill": [148, 103, 189, 170], "stroke": [ 80,  40, 130, 255]},
+    "Salpe":          {"fill": [ 44, 160,  44, 170], "stroke": [ 20, 100,  20, 255]},
+    "Veivirzas":      {"fill": [227, 119, 194, 170], "stroke": [180,  60, 130, 255]},
+    "Atmata":         {"fill": [220,  20,  60, 170], "stroke": [140,   0,  20, 255]},
+    "CuronianLagoon": {"fill": [ 70, 200, 230, 130], "stroke": [ 30, 120, 170, 255]},
+}
+_FALLBACK_COLOR = {"fill": [255, 140, 0, 170], "stroke": [200, 50, 0, 255]}
 
-    v0.56.4 fixtures emit `*-osm-{polygons,centerlines}.shp` files
-    alongside the cell mesh, preserving the original OSM input geometry
-    used to generate the cells. Polygon sidecars render as a thin
-    transparent fill so users can see whether the cells fully cover the
-    real river polygon shape; centerline sidecars render as a bright
-    contrasting line so the OSM waterway path is visible at any zoom.
 
-    Returns one ``geojson_layer`` per sidecar found, in the order
-    ``simulation.discover_osm_sidecars`` produced them. Empty list when
-    no sidecars exist (older fixtures or non-WGBAST examples).
+def _reach_layer_id(reach: str, kind: str) -> str:
+    """Stable layer id used by the layer-legend widget for visibility toggles."""
+    return f"osm-{reach}-{kind}"
+
+
+def _reach_label(reach: str, kind: str) -> str:
+    """Human-readable label shown in the in-map legend widget."""
+    pretty = {"polygons": "area", "centerlines": "centerline"}[kind]
+    return f"{reach} ({pretty})"
+
+
+def build_osm_overlay_layers(sidecars: dict, visible: bool = True) -> list:
+    """Render the OSM-source sidecar shapefiles as **per-reach** overlay layers.
+
+    Each ``REACH_NAME`` value across all sidecars produces TWO deck.gl
+    layers — one for its polygons and one for its centerlines — with a
+    stable id (``osm-<reach>-<kind>``) so the in-map ``layer_legend_widget``
+    can toggle each reach independently. Per-reach colors come from
+    ``_REACH_COLORS``; layers default to ``visible=True`` because the
+    legend widget controls visibility from the client side.
+
+    Z-order: emit centerlines first and polygons last so polygons render
+    on top (avoids the v0.56.14 problem where 3 px magenta centerlines
+    hid the polygon stroke for thin streams).
     """
     if not sidecars:
         return []
 
-    # Bright, contrasting palette: polygons render as semi-opaque orange
-    # fills with bold red-orange strokes; centerlines render as solid
-    # magenta strokes. Designed to stand out against viridis-coloured
-    # cells (mostly green/yellow/blue) and the light basemap.
-    #
-    # Z-order: emit centerlines FIRST and polygons LAST so the polygon
-    # fills + strokes render on top of the magenta centerline. For thin
-    # rivers (Lithuanian small streams ~5-10 m wide) the polygon stroke
-    # exactly co-located with a 3 px centerline would otherwise be hidden.
+    # Group features by (REACH_NAME, kind) across all sidecars so each
+    # reach gets one polygon layer + one centerline layer regardless of
+    # which sidecar file the rows come from.
+    import geopandas as _gpd
+    grouped: dict = {}
+    for stem, gdf in sidecars.items():
+        kind = "polygons" if "-polygons" in stem else "centerlines"
+        if "REACH_NAME" not in gdf.columns:
+            continue
+        for reach, sub in gdf.groupby("REACH_NAME"):
+            key = (str(reach), kind)
+            existing = grouped.get(key)
+            if existing is None:
+                grouped[key] = sub.copy()
+            else:
+                grouped[key] = _gpd.GeoDataFrame(
+                    pd.concat([existing, sub], ignore_index=True),
+                    geometry="geometry",
+                    crs=existing.crs,
+                )
+
     centerline_layers = []
     polygon_layers = []
-    for stem, gdf in sidecars.items():
-        is_polygon = "-polygons" in stem
-        if is_polygon:
-            kwargs = {
-                "getFillColor": [255, 140, 0, 160],   # bright orange, ~63% alpha
-                "getLineColor": [200, 50, 0, 255],    # solid red-orange
-                "lineWidthMinPixels": 3,
-                "stroked": True,
-                "filled": True,
-            }
+    for (reach, kind), sub_gdf in grouped.items():
+        colors = _REACH_COLORS.get(reach, _FALLBACK_COLOR)
+        if kind == "polygons":
             polygon_layers.append(
-                geojson_layer(f"osm-{stem}", gdf, visible=visible, pickable=False, **kwargs)
+                geojson_layer(
+                    _reach_layer_id(reach, kind),
+                    sub_gdf,
+                    visible=visible,
+                    pickable=False,
+                    getFillColor=colors["fill"],
+                    getLineColor=colors["stroke"],
+                    lineWidthMinPixels=3,
+                    stroked=True,
+                    filled=True,
+                )
             )
         else:
-            kwargs = {
-                "getLineColor": [220, 0, 120, 230],   # magenta
-                "lineWidthMinPixels": 3,
-                "stroked": True,
-                "filled": False,
-            }
             centerline_layers.append(
-                geojson_layer(f"osm-{stem}", gdf, visible=visible, pickable=False, **kwargs)
+                geojson_layer(
+                    _reach_layer_id(reach, kind),
+                    sub_gdf,
+                    visible=visible,
+                    pickable=False,
+                    getLineColor=colors["stroke"],
+                    lineWidthMinPixels=3,
+                    stroked=True,
+                    filled=False,
+                )
             )
     return centerline_layers + polygon_layers
+
+
+def build_osm_overlay_legend_widget(sidecars: dict, *, placement: str = "top-left") -> dict | None:
+    """Build a ``layer_legend_widget`` listing one entry per reach layer.
+
+    Returns ``None`` when there are no sidecars (so the caller can skip
+    the widget entirely). Entries are constructed manually rather than
+    relying on auto-introspect — this keeps swatch colors aligned with
+    the layer styling and labels human-friendly.
+    """
+    from shiny_deckgl import layer_legend_widget
+
+    if not sidecars:
+        return None
+
+    # Walk sidecars in the same way build_osm_overlay_layers does to get
+    # the same (reach, kind) keyset; this guarantees the legend's layer_id
+    # entries match real layer ids in the deck.
+    seen: dict = {}
+    for stem, gdf in sidecars.items():
+        kind = "polygons" if "-polygons" in stem else "centerlines"
+        if "REACH_NAME" not in gdf.columns:
+            continue
+        for reach in gdf["REACH_NAME"].unique():
+            seen.setdefault((str(reach), kind), True)
+    if not seen:
+        return None
+
+    entries = []
+    for (reach, kind) in seen:
+        colors = _REACH_COLORS.get(reach, _FALLBACK_COLOR)
+        if kind == "polygons":
+            entries.append({
+                "layer_id": _reach_layer_id(reach, kind),
+                "label": _reach_label(reach, kind),
+                "color": colors["fill"],
+                "shape": "rect",
+            })
+        else:
+            entries.append({
+                "layer_id": _reach_layer_id(reach, kind),
+                "label": _reach_label(reach, kind),
+                "color": colors["stroke"],
+                "shape": "line",
+            })
+    return layer_legend_widget(
+        entries=entries,
+        placement=placement,
+        title="OSM source layers",
+        show_checkbox=True,
+        collapsed=True,
+    )
 
 
 def _build_osm_overlay_layers(results, visible: bool = False) -> list:
