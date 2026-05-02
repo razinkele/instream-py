@@ -48,6 +48,7 @@ TRIPS_COLOR_MODES = {
 @module.ui
 def spatial_ui():
     return ui.card(
+        LEGEND_POINTER_EVENTS_FIX,
         ui.card_header("Spatial View"),
         ui.layout_columns(
             ui.input_select("color_var", "Cells color:", choices=COLORING_VARS),
@@ -526,6 +527,23 @@ def build_osm_overlay_layers(sidecars: dict, visible: bool = True) -> list:
     return centerline_layers + polygon_layers
 
 
+# CSS fix for shiny-deckgl 1.9.2: the widget container hierarchy
+# (.deck-widget-container > .top-left/...) sets pointer-events:none so
+# the underlying map can be dragged through the empty corner area, but
+# `.deck-widget` itself doesn't opt back in to pointer-events:auto. As
+# a result, all clicks on the legend widget header / checkboxes are
+# silently dropped. We inject this rule once per panel.
+LEGEND_POINTER_EVENTS_FIX = ui.tags.style("""
+.deck-widget-container,
+.deck-widget-container .top-left,
+.deck-widget-container .top-right,
+.deck-widget-container .bottom-left,
+.deck-widget-container .bottom-right { pointer-events: none; }
+.deck-widget,
+.deck-widget * { pointer-events: auto !important; }
+""")
+
+
 def build_osm_overlay_legend_widget(sidecars: dict, *, placement: str = "top-left") -> dict | None:
     """Build a ``layer_legend_widget`` listing one entry per reach layer.
 
@@ -574,7 +592,7 @@ def build_osm_overlay_legend_widget(sidecars: dict, *, placement: str = "top-lef
         placement=placement,
         title="OSM source layers",
         show_checkbox=True,
-        collapsed=True,
+        collapsed=False,
     )
 
 

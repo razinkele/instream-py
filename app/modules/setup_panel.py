@@ -187,7 +187,9 @@ def setup_ui():
     }
     """
 
+    from modules.spatial_panel import LEGEND_POINTER_EVENTS_FIX
     return ui.card(
+        LEGEND_POINTER_EVENTS_FIX,
         ui.tags.style(_SETUP_CSS),
         ui.card_header("Setup Review",
                        style="padding:0.3rem 0.75rem; font-size:0.95rem;"),

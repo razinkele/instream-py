@@ -153,7 +153,9 @@ def edit_model_ui():
             {"type": "fullscreen", "position": "top-right"},
         ],
     )
+    from modules.spatial_panel import LEGEND_POINTER_EVENTS_FIX
     return ui.div(
+        LEGEND_POINTER_EVENTS_FIX,
         ui.row(
             ui.column(
                 4,

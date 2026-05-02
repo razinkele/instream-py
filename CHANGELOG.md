@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.18] — 2026-05-02
+
+### Fixed — OSM source layers legend widget was unclickable (CSS pointer-events bug)
+
+User: "somehow the layers widget is closed and disfunctional. use
+debugging skill for that".
+
+Diagnosis (Playwright DOM inspection on the live laguna deploy):
+
+* Widget DOM rendered correctly (11 rows, 11 checkboxes, all checked,
+  all 12 deck.gl layers `visible: true`).
+* Body was `display: none` — collapsed at startup (was `collapsed=True`).
+* Header/checkbox real-mouse clicks were silently dropped because
+  shiny-deckgl 1.9.2's `.deck-widget` class doesn't set
+  `pointer-events: auto`. The widget container hierarchy
+  (`.deck-widget-container > .top-left/...`) sets `pointer-events:
+  none` so the underlying map can be dragged through empty corner
+  area, but `.deck-widget` itself never opts back in.
+* Confirmed via parent-chain walk: every ancestor of the legend
+  button reported `pointer-events: none`, only the bottom
+  `maplibregl-control-container` had `auto`.
+
+Fix:
+
+* Inject CSS into all 3 panels' UI: `.deck-widget` and descendants
+  get `pointer-events: auto !important`, restoring clickability while
+  the corner containers keep `pointer-events: none` so map drag
+  through empty corners still works.
+* Open the widget by default (`collapsed=False`) so users see all
+  reach toggles immediately — no hidden header click required.
+
+End-to-end verification via Playwright on laguna: clicking
+"Minija (centerline)" checkbox toggled `osm-Minija-centerlines.visible`
+from `true` to `false` on the deck.gl layer, confirming the JS-side
+visibility patch path works correctly once the CSS fix lets clicks
+through.
+
 ## [0.56.17] — 2026-05-02
 
 ### Changed — OSM source overlay is now a per-reach legend widget (shiny-deckgl 1.9 layer_legend_widget)
