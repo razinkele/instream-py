@@ -469,9 +469,14 @@ def build_osm_overlay_layers(sidecars: dict, visible: bool = False) -> list:
     # Bright, contrasting palette: polygons render as semi-opaque orange
     # fills with bold red-orange strokes; centerlines render as solid
     # magenta strokes. Designed to stand out against viridis-coloured
-    # cells (mostly green/yellow/blue) and the light basemap. Earlier
-    # blues blended with the cells and were missed entirely.
-    layers = []
+    # cells (mostly green/yellow/blue) and the light basemap.
+    #
+    # Z-order: emit centerlines FIRST and polygons LAST so the polygon
+    # fills + strokes render on top of the magenta centerline. For thin
+    # rivers (Lithuanian small streams ~5-10 m wide) the polygon stroke
+    # exactly co-located with a 3 px centerline would otherwise be hidden.
+    centerline_layers = []
+    polygon_layers = []
     for stem, gdf in sidecars.items():
         is_polygon = "-polygons" in stem
         if is_polygon:
@@ -482,23 +487,20 @@ def build_osm_overlay_layers(sidecars: dict, visible: bool = False) -> list:
                 "stroked": True,
                 "filled": True,
             }
+            polygon_layers.append(
+                geojson_layer(f"osm-{stem}", gdf, visible=visible, pickable=False, **kwargs)
+            )
         else:
             kwargs = {
-                "getLineColor": [220, 0, 120, 230],   # magenta — won't clash with the orange fill
+                "getLineColor": [220, 0, 120, 230],   # magenta
                 "lineWidthMinPixels": 3,
                 "stroked": True,
                 "filled": False,
             }
-        layers.append(
-            geojson_layer(
-                f"osm-{stem}",
-                gdf,
-                visible=visible,
-                pickable=False,
-                **kwargs,
+            centerline_layers.append(
+                geojson_layer(f"osm-{stem}", gdf, visible=visible, pickable=False, **kwargs)
             )
-        )
-    return layers
+    return centerline_layers + polygon_layers
 
 
 def _build_osm_overlay_layers(results, visible: bool = False) -> list:

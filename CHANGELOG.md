@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.14] — 2026-05-02
+
+### Added — Lithuanian GDR50 topographic river polygons (mariosupes.gpkg)
+
+User: "use C:\\Users\\arturas.baziukas\\Documents\\mariosupes.gpkg as
+main source for minija basin." This file is a Lithuanian GDR50
+topographic database extract with 547 hydrographic polygons covering
+the Minija basin and adjacent watersheds.
+
+New script ``scripts/_build_minija_sidecar_from_mariosupes.py``:
+
+* Reads the ``landuse`` layer (GKODAS=hd1 = river polygons,
+  GKODAS=hd5 = lakes/reservoirs).
+* Filters to the basin reaches (Minija, Babrungas, Salantas, Šalpė,
+  Curonian Lagoon by name; Atmata by spatial bbox since it's
+  unnamed in the source).
+* Writes ``MinijaBasinExample-gdr50-osm-polygons.shp`` (15 polygons:
+  3 Minija + 3 Babrungas + 3 Salantas + 1 Šalpė + 3 Atmata +
+  2 Curonian Lagoon).
+* Removes the obsolete v0.56.4 OSM polygon sidecars
+  (mainstem-osm-polygons, tributaries-osm-polygons) and the v0.56.13
+  DSM-derived sidecar — superseded by the GDR50 source.
+
+Coverage now extends across the WHOLE basin, not just the parts where
+OSM happened to have polygons. The Minija main-stem polygon (1.21
+km², ~190 km long) follows real river morphology with proper meanders.
+The Curonian Lagoon polygon (399 km²) covers the entire lagoon.
+
+Veiviržas is **not** in mariosupes.gpkg under any spelling — keeping
+the existing OSM-derived centerline-only coverage for it.
+
+### Changed — z-order in build_osm_overlay_layers
+
+Centerlines render first, polygons render on top. For thin Lithuanian
+streams (~5-10 m wide) the polygon stroke would otherwise be hidden
+under the 3 px magenta centerline. Verified via Playwright at zoom 11
+on the upper Minija — orange polygon now traces the real river path.
+
 ## [0.56.13] — 2026-05-01
 
 ### Added — DSM-derived river polygons (gis-hydro-mcp pipeline)
