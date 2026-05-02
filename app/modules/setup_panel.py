@@ -13,7 +13,7 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
-from shiny_deckgl.controls import legend_control
+# legend_control removed in v0.56.20 — see spatial_panel.py for rationale
 from simulation import _value_to_rgba, discover_osm_sidecars
 from modules.spatial_panel import build_osm_overlay_layers, build_osm_overlay_legend_widget
 
@@ -118,7 +118,6 @@ def setup_ui():
         controls=[
             {"type": "navigation", "position": "top-right"},
             {"type": "fullscreen", "position": "top-right"},
-            legend_control(position="bottom-left", show_default=False, show_checkbox=True),
         ],
         tooltip={
             "html": ("<b>{cell_id}</b><br/>Reach: {reach}<br/>"

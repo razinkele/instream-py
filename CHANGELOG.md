@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.20] — 2026-05-02
+
+### Fixed — `TypeError: Cannot read properties of undefined (reading 'layers')` on map fitBounds
+
+User pasted browser console showing the error firing on every
+fitBounds. Stack trace pinpointed
+``ql.updateLegendControl (index.ts:243:21)`` — the **MapLibre**
+``legend_control(...)`` widget (separate from the new deck.gl
+``layer_legend_widget``).
+
+The MapLibre legend control reads ``map.style.layers`` to build its
+basemap-layer toggle list. Under fitBounds, MapLibre fires events
+before the style has finished loading, so the control sees
+``style === undefined`` and crashes.
+
+The control is also redundant since v0.56.17 — the deck.gl
+``layer_legend_widget`` provides per-reach OSM toggles, which is
+what the user actually needs. The MapLibre control was for basemap
+layers (which we don't toggle).
+
+Removed ``legend_control(...)`` from the ``controls=[...]`` list in
+all three panels (spatial / setup / create_model) along with the
+``from shiny_deckgl.controls import legend_control`` import.
+
+Verified via Playwright: layer_legend_widget still renders open with
+all 11 reach toggles; 12 deck.gl layers active; no console error
+on fitBounds (only the cosmetic favicon 404 remains).
+
 ## [0.56.19] — 2026-05-02
 
 ### Fixed — `plotly-2.35.2.min.js: 404` console error (`www/` not served)

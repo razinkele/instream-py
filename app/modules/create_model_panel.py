@@ -20,7 +20,7 @@ from shapely.ops import unary_union
 from shiny import module, reactive, render, ui
 
 from shiny_deckgl import MapWidget, geojson_layer
-from shiny_deckgl.controls import legend_control
+# legend_control removed in v0.56.20 — see spatial_panel.py for rationale
 
 # Optional imports — modules may not exist yet during early development
 try:
@@ -182,7 +182,6 @@ def create_model_ui():
         controls=[
             {"type": "navigation", "position": "top-right"},
             {"type": "fullscreen", "position": "top-right"},
-            legend_control(position="bottom-left", show_default=False, show_checkbox=True),
         ],
         tooltip={
             "html": "<b>{nameText}</b><br/>Strahler: {STRAHLER}<br/>Type: {waterway}",

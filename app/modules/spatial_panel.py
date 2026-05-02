@@ -21,7 +21,10 @@ from shiny_deckgl import (
     scatterplot_layer,
     trips_layer,
 )
-from shiny_deckgl.controls import legend_control
+# legend_control removed in v0.56.20 — replaced by `layer_legend_widget`
+# for per-reach toggles. The old MapLibre legend_control crashed with
+# "Cannot read properties of undefined (reading 'layers')" when
+# fitBounds fired before the MapLibre style had loaded.
 
 # Light basemap with labels for readability
 BASEMAP_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
@@ -146,7 +149,6 @@ def spatial_server(input, output, session, results_rv):
             controls=[
                 {"type": "navigation", "position": "top-right"},
                 {"type": "fullscreen", "position": "top-right"},
-                legend_control(position="bottom-left", show_default=False, show_checkbox=True),
             ],
             tooltip={
                 "html": "<b>{cell_id}</b><br/>{_tooltip_var}: {_tooltip_val}",
