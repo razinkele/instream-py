@@ -58,10 +58,24 @@ SPATIAL_REACHES = [
     # We don't have an OSM centerline for Atmata, so use a bbox here.
 ]
 ATMATA_BBOX = (21.20, 55.27, 21.50, 55.39)  # Lankupiai → Drevernai branch
-# Šyša is a HUGE delta polygon (74 km²) that touches the Minija mouth
-# but covers the whole Klaipėda-Šilutė delta — too coarse to label as
-# Minija. Skip it.
-DROP_BY_NAME = {"Šyša"}
+# Šyša in GDR50 is a single 74 km² polygon that covers the entire
+# Klaipėda-Šilutė delta — including the lower Minija (south of
+# Lankupiai 55.34°N) AND the Atmata branch. Plain inclusion would
+# add the entire delta as one reach; instead we CLIP Šyša to each
+# reach's centerline / bbox buffer so we get only the river-relevant
+# area. Same logic applies to other delta lump polygons we discover.
+SYSA_NAME = "Šyša"
+SYSA_CLIP_BUFFER_M = 250
+SYSA_CLIP_TARGETS = [
+    # (reach_name, centerline_shp_path | None, bbox | None)
+    ("Minija",
+     ROOT / "tests/fixtures/example_minija_basin/Shapefile"
+     / "MinijaBasinExample-mainstem-osm-centerlines.shp",
+     None),
+    ("Atmata",
+     None,
+     ATMATA_BBOX),
+]
 
 
 def main() -> None:
@@ -96,9 +110,12 @@ def main() -> None:
         cl = gpd.read_file(centerline_shp).to_crs(epsg=32634)
         cl_buf = cl.geometry.union_all().buffer(CENTERLINE_BUFFER_M)
         cl_buf_4326 = gpd.GeoSeries([cl_buf], crs="EPSG:32634").to_crs(4326).iloc[0]
+        # Exclude Šyša from raw inclusion — it's a 74 km² delta lump
+        # that we instead clip in pass 4. Including it raw here would
+        # add the entire Klaipėda-Šilutė delta as a single Minija polygon.
         candidates = g[
             (g["GKODAS"] == "hd1")
-            & (~g["VARDAS"].astype(str).isin(DROP_BY_NAME))
+            & (g["VARDAS"].astype(str) != SYSA_NAME)
             & (~g.index.isin(used_idx))
             & g.geometry.intersects(cl_buf_4326)
         ]
@@ -124,6 +141,43 @@ def main() -> None:
         print(f"      [Atmata] {len(candidates)} unnamed hd1 polygons in spatial bbox")
     else:
         print(f"      [Atmata] 0 unnamed hd1 polygons in spatial bbox {ATMATA_BBOX}")
+
+    # Pass 4 — Šyša-clipping: the 74 km² Šyša polygon contains the lower
+    # Minija + Atmata + entire delta. Clip it to each target reach's
+    # centerline buffer / bbox so the relevant river-segments are
+    # captured without dragging in the Šilutė area.
+    sysa_polys = g[g["VARDAS"] == SYSA_NAME]
+    if not sysa_polys.empty:
+        sysa_union = sysa_polys.geometry.union_all()
+        for reach_name, centerline_shp, bbox_tuple in SYSA_CLIP_TARGETS:
+            if centerline_shp is not None and centerline_shp.exists():
+                cl = gpd.read_file(centerline_shp).to_crs(epsg=32634)
+                clip_geom_utm = cl.geometry.union_all().buffer(SYSA_CLIP_BUFFER_M)
+                clip_geom = gpd.GeoSeries([clip_geom_utm], crs="EPSG:32634").to_crs(4326).iloc[0]
+            elif bbox_tuple is not None:
+                clip_geom = box(*bbox_tuple)
+            else:
+                continue
+            piece = sysa_union.intersection(clip_geom)
+            if piece.is_empty:
+                print(f"      [Šyša→{reach_name}] empty intersection — skipping")
+                continue
+            # piece may be Polygon or MultiPolygon — explode to individual polys.
+            if hasattr(piece, "geoms"):
+                parts = list(piece.geoms)
+            else:
+                parts = [piece]
+            n_added = 0
+            for p in parts:
+                if p.is_empty or not p.is_valid:
+                    continue
+                # filter out vanishingly small slivers (< 200 m²)
+                p_area = gpd.GeoSeries([p], crs=4326).to_crs(epsg=32634).iloc[0].area
+                if p_area < 200:
+                    continue
+                rows.append({"REACH_NAME": reach_name, "geometry": p})
+                n_added += 1
+            print(f"      [Šyša→{reach_name}] {n_added} clipped pieces added")
 
     if not rows:
         raise SystemExit("no polygons collected — aborting")

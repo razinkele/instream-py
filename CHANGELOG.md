@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.16] — 2026-05-02
+
+### Fixed — lower Minija + Atmata polygons clipped from the Šyša delta lump
+
+User: "lower reaches of minija and atmata are still not imported from
+GDR50". Root cause: the lower Minija (south of Lankupiai 55.34°N) and
+the entire Atmata branch are not stored as separate polygons in
+GDR50 — they're part of a single 74 km² polygon named ``Šyša`` that
+covers the whole Klaipėda-Šilutė delta. v0.56.15 dropped Šyša entirely
+because it was too coarse to label as one reach.
+
+v0.56.16 instead **clips Šyša** to each reach's centerline / bbox so
+only the river-relevant portion is kept:
+
+* Šyša ∩ (OSM Minija centerline buffer 250 m) → 2 polygons added to
+  Minija reach (the lower stem from Lankupiai to the lagoon mouth).
+* Šyša ∩ (Atmata bbox 21.20–21.50, 55.27–55.39) → 2 polygons added
+  to Atmata reach (the Lankupiai → Drevernai branch network).
+
+Slivers under 200 m² are filtered out.
+
+Total now: **31 polygons** (was 27 in v0.56.15) with reach
+breakdown: Minija 17, Atmata 5, Babrungas 3, Salantas 3, Šalpė 1,
+CuronianLagoon 2.
+
+Verified via Playwright at zoom 13 over the lower-Minija + Atmata
+area: orange polygons trace the lower Minija coming down from Priekulė
+into the delta network around Kintai/Šilutė, with Atmata branches
+visible.
+
 ## [0.56.15] — 2026-05-02
 
 ### Fixed — full Minija main-stem polygon coverage (was missing the lower 35 km)
