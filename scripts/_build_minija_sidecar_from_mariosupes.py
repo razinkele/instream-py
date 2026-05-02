@@ -36,20 +36,32 @@ SRC = Path(r"C:\Users\arturas.baziukas\Documents\mariosupes.gpkg")
 OUT_DIR = ROOT / "tests" / "fixtures" / "example_minija_basin" / "Shapefile"
 TARGET_CRS_EPSG = 3035  # match rest of fixture
 
-# Reach name → list of patterns (case-insensitive substring) OR a bbox
-# tuple (lon_w, lat_s, lon_e, lat_n) for spatial-only matches.
+# Reaches matched by name (case-insensitive substring on VARDAS).
 REACH_NAMED = [
-    ("Minija",         "Minija"),
     ("Babrungas",      "Babrungas"),
     ("Salantas",       "Salantas"),
     ("Salpe",          "Šalpė"),                # YAML uses Salpe (no diacritic)
     ("CuronianLagoon", "KURŠIŲ MARIOS"),
 ]
-# Atmata is not named in mariosupes.gpkg. The unnamed 0.4 km² polygon
-# at lon 21.292-21.374, lat 55.577-55.670 (row 365 of the source) is
-# spatially the Atmata branch by location. We accept any unnamed hd1
-# polygon intersecting the Atmata bbox.
+# Reaches matched by SPATIAL overlap with an existing OSM centerline
+# sidecar. GDR50 (mariosupes.gpkg) doesn't tag the lower Minija as
+# "Minija" — it segments it under "Piktvardė", "Šyša", and unnamed hd1
+# channels at Lankupiai/Drevernai. Filtering by intersection with the
+# OSM Minija centerline buffer (250 m) catches all those segments
+# regardless of name. Same trick gets the Atmata branch.
+CENTERLINE_BUFFER_M = 250
+SPATIAL_REACHES = [
+    ("Minija",
+     ROOT / "tests/fixtures/example_minija_basin/Shapefile"
+     / "MinijaBasinExample-mainstem-osm-centerlines.shp"),
+    # Atmata: spatial overlap with the Lankupiai-Drevernai bbox area.
+    # We don't have an OSM centerline for Atmata, so use a bbox here.
+]
 ATMATA_BBOX = (21.20, 55.27, 21.50, 55.39)  # Lankupiai → Drevernai branch
+# Šyša is a HUGE delta polygon (74 km²) that touches the Minija mouth
+# but covers the whole Klaipėda-Šilutė delta — too coarse to label as
+# Minija. Skip it.
+DROP_BY_NAME = {"Šyša"}
 
 
 def main() -> None:
@@ -60,30 +72,56 @@ def main() -> None:
     print(f"      total: {len(g)} polygons in EPSG:3346 (reprojected to 4326)")
 
     rows = []
-    # Preserve None/NaN in VARDAS so the unnamed-polygon filter below
-    # works correctly (str.contains on NaN produces NaN with na=False
-    # → False, so name-match still skips them).
+    used_idx: set = set()  # avoid double-assigning a polygon to two reaches
+
+    # Pass 1 — name match
     for reach_name, pattern in REACH_NAMED:
         mask = g["VARDAS"].astype(str).str.contains(pattern, case=False, na=False, regex=False)
         n = int(mask.sum())
         if n == 0:
             print(f"      [{reach_name}] 0 polygons matching '{pattern}'")
             continue
-        for _, prow in g.loc[mask].iterrows():
+        for idx, prow in g.loc[mask].iterrows():
             rows.append({"REACH_NAME": reach_name, "geometry": prow.geometry})
+            used_idx.add(idx)
         print(f"      [{reach_name}] {n} polygons matching '{pattern}'")
 
-    # Atmata — spatial intersection (no name in source). Match any hd1
-    # river polygon that's nameless (VARDAS isna OR empty string) and
-    # intersects the Lankupiai-Drevernai bbox.
+    # Pass 2 — spatial overlap with OSM centerlines (catches the lower
+    # Minija segments named Piktvardė, M-1, M-2, etc. in GDR50, plus
+    # unnamed hd1 channels at Lankupiai/Drevernai).
+    for reach_name, centerline_shp in SPATIAL_REACHES:
+        if not centerline_shp.exists():
+            print(f"      [{reach_name}] missing centerline {centerline_shp.name}")
+            continue
+        cl = gpd.read_file(centerline_shp).to_crs(epsg=32634)
+        cl_buf = cl.geometry.union_all().buffer(CENTERLINE_BUFFER_M)
+        cl_buf_4326 = gpd.GeoSeries([cl_buf], crs="EPSG:32634").to_crs(4326).iloc[0]
+        candidates = g[
+            (g["GKODAS"] == "hd1")
+            & (~g["VARDAS"].astype(str).isin(DROP_BY_NAME))
+            & (~g.index.isin(used_idx))
+            & g.geometry.intersects(cl_buf_4326)
+        ]
+        for idx, prow in candidates.iterrows():
+            rows.append({"REACH_NAME": reach_name, "geometry": prow.geometry})
+            used_idx.add(idx)
+        print(f"      [{reach_name}] {len(candidates)} additional hd1 polygons "
+              f"within {CENTERLINE_BUFFER_M} m of {centerline_shp.stem}")
+
+    # Pass 3 — Atmata: nameless hd1 polygons in the Lankupiai-Drevernai bbox.
     atmata_box = box(*ATMATA_BBOX)
     nameless = g["VARDAS"].isna() | (g["VARDAS"].astype(str).str.strip() == "")
-    unnamed_river = g[(g["GKODAS"] == "hd1") & nameless]
-    in_box = unnamed_river[unnamed_river.geometry.intersects(atmata_box)]
-    if not in_box.empty:
-        for _, prow in in_box.iterrows():
+    candidates = g[
+        (g["GKODAS"] == "hd1")
+        & nameless
+        & (~g.index.isin(used_idx))
+        & g.geometry.intersects(atmata_box)
+    ]
+    if not candidates.empty:
+        for idx, prow in candidates.iterrows():
             rows.append({"REACH_NAME": "Atmata", "geometry": prow.geometry})
-        print(f"      [Atmata] {len(in_box)} unnamed hd1 polygons in spatial bbox")
+            used_idx.add(idx)
+        print(f"      [Atmata] {len(candidates)} unnamed hd1 polygons in spatial bbox")
     else:
         print(f"      [Atmata] 0 unnamed hd1 polygons in spatial bbox {ATMATA_BBOX}")
 

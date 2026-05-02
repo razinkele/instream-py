@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.15] — 2026-05-02
+
+### Fixed — full Minija main-stem polygon coverage (was missing the lower 35 km)
+
+User: "lagoon is ok, but minija itself is not displayed". v0.56.14
+matched only by name (``VARDAS=Minija``) which gave 3 polygons, but
+GDR50 segments the lower river under different names — Piktvardė
+(row 445, 1.06 km²) covers Vežaičiai → Lankupiai, plus M-1/M-2/M-3
+(numbered tributary aliases) and several unnamed hd1 channels.
+
+``_build_minija_sidecar_from_mariosupes.py`` now does a 3-pass
+collection:
+
+1. **Name match** for Babrungas / Salantas / Šalpė / KURŠIŲ MARIOS.
+2. **Spatial overlap** with the OSM Minija centerline within 250 m
+   buffer — captures all hd1 channels on the Minija path regardless
+   of their GDR50 name. Adds 15 polygons for the Minija reach
+   (Piktvardė + M-1/2/3 + Neknupis + several unnamed channels +
+   the named Minija segments).
+3. **Spatial bbox** for Atmata (Lankupiai-Drevernai area, unnamed
+   in source).
+
+Total: 27 polygons (was 15 in v0.56.14).
+
+The Šyša polygon (74 km², spans the entire Klaipėda-Šilutė delta) is
+explicitly excluded — too coarse to label as part of any single reach.
+
+Verified via Playwright at zoom 11: orange polygon now traces the
+full Minija from upper basin (Priekulė area) through Šventvakiai →
+Daugmaliai → Lankupiai → Bendalai. No more missing lower-stem gap.
+
 ## [0.56.14] — 2026-05-02
 
 ### Added — Lithuanian GDR50 topographic river polygons (mariosupes.gpkg)
