@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.56.19] — 2026-05-02
+
+### Fixed — `plotly-2.35.2.min.js: 404` console error (`www/` not served)
+
+User reported the browser console error
+``Refused to execute script from '...plotly-2.35.2.min.js' because
+its MIME type ('text/plain') is not executable``. Root cause: Shiny
+for Python (unlike Shiny for R) does NOT auto-serve the ``app/www/``
+folder at any URL. The script tag ``<script src="plotly-2.35.2.min.js">``
+resolved to ``https://laguna.ku.lt/inSTREAMPY/plotly-2.35.2.min.js``
+which 404'd; nginx/Shiny served the 404 page as text/plain, and the
+browser's strict-MIME check refused to interpret it as JS.
+
+Fix in ``app/app.py``:
+
+* ``App(...)`` now passes ``static_assets={"/static": Path(__file__).parent / "www"}``
+  so the ``www/`` folder is mounted at ``/static``.
+* The plotly script tag now uses ``src="static/plotly-2.35.2.min.js"``.
+
+Verified via curl after deploy: HTTP 200 + ``Content-Type:
+text/javascript; charset=utf-8`` on the new URL. Verified via
+Playwright: ``window.Plotly.version === "2.35.2"``.
+
+Other console output noted but not fixed: bootstrap-datepicker
+DEPRECATED warnings (third-party noise), favicon.ico 404 (cosmetic).
+
 ## [0.56.18] — 2026-05-02
 
 ### Fixed — OSM source layers legend widget was unclickable (CSS pointer-events bug)

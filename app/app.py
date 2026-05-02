@@ -421,7 +421,7 @@ app_ui = ui.page_fluid(
         # Plotly self-hosted from app/www/ (CDN blocked by Edge/Firefox
         # tracking prevention on laguna deploy — see memory/CLAUDE.md).
         ui.tags.script(
-            src="plotly-2.35.2.min.js",
+            src="static/plotly-2.35.2.min.js",
             charset="utf-8",
         ),
         ui.tags.script(DASHBOARD_JS),
@@ -740,4 +740,12 @@ def server(input, output, session):
             ui.notification_show("Test failed: {}".format(err), type="error")
 
 
-app = App(app_ui, server)
+app = App(
+    app_ui,
+    server,
+    # Mount app/www/ at /static so `<script src="static/plotly-2.35.2.min.js">`
+    # resolves on both local dev and the laguna deploy. Without this,
+    # Shiny for Python doesn't serve the www/ folder at any URL (unlike
+    # Shiny for R), so plotly + similar self-hosted assets 404.
+    static_assets={"/static": str(Path(__file__).parent / "www")},
+)
