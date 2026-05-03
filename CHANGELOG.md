@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.2] - 2026-05-04
+
+Test-only follow-up to v0.57.1. Fixes 2 long-pre-existing failures in `tests/test_edit_model_panel_regenerate.py` that surfaced after the v0.57.0 fixture regen flipped Mörrumsån from EPSG:4326 to EPSG:3035. Same bug shape as the v0.57.0 fix to `test_balticcoast_geometric_adjacency_to_mouth`.
+
+### Fixed
+- **`test_regenerate_at_smaller_size_produces_more_cells` + `test_regenerate_re_expands_per_cell_csvs`**: both tests loaded the Mörrumsån fixture via raw `gpd.read_file` and passed the resulting `GeoDataFrame` straight to `generate_cells`. `create_model_grid.generate_cells` assumes EPSG:4326 input — it forces that CRS on the GDF (line 107) and computes UTM zone via `detect_utm_epsg(centroid.x, centroid.y)` interpreting raw coordinates as longitude/latitude. With post-v0.57.0 EPSG:3035 fixtures, the metric centroid (~5e6 m) was treated as longitude → bogus UTM zone (`EPSG:802286`, etc.) → `pyproj.exceptions.CRSError`. The production Edit Model regen path doesn't hit this because `_load_fixture` reprojects to EPSG:4326 before passing cells downstream. The tests bypass `_load_fixture` and so missed that normalisation. Both tests now reproject to EPSG:4326 immediately after `gpd.read_file`, mirroring `_load_fixture`'s contract. Verified end-to-end: `2 passed in 2367.84s`.
+
+No production code changes. The underlying assumption in `create_model_grid.generate_cells` (input must be EPSG:4326) is documented in the test comment for future maintainers; hardening the function itself to accept arbitrary projected CRS is a v0.58.0+ candidate (review item #16 in the 2026-05-03 plan).
+
 ## [0.57.1] - 2026-05-03
 
 Corrective patch on top of v0.57.0. The v0.57.0 fixture regen step (Sub-task 2 of the bug-fix plan) blindly iterated `RIVERS` in `scripts/_generate_wgbast_physical_domains.py`, which still listed `example_minija_basin`. Minija has its own dedicated build pipeline (v0.54.0–v0.56.16: GDR50 + DSM polygons + OSM 3-pass collection + Šyša delta clip + named tributaries), and the WGBAST waypoint generator can only produce a coarse 5-reach cookie-cutter — which silently overwrote the carefully-built 18,366-cell, 8-reach Minija fixture with a 3,979-cell, 5-reach degraded version.

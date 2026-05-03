@@ -21,6 +21,16 @@ def test_regenerate_at_smaller_size_produces_more_cells(tmp_path):
     shp = next((dst_root / "Shapefile").glob("*.shp"))
 
     cells = gpd.read_file(shp)
+    # v0.57.2: post-v0.57.0 fixtures ship in EPSG:3035 (LAEA Europe,
+    # metres). The production _regen_apply path goes through
+    # _load_fixture which reprojects to EPSG:4326 before passing cells
+    # to generate_cells. Mirror that here — generate_cells assumes
+    # EPSG:4326 input (it forces that CRS on the GDF at line 107 and
+    # then calls detect_utm_epsg on raw centroid x/y as if they were
+    # degrees). Without this reproject, the metric coords (~5e6 m)
+    # are interpreted as longitude → bogus UTM zone → CRSError.
+    if cells.crs is not None and str(cells.crs) != "EPSG:4326":
+        cells = cells.to_crs("EPSG:4326")
     n_before = len(cells)
     reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
     reaches_before = set(cells[reach_col].unique())
@@ -64,6 +74,11 @@ def test_regenerate_re_expands_per_cell_csvs(tmp_path):
     shp = next((dst / "Shapefile").glob("*.shp"))
 
     cells_before = gpd.read_file(shp)
+    # v0.57.2: reproject to EPSG:4326 to match what production
+    # _regen_apply receives via _load_fixture (see sister test for
+    # the longer rationale).
+    if cells_before.crs is not None and str(cells_before.crs) != "EPSG:4326":
+        cells_before = cells_before.to_crs("EPSG:4326")
     reach_col = "REACH_NAME" if "REACH_NAME" in cells_before.columns else "reach_name"
     counts_before = cells_before[reach_col].value_counts().to_dict()
 
