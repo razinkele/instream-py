@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.0] - 2026-05-03
+
+Bug-fix release closing 5 high-confidence defects from the 2026-05-03 review of example creation scripts and Create/Edit Model UI panels. Behaviour-only — no refactoring or module reorganisation (deferred to v0.58.0).
+
+### Fixed
+- **Edit Model lasso/split race condition** (review #1): `_split_apply` and `_lasso_apply` always saw stale drawn-features because they read the reactive input on the same coroutine that triggered the JS-side push. Both handlers now split into a trigger effect (captures op params + fires `get_drawn_features`) and a separate completion effect keyed on the drawn-features reactive input. Three additional safety properties enforced by the rewrite: (a) **mutual exclusion** — each trigger clears the other op's pending value before staging its own, so split + lasso can't race on the same drawn-features push; (b) **immediate-claim** — completion effects clear their own `pending` before any disk I/O, defeating the double-Apply race where a second click could re-mutate already-processed state; (c) **undo-after-validation** — the undo snapshot is pushed only after the geometry result is non-empty, so a no-op apply can't pollute the undo stack (this also closes the original review's separate item #2). Geometry math extracted to `_apply_split_to_cells` and `_apply_lasso_to_cells` module-level helpers for direct unit testing without a Shiny session.
+- **WGBAST + Minija fixtures CRS** (review #4): `scripts/_generate_wgbast_physical_domains.write_river_shapefile` now accepts `output_crs` (default `"EPSG:3035"`) and reprojects + recomputes `AREA` in m² before writing. Fixes the latent natal-recruitment bug for Simojoki/Byskealven/Morrumsan that previously shipped in EPSG:4326 (selectable spawn cells excluded by `defense_area_m` interpreted as metres against degree-distance centroids). All 5 fixtures regenerated. `scripts/_reproject_tornionjoki_to_3035.py` deleted (its behaviour is now the generator default).
+- **Create Model export photoperiod latitude** (review #5): `export_yaml` now derives `light.latitude` from cells centroids in EPSG:4326 instead of the hardcoded `55.7` (Curonian Lagoon). Models created outside Lithuania get correct day-length curves.
+- **Edit Model merge silently discards reach B's CSVs** (review #11): `_merge_apply` now `logger.warns` when reach B has per-reach CSVs being orphaned, and the user-facing message names the orphaned files so the user can clean them up manually.
+- **Edit Model rename skips fixtures without `reaches:` key** (review #13): `_do_rename` previously gated CSV-on-disk renames on `cfg["reaches"]` containing the old name. Fixtures whose YAML lacks a top-level `reaches:` key had their shapefile renamed but their CSVs left behind under the old name — next load failed with a missing-file error. CSV rename is now unconditional; YAML mutation stays gated.
+
+### Deferred to v0.58.0
+- Fixtures-module extraction (consolidate Overpass fetch loops, polygon parsing, COLUMN_RENAME, hydraulic CSV writers; review items #2/#3/#7/#9/#10/#15)
+- Edit Model panel split into `panel.py` + `ops.py` + `undo.py`
+- Create Model latitude inconsistency (`_get_view_bbox` asymmetric span; review #17)
+- `buffer_factor` semantic clean-up (review #16)
+
 ## [0.56.20] — 2026-05-02
 
 ### Fixed — `TypeError: Cannot read properties of undefined (reading 'layers')` on map fitBounds
