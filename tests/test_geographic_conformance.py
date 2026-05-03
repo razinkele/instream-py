@@ -71,17 +71,13 @@ KNOWN_GEOMETRY_DRIFT: dict[tuple[str, str], str] = {
     # `_extend_minija_mainstem.py` fetches the Minija polylines from
     # OSM, filters to the upper portion, and appends them to the
     # existing Minija reach.
-    ("example_morrumsan", "Mouth"): (
-        "v0.56.0 connectivity check: Morrumsan/Mouth nearest 2-hop "
-        "neighbor is 835 m away — just barely over the 500 m river "
-        "threshold. The freshwater reach chain (Mouth → Lower → "
-        "Middle → Upper) has a small geometric gap between Mouth "
-        "and Lower that the WGBAST physical-domain generator left. "
-        "Cosmetic issue (real geometry is right); fix requires "
-        "tightening _generate_wgbast_physical_domains.py's reach-"
-        "split logic to ensure adjacent reaches share at least one "
-        "edge cell. v0.56.x candidate."
-    ),
+    # v0.56.0 entry for example_morrumsan/Mouth ("Morrumsan/Mouth nearest
+    # 2-hop neighbor is 835 m away") was CLOSED in v0.57.0/v0.57.1: the
+    # WGBAST generator regen with the new EPSG:3035 reproject + AREA
+    # recompute also tightened reach-split adjacency as a side effect,
+    # and the Mouth↔Lower gap shrank below the 500 m threshold. The
+    # XPASS(strict) on this entry forced its removal — keeping a stale
+    # xfail would silently regress the test if the gap re-opens.
     # v0.56.0 initial sweep flagged example_simojoki/BalticCoast and
     # example_tornionjoki/BalticCoast at 182/257 km from configured
     # neighbors. Root cause: WGBAST topology connects BalticCoast to

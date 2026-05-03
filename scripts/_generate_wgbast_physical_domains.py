@@ -189,32 +189,25 @@ RIVERS: list[River] = [
         cell_size_m=60.0,       # ~20m channel width, small cells
         buffer_factor=4.0,
     ),
-    # --- Minija basin (Lithuania) — v0.54.0 example fixture ---
-    # Minija (~202 km, ~21°E, southern Baltic-state coast) drains the
-    # NW Lithuania highlands → Curonian Lagoon. Flows roughly NE→SW from
-    # source near Plungė through Gargždai → Priekulė → Drevernai mouth.
-    # Major right-bank tributaries (Babrungas, Veiviržė) join in the
-    # mid-lower reaches, embedded geographically in the Middle/Lower
-    # waypoints. Mouth feeds the Curonian Lagoon (separated from the
-    # Baltic Sea proper by the Curonian Spit) — Marine Regions returns
-    # "Baltic Sea" for the bbox, so we share that IHO cache.
-    # NOT a WGBAST-assessment stock; Lithuanian Atlantic salmon are
-    # tracked in ICES SD 26 alongside the Daugava/Lielupe rivers.
-    River(
-        short_name="example_minija_basin",
-        stem="MinijaBasinExample",
-        river_name="Minija",
-        latitude=55.5,           # mouth at ~55.46°N
-        waypoints=[
-            (21.21, 55.46),     # 0: Mouth — Curonian Lagoon entry near Drevernai
-            (21.31, 55.55),     # 1: Priekulė area (Lower)
-            (21.45, 55.71),     # 2: Gargždai / Veiviržė confluence (Middle)
-            (21.66, 55.84),     # 3: mid-upper, post-Babrungas (Upper-mid)
-            (21.88, 55.93),     # 4: source area near Plungė (Upper)
-        ],
-        cell_size_m=70.0,        # ~25-40 m channel width, moderate cells
-        buffer_factor=3.5,
-    ),
+    # NOTE: example_minija_basin is intentionally OMITTED from the default
+    # RIVERS list as of v0.57.1.
+    #
+    # Minija has its own dedicated build pipeline that produces a
+    # higher-fidelity 8-reach, 18k-cell fixture using GDR50 Lithuanian
+    # topographic data (v0.56.14) + DSM-derived polygons (v0.56.13) +
+    # OSM polygon collection (v0.56.15) + Šyša delta clip (v0.56.16) +
+    # named tributaries (Babrungas, Salantas, Salpe, Veiviržė — v0.55.x).
+    #
+    # The WGBAST waypoint→hex-grid generator can only produce a coarse
+    # 5-reach Mouth/Lower/Middle/Upper/BalticCoast template (~4k cells)
+    # which would lose all the v0.54-v0.56 Minija work. Including Minija
+    # in this RIVERS list would silently downgrade the fixture every time
+    # the generator runs.
+    #
+    # If you really need the WGBAST cookie-cutter version of Minija (e.g.
+    # for a debugging side-fixture), invoke the generator with
+    # `--only example_minija_basin` AFTER manually re-adding the River()
+    # entry below — but understand the cost.
 ]
 
 
