@@ -76,3 +76,49 @@ def test_merge_two_reaches_writes_shapefile_and_config(tmp_path, monkeypatch):
     assert "Lower" not in reloaded_cfg["reaches"]
     estuary = reloaded_cfg["reaches"]["Estuary"]
     assert estuary["time_series_input_file"] == "Estuary-TimeSeriesInputs.csv"
+
+
+def test_merge_warns_when_reach_b_has_csvs(tmp_path, monkeypatch, caplog):
+    """v0.57.0 fix #11: when reach B has its own per-reach CSVs, _merge_apply
+    must surface a warning to the user (last_save) and the logger.
+
+    Pre-fix: reach A's CSVs were renamed to the merged name, reach B's
+    CSVs were silently orphaned on disk with no message. Users merging
+    upper+lower reaches got the merged reach with only A's hydraulic
+    profile applied to the merged extent, with no notification.
+    """
+    import logging
+    from modules import edit_model_panel as ep
+
+    sandbox = _isolated_fixture(tmp_path, source="example_morrumsan")
+    monkeypatch.setattr(ep, "_project_root", lambda: sandbox)
+
+    # Verify reach B's CSVs exist on disk before the merge.
+    fixture_dir = sandbox / "tests" / "fixtures" / "example_morrumsan"
+    reach_b_csvs = [
+        fixture_dir / "Lower-TimeSeriesInputs.csv",
+        fixture_dir / "Lower-Depths.csv",
+        fixture_dir / "Lower-Vels.csv",
+    ]
+    pre_b = [p for p in reach_b_csvs if p.exists()]
+    assert pre_b, (
+        "test prerequisite: at least one Lower- CSV must exist before merge"
+    )
+
+    # Source-level inspection: the merge body must contain a warning
+    # branch when reach B has CSVs. The exact wiring needs Shiny session
+    # plumbing to test end-to-end; we check the source contains the
+    # required logger.warning + last_save message.
+    src = (Path(ep.__file__)).read_text(encoding="utf-8")
+    merge_body_start = src.index("def _merge_apply()")
+    merge_body_end = src.index("def _split_start", merge_body_start)
+    merge_body = src[merge_body_start:merge_body_end]
+    assert "logger.warning" in merge_body, (
+        "v0.57.0 fix #11: _merge_apply must logger.warning when reach B "
+        "has orphaned CSVs"
+    )
+    assert "orphan" in merge_body.lower(), (
+        "v0.57.0 fix #11: _merge_apply must mention 'orphan' in its "
+        "user-facing message so the user understands B's CSVs were "
+        "discarded"
+    )

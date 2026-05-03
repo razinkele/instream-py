@@ -567,6 +567,7 @@ def edit_model_server(input, output, session):
         cells = s["cells"].copy()
         reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
         cells.loc[cells[reach_col].isin([a, b]), reach_col] = new_name
+        orphaned_b_csvs: list[str] = []
 
         cfg = dict(s["cfg"])
         if "reaches" in cfg:
@@ -587,6 +588,15 @@ def edit_model_server(input, output, session):
             cfg["reaches"] = new_reaches
 
             fixture_dir = s["shp_path"].parent.parent
+            # v0.57.0 fix #11: detect reach B CSVs that will be orphaned
+            # by the merge. The merged reach inherits ONLY reach A's
+            # hydraulics — B's CSVs stay on disk under their old name and
+            # never get loaded again. Users merging upper+lower reaches
+            # could otherwise get silently wrong inputs.
+            for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
+                b_src = fixture_dir / f"{b}-{suffix}"
+                if b_src.exists():
+                    orphaned_b_csvs.append(b_src.name)
             for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
                 src = fixture_dir / f"{a}-{suffix}"
                 if src.exists():
@@ -594,7 +604,12 @@ def edit_model_server(input, output, session):
                     if dst.exists() and dst != src:
                         dst.unlink()
                     src.rename(dst)
-                # b's CSVs become orphaned — leave on disk for manual cleanup
+            if orphaned_b_csvs:
+                logger.warning(
+                    "merge: %d reach-B CSVs orphaned on disk under '%s-' "
+                    "prefix (merged reach inherits reach A's hydraulics): %s",
+                    len(orphaned_b_csvs), b, ", ".join(orphaned_b_csvs),
+                )
 
         try:
             cells.to_file(s["shp_path"], driver="ESRI Shapefile")
@@ -614,7 +629,14 @@ def edit_model_server(input, output, session):
         new_state["cfg"] = cfg
         state.set(new_state)
         merge_state.set({"phase": "idle", "reach_a": None})
-        last_save.set(f"✓ merged '{a}' + '{b}' → '{new_name}' and saved")
+        merged_msg = f"✓ merged '{a}' + '{b}' → '{new_name}' and saved"
+        if orphaned_b_csvs:
+            merged_msg += (
+                f" — note: {len(orphaned_b_csvs)} '{b}-' CSVs orphaned on "
+                f"disk; merged reach uses '{a}' hydraulics. Delete or merge "
+                "the orphaned files manually."
+            )
+        last_save.set(merged_msg)
 
     # ------------------------------------------------------------------
     # Split a reach by drawing a line
