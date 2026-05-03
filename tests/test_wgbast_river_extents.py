@@ -83,19 +83,30 @@ def test_balticcoast_geometric_adjacency_to_mouth(short_name: str):
     bc = gdf[gdf[reach_col] == "BalticCoast"]
     assert not mouth.empty
     assert not bc.empty
-    # Project to UTM for a true-meters adjacency check, matching the
-    # generator's tolerance (5 m). A WGS84-degree buffer here would be
+    # Project to a metric CRS for a true-meters adjacency check, matching
+    # the generator's tolerance (5 m). A WGS84-degree buffer here would be
     # anisotropic at Bothnian Bay latitudes and could spuriously fail.
-    # (`detect_utm_epsg` is imported once at module top — see header.)
-    mouth_centroid = mouth.geometry.union_all().centroid
-    utm_epsg = detect_utm_epsg(mouth_centroid.x, mouth_centroid.y)
-    mouth_utm = mouth.to_crs(epsg=utm_epsg)
-    bc_utm = bc.to_crs(epsg=utm_epsg)
-    bc_union_utm = bc_utm.geometry.union_all()
-    hits = mouth_utm.geometry.buffer(5.0).intersects(bc_union_utm).sum()
+    #
+    # v0.57.0: post-CRS-fix the fixtures already ship in EPSG:3035 (LAEA
+    # Europe, metres), so we can skip the UTM reprojection — buffer +
+    # intersect directly in 3035. Pre-v0.57.0 fixtures shipped in
+    # EPSG:4326 (degrees), in which case `detect_utm_epsg` is called
+    # with the mouth's lon/lat to pick a UTM zone for reprojection.
+    if gdf.crs is not None and gdf.crs.is_projected:
+        mouth_metric = mouth
+        bc_metric = bc
+    else:
+        # Compute UTM zone from a lon/lat centroid — only valid when gdf
+        # is geographic (degrees). Reproject mouth + bc subsets to UTM.
+        mouth_centroid = mouth.geometry.union_all().centroid
+        utm_epsg = detect_utm_epsg(mouth_centroid.x, mouth_centroid.y)
+        mouth_metric = mouth.to_crs(epsg=utm_epsg)
+        bc_metric = bc.to_crs(epsg=utm_epsg)
+    bc_union_metric = bc_metric.geometry.union_all()
+    hits = mouth_metric.geometry.buffer(5.0).intersects(bc_union_metric).sum()
     assert hits >= 1, (
         f"{short_name}: no Mouth↔BalticCoast geometric adjacency "
-        f"(within 5 m UTM tolerance)"
+        f"(within 5 m metric tolerance, CRS={gdf.crs})"
     )
 
 
@@ -231,3 +242,36 @@ def test_example_baltic_prototype_csvs_present(proto: str, suffix: str):
         f"{src.relative_to(ROOT)} missing — wire script source. "
         f"Did example_baltic get cleaned up by mistake?"
     )
+
+
+def test_wgbast_fixtures_ship_in_epsg_3035():
+    """v0.57.0 fix #4: every WGBAST + Minija fixture must ship in EPSG:3035.
+
+    Pre-fix: Tornionjoki was 3035 (post-hoc fix in v0.52.2 via
+    _reproject_tornionjoki_to_3035.py), but Simojoki/Byskealven/Morrumsan
+    were 4326 — a latent natal-recruitment bug per the script's docstring.
+    Fix: the generator writes 3035 by default, and the one-shot fixer
+    script is deleted.
+    """
+    import geopandas as gpd
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    fixtures = [
+        "example_tornionjoki", "example_simojoki",
+        "example_byskealven", "example_morrumsan",
+        "example_minija_basin",
+    ]
+    for short in fixtures:
+        shp_dir = root / "tests" / "fixtures" / short / "Shapefile"
+        shps = [p for p in shp_dir.glob("*.shp") if "-osm-" not in p.stem]
+        assert len(shps) == 1, f"{short}: expected exactly 1 main mesh shp, got {len(shps)}"
+        gdf = gpd.read_file(shps[0])
+        epsg = gdf.crs.to_epsg() if gdf.crs else None
+        assert epsg == 3035, f"{short}: expected EPSG:3035, got {epsg}"
+        # AREA column must be in m² (positive integers, not degree-squared
+        # which would give values < 1e-6).
+        if "AREA" in gdf.columns:
+            assert gdf["AREA"].min() > 100.0, (
+                f"{short}: AREA min={gdf['AREA'].min()} — "
+                "looks like degree² rather than m²"
+            )

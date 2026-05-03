@@ -571,8 +571,16 @@ def build_reach_segments(river: River) -> dict:
     return build_reach_segments_from_osm(river, ways)
 
 
-def write_river_shapefile(river: River) -> Path:
-    """Generate hex cells for `river` and write {RiverStem}Example.shp."""
+def write_river_shapefile(river: River, output_crs: str = "EPSG:3035") -> Path:
+    """Generate hex cells for `river` and write {RiverStem}Example.shp.
+
+    `output_crs` controls the CRS of the written shapefile. Default
+    EPSG:3035 (LAEA Europe, metres) — matches example_baltic and the
+    spawning module's metres-based defense_area_m. v0.57.0 absorbed the
+    one-shot _reproject_tornionjoki_to_3035.py fixer into this default.
+    Pass output_crs="EPSG:4326" to retain the legacy degree-CRS behaviour
+    if needed for ad-hoc inspection.
+    """
     fixture_dir = ROOT / "tests" / "fixtures" / river.short_name
     shp_dir = fixture_dir / "Shapefile"
     shp_dir.mkdir(parents=True, exist_ok=True)
@@ -776,14 +784,29 @@ def write_river_shapefile(river: River) -> Path:
     # across concat; this keeps the DBF column type consistent.
     cells["ID_TEXT"] = cells["ID_TEXT"].astype(str)
 
-    # Clear any stale Shapefile/* from a prior run (Nemunas leftover)
+    # v0.57.0 fix #4: reproject to the requested output CRS and recompute
+    # the AREA field in the new CRS's units. The polygon_mesh.py reader
+    # expects AREA to be in m² (it multiplies by 1e4 to get cm² internally),
+    # so this branch is only sound when output_crs is a metric projection.
+    if cells.crs is None or str(cells.crs) != output_crs:
+        cells = cells.to_crs(output_crs)
+    cells["AREA"] = cells.geometry.area
+
+    # Clear any stale Shapefile/* from a prior run (Nemunas leftover).
+    # Skip OSM sidecar shapefiles (named "*-osm-*", added by separate
+    # v0.56.x pipelines such as _build_minija_sidecar_from_mariosupes.py
+    # for the OSM-overlay UI). The WGBAST generator only owns the main
+    # mesh — sidecars are produced and maintained by other scripts and
+    # must survive regen.
     for pat in ("*.shp", "*.shx", "*.dbf", "*.prj", "*.cpg"):
         for stale in shp_dir.glob(pat):
+            if "-osm-" in stale.stem:
+                continue
             stale.unlink()
 
     out_path = shp_dir / f"{river.stem}.shp"
     cells.to_file(out_path, driver="ESRI Shapefile")
-    log.info("Wrote %s (%d cells, EPSG:4326)", out_path.relative_to(ROOT), len(cells))
+    log.info("Wrote %s (%d cells, %s)", out_path.relative_to(ROOT), len(cells), output_crs)
     return out_path
 
 
