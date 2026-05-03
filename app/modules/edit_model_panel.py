@@ -449,15 +449,19 @@ def edit_model_server(input, output, session):
         cells = cells.copy()
         cells.loc[cells[reach_col] == old, reach_col] = new
         cfg = dict(s["cfg"])
+        # v0.57.0 fix #13: rename CSVs on disk unconditionally — fixtures
+        # without a top-level `reaches:` key (e.g. minimal smoke fixtures)
+        # still own per-reach CSVs that must follow the rename, otherwise
+        # the next load fails with a missing-file error.
+        fixture_dir = s["shp_path"].parent.parent
+        for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
+            src = fixture_dir / f"{old}-{suffix}"
+            if src.exists():
+                src.rename(fixture_dir / f"{new}-{suffix}")
         if "reaches" in cfg and old in cfg["reaches"]:
             cfg["reaches"] = {
                 (new if k == old else k): v for k, v in cfg["reaches"].items()
             }
-            fixture_dir = s["shp_path"].parent.parent
-            for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
-                src = fixture_dir / f"{old}-{suffix}"
-                if src.exists():
-                    src.rename(fixture_dir / f"{new}-{suffix}")
             r = cfg["reaches"][new]
             for fk in ("time_series_input_file", "depth_file", "velocity_file"):
                 v = r.get(fk, "")
