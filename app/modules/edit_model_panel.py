@@ -244,6 +244,75 @@ def edit_model_ui():
 
 
 # -----------------------------------------------------------------------------
+# Pure geometry helpers (v0.57.0 fix #1) — split apart so the completion
+# effects can call them without Shiny session in scope. Tested directly
+# in tests/test_edit_model_panel_draw_handoff.py.
+# -----------------------------------------------------------------------------
+
+def _apply_split_to_cells(
+    cells: gpd.GeoDataFrame,
+    *,
+    target_reach: str,
+    line,                          # shapely LineString
+    north_name: str,
+    south_name: str,
+) -> tuple[gpd.GeoDataFrame, int, int]:
+    """Classify each cell of `target_reach` as north or south of `line`
+    and return (mutated_cells, n_north, n_south).
+
+    Side classification mirrors the v0.46.0 sign-of-cross-product logic
+    in _split_apply (extracted verbatim so the completion effect calls
+    this helper rather than inlining the math).
+    """
+    out = cells.copy()
+    reach_col = "REACH_NAME" if "REACH_NAME" in out.columns else "reach_name"
+    target_mask = out[reach_col] == target_reach
+    if not target_mask.any():
+        return out, 0, 0
+    L = line.length
+    eps = max(L * 1e-6, 1e-9)
+    sides: list[str] = []
+    for geom in out.loc[target_mask].geometry:
+        c = geom.centroid
+        nearest_dist = line.project(c)
+        nearest_pt = line.interpolate(nearest_dist)
+        if nearest_dist + eps <= L:
+            tangent_pt = line.interpolate(nearest_dist + eps)
+            base = nearest_pt
+        else:
+            prev_pt = line.interpolate(max(nearest_dist - eps, 0.0))
+            base = prev_pt
+            tangent_pt = nearest_pt
+        dx = tangent_pt.x - base.x
+        dy = tangent_pt.y - base.y
+        cross = (c.x - base.x) * dy - (c.y - base.y) * dx
+        sides.append("north" if cross >= 0 else "south")
+    out.loc[target_mask, reach_col] = [
+        north_name if sd == "north" else south_name for sd in sides
+    ]
+    n_north = sum(1 for sd in sides if sd == "north")
+    return out, n_north, len(sides) - n_north
+
+
+def _apply_lasso_to_cells(
+    cells: gpd.GeoDataFrame,
+    *,
+    lasso,                         # shapely Polygon | MultiPolygon
+    new_name: str,
+) -> tuple[gpd.GeoDataFrame, int]:
+    """Reassign every cell whose centroid is inside `lasso` to `new_name`.
+
+    Returns (mutated_cells, n_inside).
+    """
+    out = cells.copy()
+    reach_col = "REACH_NAME" if "REACH_NAME" in out.columns else "reach_name"
+    inside_mask = out.geometry.centroid.within(lasso)
+    n_inside = int(inside_mask.sum())
+    out.loc[inside_mask, reach_col] = new_name
+    return out, n_inside
+
+
+# -----------------------------------------------------------------------------
 # Server
 # -----------------------------------------------------------------------------
 
@@ -269,6 +338,11 @@ def edit_model_server(input, output, session):
 
     # Split state: idle -> drawing
     split_state = reactive.value({"phase": "idle"})
+    # v0.57.0 fix #1: pending split operation captured by the trigger
+    # effect; consumed by the completion effect when drawn features
+    # arrive. None means "no pending op".
+    split_pending = reactive.value(None)
+    lasso_pending = reactive.value(None)
 
     # Undo/redo: list of {cells, cfg} snapshots, capped at 10
     history_undo = reactive.value([])
@@ -661,6 +735,9 @@ def edit_model_server(input, output, session):
     @reactive.effect
     @reactive.event(input.split_apply)
     async def _split_apply():
+        """Trigger effect: validate inputs, stash op params, fire
+        get_drawn_features. The completion effect at
+        _split_completion handles the geometry mutation."""
         s = state()
         target = (input.split_target() or "").strip()
         north_name = (input.split_north_name() or "").strip()
@@ -671,16 +748,38 @@ def edit_model_server(input, output, session):
         if north_name == south_name:
             last_save.set("❌ split: north and south names must differ")
             return
+        if s["cells"] is None:
+            return
+        # Mutual-exclusion: a previous lasso may still have a pending op.
+        # Both completions react to the same drawn-features input — if both
+        # ops are set simultaneously, the wrong completion can fire on the
+        # next JS push. Clear the other op before staging this one.
+        lasso_pending.set(None)
+        split_pending.set({
+            "target": target,
+            "north_name": north_name,
+            "south_name": south_name,
+        })
         try:
             await _widget.get_drawn_features(session)
         except Exception as exc:
             last_save.set(f"❌ get_drawn_features trigger failed: {exc}")
+            split_pending.set(None)
             return
-        features_input_name = _widget.drawn_features_input_id
+        last_save.set("split: collecting drawn line — please wait…")
+
+    @reactive.effect
+    async def _split_completion():
+        """Completion effect: react to drawn-features arriving from JS.
+        Reads pending op (set by _split_apply trigger); performs geometry
+        + shapefile/YAML mutation; clears pending op + draw mode."""
         try:
-            features = getattr(input, features_input_name)()
+            features = getattr(input, _widget.drawn_features_input_id)()
         except Exception:
-            features = None
+            return
+        op = split_pending()
+        if op is None:
+            return
         line = None
         for f in (features or []):
             try:
@@ -691,67 +790,74 @@ def edit_model_server(input, output, session):
                 line = g
                 break
         if line is None:
-            last_save.set(
-                "❌ split: no LineString found in drawn features (did you finish the line?)"
-            )
+            # Drawn features arrived but no LineString in the payload.
+            # Either the payload is empty (JS hasn't pushed yet — ignore)
+            # or it contains a polygon (user switched to lasso). Use the
+            # presence of features to decide: empty → keep pending so we
+            # see the next JS push; non-empty → clear pending so we don't
+            # block future split Apply presses.
+            if features:
+                split_pending.set(None)
             return
 
+        # Claim the operation NOW (before any disk I/O). If the user
+        # double-clicked Apply, two _split_completion runs are queued;
+        # the first claims by clearing pending, the second reads
+        # pending=None on its next dependency-trigger and exits early.
+        # This is a defensive idiom — Shiny's single-threaded effect
+        # loop usually serialises the two runs, but pending can leak
+        # across reactive flushes if the JS layer pushes twice.
+        split_pending.set(None)
+
+        s = state()
+        if s["cells"] is None:
+            return
+
+        # Geometry pass first — _apply_split_to_cells is pure (no state
+        # mutation). Only push undo AFTER we know the operation will
+        # actually mutate cells, so a no-op apply doesn't pollute the
+        # undo stack.
+        new_cells, n_north, n_south = _apply_split_to_cells(
+            cells=s["cells"],
+            target_reach=op["target"],
+            line=line,
+            north_name=op["north_name"],
+            south_name=op["south_name"],
+        )
+        if n_north + n_south == 0:
+            last_save.set(f"❌ no cells with reach '{op['target']}'")
+            return
         _push_undo_snapshot()
-        cells = s["cells"].copy()
-        reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
-        target_mask = cells[reach_col] == target
-        if not target_mask.any():
-            last_save.set(f"❌ no cells with reach '{target}'")
-            return
 
-        target_cells = cells[target_mask]
-        sides = []
-        L = line.length
-        for geom in target_cells.geometry:
-            c = geom.centroid
-            nearest_dist = line.project(c)
-            nearest_pt = line.interpolate(nearest_dist)
-            eps = max(L * 1e-6, 1e-9)
-            if nearest_dist + eps <= L:
-                tangent_pt = line.interpolate(nearest_dist + eps)
-                base = nearest_pt
-            else:
-                # End-of-line: step backward, flip frame so cross sign matches.
-                prev_pt = line.interpolate(max(nearest_dist - eps, 0.0))
-                base = prev_pt
-                tangent_pt = nearest_pt
-            dx = tangent_pt.x - base.x
-            dy = tangent_pt.y - base.y
-            cross = (c.x - base.x) * dy - (c.y - base.y) * dx
-            sides.append("north" if cross >= 0 else "south")
-        cells.loc[target_mask, reach_col] = [
-            north_name if sd == "north" else south_name for sd in sides
-        ]
-
+        # YAML mutation (rebuild reach entries)
         cfg = dict(s["cfg"])
-        if "reaches" in cfg and target in cfg["reaches"]:
-            base_entry = dict(cfg["reaches"][target])
-            del cfg["reaches"][target]
-            for new_name in (north_name, south_name):
+        if "reaches" in cfg and op["target"] in cfg["reaches"]:
+            base_entry = dict(cfg["reaches"][op["target"]])
+            del cfg["reaches"][op["target"]]
+            for new_name in (op["north_name"], op["south_name"]):
                 entry = dict(base_entry)
                 entry["time_series_input_file"] = f"{new_name}-TimeSeriesInputs.csv"
                 entry["depth_file"] = f"{new_name}-Depths.csv"
                 entry["velocity_file"] = f"{new_name}-Vels.csv"
                 cfg["reaches"][new_name] = entry
-            fixture_dir = s["shp_path"].parent.parent
-            for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
-                src = fixture_dir / f"{target}-{suffix}"
-                if src.exists():
-                    shutil.copy2(src, fixture_dir / f"{north_name}-{suffix}")
-                    src.rename(fixture_dir / f"{south_name}-{suffix}")
+        # CSV rename on disk runs unconditionally — same v0.57.0 fix #13
+        # contract as _do_rename: don't gate disk-side IO on the YAML
+        # having a reaches: key.
+        fixture_dir = s["shp_path"].parent.parent
+        for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
+            src = fixture_dir / f"{op['target']}-{suffix}"
+            if src.exists():
+                shutil.copy2(src, fixture_dir / f"{op['north_name']}-{suffix}")
+                src.rename(fixture_dir / f"{op['south_name']}-{suffix}")
 
         try:
-            cells.to_file(s["shp_path"], driver="ESRI Shapefile")
+            new_cells.to_file(s["shp_path"], driver="ESRI Shapefile")
             with open(s["cfg_path"], "w", encoding="utf-8") as f:
                 f.write(
                     f"# {s['short_name']} — split via Edit Model panel.\n"
-                    f"# Reach '{target}' split into '{north_name}' (N) and "
-                    f"'{south_name}' (S).\n#\n"
+                    f"# Reach '{op['target']}' split into "
+                    f"'{op['north_name']}' (N) and "
+                    f"'{op['south_name']}' (S).\n#\n"
                 )
                 yaml.safe_dump(cfg, f, sort_keys=False, default_flow_style=False)
         except Exception as exc:
@@ -766,15 +872,16 @@ def edit_model_server(input, output, session):
             pass
 
         new_state = dict(s)
-        new_state["cells"] = cells
+        new_state["cells"] = new_cells
         new_state["cfg"] = cfg
         state.set(new_state)
         split_state.set({"phase": "idle"})
-        n_north = sum(1 for sd in sides if sd == "north")
-        n_south = len(sides) - n_north
+        # split_pending was already cleared at the top of this effect
+        # (right after the line-found check), so a double-Apply race
+        # cannot re-trigger this body. No second clear needed here.
         last_save.set(
-            f"✓ split '{target}' into '{north_name}' ({n_north} cells) "
-            f"and '{south_name}' ({n_south} cells)"
+            f"✓ split '{op['target']}' into '{op['north_name']}' "
+            f"({n_north} cells) and '{op['south_name']}' ({n_south} cells)"
         )
 
     # ------------------------------------------------------------------
@@ -799,6 +906,8 @@ def edit_model_server(input, output, session):
     @reactive.effect
     @reactive.event(input.lasso_apply)
     async def _lasso_apply():
+        """Trigger effect — captures op params, calls get_drawn_features.
+        Completion handled in _lasso_completion."""
         s = state()
         new_name = (input.lasso_new_name() or "").strip()
         if not new_name:
@@ -806,57 +915,88 @@ def edit_model_server(input, output, session):
             return
         if s["cells"] is None:
             return
+        # Mutual-exclusion: see _split_apply for rationale. Clear the
+        # split op before staging this one so split_completion does not
+        # mistake an arriving polygon for its target.
+        split_pending.set(None)
+        lasso_pending.set({"new_name": new_name})
         try:
             await _widget.get_drawn_features(session)
         except Exception as exc:
             last_save.set(f"❌ get_drawn_features trigger failed: {exc}")
+            lasso_pending.set(None)
             return
+        last_save.set("lasso: collecting drawn polygon — please wait…")
+
+    @reactive.effect
+    async def _lasso_completion():
+        """React to drawn-features arriving from JS; perform the lasso
+        reassignment + shapefile/YAML write."""
         try:
             features = getattr(input, _widget.drawn_features_input_id)()
         except Exception:
-            features = None
+            return
+        op = lasso_pending()
+        if op is None:
+            return
+        from shapely.ops import unary_union
         polys = [
             shape(f["geometry"]) for f in (features or [])
             if f.get("geometry", {}).get("type") in ("Polygon", "MultiPolygon")
         ]
         if not polys:
-            last_save.set("❌ lasso: no polygon found in drawn features")
+            # No polygon in the payload. Empty payload → keep pending and
+            # wait for the next JS push. Non-empty (LineString) → clear
+            # pending so future lasso Apply presses can proceed.
+            if features:
+                lasso_pending.set(None)
             return
-        from shapely.ops import unary_union
         lasso = unary_union(polys)
 
-        _push_undo_snapshot()
-        cells = s["cells"].copy()
-        reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
-        inside_mask = cells.geometry.centroid.within(lasso)
-        n_inside = int(inside_mask.sum())
+        # Claim the operation NOW (before any disk I/O); see
+        # _split_completion for the double-Apply race rationale.
+        lasso_pending.set(None)
+
+        s = state()
+        if s["cells"] is None:
+            return
+
+        # Pure geometry pass first; only push undo if we will actually
+        # mutate cells (mirrors _split_completion's ordering).
+        reach_col = "REACH_NAME" if "REACH_NAME" in s["cells"].columns else "reach_name"
+        old_reaches = (
+            s["cells"][s["cells"].geometry.centroid.within(lasso)]
+            [reach_col].value_counts().to_dict()
+        )
+        new_cells, n_inside = _apply_lasso_to_cells(
+            cells=s["cells"], lasso=lasso, new_name=op["new_name"],
+        )
         if n_inside == 0:
             last_save.set("❌ lasso: no cell centroids inside the drawn polygon")
             return
-
-        old_reaches = cells.loc[inside_mask, reach_col].value_counts().to_dict()
-        cells.loc[inside_mask, reach_col] = new_name
+        _push_undo_snapshot()
 
         cfg = dict(s["cfg"])
-        if "reaches" in cfg and new_name not in cfg["reaches"]:
-            donor = max(old_reaches, key=old_reaches.get)
-            entry = dict(cfg["reaches"].get(donor, {}))
-            entry["time_series_input_file"] = f"{new_name}-TimeSeriesInputs.csv"
-            entry["depth_file"] = f"{new_name}-Depths.csv"
-            entry["velocity_file"] = f"{new_name}-Vels.csv"
-            cfg["reaches"][new_name] = entry
-            fixture_dir = s["shp_path"].parent.parent
-            for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
-                src = fixture_dir / f"{donor}-{suffix}"
-                if src.exists():
-                    shutil.copy2(src, fixture_dir / f"{new_name}-{suffix}")
+        if "reaches" in cfg and op["new_name"] not in cfg["reaches"]:
+            donor = max(old_reaches, key=old_reaches.get) if old_reaches else None
+            if donor is not None:
+                entry = dict(cfg["reaches"].get(donor, {}))
+                entry["time_series_input_file"] = f"{op['new_name']}-TimeSeriesInputs.csv"
+                entry["depth_file"] = f"{op['new_name']}-Depths.csv"
+                entry["velocity_file"] = f"{op['new_name']}-Vels.csv"
+                cfg["reaches"][op["new_name"]] = entry
+                fixture_dir = s["shp_path"].parent.parent
+                for suffix in ("TimeSeriesInputs.csv", "Depths.csv", "Vels.csv"):
+                    src = fixture_dir / f"{donor}-{suffix}"
+                    if src.exists():
+                        shutil.copy2(src, fixture_dir / f"{op['new_name']}-{suffix}")
 
         try:
-            cells.to_file(s["shp_path"], driver="ESRI Shapefile")
+            new_cells.to_file(s["shp_path"], driver="ESRI Shapefile")
             with open(s["cfg_path"], "w", encoding="utf-8") as f:
                 f.write(
                     f"# {s['short_name']} — lasso-edited via Edit Model panel.\n"
-                    f"# {n_inside} cells reassigned to '{new_name}'.\n#\n"
+                    f"# {n_inside} cells reassigned to '{op['new_name']}'.\n#\n"
                 )
                 yaml.safe_dump(cfg, f, sort_keys=False, default_flow_style=False)
         except Exception as exc:
@@ -871,10 +1011,12 @@ def edit_model_server(input, output, session):
             pass
 
         new_state = dict(s)
-        new_state["cells"] = cells
+        new_state["cells"] = new_cells
         new_state["cfg"] = cfg
         state.set(new_state)
-        last_save.set(f"✓ lasso: {n_inside} cells reassigned to '{new_name}'")
+        # lasso_pending was already cleared at the top of the post-validation
+        # block; no second clear needed here (mirrors _split_completion).
+        last_save.set(f"✓ lasso: {n_inside} cells reassigned to '{op['new_name']}'")
 
     # ------------------------------------------------------------------
     # Regenerate cells at a new cell size
