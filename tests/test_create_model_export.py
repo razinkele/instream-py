@@ -116,3 +116,53 @@ def test_export_template_csvs_round_trips_through_hydraulic_reader(tmp_path):
     ts = pd.read_csv(ts_path)
     assert len(ts) == 365
     assert set(ts.columns) >= {"date", "flow", "temperature", "turbidity"}
+
+
+def test_export_yaml_latitude_from_cells_centroid():
+    """v0.57.0 fix #5: export_yaml derives light.latitude from cells centroid.
+
+    Pre-fix bug: every exported model got hardcoded latitude=55.7 (Curonian
+    Lagoon), so a Norwegian model would receive Lithuanian photoperiod.
+    Fix: when cells_gdf is provided, latitude is the mean centroid y in
+    EPSG:4326. Without cells_gdf, latitude falls back to the previous default.
+    """
+    import yaml as _yaml
+
+    # Build a 3-cell fixture sitting at ~69°N (Norway, well outside 55.7°N).
+    cells = gpd.GeoDataFrame(
+        {
+            "cell_id": ["C0001", "C0002", "C0003"],
+            "reach_name": ["R1", "R1", "R1"],
+        },
+        geometry=[
+            Polygon([(20.0, 69.0), (20.001, 69.0), (20.001, 69.001), (20.0, 69.001)]),
+            Polygon([(20.001, 69.0), (20.002, 69.0), (20.002, 69.001), (20.001, 69.001)]),
+            Polygon([(20.002, 69.0), (20.003, 69.0), (20.003, 69.001), (20.002, 69.001)]),
+        ],
+        crs="EPSG:4326",
+    )
+
+    from modules.create_model_export import export_yaml
+    yaml_str = export_yaml(reaches={"R1": {}}, cells_gdf=cells)
+    config = _yaml.safe_load(yaml_str)
+
+    # Centroid of unit squares at y ∈ [69.0, 69.001] is ~69.0005°N.
+    assert 68.9 < config["light"]["latitude"] < 69.1, (
+        f"expected ~69°N, got {config['light']['latitude']}"
+    )
+
+    # No-cells fallback keeps the previous behaviour so existing callers
+    # that pass cells_gdf=None do not silently change.
+    yaml_str_no_cells = export_yaml(reaches={"R1": {}}, cells_gdf=None)
+    config_no_cells = _yaml.safe_load(yaml_str_no_cells)
+    assert config_no_cells["light"]["latitude"] == 55.7
+
+    # Geometry-less GeoDataFrame fallback — guards the call shape used by
+    # tests/test_create_model.py::test_export_yaml_has_reaches which
+    # constructs `gpd.GeoDataFrame({"cell_id": [...]})` with no geometry
+    # column. Pre-guard, _derive_latitude raised on .geometry.centroid;
+    # post-guard it returns the 55.7 default unchanged.
+    geomless = gpd.GeoDataFrame({"cell_id": ["C0001"], "reach_name": ["R1"]})
+    yaml_str_geomless = export_yaml(reaches={"R1": {}}, cells_gdf=geomless)
+    config_geomless = _yaml.safe_load(yaml_str_geomless)
+    assert config_geomless["light"]["latitude"] == 55.7

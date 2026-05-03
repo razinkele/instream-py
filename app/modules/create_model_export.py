@@ -45,6 +45,42 @@ def export_shapefile(
     return shp_path
 
 
+def _derive_latitude(cells_gdf: "gpd.GeoDataFrame | None") -> float:
+    """Return mean cell centroid latitude in EPSG:4326, or 55.7 if no cells.
+
+    The 55.7 fallback is the historical Create Model default (Curonian
+    Lagoon) and is preserved so callers that pass `cells_gdf=None` (or
+    a geometry-less GeoDataFrame, e.g. `gpd.GeoDataFrame({'cell_id': [...]})`
+    used by `tests/test_create_model.py::test_export_yaml_has_reaches`)
+    see no behavioural change. The shapely centroid is computed in
+    whatever CRS the GeoDataFrame already carries; we explicitly project
+    to EPSG:4326 first so the returned value is always degrees of
+    latitude regardless of how the cells were built.
+    """
+    if cells_gdf is None or len(cells_gdf) == 0:
+        return 55.7
+    # Geometry-less GeoDataFrame (no active geometry column, or all-empty
+    # geometries) is a legitimate caller pattern — bail to the default
+    # rather than blowing up on `.geometry.centroid`.
+    geom = getattr(cells_gdf, "geometry", None)
+    if geom is None:
+        return 55.7
+    try:
+        if geom.isna().all() or geom.is_empty.all():
+            return 55.7
+    except Exception:
+        # Active geometry column is missing entirely — geopandas raises
+        # AttributeError or similar on `.isna()` in that case.
+        return 55.7
+    if cells_gdf.crs is None:
+        wgs = cells_gdf.set_crs("EPSG:4326")
+    elif str(cells_gdf.crs) == "EPSG:4326":
+        wgs = cells_gdf
+    else:
+        wgs = cells_gdf.to_crs("EPSG:4326")
+    return float(wgs.geometry.centroid.y.mean())
+
+
 def export_yaml(
     reaches: dict,
     cells_gdf: "gpd.GeoDataFrame | None" = None,
@@ -114,7 +150,7 @@ def export_yaml(
             },
         },
         "light": {
-            "latitude": 55.7,
+            "latitude": _derive_latitude(cells_gdf),
             "light_correction": 0.65,
             "light_at_night": 0.5,
             "twilight_angle": 6.0,
