@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.5] - 2026-05-04
+
+Edit Model: hot-fix for the v0.57.4 reach-highlight bug. The map cells weren't picking up the gold outline / brighter fill when the user selected a reach (only the colour buttons changed). Root cause: deck.gl accessor expressions of the form `"@@=properties._fill"` fail the `shiny_deckgl-init.js` `SAFE_ACCESSOR_RE` validation, which requires the expression to start with `d.`. The pre-v0.57.4 code shipped this same broken accessor for `getFillColor` and the per-reach fill colors only worked because of an unrelated deck.gl fallback path. v0.57.4 added two new accessors (`getLineColor`, `getLineWidth`) for the highlight, and those fell off the fallback path because no equivalent fallback exists for line styling. Fix: rewrite all three accessors to the documented `@@=d.properties.X` form so validation passes and the JS-side accessor function actually runs.
+
+Also dialed up the highlight contrast so the selected reach is unmistakable: the un-selected fill alpha drops to 110 (from 180), the selected stays at 240, and the selected line width jumps to 5 px (from 3 px). The selected gold outline (`#ffd700`, full alpha) over a near-opaque fill against faded neighbours is now visible at any zoom level.
+
+### Fixed
+- Map highlight applies on reach selection (was only updating button row).
+
 ## [0.57.4] - 2026-05-04
 
 Edit Model panel: unified reach selector. Replaces three separate per-operation reach pickers (`rename_old`, `split_target`, the implicit click-only merge) with a single `selected_reach` reactive value driven by two synchronised controls: a "Selected reach" dropdown at the top of the left column AND a row of colour-coded reach buttons below the map. The selected reach is highlighted on the map with a gold outline + fully-opaque fill so the user can always see which reach the next operation will target.

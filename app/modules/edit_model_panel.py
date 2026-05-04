@@ -124,9 +124,14 @@ PALETTE_RGB = [
 
 
 _HIGHLIGHT_LINE = [255, 215, 0, 255]   # gold outline for selected reach
-_DEFAULT_LINE = [40, 40, 40, 200]      # dark grey for un-selected
-_HIGHLIGHT_FILL_ALPHA = 230            # selected → fully opaque
-_DEFAULT_FILL_ALPHA = 180              # un-selected → semi-transparent
+_DEFAULT_LINE = [40, 40, 40, 180]      # dark grey for un-selected
+_HIGHLIGHT_FILL_ALPHA = 240            # selected → near-opaque
+_DEFAULT_FILL_ALPHA = 110              # un-selected → noticeably transparent
+
+# Line widths (deck.gl pixels). The selected reach gets a much heavier
+# stroke so it pops against the surrounding faded reaches.
+_HIGHLIGHT_LINE_W = 5
+_DEFAULT_LINE_W = 1
 
 
 def _build_reach_geojson(
@@ -155,7 +160,7 @@ def _build_reach_geojson(
         return _HIGHLIGHT_LINE if reach == selected else _DEFAULT_LINE
 
     def _line_w(reach: str) -> int:
-        return 3 if reach == selected else 1
+        return _HIGHLIGHT_LINE_W if reach == selected else _DEFAULT_LINE_W
 
     cells = cells.copy()
     cells["_fill"] = cells[reach_col].map(_fill)
@@ -557,12 +562,20 @@ def edit_model_server(input, output, session):
         if s["cells"] is None:
             return
         geojson, _ = _build_reach_geojson(s["cells"], selected=selected_reach())
+        # v0.57.5: accessor expressions must start with `d.` per the
+        # shiny_deckgl-init.js SAFE_ACCESSOR_RE
+        # (`/^d(?:\.\w+|\[\d+\]|\["..."\])*$/`). The pre-v0.57.5 form
+        # `@@=properties._fill` failed validation silently; fill colours
+        # were rendered via a deck.gl fallback we cannot rely on for
+        # `getLineColor` / `getLineWidth`. Use the documented
+        # `d.properties.X` form everywhere so highlight changes
+        # actually take effect.
         layer = geojson_layer(
             id="reaches",
             data=geojson,
-            getFillColor="@@=properties._fill",
-            getLineColor="@@=properties._line",
-            getLineWidth="@@=properties._line_w",
+            getFillColor="@@=d.properties._fill",
+            getLineColor="@@=d.properties._line",
+            getLineWidth="@@=d.properties._line_w",
             stroked=True,
             filled=True,
             pickable=True,
