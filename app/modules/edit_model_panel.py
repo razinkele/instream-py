@@ -123,18 +123,49 @@ PALETTE_RGB = [
 ]
 
 
-def _build_reach_geojson(cells: gpd.GeoDataFrame):
-    """Render cells as GeoJSON with per-feature `_fill` (RGBA)."""
+_HIGHLIGHT_LINE = [255, 215, 0, 255]   # gold outline for selected reach
+_DEFAULT_LINE = [40, 40, 40, 200]      # dark grey for un-selected
+_HIGHLIGHT_FILL_ALPHA = 230            # selected → fully opaque
+_DEFAULT_FILL_ALPHA = 180              # un-selected → semi-transparent
+
+
+def _build_reach_geojson(
+    cells: gpd.GeoDataFrame,
+    selected: str | None = None,
+):
+    """Render cells as GeoJSON with per-feature `_fill`, `_line`, `_line_w`.
+
+    When ``selected`` matches a reach name, that reach's cells get a
+    bolder gold outline + fully-opaque fill so the selection is
+    visually obvious on the map. v0.57.4.
+    """
     reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
     reach_names = sorted(cells[reach_col].unique())
-    color_for = {
-        name: PALETTE_RGB[i % len(PALETTE_RGB)] + [180]
+    base_color = {
+        name: PALETTE_RGB[i % len(PALETTE_RGB)]
         for i, name in enumerate(reach_names)
     }
+
+    def _fill(reach: str) -> list[int]:
+        c = base_color[reach]
+        a = _HIGHLIGHT_FILL_ALPHA if reach == selected else _DEFAULT_FILL_ALPHA
+        return [c[0], c[1], c[2], a]
+
+    def _line(reach: str) -> list[int]:
+        return _HIGHLIGHT_LINE if reach == selected else _DEFAULT_LINE
+
+    def _line_w(reach: str) -> int:
+        return 3 if reach == selected else 1
+
     cells = cells.copy()
-    cells["_fill"] = cells[reach_col].map(color_for)
+    cells["_fill"] = cells[reach_col].map(_fill)
+    cells["_line"] = cells[reach_col].map(_line)
+    cells["_line_w"] = cells[reach_col].map(_line_w)
     geojson = json.loads(cells.to_json())
-    legend_entries = [(name, color_for[name]) for name in reach_names]
+    legend_entries = [
+        (name, base_color[name] + [_DEFAULT_FILL_ALPHA])
+        for name in reach_names
+    ]
     return geojson, legend_entries
 
 
@@ -180,6 +211,24 @@ def edit_model_ui():
     body[data-em-mode="lasso"] canvas { cursor: crosshair !important; }
     body[data-em-mode="merge-a"] canvas,
     body[data-em-mode="merge-b"] canvas { cursor: pointer !important; }
+    /* v0.57.4 unified reach selector: color buttons below the map.
+       Each chip is the reach color; .active gets a heavier outline. */
+    .em-reach-btn-row { display: flex; flex-wrap: wrap; gap: 6px;
+                        padding: 8px 0; align-items: center; }
+    .em-reach-btn-row .em-label { color: #555; font-size: 12px;
+                                   margin-right: 4px; font-weight: 500; }
+    .em-reach-btn { padding: 4px 12px; border-radius: 4px;
+                    border: 1px solid rgba(0,0,0,.2); cursor: pointer;
+                    color: #fff; font-size: 12px; font-weight: 500;
+                    text-shadow: 0 0 2px rgba(0,0,0,.5);
+                    transition: transform .12s, box-shadow .12s; }
+    .em-reach-btn:hover { transform: translateY(-1px);
+                          box-shadow: 0 2px 4px rgba(0,0,0,.2); }
+    .em-reach-btn.active { outline: 3px solid #ffd700;
+                           outline-offset: 1px;
+                           box-shadow: 0 0 0 1px rgba(0,0,0,.4); }
+    .em-reach-btn.clear { background: #f0f0f0; color: #555;
+                          text-shadow: none; }
     """)
     EM_MODE_BRIDGE = ui.tags.script("""
     (function(){
@@ -208,6 +257,17 @@ def edit_model_ui():
                     choices=fixtures or ["(none — generate one first)"],
                     selected=fixtures[0] if fixtures else None,
                 ),
+                # v0.57.4: unified reach selector. Single source of truth
+                # for "which reach is the user editing". The dropdown here
+                # and the colour-button row below the map both drive the
+                # same `selected_reach` reactive value; the map highlights
+                # the selected reach with a gold outline.
+                ui.input_select(
+                    "select_reach",
+                    "Selected reach",
+                    choices=["(none)"],
+                    selected="(none)",
+                ),
                 ui.row(
                     ui.column(6, ui.input_action_button(
                         "undo", "↶ Undo", class_="btn-secondary btn-sm",
@@ -218,8 +278,7 @@ def edit_model_ui():
                 ),
                 ui.output_ui("reach_table"),
                 ui.hr(),
-                ui.h5("Rename reach"),
-                ui.input_select("rename_old", "Reach to rename", choices=[]),
+                ui.h5("Rename selected reach"),
                 ui.input_text("rename_new", "New name", placeholder="e.g. Estuary"),
                 ui.input_action_button(
                     "do_rename", "Apply rename + save", class_="btn-primary",
@@ -235,8 +294,7 @@ def edit_model_ui():
                     "merge_apply", "Apply merge", class_="btn-primary",
                 ),
                 ui.hr(),
-                ui.h5("Split a reach by drawing a line"),
-                ui.input_select("split_target", "Reach to split", choices=[]),
+                ui.h5("Split selected reach by drawing a line"),
                 ui.input_text(
                     "split_north_name", "Name for north side",
                     placeholder="e.g. Upper-N",
@@ -280,7 +338,7 @@ def edit_model_ui():
                 8,
                 ui.output_ui("active_mode_banner"),
                 _widget.ui(height="600px"),
-                ui.output_ui("legend"),
+                ui.output_ui("reach_button_row"),
             ),
         ),
     )
@@ -399,6 +457,10 @@ def edit_model_server(input, output, session):
     # on every state mutation (rename, split apply, etc.) — only on
     # fixture change.
     last_fitted_fixture = reactive.value(None)
+    # v0.57.4 UX: unified reach selector. Drives the map highlight and
+    # serves as the default target for rename/split. Set by either the
+    # `select_reach` dropdown or the colour buttons below the map.
+    selected_reach = reactive.value(None)
 
     def _push_undo_snapshot():
         s = state()
@@ -431,6 +493,9 @@ def edit_model_server(input, output, session):
             "cells": cells,
             "shp_path": shp_path,
         })
+        # v0.57.4: clear selection on fixture switch (the previously-
+        # selected reach may not exist in the new fixture).
+        selected_reach.set(None)
         last_save.set(f"loaded {short_name} ({len(cells)} cells)")
 
     @reactive.effect
@@ -440,30 +505,68 @@ def edit_model_server(input, output, session):
             return
         reach_col = "REACH_NAME" if "REACH_NAME" in s["cells"].columns else "reach_name"
         names = sorted(s["cells"][reach_col].unique())
-        ui.update_select(
-            "rename_old", choices=names,
-            selected=names[0] if names else None,
-        )
-        ui.update_select(
-            "split_target", choices=names,
-            selected=names[0] if names else None,
-        )
+        # v0.57.4: single unified `select_reach` dropdown. The "(none)"
+        # sentinel is the default — keeps no reach selected on first load,
+        # so the user can either pick from the dropdown or click a
+        # colour button below the map.
+        choices = ["(none)"] + names
+        cur = selected_reach()
+        # If the previously-selected reach still exists, keep it
+        # selected; otherwise drop back to "(none)".
+        sel = cur if cur in names else "(none)"
+        ui.update_select("select_reach", choices=choices, selected=sel)
+
+    @reactive.effect
+    @reactive.event(input.select_reach)
+    def _on_select_reach_dropdown():
+        # Sync dropdown → reactive value. The "(none)" sentinel maps to
+        # None so downstream consumers can short-circuit cleanly.
+        v = (input.select_reach() or "").strip()
+        selected_reach.set(None if not v or v == "(none)" else v)
+
+    @reactive.effect
+    @reactive.event(input.reach_button_click)
+    def _on_reach_button_click():
+        # Sync colour-button click → reactive value. Clicking the same
+        # reach again deselects (toggle), so users can clear via the
+        # button row without going to the dropdown.
+        v = (input.reach_button_click() or "").strip()
+        if not v:
+            selected_reach.set(None)
+            return
+        cur = selected_reach()
+        selected_reach.set(None if cur == v else v)
+
+    @reactive.effect
+    def _selected_reach_to_dropdown():
+        # Keep the dropdown in sync when a button click changes the
+        # selection. Without this, dropdown and buttons can drift.
+        cur = selected_reach()
+        s = state()
+        if s["cells"] is None:
+            return
+        target = cur if cur is not None else "(none)"
+        try:
+            ui.update_select("select_reach", selected=target)
+        except Exception:
+            pass
 
     @reactive.effect
     async def _update_map():
         s = state()
         if s["cells"] is None:
             return
-        geojson, _ = _build_reach_geojson(s["cells"])
+        geojson, _ = _build_reach_geojson(s["cells"], selected=selected_reach())
         layer = geojson_layer(
             id="reaches",
             data=geojson,
             getFillColor="@@=properties._fill",
-            getLineColor=[40, 40, 40, 200],
-            getLineWidth=1,
+            getLineColor="@@=properties._line",
+            getLineWidth="@@=properties._line_w",
             stroked=True,
             filled=True,
             pickable=True,
+            lineWidthMinPixels=1,
         )
 
         # v0.56.17: per-reach OSM-source overlay layers + in-map legend
@@ -539,6 +642,71 @@ def edit_model_server(input, output, session):
             ui.input_action_button(
                 "mode_cancel", cancel_label, class_="btn btn-sm btn-light",
             ),
+        )
+
+    # v0.57.4 unified reach selector — colour buttons below the map.
+    # Clicking a button drives the same `selected_reach` reactive value
+    # as the dropdown above, and toggles selection on second click.
+    @output
+    @render.ui
+    def reach_button_row():
+        s = state()
+        if s["cells"] is None:
+            return ui.HTML("")
+        cells = s["cells"]
+        reach_col = "REACH_NAME" if "REACH_NAME" in cells.columns else "reach_name"
+        names = sorted(cells[reach_col].unique())
+        sel = selected_reach()
+        # Each click pushes the reach name as a string into a single
+        # shared input. The Shiny module namespacing means we must use
+        # `session.ns(...)` to compute the wire-level input id that the
+        # JS-side `Shiny.setInputValue` should target.
+        btn_input_id = session.ns("reach_button_click")
+        chips = []
+        for i, name in enumerate(names):
+            c = PALETTE_RGB[i % len(PALETTE_RGB)]
+            active = (name == sel)
+            # Escape backticks/quotes in name for the JS string literal.
+            # Reach names in this codebase are alphanumeric, but defend.
+            safe_name = name.replace("\\", "\\\\").replace("'", "\\'")
+            chips.append(ui.tags.button(
+                name,
+                {
+                    "type": "button",
+                    "class": "em-reach-btn" + (" active" if active else ""),
+                    "style": (
+                        f"background:rgb({c[0]},{c[1]},{c[2]});"
+                    ),
+                    "onclick": (
+                        f"Shiny.setInputValue("
+                        f"'{btn_input_id}', '{safe_name}', "
+                        f"{{priority: 'event'}});"
+                    ),
+                    "title": f"Click to select '{name}' (click again to deselect)",
+                },
+            ))
+        # Trailing "Clear" chip for one-click deselection.
+        clear_chip = ui.tags.button(
+            "× clear",
+            {
+                "type": "button",
+                "class": "em-reach-btn clear",
+                "onclick": (
+                    f"Shiny.setInputValue("
+                    f"'{btn_input_id}', '', {{priority: 'event'}});"
+                ),
+                "title": "Deselect the current reach",
+            },
+        )
+        label_text = (
+            f"Selected: {sel}" if sel is not None
+            else "No reach selected — pick one to edit:"
+        )
+        return ui.div(
+            {"class": "em-reach-btn-row"},
+            ui.span({"class": "em-label"}, label_text),
+            *chips,
+            clear_chip,
         )
 
     @reactive.effect
@@ -640,10 +808,17 @@ def edit_model_server(input, output, session):
         s = state()
         if s["cells"] is None:
             return
-        old = (input.rename_old() or "").strip()
+        # v0.57.4: rename targets the unified `selected_reach`. Pre-fix
+        # used a separate `rename_old` dropdown — now the user picks
+        # the target via either the "Selected reach" dropdown at the
+        # top or the colour buttons below the map.
+        old = (selected_reach() or "").strip()
         new = (input.rename_new() or "").strip()
-        if not old or not new:
-            last_save.set("❌ rename requires both old and new names")
+        if not old:
+            last_save.set("❌ rename: pick a reach first (use the dropdown or click a colour button)")
+            return
+        if not new:
+            last_save.set("❌ rename: enter a new name")
             return
         if old == new:
             last_save.set("❌ old and new names are identical")
@@ -884,11 +1059,17 @@ def edit_model_server(input, output, session):
         get_drawn_features. The completion effect at
         _split_completion handles the geometry mutation."""
         s = state()
-        target = (input.split_target() or "").strip()
+        # v0.57.4: split targets the unified `selected_reach` — same
+        # source of truth as rename. Pre-fix used a separate
+        # `split_target` dropdown.
+        target = (selected_reach() or "").strip()
         north_name = (input.split_north_name() or "").strip()
         south_name = (input.split_south_name() or "").strip()
-        if not target or not north_name or not south_name:
-            last_save.set("❌ split: pick target reach and both new names")
+        if not target:
+            last_save.set("❌ split: pick a reach first (dropdown or colour button)")
+            return
+        if not north_name or not south_name:
+            last_save.set("❌ split: enter both north and south names")
             return
         if north_name == south_name:
             last_save.set("❌ split: north and south names must differ")

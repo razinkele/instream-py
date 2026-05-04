@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.4] - 2026-05-04
+
+Edit Model panel: unified reach selector. Replaces three separate per-operation reach pickers (`rename_old`, `split_target`, the implicit click-only merge) with a single `selected_reach` reactive value driven by two synchronised controls: a "Selected reach" dropdown at the top of the left column AND a row of colour-coded reach buttons below the map. The selected reach is highlighted on the map with a gold outline + fully-opaque fill so the user can always see which reach the next operation will target.
+
+### Changed
+- **Unified reach selector**: new `selected_reach` reactive value (None | reach name) drives map highlight, rename target, and split target.
+- **`select_reach` dropdown** at the top of the left column (right after Fixture). Lists all reaches with a `(none)` sentinel at the head.
+- **Colour-button row** below the map: one chip per reach, coloured with that reach's PALETTE_RGB entry. Clicking a button toggles selection (click again to deselect). Trailing **× clear** chip for one-step deselect.
+- **Map highlight**: selected reach gets gold outline (`getLineColor=[255,215,0,255]`), 3-px line width, and fully-opaque fill (alpha 230 vs 180 for un-selected). `_build_reach_geojson` now emits per-feature `_line` and `_line_w` fields and the deck.gl `geojson_layer` consumes them via `@@=properties._line` accessors.
+- **Rename / Split** sections no longer carry their own reach selectors; they read `selected_reach()`. Validation error messages now point users at the dropdown and the colour buttons.
+- **Selection clears on fixture switch** (the previously-selected reach may not exist in the new fixture).
+
+### Removed
+- `input_select("rename_old", ...)` and `input_select("split_target", ...)` — replaced by the unified selector.
+
+No production-data changes. No test changes — UX-only patch. All 20 Edit Model tests pass.
+
 ## [0.57.3] - 2026-05-04
 
 Edit Model panel UX improvements based on user smoke-test feedback:
