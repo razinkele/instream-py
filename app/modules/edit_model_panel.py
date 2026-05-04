@@ -154,8 +154,50 @@ def edit_model_ui():
         ],
     )
     from modules.spatial_panel import LEGEND_POINTER_EVENTS_FIX
+    # v0.57.3 UX: cursor styling + active-mode banner styling, plus a JS
+    # bridge that toggles `body[data-em-mode=...]` so the cursor rule below
+    # actually targets the deck.gl canvas. Without the body-class indirection
+    # we cannot scope cursor styles to "draw mode active" without colliding
+    # with mapbox-gl-draw's own internal cursor handling.
+    EM_UX_STYLE = ui.tags.style("""
+    .em-mode-banner { padding: 10px 14px; margin: 0 0 8px 0; border-radius: 4px;
+                      display: flex; align-items: center; justify-content: space-between;
+                      gap: 12px; font-size: 13px; font-weight: 500;
+                      box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .em-mode-banner.merge-a, .em-mode-banner.merge-b {
+        background: #fff3cd; color: #664d03; border: 1px solid #ffc107; }
+    .em-mode-banner.split  { background: #cff4fc; color: #055160; border: 1px solid #0dcaf0; }
+    .em-mode-banner.lasso  { background: #d1e7dd; color: #0f5132; border: 1px solid #198754; }
+    .em-mode-banner .em-mode-text { flex: 1; }
+    .em-mode-banner .em-mode-text strong { font-weight: 600; }
+    .em-mode-banner .btn { font-size: 12px; padding: 3px 10px; flex-shrink: 0; }
+    /* Cursor override on the deck.gl/mapbox canvas while a draw or click
+       mode is active. The !important is needed because mapbox-gl and
+       deckgl set their own cursors on these canvases. Targeting
+       'canvas' broadly inside the data-em-mode'd body covers both
+       deck-gl-overlay-canvas and mapbox-gl-canvas. */
+    body[data-em-mode="split"] canvas,
+    body[data-em-mode="lasso"] canvas { cursor: crosshair !important; }
+    body[data-em-mode="merge-a"] canvas,
+    body[data-em-mode="merge-b"] canvas { cursor: pointer !important; }
+    """)
+    EM_MODE_BRIDGE = ui.tags.script("""
+    (function(){
+        if (window.__emModeBridgeInstalled) return;
+        window.__emModeBridgeInstalled = true;
+        Shiny.addCustomMessageHandler('em_set_mode', function(msg){
+            if (msg && msg.mode) {
+                document.body.setAttribute('data-em-mode', msg.mode);
+            } else {
+                document.body.removeAttribute('data-em-mode');
+            }
+        });
+    })();
+    """)
     return ui.div(
         LEGEND_POINTER_EVENTS_FIX,
+        EM_UX_STYLE,
+        EM_MODE_BRIDGE,
         ui.row(
             ui.column(
                 4,
@@ -236,6 +278,7 @@ def edit_model_ui():
             ),
             ui.column(
                 8,
+                ui.output_ui("active_mode_banner"),
                 _widget.ui(height="600px"),
                 ui.output_ui("legend"),
             ),
@@ -348,6 +391,15 @@ def edit_model_server(input, output, session):
     history_undo = reactive.value([])
     history_redo = reactive.value([])
 
+    # v0.57.3 UX: single source of truth for "what is the user doing right
+    # now". Values: None | "merge-a" | "merge-b" | "split" | "lasso".
+    # Drives both the visible banner and the body[data-em-mode] cursor CSS.
+    active_mode = reactive.value(None)
+    # Track which fixture's bounds we last fitted on, so we don't re-zoom
+    # on every state mutation (rename, split apply, etc.) — only on
+    # fixture change.
+    last_fitted_fixture = reactive.value(None)
+
     def _push_undo_snapshot():
         s = state()
         if s["cells"] is None:
@@ -430,6 +482,92 @@ def edit_model_server(input, output, session):
             await _widget.update(session, layers, widgets=extra_widgets)
         except Exception:
             logger.exception("map update failed")
+
+        # v0.57.3 UX: auto-zoom to the loaded fixture's bounds. Only fire
+        # when the fixture identity changes — otherwise every rename /
+        # split / lasso mutation would reset the map view, fighting any
+        # manual pan/zoom the user has done. fit_bounds payload is
+        # `[[sw_lng, sw_lat], [ne_lng, ne_lat]]` per shiny_deckgl's
+        # MapWidget.fit_bounds contract.
+        short_name = s.get("short_name")
+        if short_name and short_name != last_fitted_fixture():
+            try:
+                bounds_arr = s["cells"].total_bounds  # [minx, miny, maxx, maxy]
+                bounds = [
+                    [float(bounds_arr[0]), float(bounds_arr[1])],
+                    [float(bounds_arr[2]), float(bounds_arr[3])],
+                ]
+                await _widget.fit_bounds(
+                    session, bounds, padding=50, max_zoom=14, duration=600,
+                )
+                last_fitted_fixture.set(short_name)
+            except Exception:
+                logger.exception("fit_bounds failed for %s", short_name)
+
+    # ------------------------------------------------------------------
+    # v0.57.3 UX: active-mode banner + JS body-class bridge
+    # ------------------------------------------------------------------
+    _MODE_LABELS = {
+        "merge-a": (
+            "MERGE — click any cell of <strong>reach A</strong> on the map.",
+            "Cancel merge",
+        ),
+        "merge-b": (
+            "MERGE — click any cell of <strong>reach B</strong> on the map.",
+            "Cancel merge",
+        ),
+        "split": (
+            "SPLIT — draw a single <strong>line</strong> across the target reach, then click <strong>Apply split</strong>.",
+            "Cancel split",
+        ),
+        "lasso": (
+            "LASSO — draw a <strong>polygon</strong> enclosing the cells to reassign, then click <strong>Apply selection</strong>.",
+            "Cancel selection",
+        ),
+    }
+
+    @output
+    @render.ui
+    def active_mode_banner():
+        mode = active_mode()
+        if mode is None or mode not in _MODE_LABELS:
+            return ui.HTML("")
+        text_html, cancel_label = _MODE_LABELS[mode]
+        return ui.div(
+            {"class": f"em-mode-banner {mode}"},
+            ui.div({"class": "em-mode-text"}, ui.HTML(text_html)),
+            ui.input_action_button(
+                "mode_cancel", cancel_label, class_="btn btn-sm btn-light",
+            ),
+        )
+
+    @reactive.effect
+    async def _propagate_mode_to_js():
+        # Push the current mode (or None) to the body[data-em-mode]
+        # attribute so the cursor CSS can scope itself.
+        mode = active_mode()
+        try:
+            await session.send_custom_message(
+                "em_set_mode", {"mode": mode if mode else None},
+            )
+        except Exception:
+            logger.exception("em_set_mode dispatch failed")
+
+    @reactive.effect
+    @reactive.event(input.mode_cancel)
+    async def _on_mode_cancel():
+        # Clear all pending op state + tear down any active draw layer.
+        merge_state.set({"phase": "idle", "reach_a": None})
+        split_state.set({"phase": "idle"})
+        split_pending.set(None)
+        lasso_pending.set(None)
+        active_mode.set(None)
+        try:
+            await _widget.delete_drawn_features(session)
+            await _widget.disable_draw(session)
+        except Exception:
+            pass
+        last_save.set("✓ cancelled — no edits applied")
 
     @output
     @render.ui
@@ -578,6 +716,7 @@ def edit_model_server(input, output, session):
                 )
                 return
         merge_state.set({"phase": "pick_a", "reach_a": None})
+        active_mode.set("merge-a")
         last_save.set("merge: click any cell of the first reach")
 
     @reactive.effect
@@ -601,6 +740,7 @@ def edit_model_server(input, output, session):
             return
         if ms["phase"] == "pick_a":
             merge_state.set({"phase": "pick_b", "reach_a": clicked_reach})
+            active_mode.set("merge-b")
             last_save.set(f"reach A = {clicked_reach}; click reach B")
         elif ms["phase"] == "pick_b":
             if clicked_reach == ms["reach_a"]:
@@ -609,6 +749,9 @@ def edit_model_server(input, output, session):
             merge_state.set({
                 "phase": "ready", "reach_a": ms["reach_a"], "reach_b": clicked_reach,
             })
+            # Both reaches picked — clear the cursor mode but keep the
+            # state machine in "ready" so Apply can fire.
+            active_mode.set(None)
             last_save.set(
                 f"reach A = {ms['reach_a']}, reach B = {clicked_reach}; "
                 "type a new name and Apply"
@@ -703,6 +846,7 @@ def edit_model_server(input, output, session):
         new_state["cfg"] = cfg
         state.set(new_state)
         merge_state.set({"phase": "idle", "reach_a": None})
+        active_mode.set(None)
         merged_msg = f"✓ merged '{a}' + '{b}' → '{new_name}' and saved"
         if orphaned_b_csvs:
             merged_msg += (
@@ -728,6 +872,7 @@ def edit_model_server(input, output, session):
             last_save.set(f"❌ enable_draw failed: {exc}")
             return
         split_state.set({"phase": "drawing"})
+        active_mode.set("split")
         last_save.set(
             "split: draw a single line across the target reach, then click Apply"
         )
@@ -876,6 +1021,7 @@ def edit_model_server(input, output, session):
         new_state["cfg"] = cfg
         state.set(new_state)
         split_state.set({"phase": "idle"})
+        active_mode.set(None)
         # split_pending was already cleared at the top of this effect
         # (right after the line-found check), so a double-Apply race
         # cannot re-trigger this body. No second clear needed here.
@@ -899,6 +1045,7 @@ def edit_model_server(input, output, session):
         except Exception as exc:
             last_save.set(f"❌ enable_draw failed: {exc}")
             return
+        active_mode.set("lasso")
         last_save.set(
             "lasso: draw a polygon enclosing the cells to reassign, then Apply"
         )
@@ -1016,6 +1163,7 @@ def edit_model_server(input, output, session):
         state.set(new_state)
         # lasso_pending was already cleared at the top of the post-validation
         # block; no second clear needed here (mirrors _split_completion).
+        active_mode.set(None)
         last_save.set(f"✓ lasso: {n_inside} cells reassigned to '{op['new_name']}'")
 
     # ------------------------------------------------------------------

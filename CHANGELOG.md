@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.3] - 2026-05-04
+
+Edit Model panel UX improvements based on user smoke-test feedback:
+
+- **The map didn't zoom to the loaded fixture.** It opened at the hardcoded Baltic-wide default view (`longitude=22, latitude=60, zoom=5`) and the user had to manually pan/zoom to find their reaches. v0.57.3 calls `_widget.fit_bounds()` after the first layer update for a given fixture, animating to the cells' total bounds with 50px padding and `max_zoom=14`. Subsequent state mutations (rename, split, lasso, regen) do NOT re-fit — only the initial fixture load and any subsequent fixture change.
+- **The cursor didn't change when entering a draw or click mode.** Mapbox-gl-draw's own cursor handling was being overridden by deck.gl's grab cursor. v0.57.3 adds a CSS rule that scopes `cursor: crosshair !important` (split / lasso) and `cursor: pointer !important` (merge pick A / pick B) to the deck.gl canvas based on a `body[data-em-mode=...]` attribute, toggled via a tiny Shiny→JS bridge keyed off a new `active_mode` reactive value.
+- **No prominent indicator of what mode the user was in.** The previous `merge_status` line was small, only visible in the left column far from the map. v0.57.3 adds a colour-coded banner directly above the map that shows the current mode (MERGE / SPLIT / LASSO), tells the user exactly what to do next, and includes a **Cancel** button that tears down all draw state in one click.
+
+### Fixed
+- `_update_map`: `fit_bounds` on initial fixture load. Tracks `last_fitted_fixture` reactive value so re-fit fires only on fixture change.
+- `_split_start` / `_lasso_start` / `_merge_start` / `_merge_on_click`: set `active_mode` to drive the banner + cursor.
+- `_split_completion` / `_lasso_completion` / `_merge_apply`: clear `active_mode` on success or error.
+- New `_on_mode_cancel` handler tears down all draw state and disables the draw layer.
+
+No production-code changes outside `app/modules/edit_model_panel.py`. No test changes — UX-only patch.
+
 ## [0.57.2] - 2026-05-04
 
 Test-only follow-up to v0.57.1. Fixes 2 long-pre-existing failures in `tests/test_edit_model_panel_regenerate.py` that surfaced after the v0.57.0 fixture regen flipped Mörrumsån from EPSG:4326 to EPSG:3035. Same bug shape as the v0.57.0 fix to `test_balticcoast_geometric_adjacency_to_mouth`.
