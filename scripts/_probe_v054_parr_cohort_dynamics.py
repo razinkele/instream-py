@@ -40,8 +40,20 @@ v0.54.x next step.
 Usage:
     micromamba run -n shiny python scripts/_probe_v054_parr_cohort_dynamics.py --years 5
 
-The 5-yr run takes ~75-90 min on a quiet system (~115+ min if anything
-else is competing). Use --years 1 for a quick smoke (~5 min).
+Pre-requisite: bump `performance.trout_capacity` to >= 500000 in
+configs/example_tornionjoki.yaml before a multi-year run. The default
+100k overflows at the redd-emergence burst and distorts cohort dynamics
+(see v0.54.1 xfail message in tests/test_multi_river_baltic.py).
+
+Runtime (post-v0.53 calibration; the docstring's old "75-90 min" estimate
+predates the v0.53.0 terr_pred_min raise that ~10x'd PARR retention):
+- --years 1 smoke: ~5-15 min (minimal natal cohort, just confirms boot)
+- --years 2: ~30-60 min (covers H1 — age-2 length question)
+- --years 5: ~4-8 hours at 500k capacity (full H1 + H2 + modal-age verdict)
+
+Progress visibility: by default the probe prints a `[progress]` line every
+100 simulation days with current date, alive count, natal count, and
+wall-clock elapsed (forced flush). Tune with `--progress-days N`.
 """
 from __future__ import annotations
 
@@ -74,6 +86,8 @@ def main():
                     default="tests/fixtures/example_tornionjoki")
     ap.add_argument("--snapshot-days", type=int, default=14,
                     help="Snapshot interval in days (default 14 = biweekly).")
+    ap.add_argument("--progress-days", type=int, default=100,
+                    help="Print a progress line every N simulation days (default 100).")
     args = ap.parse_args()
 
     from salmopy.model import SalmopyModel
@@ -85,7 +99,7 @@ def main():
 
     start = _dt.date(2011, 4, 1)
     end = (start + _dt.timedelta(days=365 * args.years)).isoformat()
-    print(f"Running {Path(args.config).stem} for {args.years} years (end {end})...")
+    print(f"Running {Path(args.config).stem} for {args.years} years (end {end})...", flush=True)
 
     model = SalmopyModel(
         config_path=str(ROOT / args.config),
@@ -99,11 +113,31 @@ def main():
     snapshots = []
     next_snapshot = start
     snap_dt = _dt.timedelta(days=args.snapshot_days)
+    progress_interval = _dt.timedelta(days=args.progress_days)
+    next_progress = start + progress_interval
+    wall_start = _dt.datetime.now()
 
     while not model.time_manager.is_done():
         model.step()
         cur = model.time_manager.current_date
         cur_date = cur.date() if hasattr(cur, "date") else cur
+        if cur_date >= next_progress:
+            ts = model.trout_state
+            alive = ts.alive_indices()
+            is_natal = getattr(ts, "is_natal", None)
+            n_natal = int(is_natal[alive].sum()) if is_natal is not None else -1
+            elapsed = _dt.datetime.now() - wall_start
+            sim_days = (cur_date - start).days
+            total_days = (_dt.date.fromisoformat(end) - start).days
+            pct = 100.0 * sim_days / max(total_days, 1)
+            print(
+                f"[progress] sim {cur_date.isoformat()} "
+                f"({sim_days}/{total_days} days, {pct:.1f}%) "
+                f"alive={len(alive)} natal={n_natal} "
+                f"wall={str(elapsed).split('.')[0]}",
+                flush=True,
+            )
+            next_progress = cur_date + progress_interval
         if cur_date < next_snapshot:
             continue
 

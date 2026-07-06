@@ -19,14 +19,16 @@ simulation:
 performance:
   backend: numpy
   device: cpu
-  # v0.53.1 Issue A: was 12000; the v0.53.0 terr_pred calibration plus
-  # v0.52.x natal-recruitment fixes lift PARR retention enough that the
-  # 5-yr run hits the cap and starts dropping eggs at redd_emergence
-  # ("trout_state capacity full" warnings, see scripts/_v053_breakdown_1yr.log).
-  # 100k slot pool covers seed pop (~3k) + natal cohorts (peak ~30-40k
-  # FRY/PARR per year × 5 cohorts overlapping for AU1 4-yr smolt life
-  # history) with comfortable headroom.
-  trout_capacity: 100000
+  # v0.55: was 500000 (v0.54.x bump). The v0.55 V3 calibration
+  # (2x drift_conc / 0.5x drift_regen across all reaches) boosted FRY
+  # recruitment from ~370k peak (v0.54.x baseline 5-yr probe) to ~500k+
+  # in a single emergence event — saturating the 500k cap. 1.5M gives 3x
+  # headroom over the observed 500k peak, accounting for compounded peaks
+  # when multiple AU1 cohorts overlap in years 2-4. Memory cost ~1.8 GB
+  # at full population, fine on 16 GB hosts.
+  # Earlier history: v0.53.1 raised 12k→100k (terr_pred recruitment boost),
+  # v0.54.x raised 100k→500k (probe burst-overflow fix).
+  trout_capacity: 1500000
   # v0.53.5: was 3000; v0.53.0's terr_pred calibration + v0.53.1 trout_capacity
   # raise increase PARR-to-spawner conversion enough that the 5-yr test
   # accumulates >3000 active redds and starts dropping spawns at create_redd
@@ -56,14 +58,28 @@ species:
   BalticAtlanticSalmon:
     is_anadromous: true
     display_color: silver
-    cmax_A: 0.303
+    cmax_A: 0.40  # v0.55: was 0.303 (Smith 2009 marine post-smolt — misapplied to freshwater parr per baltic_salmon_species.yaml comment). v0.54.x probe verdict: V3 drift bump fixed sub-10cm growth but mean age-2 length still 10.23 cm (need 14 cm smolt threshold). c_stepmax = cmax_A × weight^-0.275 × cmax_temp is the binding cap above 10 cm. 0.40 is +32% conservative test; other configs in this repo (example_a/b/marine/calibration) use 0.628 (NetLogo Chinook/general-salmonid default) — that's the next-step value if 0.40 underperforms. Forseth et al. 2001 (DOI 10.1046/j.1365-2427.2001.00631.x) has parr-specific Cmax for Norwegian subarctic salmon but is paywalled.
     cmax_B: -0.275
     cmax_temp_table:
+      # Tornionjoki override (subarctic, ~67°N) — Jensen 2000 reparameterization.
+      # Jensen (2000) tested Elliott & Hurley 1997 on River Alta (70°N) parr and
+      # concluded the standard curve "seriously underestimated growth at low
+      # temperatures". Best-fit lower-T=1.39°C (vs canonical ~4°C), optimum=14.71°C
+      # (vs 16°C), upper=25.30°C (vs 20°C). Combined with Finstad et al. 2004
+      # (DOI 10.1111/j.1365-2427.2004.01279.x) which documents non-zero winter growth
+      # at 1-6°C for Norwegian Atlantic salmon parr, this overrides the canonical
+      # Baltic table's cold edge. v0.54.x probe verdict (cmax_A=0.40 alone) gave
+      # age-2 length 11.42 cm with Dec→May winter flatline at ~9.9 cm — Jensen
+      # 2000's diagnosis applied. Boosts 4°C 0.3→0.5 and 8°C 0.7→0.85, peak
+      # plateau widened to 14.7-16°C. Upper-tail kept conservative since
+      # Tornionjoki summer max ~18-19°C; full Jensen 25.3°C tail unnecessary.
       0.0: 0.0
-      4.0: 0.3
-      8.0: 0.7
-      13.0: 0.95
-      16.0: 1.0
+      1.4: 0.05    # Jensen 2000 lower-T for growth; Finstad 2004 non-zero winter
+      4.0: 0.5     # was 0.3 — cold-water boost per Jensen 2000
+      8.0: 0.85    # was 0.7
+      13.0: 0.97
+      14.7: 1.0    # Jensen 2000 optimum
+      16.0: 1.0    # plateau through canonical Baltic optimum
       18.0: 0.6
       19.0: 0.3
       20.0: 0.0
@@ -173,11 +189,11 @@ species:
     smolt_min_length: 14.0
 reaches:
   Mouth:
-    drift_conc: 2.0e-08
+    drift_conc: 4.0e-08  # v0.55: 2x boost (was 2.0e-08). v0.54.x probe verdict: natal cohorts hit 10cm asymptote, never reach 14cm smolt threshold (0 natal smolts in 5 yrs). Growth-too-slow, not H1/H2 as originally framed. v0.46+ plan V3 prescribes upstream-food bump; expanded across all 4 reaches per scripts/_probe_v054_5yr.log.
     search_prod: 2.0e-06
     shelter_speed_frac: 0.3
     prey_energy_density: 4500
-    drift_regen_distance: 600
+    drift_regen_distance: 300  # v0.55: 0.5x (was 600). Paired with drift_conc 2x; faster drift regeneration → more sustained food supply for downstream-of-feeding-station fish.
     shading: 0.8
     fish_pred_min: 0.985
     terr_pred_min: 0.99  # v0.53.0: was 0.97; per-source mortality probe (scripts/_v053_breakdown_1yr.log) showed terr_pred is dominant kernel killer at ~2.6% annualized survival vs real Tornionjoki parr ~30-50%/yr. Floor 0.97 is warm-river template default; subarctic Atlantic salmon experience much lower avian/mammalian predation pressure on parr.
@@ -194,11 +210,11 @@ reaches:
     river_name: Tornionjoki
   Lower:
     pspc_smolts_per_year: 660000
-    drift_conc: 1.2e-08
+    drift_conc: 2.4e-08  # v0.55: 2x boost (was 1.2e-08). See Mouth note.
     search_prod: 1.5e-06
     shelter_speed_frac: 0.2
     prey_energy_density: 3800
-    drift_regen_distance: 800
+    drift_regen_distance: 400  # v0.55: 0.5x (was 800). See Mouth note.
     shading: 0.5
     fish_pred_min: 0.97
     terr_pred_min: 0.99  # v0.53.0: was 0.965; see Mouth note.
@@ -215,11 +231,11 @@ reaches:
     river_name: Tornionjoki
   Middle:
     pspc_smolts_per_year: 990000
-    drift_conc: 1.5e-08
+    drift_conc: 3.0e-08  # v0.55: 2x boost (was 1.5e-08). See Mouth note.
     search_prod: 1.8e-06
     shelter_speed_frac: 0.22
     prey_energy_density: 4000
-    drift_regen_distance: 700
+    drift_regen_distance: 350  # v0.55: 0.5x (was 700). See Mouth note.
     shading: 0.72
     fish_pred_min: 0.98
     terr_pred_min: 0.99  # v0.53.0: was 0.97; see Mouth note.
@@ -235,11 +251,11 @@ reaches:
     velocity_file: Middle-Vels.csv
     river_name: Tornionjoki
   Upper:
-    drift_conc: 8.0e-09
+    drift_conc: 1.6e-08  # v0.55: 2x boost (was 8.0e-09). v0.46+ plan V3 specifically targeted Upper; expanded to all 4 reaches per probe verdict. See Mouth note.
     search_prod: 1.0e-06
     shelter_speed_frac: 0.15
     prey_energy_density: 3500
-    drift_regen_distance: 1000
+    drift_regen_distance: 500  # v0.55: 0.5x (was 1000). See Mouth note.
     shading: 0.55
     fish_pred_min: 0.96
     terr_pred_min: 0.99  # v0.53.0: was 0.96; see Mouth note.

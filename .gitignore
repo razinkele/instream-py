@@ -61,6 +61,9 @@ Thumbs.db
 # Diagnostic probe CSVs (Arc E/F/G/H lifecycle tracing outputs)
 scripts/_arc_*.csv
 scripts/_probe_*.csv
+# Probe/verify run logs (outputs, like the CSVs above)
+scripts/_probe_*.log
+scripts/_verify_*.log
 
 # Numba AOT cache (user home)
 # ~/.salmopy_numba_cache is kept out via the user-home location itself
