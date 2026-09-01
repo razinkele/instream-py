@@ -22,6 +22,16 @@ Tracks issues opened from monthly IBM literature digests so that subsequent runs
 
 ---
 
+## 2026-09-01 digest
+
+### M1 — Hajiesmaeili (2025) inSALMO Gullspång validation targets
+
+**Digest entry:** Roadmap item M1 in `LITERATURE/2026-09-01.md`  
+**Source:** Hajiesmaeili 2025 — DOI 10.1002/rra.70023  
+**Status:** ✅ Opened as [razinkele/instream-py#4](https://github.com/razinkele/instream-py/issues/4) (2026-09-01)
+
+---
+
 ## Pre-existing issues (do not re-file)
 
 | Issue | Title | Labels |
