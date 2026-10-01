@@ -32,6 +32,16 @@ Tracks issues opened from monthly IBM literature digests so that subsequent runs
 
 ---
 
+## 2026-10-01 digest
+
+### M1 — M74 thiamine-deficiency covariate in Baltic validation pipeline
+
+**Digest entry:** Roadmap item M1 in `LITERATURE/2026-10-01.md`  
+**Source:** Tamario et al. 2026 — DOI 10.1098/rsbl.2026.0219  
+**Status:** ✅ Opened as [razinkele/instream-py#5](https://github.com/razinkele/instream-py/issues/5) (2026-10-01)
+
+---
+
 ## Pre-existing issues (do not re-file)
 
 | Issue | Title | Labels |
