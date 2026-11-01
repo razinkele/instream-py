@@ -42,6 +42,16 @@ Tracks issues opened from monthly IBM literature digests so that subsequent runs
 
 ---
 
+## 2026-11-01 digest
+
+### M1 — Atlantic salmon temperature mortality threshold (21°C) audit
+
+**Digest entry:** Roadmap item M1 in `LITERATURE/2026-11-01.md`  
+**Source:** Foldvik 2026 — *Fisheries Research* (DOI to be confirmed)  
+**Status:** ✅ Opened as [razinkele/instream-py#6](https://github.com/razinkele/instream-py/issues/6) (2026-11-01)
+
+---
+
 ## Pre-existing issues (do not re-file)
 
 | Issue | Title | Labels |
